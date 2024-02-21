@@ -41,8 +41,7 @@ public:
     virtual void requestStop() = 0;
     virtual void run() = 0;
     virtual void post(void (*fn)(void *), void *arg = nullptr) = 0;
-    // virtual uintptr_t addTimer(int64_t delay, void (*fn)(void *), void *arg = nullptr) = 0;
-    // virtual void      removeTimer(uintptr_t id) = 0;
+    virtual void timerSingleShot(int64_t ms, void (*fn)(void *), void *arg) = 0;
 
     /**
      * @brief Spawn a task add post it
@@ -549,6 +548,21 @@ inline void EventLoop::_invokeCoroutine(void *ptr) {
 
 inline void EventLoop::quit() {
     instance()->requestStop();
+}
+
+// --- Utils Function
+inline CallbackAwaitable<> msleep(int64_t ms) {
+    return CallbackAwaitable<>([ms](CallbackAwaitable<>::ResumeFunc &&func) {
+        if (ms == 0) {
+            func();
+            return;
+        }
+        EventLoop::instance()->timerSingleShot(ms, [](void *ptr) {
+            auto func = static_cast<CallbackAwaitable<>::ResumeFunc*>(ptr);
+            (*func)();
+            delete func;
+        }, new CallbackAwaitable<>::ResumeFunc(std::move(func)));
+    });
 }
 
 ILIAS_NS_END

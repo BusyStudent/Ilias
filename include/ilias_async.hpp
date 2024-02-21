@@ -26,6 +26,7 @@ enum PollEvent : int {
 class IOWatcher {
 public:
     virtual void onEvent(int event) = 0;
+    virtual void onTimeout() = 0;
 protected:
     constexpr IOWatcher() = default;
     constexpr ~IOWatcher() = default;
@@ -35,7 +36,7 @@ protected:
  * @brief A Context for add watcher 
  * 
  */
-class IOContext {
+class IOContext : private IOWatcher {
 public:
     IOContext();
     IOContext(const IOContext&) = delete;
@@ -52,12 +53,16 @@ public:
 
 private:
     void _run();
+    void _notify(::pollfd &pfd);
 
     std::thread           mThread; //< Threads for network poll
-    std::atomic<bool>     mRunning {true}; //< Flag to stop the thread
+    std::atomic_bool      mRunning {true}; //< Flag to stop the thread
     std::vector<::pollfd> mPollfds;
     std::map<socket_t, IOWatcher*> mWatchers;
     std::recursive_mutex           mMutex;
+
+    Socket mEvent; //< Socket poll in workThread
+    Socket mControl; //< Socket for sending message
 };
 
 // --- C
@@ -76,13 +81,49 @@ private:
 };
 
 // --- IOContext Impl
-inline IOContext::IOContext() : mThread(&IOContext::_run, this) {
-    while (mRunning) {
-        auto ret = ILIAS_POLL(mPollfds.data(), mPollfds.size(), -1);
-    }
+inline IOContext::IOContext() {
+    // Init socket
+#ifndef __linux
+    Socket server(AF_INET, SOCK_STREAM, 0);
+    server.listen();
+    mControl = Socket(AF_INET, SOCK_STREAM, 0);
+    mControl.connect(server.localEndpoint());
+    mEvent = server.accept().first;
+#else
+
+#endif
+    // Add event socket
 }
 inline IOContext::~IOContext() {
+    mRunning = false;
     mThread.join();
+}
+inline void IOContext::_run() {
+    while (mRunning) {
+        auto n = ILIAS_POLL(mPollfds.data(), mPollfds.size(), -1);
+        if (n < 0) {
+            ::printf("[Ilias::IOContext] Poll Error %s\n", SockError::fromErrno().message().c_str());
+        }
+        // Because first socket are event soocket, for the array from [end to begin]
+        for (auto iter = mPollfds.rbegin(); iter != mPollfds.rend(); iter++) {
+            if (n == 0) {
+                break;
+            }
+            if (iter->revents) {
+                n--;
+                _notify(*iter);
+            }
+        }
+    }
+}
+inline void IOContext::_notify(::pollfd &pfd) {
+    auto iter = mWatchers.find(pfd.fd);
+    if (iter == mWatchers.end()) {
+        return;
+    }
+    auto &watcher = iter->second;
+    watcher->onEvent(pfd.revents);
+    pfd.revents = 0;
 }
 
 ILIAS_NS_END

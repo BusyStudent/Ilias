@@ -6,21 +6,8 @@
 
 using namespace ILIAS_NAMESPACE;
 
-auto coSleep(int s) {
-    return CallbackAwaitable<>(
-        [s](CallbackAwaitable<>::ResumeFunc &&resumeFunc) {
-            std::cout << "sleeping... for " << s << std::endl;
-            std::thread([resumeFunc, s]() {
-                std::this_thread::sleep_for(std::chrono::seconds(s));
-                std::cout << "sleeping done. " << std::endl;
-                resumeFunc();
-            }).detach();
-        }
-    );
-}
-
 auto a() -> Task<> {
-    co_await coSleep(1);
+    co_await msleep(1000);
     co_return;
 }
 auto b() -> Task<> {
@@ -59,24 +46,25 @@ auto coToString(int num) -> Task<std::string> {
     co_return std::to_string(num);
 }
 auto anotherTask() -> Task<> {
+    co_await msleep(2000);
     std::cout << "Another task" << std::endl;
     co_return;
 }
 
 int main() {
     std::ios::sync_with_stdio(true);
-    MiniEventLoop loop;
+    NativeEventLoop loop;
 
     return loop.runTask([&]() -> Task<int> {
         std::cout << "Part 1" << std::endl;
         ilias_spawn anotherTask();
 
-        auto self = co_await GetPromiseAwaitable();
         auto val = co_await testAwait();
         auto str = co_await coToString(val);
         std::cout << "testAwait return :" <<  val << std::endl;
         std::cout << "coToString return :" << str << std::endl;
         std::cout << "Part 2" << std::endl;
+        co_await msleep(3000);
         co_return 0;
     }());
 }
