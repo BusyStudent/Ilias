@@ -4,6 +4,11 @@ target("test_addr")
     set_kind("binary")
     add_files("tests/test_addr.cpp")
 
+target("test_async")
+    set_kind("binary")
+    set_languages("c++20")
+    add_files("tests/test_async.cpp")
+
 target("test_co")
     set_kind("binary")
     set_languages("c++20")

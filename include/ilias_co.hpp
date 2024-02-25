@@ -7,19 +7,17 @@
 #include <functional>
 #include "ilias.hpp"
 
-#ifndef __cpp_lib_coroutine
+#if !defined(__cpp_lib_coroutine)
 #error "Compiler does not support coroutines"
 #endif
 
-#ifdef __cpp_lib_source_location
+#if defined(__cpp_lib_source_location)
 #include <source_location>
 #endif
 
-#ifdef ILIAS_ENABLE_GO
-#define go co_yield
+#if defined(__cpp_lib_source_location) && !defined(NDEBUG)
+#define ILIAS_COROUTINE_TRACE
 #endif
-
-#define ilias_spawn co_yield
 
 ILIAS_NS_BEGIN
 
@@ -116,7 +114,7 @@ public:
         return promise().value();
     }
 private:
-    std::coroutine_handle<promise_type> mHandle;
+    handle_type mHandle;
 };
 
 // --- Promise Impl
@@ -234,6 +232,13 @@ public:
     std::coroutine_handle<> handle() const noexcept {
         return mHandle;
     }
+
+    void *operator new(size_t n) {
+        return ILIAS_MALLOC(n);
+    }
+    void operator delete(void *p) noexcept {
+        return ILIAS_FREE(p);
+    }
 protected:
     bool mSuspendByAwait = false;
     bool mQuitAtDone = false; //< Quit the event loop if coroutinue is doned
@@ -309,13 +314,16 @@ class Promise final : public PromiseImpl<T> {
 public:
     using handle_type = std::coroutine_handle<Promise<T> >;
 
-#if !defined(NDEBUG) && defined(__cpp_lib_source_location)
+#if defined(ILIAS_COROUTINE_TRACE)
     Promise(std::source_location loc = std::source_location::current()) {
         mLocation = loc;
-        ::printf("[Ilias] co %s was created\n", mLocation.function_name());
+        ::fprintf(stderr, "[Ilias] co '%s' was created\n", name());
     }
     ~Promise() {
-        ::printf("[Ilias] co %s was destroyed\n", mLocation.function_name());
+        ::fprintf(stderr, "[Ilias] co '%s' was destroyed\n", name());
+    }
+    const char *name() const noexcept { //< Debug name
+        return mLocation.function_name();
     }
 private:
     std::source_location mLocation;

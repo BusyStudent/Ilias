@@ -172,6 +172,21 @@ public:
     error_t error() const;
 
     /**
+     * @brief Is Posix like code EWOULDBLOCK or EAGAIN
+     * 
+     * @return true 
+     * @return false 
+     */
+    bool isWouldBlock() const;
+    /**
+     * @brief Is Posix like code EINPROGRESS
+     * 
+     * @return true 
+     * @return false 
+     */
+    bool isInProgress() const;
+
+    /**
      * @brief Get Error code from errno (WSAGetLastError)
      * 
      * @return SockError 
@@ -234,6 +249,8 @@ public:
     bool    isValid() const;
     bool    isBlocking() const;
 
+    SockError error() const;
+
     template <typename T>
     std::pair<T, IPEndpoint> accept() const;
 
@@ -265,6 +282,7 @@ public:
     socket_t release(socket_t newSocket = InvalidSocket);
     bool     reset(socket_t newSocket = InvalidSocket);
     bool     close();
+    Socket   clone();
 
     Socket &operator =(Socket &&s);
     Socket &operator =(const Socket &) = delete;
@@ -506,6 +524,22 @@ inline std::string SockError::u8message() const {
 #endif
 }
 
+#ifdef _WIN32
+inline bool SockError::isWouldBlock() const {
+    return mError == WSAEWOULDBLOCK;
+}
+inline bool SockError::isInProgress() const {
+    return mError == WSAEINPROGRESS;
+}
+#else
+inline bool SockError::isWouldBlock() const {
+    return mError == EWOULDBLOCK || mError == EAGAIN;
+}
+inline bool SockError::isInProgress() const {
+    return mError == EINPROGRESS;
+}
+#endif
+
 inline SockError SockError::fromErrno() {
     return ILIAS_ERRNO;
 }
@@ -603,6 +637,14 @@ inline IPEndpoint SocketView::remoteEndpoint() const {
         return IPEndpoint::fromRaw(&addr, len);
     }
     return IPEndpoint();
+}
+inline SockError SocketView::error() const {
+    error_t err;
+    ::socklen_t len = 0;
+    if (::getsockopt(mFd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&err), &len) == 0) {
+        return SockError(err);
+    }
+    return SockError();
 }
 
 // --- Socket Impl

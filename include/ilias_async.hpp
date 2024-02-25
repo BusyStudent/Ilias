@@ -3,6 +3,7 @@
 #include "ilias.hpp"
 #include <thread>
 #include <atomic>
+#include <latch>
 #include <mutex>
 #include <map>
 
@@ -13,10 +14,50 @@
 ILIAS_NS_BEGIN
 
 enum PollEvent : int {
+    None = 0,
     In  = POLLIN,
     Out = POLLOUT,
     Err = POLLERR,
     All = In | Out | Err
+};
+
+template <typename T, typename Err = SockError>
+class Expected {
+public:
+    explicit Expected(T &&v) : mType(Value) {
+        new(&mStorage.value) T(std::move(v));
+    }
+    explicit Expected(Err &&e) : mType(Error) {
+        new(&mStorage.err) Err(std::move(e));
+    }
+    ~Expected() {
+        if (mType == Value) {
+            mStorage.value.~T();
+        }
+        else if (mType == Error) {
+            mStorage.err.~Err();
+        }
+    }
+    T value() && {
+        ILIAS_ASSERT(mType == Value);
+        return std::move(mStorage.value);
+    }
+    Err error() && {
+        ILIAS_ASSERT(mType == Error);
+        return std::move(mStorage.err);
+    }
+    bool has_value() const {
+        return mType == Value;
+    }
+private:
+    union Storage {
+        T value;
+        Err err;
+    } mStorage;
+    enum {
+        Value = 0,
+        Error = 1
+    } mType;
 };
 
 /**
@@ -28,8 +69,11 @@ public:
     virtual void onEvent(int event) = 0;
     virtual void onTimeout() = 0;
 protected:
-    constexpr IOWatcher() = default;
-    constexpr ~IOWatcher() = default;
+    IOWatcher() = default;
+    ~IOWatcher() = default;
+private:
+    SocketView mSocket;
+friend class IOContext;
 };
 
 /**
@@ -42,42 +86,41 @@ public:
     IOContext(const IOContext&) = delete;
     ~IOContext();
 
-    void addWatcher(IOWatcher* watcher, int events = PollEvent::All);
-    bool modifyWatcher(IOWatcher* watcher, int events = PollEvent::All);
+    void addWatcher(SocketView socket, IOWatcher* watcher, int events);
+    bool modifyWatcher(IOWatcher* watcher, int events);
     bool removeWatcher(IOWatcher* watcher);
 
 #ifdef __cpp_lib_coroutine
+    Task<int>     asyncPoll(SocketView socket, int events);
     Task<ssize_t> asyncRecv(SocketView socket, void* buffer, size_t length, int flags = 0);
     Task<ssize_t> asyncSend(SocketView socket, const void* buffer, size_t length, int flags = 0);
+    Task<bool>    asyncConnect(SocketView socket, const IPEndpoint& endpoint);
+    template <typename T>
+    Task<std::pair<T, IPEndpoint> > asyncAccept(const T &socket);
 #endif
 
 private:
+    struct Fn {
+        void (*fn)(void *);
+        void *arg;    
+    };
+
     void _run();
-    void _notify(::pollfd &pfd);
+    void _notify(const ::pollfd &pfd);
+    void _stop();
+    void _invoke(Fn);
+    template <typename T>
+    void _invoke4(T &&callable);
+    void onEvent(int events) override;
+    void onTimeout() override;              
 
     std::thread           mThread; //< Threads for network poll
     std::atomic_bool      mRunning {true}; //< Flag to stop the thread
     std::vector<::pollfd> mPollfds;
     std::map<socket_t, IOWatcher*> mWatchers;
-    std::recursive_mutex           mMutex;
 
     Socket mEvent; //< Socket poll in workThread
     Socket mControl; //< Socket for sending message
-};
-
-// --- C
-class TcpServer {
-public:
-
-private:
-    IOContext *mContext;
-};
-
-class TcpClient {
-public:
-
-private:
-    IOContext *mContext;
 };
 
 // --- IOContext Impl
@@ -85,20 +128,30 @@ inline IOContext::IOContext() {
     // Init socket
 #ifndef __linux
     Socket server(AF_INET, SOCK_STREAM, 0);
+    server.bind(IPEndpoint("127.0.0.1", 0));
     server.listen();
     mControl = Socket(AF_INET, SOCK_STREAM, 0);
     mControl.connect(server.localEndpoint());
     mEvent = server.accept().first;
+    mEvent.setBlocking(false);
 #else
-
+    int fds[2];
+    ::socketpair(AF_UNIX, SOCK_STREAM, 0, fds);
+    mEvent = Socket(fds[0]);
+    mControl = Socket(fds[1]);
 #endif
     // Add event socket
+    addWatcher(mEvent, this, PollEvent::In);
+
+    // Start Work Thread
+    mThread = std::thread(&IOContext::_run, this);
 }
 inline IOContext::~IOContext() {
-    mRunning = false;
+    _stop();
     mThread.join();
 }
 inline void IOContext::_run() {
+    std::vector<::pollfd> collected;
     while (mRunning) {
         auto n = ILIAS_POLL(mPollfds.data(), mPollfds.size(), -1);
         if (n < 0) {
@@ -111,19 +164,197 @@ inline void IOContext::_run() {
             }
             if (iter->revents) {
                 n--;
-                _notify(*iter);
+                collected.push_back(*iter);
+                iter->revents = 0;
             }
         }
+        // Dispatch
+        for (const auto &v : collected) {
+            _notify(v);
+        }
+        collected.clear();
     }
 }
-inline void IOContext::_notify(::pollfd &pfd) {
+inline void IOContext::_notify(const ::pollfd &pfd) {
     auto iter = mWatchers.find(pfd.fd);
     if (iter == mWatchers.end()) {
         return;
     }
     auto &watcher = iter->second;
     watcher->onEvent(pfd.revents);
-    pfd.revents = 0;
 }
+inline void IOContext::addWatcher(SocketView socket, IOWatcher *watcher, int events) {
+    if (mThread.joinable()) {
+        if (mThread.get_id() != std::this_thread::get_id()) {
+            return _invoke4([=, this]() {
+                addWatcher(socket, watcher, events);
+            });
+        }
+    }
+    ::pollfd pfd;
+    pfd.events = events;
+    pfd.revents = 0;
+    pfd.fd = socket.get();
+
+    watcher->mSocket = socket;
+    mWatchers.emplace(socket.get(), watcher);
+    mPollfds.push_back(pfd);
+}
+inline bool IOContext::modifyWatcher(IOWatcher *watcher, int events) {
+    if (mThread.get_id() != std::this_thread::get_id()) {
+        bool val = false;
+        _invoke4([=, this, &val]() {
+            val =  modifyWatcher(watcher, events);
+        });
+        return val;
+    }
+
+    auto fd = watcher->mSocket.get();
+    for (auto iter = mPollfds.begin(); iter != mPollfds.end(); iter++) {
+        if (iter->fd == fd) {
+            iter->events = events;
+            return true;
+        }
+    }
+    return false;
+}
+inline bool IOContext::removeWatcher(IOWatcher *watcher) {
+    if (mThread.get_id() != std::this_thread::get_id()) {
+        bool val = false;
+        _invoke4([=, this, &val]() {
+            val =  removeWatcher(watcher);
+        });
+        return val;
+    }
+
+    auto fd = watcher->mSocket.get();
+    auto iter = mWatchers.find(fd);
+    if (iter == mWatchers.end()) {
+        return false;
+    }
+    mWatchers.erase(iter);
+    for (auto iter = mPollfds.begin(); iter != mPollfds.end(); iter++) {
+        if (iter->fd == fd) {
+            mPollfds.erase(iter);
+            break;
+        }
+    }
+    return true;
+}
+inline void IOContext::onEvent(int events) {
+    if (!(events & PollEvent::In)) {
+        return;
+    }
+    Fn fn;
+    while (mEvent.recv(&fn, sizeof(Fn)) == sizeof(Fn)) {
+        fn.fn(fn.arg);
+    }
+}
+inline void IOContext::onTimeout() {
+
+}
+inline void IOContext::_stop() {
+    Fn fn;
+    fn.fn = [](void *arg) { static_cast<IOContext *>(arg)->mRunning = false; };
+    fn.arg = this;
+    _invoke(fn);
+}
+inline void IOContext::_invoke(Fn fn) {
+    struct Args {
+        Fn fn;
+        std::latch latch {1};
+    } args {fn};
+
+    Fn helperFn;
+    helperFn.fn = [](void *ptr) {
+        auto arg = static_cast<Args *>(ptr);
+        arg->fn.fn(arg->fn.arg);
+        arg->latch.count_down();
+    };
+    helperFn.arg = &args;
+    mControl.send(&helperFn, sizeof(Fn));
+    args.latch.wait();
+}
+template <typename Callable>
+inline void IOContext::_invoke4(Callable &&callable) {
+    Fn fn;
+    fn.fn = [](void *callable) {
+        auto c = static_cast<Callable *>(callable);
+        (*c)();
+    };
+    fn.arg = &callable;
+    _invoke(fn);
+}
+
+#ifdef __cpp_lib_coroutine
+
+inline Task<int> IOContext::asyncPoll(SocketView socket, int events) {
+    if (events == 0 || !socket.isValid()) {
+        co_return 0;
+    }
+    struct Watcher : IOWatcher {
+        void onTimeout() override {}
+        void onEvent(int revents) override {
+            resume(std::move(revents));
+            ctxt->removeWatcher(this);
+            delete this;
+        }
+        IOContext *ctxt;
+        CallbackAwaitable<int>::ResumeFunc resume;
+    };
+    int revents = co_await CallbackAwaitable<int>(
+        [=, this](CallbackAwaitable<int>::ResumeFunc &&func) {
+            auto watcher = new Watcher();
+            watcher->ctxt = this;
+            watcher->resume = std::move(func);
+            addWatcher(socket, watcher, events);
+        }
+    );
+    co_return revents;
+}
+inline Task<ssize_t> IOContext::asyncRecv(SocketView socket, void *buf, size_t count, int flags) {
+    ssize_t n = socket.recv(buf, count, flags);
+    if (n == -1) {
+        auto err = SockError::fromErrno();
+        if (!err.isWouldBlock()) {
+            co_return n; //< Just Error
+        }
+        auto event = co_await asyncPoll(socket, PollEvent::In);
+        if (event & PollEvent::In) {
+            co_return socket.recv(buf, count, flags);
+        }
+    }
+    co_return n;
+}
+inline Task<ssize_t> IOContext::asyncSend(SocketView socket, const void *buf, size_t count, int flags) {
+    ssize_t n = socket.send(buf, count, flags);
+    if (n == -1) {
+        auto err = SockError::fromErrno();
+        if (!err.isWouldBlock()) {
+            co_return n; //< Just Error
+        }
+        auto event = co_await asyncPoll(socket, PollEvent::Out);
+        if (event & PollEvent::Out) {
+            co_return socket.send(buf, count, flags);
+        }
+    }
+    co_return n;
+}
+inline Task<bool> IOContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint) {
+    bool connected = socket.connect(endpoint);
+    if (!connected) {
+        auto err = SockError::fromErrno();
+        if (!err.isInProgress() && !err.isWouldBlock()) {
+            co_return connected; //< Just Error
+        }
+        auto event = co_await asyncPoll(socket, PollEvent::Out | PollEvent::Err);
+        if (event & (PollEvent::Out | PollEvent::Err)) {
+            co_return true;
+        }
+    }
+    co_return connected;
+}
+
+#endif
 
 ILIAS_NS_END

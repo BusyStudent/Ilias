@@ -57,7 +57,7 @@ int main() {
 
     return loop.runTask([&]() -> Task<int> {
         std::cout << "Part 1" << std::endl;
-        ilias_spawn anotherTask();
+        co_yield anotherTask();
 
         auto val = co_await testAwait();
         auto str = co_await coToString(val);
