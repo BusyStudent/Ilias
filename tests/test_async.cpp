@@ -5,7 +5,6 @@
 using namespace ILIAS_NAMESPACE;
 
 int main() {
-    SockInitializer init;
     NativeEventLoop loop;
     IOContext ctxt;
 

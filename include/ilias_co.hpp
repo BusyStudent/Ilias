@@ -314,7 +314,7 @@ class Promise final : public PromiseImpl<T> {
 public:
     using handle_type = std::coroutine_handle<Promise<T> >;
 
-#if defined(ILIAS_COROUTINE_TRACE)
+#if defined(ILIAS_COROUTINE_TRACE) && !defined(ILIAS_COROUTINE_NO_CREATE_TRACE)
     Promise(std::source_location loc = std::source_location::current()) {
         mLocation = loc;
         ::fprintf(stderr, "[Ilias] co '%s' was created\n", name());
@@ -386,23 +386,54 @@ public:
     TaskAwaitable(TaskAwaitable &&) = default;
     ~TaskAwaitable() = default;
 
+#if defined(ILIAS_COROUTINE_TRACE) && !defined(ILIAS_COROUTINE_NO_AWAIT_TRACE)
+    bool await_ready(std::source_location loc = std::source_location::current()) noexcept {
+        mLocation = loc;
+        ::fprintf(stderr, "[Ilias] co '%s' was try to await '%s'\n", loc.function_name(), mTask.promise().name());
+        return _await_ready();
+    }
+    template <typename U>
+    void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
+        ::fprintf(stderr, "[Ilias] co '%s' was suspended by '%s'\n", mLocation.function_name(), mTask.promise().name());
+        return _await_suspend(h);
+    }
+    T await_resume() const noexcept {
+        ::fprintf(stderr, "[Ilias] co '%s' was resumed\n", mLocation.function_name());
+        return _await_resume();
+    }
+private:
+    std::source_location mLocation;
+#else
     bool await_ready() const noexcept {
+        return _await_ready();
+    }
+    template <typename U>
+    void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
+        return _await_suspend(h);
+    }
+    T await_resume() const noexcept {
+        return _await_resume();
+    }
+#endif
+
+private:
+    bool _await_ready() const noexcept {
         // Let it run true on done, false on await
         // So on true, this awaitable is ready
         return mTask.promise().resume_util_done_or_await();
     }
     template <typename U>
-    void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
+    void _await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
         h.promise().set_suspend_by_await(true);
         mTask.promise().set_await_handle(h);
 
         // Run mHandle at EventLoop
         mTask.promise().event_loop()->postTask(mTask);
     }
-    T await_resume() const noexcept {
+    T _await_resume() const noexcept {
         return mTask.get();
     }
-private:
+
     Task<T> mTask;
 };
 
