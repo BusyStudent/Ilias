@@ -1,9 +1,9 @@
 #pragma once
 
+#include "ilias_latch.hpp"
 #include "ilias.hpp"
 #include <thread>
 #include <atomic>
-#include <latch>
 #include <mutex>
 #include <map>
 
@@ -73,7 +73,8 @@ protected:
     IOWatcher() = default;
     ~IOWatcher() = default;
 private:
-    SocketView mSocket;
+    socket_t mFd = ILIAS_INVALID_SOCKET;
+    int64_t  mPollfdIdx = -1; //< Location of it's pollfd
 friend class IOContext;
 };
 
@@ -156,13 +157,14 @@ inline IOContext::IOContext() {
     mControl = Socket(AF_INET, SOCK_STREAM, 0);
     mControl.connect(server.localEndpoint());
     mEvent = server.accept().first;
-    mEvent.setBlocking(false);
 #else
     int fds[2];
     ::socketpair(AF_UNIX, SOCK_STREAM, 0, fds);
     mEvent = Socket(fds[0]);
     mControl = Socket(fds[1]);
 #endif
+    mEvent.setBlocking(false);
+
     // Add event socket
     addWatcher(mEvent, this, PollEvent::In);
 
@@ -221,7 +223,7 @@ inline void IOContext::_dump() {
             events += "Out ";
         }
         ::printf(
-            "[Ilias::IOContext] IOWatcher %p Socket %p Event %s\n",
+            "[Ilias::IOContext] IOWatcher %p Socket %lu Event %s\n",
             mWatchers[pfd.fd], 
             uintptr_t(pfd.fd), 
             events.c_str()
@@ -245,7 +247,8 @@ inline void IOContext::addWatcher(SocketView socket, IOWatcher *watcher, int eve
     pfd.revents = 0;
     pfd.fd = socket.get();
 
-    watcher->mSocket = socket;
+    watcher->mFd = socket.get();
+    watcher->mPollfdIdx = mPollfds.size(); //< Store the location
     mWatchers.emplace(socket.get(), watcher);
     mPollfds.push_back(pfd);
 
@@ -259,17 +262,15 @@ inline bool IOContext::modifyWatcher(IOWatcher *watcher, int events) {
         });
         return val;
     }
-
-    auto fd = watcher->mSocket.get();
-    for (auto iter = mPollfds.begin(); iter != mPollfds.end(); iter++) {
-        if (iter->fd == fd) {
-            iter->events = events;
-            return true;
-        }
+    if (watcher->mPollfdIdx <= 0) {
+        return false;
     }
 
+    mPollfds[watcher->mPollfdIdx].events = events;
+    mPollfds[watcher->mPollfdIdx].revents = 0;
+
     _dump();
-    return false;
+    return true;
 }
 inline bool IOContext::removeWatcher(IOWatcher *watcher) {
     if (mThread.get_id() != std::this_thread::get_id()) {
@@ -280,18 +281,31 @@ inline bool IOContext::removeWatcher(IOWatcher *watcher) {
         return val;
     }
 
-    auto fd = watcher->mSocket.get();
+    auto fd = watcher->mFd;
+    auto idx = watcher->mPollfdIdx;
     auto iter = mWatchers.find(fd);
     if (iter == mWatchers.end()) {
         return false;
     }
-    mWatchers.erase(iter);
-    for (auto iter = mPollfds.begin(); iter != mPollfds.end(); iter++) {
-        if (iter->fd == fd) {
-            mPollfds.erase(iter);
-            break;
-        }
+    if (idx < 0) {
+        return false;
     }
+    if (idx + 1 == mPollfds.size()) {
+        // Is end, just remove
+        mPollfds.pop_back();
+    }
+    else {
+        // Modify the prev end with current index
+        mWatchers[mPollfds.back().fd]->mPollfdIdx = idx;
+        // Swap with the end
+        std::swap(mPollfds[idx], mPollfds.back());
+        // Remove it
+        mPollfds.pop_back();
+    }
+    mWatchers.erase(iter);
+
+    watcher->mFd = ILIAS_INVALID_SOCKET;
+    watcher->mPollfdIdx = -1;
 
     _dump();
     return true;

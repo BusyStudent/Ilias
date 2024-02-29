@@ -6,16 +6,13 @@
 #include <exception>
 #include <functional>
 #include "ilias.hpp"
+#include "ilias_source_location.hpp"
 
 #if !defined(__cpp_lib_coroutine)
 #error "Compiler does not support coroutines"
 #endif
 
-#if defined(__cpp_lib_source_location)
-#include <source_location>
-#endif
-
-#if defined(__cpp_lib_source_location) && !defined(NDEBUG)
+#if !defined(ILIAS_NO_SOURCE_LOCATION) && !defined(NDEBUG)
 #define ILIAS_COROUTINE_TRACE
 #endif
 

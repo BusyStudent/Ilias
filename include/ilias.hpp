@@ -43,9 +43,25 @@
     #endif
 #elif defined(__linux)
     #define ILIAS_INVALID_SOCKET -1
+    #define ILIAS_ERRNO     (errno)
+    #define ILIAS_H_ERRNO   (h_errno)
+    #define ILIAS_ERROR_T     int
+    #define ILIAS_SOCKET_T    int
+    #define ILIAS_SSIZE_T     int
+    #define ILIAS_BYTE_T      void
+    #define ILIAS_CLOSE(s)  ::close(s)
+    #define ILIAS_POLL      ::poll
+    #define ADDR_ANY        INADDR_ANY
 
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
+    #include <poll.h>
+    #include <errno.h>
+    #include <unistd.h>
+    #include <netdb.h>
+    #include <fcntl.h>
 #endif
-
 
 ILIAS_NS_BEGIN
 
@@ -572,7 +588,7 @@ inline ssize_t SocketView::sendto(const void *buf, size_t len, int flags, const 
 // Helper 
 template <typename T, size_t N>
 ssize_t SocketView::send(const T (&buf)[N], int flags) const {
-    static_assert(std::is_pod_v<T>, "T must be POD type");
+    static_assert(std::is_pod<T>::value, "T must be POD type");
     return send(buf, sizeof(T) * N, flags);
 }
 
@@ -600,8 +616,20 @@ inline bool SocketView::setBlocking(bool blocking) const {
     u_long block = blocking ? 0 : 1;
     return ioctl(FIONBIO, &block);
 #else
-    ILIAS_ASSERT(!"Not Impl");
-    return false;
+    int flags = ::fcntl(mFd, F_GETFL, 0);
+    if (flags < 0) {
+        return false;
+    }
+    if (blocking) {
+        flags &= ~O_NONBLOCK;
+    }
+    else {
+        flags |= O_NONBLOCK;
+    }
+    if (::fcntl(mFd, F_SETFL, flags) < 0) {
+        return false;
+    }
+    return true;
 #endif
 }
 

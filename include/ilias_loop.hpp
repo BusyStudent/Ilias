@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <algorithm>
 #include <chrono>
+#include <thread>
 #include <vector>
 #include <deque>
 #include <mutex>
