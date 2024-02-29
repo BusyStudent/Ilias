@@ -7,7 +7,7 @@
 #include <mutex>
 #include <map>
 
-#if __cpp_lib_coroutine
+#if defined(__cpp_lib_coroutine)
     #include "ilias_co.hpp"
 #endif
 
@@ -160,8 +160,8 @@ inline IOContext::IOContext() {
 #else
     int fds[2];
     ::socketpair(AF_UNIX, SOCK_STREAM, 0, fds);
-    mEvent = Socket(fds[0]);
-    mControl = Socket(fds[1]);
+    mEvent.reset(fds[0]);
+    mControl.reset(fds[1]);
 #endif
     mEvent.setBlocking(false);
 

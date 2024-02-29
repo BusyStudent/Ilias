@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstring>
-#include <vector>
 #include <string>
 
 #ifndef ILIAS_NAMESPACE
@@ -54,6 +53,7 @@
 
     #include <sys/socket.h>
     #include <netinet/in.h>
+    #include <sys/epoll.h>
     #include <arpa/inet.h>
     #include <poll.h>
     #include <errno.h>
@@ -324,7 +324,7 @@ public:
 
     static constexpr socket_t InvalidSocket = ILIAS_INVALID_SOCKET;
 protected:
-    socket_t mFd;
+    socket_t mFd = InvalidSocket;
 };
 
 /**
@@ -800,10 +800,10 @@ inline socket_t Socket::release(socket_t newSocket) {
     return prev;
 }
 inline bool Socket::reset(socket_t newSocket) {
-    if (!isValid()) {
-        return true;
+    bool ret = true;
+    if (isValid()) {
+        ret = (ILIAS_CLOSE(mFd) == 0);
     }
-    auto ret = (ILIAS_CLOSE(mFd) == 0);
     mFd = newSocket;
     return ret;
 }

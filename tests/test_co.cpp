@@ -1,8 +1,6 @@
 #define ILIAS_ENABLE_GO
-#include "../include/ilias_source_location.hpp"
 #include "../include/ilias_co.hpp"
 #include "../include/ilias_loop.hpp"
-#include <system_error>
 #include <iostream>
 #include <string>
 

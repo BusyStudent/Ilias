@@ -198,8 +198,8 @@ public:
         }
     }
     void rethrow_if_needed(std::source_location loc = std::source_location::current()) {
-        ::fprintf(stderr, "[Ilias] co '%s' rethrow exception\n", loc.function_name());
         if (mException) {
+            ::fprintf(stderr, "[Ilias] co '%s' rethrow exception\n", loc.function_name());
             std::rethrow_exception(std::move(mException));
         }
     }
@@ -588,7 +588,7 @@ inline void EventLoop::spawn(Callable &&cb, Args &&...args) {
 template <typename T>
 inline T EventLoop::runTask(Task<T> task) {
     task.promise().set_quit_at_done(true);
-    post(_invokeCoroutine, &task.promise());
+    postCoroutine(task.promise());
     run(); //< Enter event loop
     return task.get(); //< Get result value
 }
