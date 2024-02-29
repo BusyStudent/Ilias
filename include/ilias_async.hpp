@@ -129,7 +129,7 @@ private:
     Socket mControl; //< Socket for sending message
 };
 
-class AsyncSocket : protected IOWatcher {
+class AsyncSocket {
 public:
     AsyncSocket(IOContext &ctxt, socket_t sockfd);
     AsyncSocket(const AsyncSocket &) = delete;
@@ -152,7 +152,7 @@ inline IOContext::IOContext() {
     // Init socket
 #ifndef __linux
     Socket server(AF_INET, SOCK_STREAM, 0);
-    server.bind(IPEndpoint("127.0.0.1", 0));
+    server.bind(IPEndpoint(IPAddress4::loopback(), 0));
     server.listen();
     mControl = Socket(AF_INET, SOCK_STREAM, 0);
     mControl.connect(server.localEndpoint());

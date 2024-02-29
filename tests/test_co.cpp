@@ -2,12 +2,14 @@
 #include "../include/ilias_source_location.hpp"
 #include "../include/ilias_co.hpp"
 #include "../include/ilias_loop.hpp"
+#include <system_error>
 #include <iostream>
 #include <string>
 
 using namespace ILIAS_NAMESPACE;
 
 auto a() -> Task<> {
+    throw std::runtime_error("Error");
     co_await msleep(1000);
     co_return;
 }
@@ -38,8 +40,8 @@ auto testAwait() -> Task<int> {
     try {
         co_await g();
     }
-    catch (int e) {
-        std::cout << "catch " << e << "for co_await g()" << std::endl;
+    catch (std::exception &exception) {
+        std::cout << "catch " << exception.what() << " for co_await g()" << std::endl;
     }
     co_return 114514;
 }

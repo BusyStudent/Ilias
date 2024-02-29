@@ -51,7 +51,6 @@
     #define ILIAS_BYTE_T      void
     #define ILIAS_CLOSE(s)  ::close(s)
     #define ILIAS_POLL      ::poll
-    #define ADDR_ANY        INADDR_ANY
 
     #include <sys/socket.h>
     #include <netinet/in.h>
@@ -70,6 +69,50 @@ using socket_t = ILIAS_SOCKET_T;
 using ssize_t  = ILIAS_SSIZE_T;
 using byte_t   = ILIAS_BYTE_T;
 using error_t  = ILIAS_ERROR_T;
+
+/**
+ * @brief Wrapper for v4
+ * 
+ */
+class IPAddress4 : public ::in_addr {
+public:
+    IPAddress4();
+    IPAddress4(::in_addr addr4);
+    IPAddress4(const IPAddress4 &other) = default;
+
+    std::string toString() const;
+    uint32_t    toUint32() const;
+    uint32_t    toUint32NetworkOrder() const;
+
+    bool isAny() const;
+    bool isNone() const;
+    bool isBroadcast() const;
+    bool isLoopback() const;
+
+    bool operator ==(const IPAddress4 &other) const;
+    bool operator !=(const IPAddress4 &other) const;
+    
+    static IPAddress4 any();
+    static IPAddress4 none();
+    static IPAddress4 broadcast();
+    static IPAddress4 loopback();
+    static IPAddress4 fromString(const char *value);
+    static IPAddress4 fromHostname(const char *hostname);
+    static IPAddress4 fromUint32(uint32_t value);
+    static IPAddress4 fromUint32NetworkOrder(uint32_t value);
+};
+/**
+ * @brief Wrapper for v6
+ * 
+ */
+class IPAddress6 : public ::in6_addr {
+public:
+    IPAddress6();
+    IPAddress6(::in6_addr addr6);
+    IPAddress6(const IPAddress6 &other) = default;
+
+    std::string toString() const;
+};
 
 /**
  * @brief Abstraction of v4, v6 
@@ -133,6 +176,8 @@ public:
     IPEndpoint(const IPEndpoint &) = default;
 
     std::string toString() const;
+    IPAddress4 address4() const;
+    IPAddress6 address6() const;
     IPAddress address() const;
     uint16_t  port() const;
     int       family() const;
@@ -309,6 +354,64 @@ public:
     static std::pair<Socket, Socket> makePair(int family, int type, int protocol);
 };
 
+// --- IPAddress4 Impl
+inline IPAddress4::IPAddress4() { }
+inline IPAddress4::IPAddress4(::in_addr addr) : ::in_addr(addr) { }
+
+inline std::string IPAddress4::toString() const {
+    return ::inet_ntoa(*this);
+}
+inline uint32_t IPAddress4::toUint32() const {
+    return ::ntohl(toUint32NetworkOrder());
+}
+inline uint32_t IPAddress4::toUint32NetworkOrder() const {
+    return reinterpret_cast<const uint32_t&>(*this);
+}
+inline bool IPAddress4::isAny() const {
+    return toUint32() == INADDR_ANY;
+}
+inline bool IPAddress4::isNone() const {
+    return toUint32() == INADDR_NONE;
+}
+inline bool IPAddress4::isLoopback() const {
+    return toUint32() == INADDR_LOOPBACK;
+}
+inline bool IPAddress4::isBroadcast() const {
+    return toUint32() == INADDR_BROADCAST;
+}
+inline bool IPAddress4::operator ==(const IPAddress4 &other) const {
+    return toUint32NetworkOrder() == other.toUint32NetworkOrder();
+}
+inline bool IPAddress4::operator !=(const IPAddress4 &other) const {
+    return toUint32NetworkOrder() != other.toUint32NetworkOrder();
+}
+
+inline IPAddress4 IPAddress4::any() {
+    return IPAddress4::fromUint32(INADDR_ANY);
+}
+inline IPAddress4 IPAddress4::loopback() {
+    return IPAddress4::fromUint32(INADDR_LOOPBACK);   
+}
+inline IPAddress4 IPAddress4::broadcast() {
+    return IPAddress4::fromUint32(INADDR_BROADCAST);
+}
+inline IPAddress4 IPAddress4::none() {
+    return IPAddress4::fromUint32(INADDR_NONE);
+}
+inline IPAddress4 IPAddress4::fromString(const char *address) {
+    IPAddress4 addr;
+    addr.s_addr = ::inet_addr(address);
+    return addr;
+}
+inline IPAddress4 IPAddress4::fromUint32(uint32_t uint32) {
+    static_assert(sizeof(uint32_t) == sizeof(::in_addr), "sizeof mismatch");
+    uint32 = ::htonl(uint32);
+    return reinterpret_cast<::in_addr&>(uint32);
+}
+inline IPAddress4 IPAddress4::fromUint32NetworkOrder(uint32_t uint32) {
+    return reinterpret_cast<::in_addr&>(uint32);
+}
+
 // --- IPAddress Impl
 inline IPAddress::IPAddress() { }
 inline IPAddress::IPAddress(::in_addr addr) : mFamily(V4) { mStorage.v4 = addr; }
@@ -443,6 +546,14 @@ inline IPAddress IPEndpoint::address() const {
             return IPAddress::fromRaw(data<::sockaddr_in6>().sin6_addr);
         default: return IPAddress();
     }
+}
+inline IPAddress4 IPEndpoint::address4() const {
+    ILIAS_ASSERT(mAddr.ss_family == AF_INET);
+    return IPAddress4(data<::sockaddr_in>().sin_addr);
+}
+inline IPAddress6 IPEndpoint::address6() const {
+    ILIAS_ASSERT(mAddr.ss_family == AF_INET6);
+    return IPAddress6(data<::sockaddr_in6>().sin6_addr);
 }
 inline std::string IPEndpoint::toString() const {
     if (!isValid()) {
@@ -710,6 +821,20 @@ inline Socket &Socket::operator =(Socket &&s) {
 
 inline std::pair<Socket, IPEndpoint> Socket::accept() const {
     return SocketView::accept<Socket>();
+}
+
+// -- Network order / Host
+inline uint16_t ToNetworkOrder(uint16_t v) {
+    return ::htons(v);
+}
+inline uint32_t ToNetworkOrder(uint32_t v) {
+    return ::htonl(v);
+}
+inline uint16_t ToHostOrder(uint16_t v) {
+    return ::ntohs(v);
+}
+inline uint32_t ToHostOrder(uint32_t v) {
+    return ::ntohl(v);
 }
 
 // --- Init spec

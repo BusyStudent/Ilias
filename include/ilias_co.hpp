@@ -114,8 +114,22 @@ private:
     handle_type mHandle;
 };
 
+// --- Allocate Impl
+class AllocBase {
+public:
+    void *operator new(size_t n) {
+        return ILIAS_MALLOC(n);
+    }
+    void operator delete(void *p) noexcept {
+        return ILIAS_FREE(p);
+    }
+protected:
+    AllocBase() = default;
+    ~AllocBase() = default;
+};
+
 // --- Promise Impl
-class PromiseBase {
+class PromiseBase : public AllocBase {
 public:
     PromiseBase() {
 
@@ -170,9 +184,35 @@ public:
     T await_transform(T &&t) const noexcept {
         return std::move(t);
     }
+#if defined(ILIAS_COROUTINE_TRACE)
+    void unhandled_exception(std::source_location loc = std::source_location::current()) noexcept {
+        mException = std::current_exception();
+        try {
+            std::rethrow_exception(mException);
+        } 
+        catch (const std::exception &e) {
+            ::fprintf(stderr, "[Ilias] co '%s' exception was occurred: %s\n", loc.function_name(), e.what());
+        } 
+        catch (...) {
+            ::fprintf(stderr, "[Ilias] co '%s' exception was occurred\n", loc.function_name());
+        }
+    }
+    void rethrow_if_needed(std::source_location loc = std::source_location::current()) {
+        ::fprintf(stderr, "[Ilias] co '%s' rethrow exception\n", loc.function_name());
+        if (mException) {
+            std::rethrow_exception(std::move(mException));
+        }
+    }
+#else
     void unhandled_exception() noexcept {
         mException = std::current_exception();
     }
+    void rethrow_if_needed() {
+        if (mException) {
+            std::rethrow_exception(std::move(mException));
+        }
+    }
+#endif
     /**
      * @brief Resume coroutine handle
      * 
@@ -191,11 +231,6 @@ public:
                 return false;
             }
             mHandle.resume();
-        }
-    }
-    void rethrow_if_needed() {
-        if (mException) {
-            std::rethrow_exception(std::move(mException));
         }
     }
     void ref() noexcept {
@@ -228,13 +263,6 @@ public:
     }
     std::coroutine_handle<> handle() const noexcept {
         return mHandle;
-    }
-
-    void *operator new(size_t n) {
-        return ILIAS_MALLOC(n);
-    }
-    void operator delete(void *p) noexcept {
-        return ILIAS_FREE(p);
     }
 protected:
     bool mSuspendByAwait = false;
@@ -394,8 +422,9 @@ public:
         ::fprintf(stderr, "[Ilias] co '%s' was suspended by '%s'\n", mLocation.function_name(), mTask.promise().name());
         return _await_suspend(h);
     }
-    T await_resume() const noexcept {
+    T await_resume(std::source_location loc = std::source_location::current()) const {
         ::fprintf(stderr, "[Ilias] co '%s' was resumed\n", mLocation.function_name());
+        mTask.promise().rethrow_if_needed(loc); //< Rethrow exception if has
         return _await_resume();
     }
 private:
@@ -408,7 +437,7 @@ private:
     void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
         return _await_suspend(h);
     }
-    T await_resume() const noexcept {
+    T await_resume() const {
         return _await_resume();
     }
 #endif
@@ -427,7 +456,7 @@ private:
         // Run mHandle at EventLoop
         mTask.promise().event_loop()->postTask(mTask);
     }
-    T _await_resume() const noexcept {
+    T _await_resume() const {
         return mTask.get();
     }
 

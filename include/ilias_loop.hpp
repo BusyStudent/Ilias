@@ -231,10 +231,13 @@ inline void WinEventLoop::timerSingleShot(int64_t ms, void (*fn)(void *), void *
         auto timer = static_cast<Timer*>(ptr);
         timer->eventLoop->post([](void *ptr) {
             auto timer = static_cast<Timer*>(ptr);
-            timer->fn(timer->arg);
             if (!::DeleteTimerQueueTimer(nullptr, timer->handle, nullptr)) {
-                printf("Error at DeleteTimerQueueTimer\n");
+                auto err = ::GetLastError();
+                if (err != ERROR_IO_PENDING) {
+                    printf("Error at DeleteTimerQueueTimer\n");
+                }
             }
+            timer->fn(timer->arg);
             delete timer;
         }, ptr);
     };

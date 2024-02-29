@@ -12,7 +12,7 @@ int main() {
     SockInitializer initializer;
 
     IPEndpoint endpoint3(IPAddress::fromHostname("www.baidu.com"), 80);
-    IPEndpoint endpoint2(IPAddress::fromRaw(ADDR_ANY), 333);
+    IPEndpoint endpoint2(IPAddress4::any(), 333);
     IPAddress ipv6("0:0:0:0:0:0:0:0");
     IPEndpoint endpoint1(ipv6, 333);
 
@@ -25,7 +25,7 @@ int main() {
     if (!socket.isValid()) {
         return 0;
     }
-    if (!socket.bind(IPEndpoint("127.0.0.1", 1145))) {
+    if (!socket.bind(IPEndpoint(IPAddress4::loopback(), 1145))) {
         printError("FAIL TO BIND");
     }
     if (!socket.listen()) {
