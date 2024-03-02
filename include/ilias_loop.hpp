@@ -234,7 +234,7 @@ inline void WinEventLoop::timerSingleShot(int64_t ms, void (*fn)(void *), void *
             if (!::DeleteTimerQueueTimer(nullptr, timer->handle, nullptr)) {
                 auto err = ::GetLastError();
                 if (err != ERROR_IO_PENDING) {
-                    printf("Error at DeleteTimerQueueTimer\n");
+                    printf("Error at DeleteTimerQueueTimer %d\n", int(err));
                 }
             }
             timer->fn(timer->arg);
@@ -242,7 +242,7 @@ inline void WinEventLoop::timerSingleShot(int64_t ms, void (*fn)(void *), void *
         }, ptr);
     };
     if (!::CreateTimerQueueTimer(&timer->handle, nullptr, cb, timer, ms, 0, WT_EXECUTEONLYONCE)) {
-        printf("Error at CreateTimerQueueTimer\n");
+        printf("Error at CreateTimerQueueTimer %d\n", int(::GetLastError()));
         delete timer;
     }
 }

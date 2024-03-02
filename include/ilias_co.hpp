@@ -185,34 +185,28 @@ public:
         return std::move(t);
     }
 #if defined(ILIAS_COROUTINE_TRACE)
-    void unhandled_exception(std::source_location loc = std::source_location::current()) noexcept {
+    void unhandled_exception() noexcept {
         mException = std::current_exception();
         try {
             std::rethrow_exception(mException);
         } 
         catch (const std::exception &e) {
-            ::fprintf(stderr, "[Ilias] co '%s' exception was occurred: %s\n", loc.function_name(), e.what());
+            ::fprintf(stderr, "[Ilias] co '%s' %s was thrown what(): %s\n", mName, typeid(e).name(), e.what());
         } 
         catch (...) {
-            ::fprintf(stderr, "[Ilias] co '%s' exception was occurred\n", loc.function_name());
-        }
-    }
-    void rethrow_if_needed(std::source_location loc = std::source_location::current()) {
-        if (mException) {
-            ::fprintf(stderr, "[Ilias] co '%s' rethrow exception\n", loc.function_name());
-            std::rethrow_exception(std::move(mException));
+            ::fprintf(stderr, "[Ilias] co '%s' exception was thrown\n", mName);
         }
     }
 #else
     void unhandled_exception() noexcept {
         mException = std::current_exception();
     }
+#endif
     void rethrow_if_needed() {
         if (mException) {
             std::rethrow_exception(std::move(mException));
         }
     }
-#endif
     /**
      * @brief Resume coroutine handle
      * 
@@ -258,6 +252,12 @@ public:
     void set_event_loop(EventLoop *event_loop) noexcept {
         mEventLoop = event_loop;
     }
+    bool has_exception() const noexcept {
+        return bool(mException);
+    }
+    const char *name() const noexcept {
+        return mName;
+    }
     EventLoop *event_loop() const noexcept {
         return mEventLoop;
     }
@@ -268,6 +268,7 @@ protected:
     bool mSuspendByAwait = false;
     bool mQuitAtDone = false; //< Quit the event loop if coroutinue is doned
     int  mRefcount = 1; //< Inited refcount
+    const char *mName = nullptr; //< Name for debug track
     EventLoop *mEventLoop = EventLoop::instance();
     std::exception_ptr mException;
     std::coroutine_handle<> mHandle; //< A Handle pointer to self handle
@@ -341,17 +342,12 @@ public:
 
 #if defined(ILIAS_COROUTINE_TRACE) && !defined(ILIAS_COROUTINE_NO_CREATE_TRACE)
     Promise(std::source_location loc = std::source_location::current()) {
-        mLocation = loc;
-        ::fprintf(stderr, "[Ilias] co '%s' was created\n", name());
+        this->mName= loc.function_name();
+        ::fprintf(stderr, "[Ilias] co '%s' was created\n", this->name());
     }
     ~Promise() {
-        ::fprintf(stderr, "[Ilias] co '%s' was destroyed\n", name());
+        ::fprintf(stderr, "[Ilias] co '%s' was destroyed\n", this->name());
     }
-    const char *name() const noexcept { //< Debug name
-        return mLocation.function_name();
-    }
-private:
-    std::source_location mLocation;
 #else
     Promise() = default;
     ~Promise() = default;
@@ -412,23 +408,27 @@ public:
     ~TaskAwaitable() = default;
 
 #if defined(ILIAS_COROUTINE_TRACE) && !defined(ILIAS_COROUTINE_NO_AWAIT_TRACE)
-    bool await_ready(std::source_location loc = std::source_location::current()) noexcept {
-        mLocation = loc;
-        ::fprintf(stderr, "[Ilias] co '%s' was try to await '%s'\n", loc.function_name(), mTask.promise().name());
-        return _await_ready();
+    bool await_ready() const noexcept {
+        return false;
     }
     template <typename U>
-    void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
-        ::fprintf(stderr, "[Ilias] co '%s' was suspended by '%s'\n", mLocation.function_name(), mTask.promise().name());
-        return _await_suspend(h);
+    bool await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
+        mName = h.promise().name();
+        ::fprintf(stderr, "[Ilias] co '%s' was try to await '%s'\n", mName, mTask.promise().name());
+        if (_await_ready()) {
+            // Resume co
+            return false;
+        }
+        ::fprintf(stderr, "[Ilias] co '%s' was suspended by '%s'\n", mName, mTask.promise().name());
+        _await_suspend(h);
+        return true;
     }
-    T await_resume(std::source_location loc = std::source_location::current()) const {
-        ::fprintf(stderr, "[Ilias] co '%s' was resumed\n", mLocation.function_name());
-        mTask.promise().rethrow_if_needed(loc); //< Rethrow exception if has
+    T await_resume() const {
+        ::fprintf(stderr, "[Ilias] co '%s' was resumed\n", mName);
         return _await_resume();
     }
 private:
-    std::source_location mLocation;
+    const char *mName = nullptr;
 #else
     bool await_ready() const noexcept {
         return _await_ready();

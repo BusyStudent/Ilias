@@ -7,8 +7,8 @@
 using namespace ILIAS_NAMESPACE;
 
 auto a() -> Task<> {
-    throw std::runtime_error("Error");
-    co_await msleep(1000);
+    // throw std::runtime_error("Error");
+    // co_await msleep(1000);
     co_return;
 }
 auto b() -> Task<> {

@@ -403,6 +403,13 @@ inline IPAddress4 IPAddress4::fromString(const char *address) {
     addr.s_addr = ::inet_addr(address);
     return addr;
 }
+inline IPAddress4 IPAddress4::fromHostname(const char *hostnamne) {
+    auto ent = ::gethostbyname(hostnamne);
+    if (!ent || ent->h_addrtype != AF_INET) {
+        return IPAddress4::none();
+    }
+    return *reinterpret_cast<const IPAddress4*>(ent->h_addr_list[0]);
+}
 inline IPAddress4 IPAddress4::fromUint32(uint32_t uint32) {
     static_assert(sizeof(uint32_t) == sizeof(::in_addr), "sizeof mismatch");
     uint32 = ::htonl(uint32);
@@ -410,6 +417,16 @@ inline IPAddress4 IPAddress4::fromUint32(uint32_t uint32) {
 }
 inline IPAddress4 IPAddress4::fromUint32NetworkOrder(uint32_t uint32) {
     return reinterpret_cast<::in_addr&>(uint32);
+}
+
+// --- IPAddress6 Impl
+inline IPAddress6::IPAddress6() { }
+inline IPAddress6::IPAddress6(::in6_addr addr) : ::in6_addr(addr) { }
+
+inline std::string IPAddress6::toString() const {
+    char buf[INET6_ADDRSTRLEN] {0};
+    ::inet_ntop(AF_INET6, this, buf, sizeof(buf));
+    return buf;
 }
 
 // --- IPAddress Impl

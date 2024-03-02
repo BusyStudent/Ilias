@@ -11,7 +11,7 @@ void printError(const char *str) {
 int main() {
     SockInitializer initializer;
 
-    IPEndpoint endpoint3(IPAddress::fromHostname("www.baidu.com"), 80);
+    IPEndpoint endpoint3(IPAddress4::fromHostname("www.baidu.com"), 80);
     IPEndpoint endpoint2(IPAddress4::any(), 333);
     IPAddress ipv6("0:0:0:0:0:0:0:0");
     IPEndpoint endpoint1(ipv6, 333);
@@ -39,7 +39,7 @@ int main() {
 
 
     Socket client(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (!client.connect(IPEndpoint(IPAddress::fromHostname("www.baidu.com"), 80))) {
+    if (!client.connect(IPEndpoint(IPAddress4::fromHostname("www.baidu.com"), 80))) {
         printError("FAIL TO CONNECT");
     }
     if (!client.send("GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n")) {
