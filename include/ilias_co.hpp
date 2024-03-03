@@ -25,7 +25,26 @@ template <typename T = void>
 class Promise;
 class PromiseBase;
 template <typename T>
-class TaskAwaitable;
+class AwaitTransform;
+
+/**
+ * @brief Check this type user has defined transform
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept AwaitTransformable = requires(AwaitTransform<T> t) {
+    t.transform(T());
+};
+/**
+ * @brief Check this type can be directly pass to co_await
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept Awaitable = requires(T t) {
+    t.await_ready();
+};
 
 /**
  * @brief Abstraction of event loop
@@ -74,8 +93,13 @@ public:
     T runTask(Task<T> task);
 
     static void quit();
-    static EventLoop *&instance() noexcept;
+    static EventLoop *instance() noexcept;
+    static EventLoop *setInstance(EventLoop *loop) noexcept;
 private:
+    struct Tls {
+        EventLoop *loop = nullptr;
+    };
+    static Tls &_tls() noexcept;
     static void _invokeCoroutine(void *promiseBase);
 protected:
     EventLoop();
@@ -90,9 +114,8 @@ public:
     using promise_type = Promise<T>;
     using handle_type = std::coroutine_handle<Promise<T> >;
 
-    explicit Task(handle_type handle) : mHandle(handle) { }
     Task() = default;
-    Task(const Task&) = delete;
+    Task(const Task &t) : mHandle(t.mHandle) { if (mHandle) mHandle.promise().ref(); }
     Task(Task &&t) : mHandle(t.mHandle) { t.mHandle = nullptr; }
     ~Task() {
         if (mHandle) {
@@ -106,9 +129,31 @@ public:
     promise_type &promise() const noexcept {
         return mHandle.promise();
     }
+    const char *name() const noexcept {
+        return mHandle.promise().name();   
+    }
+    bool done() const noexcept {
+        return mHandle.done();
+    }
 
     T get() const {
         return promise().value();
+    }
+
+    /**
+     * @brief Get Task wrapper by coroutine handle
+     * 
+     * @param handle The handle of the coroutine handle (can not be empty)
+     * @param ref should we add the refcount of it ? (true on default)
+     * @return Task<T> 
+     */
+    static Task<T> from(handle_type handle, bool ref = true) {
+        Task<T> task;
+        task.mHandle = handle;
+        if (ref) {
+            task.mHandle.promise().ref();
+        }
+        return task;
     }
 private:
     handle_type mHandle;
@@ -134,6 +179,7 @@ public:
     PromiseBase() {
 
     }
+    PromiseBase(const PromiseBase &) = delete;
     ~PromiseBase() {
         if (mAwaitPromise) {
             mAwaitPromise->deref();
@@ -144,7 +190,7 @@ public:
     }
     std::suspend_always final_suspend() noexcept {
         if (mAwaitPromise) { //< Resume a coroutinue wating for it
-            mEventLoop->postCoroutine(*mAwaitPromise);
+            mAwaitPromise->resume_later();
             mAwaitPromise->deref();
             mAwaitPromise = nullptr;
         }
@@ -163,26 +209,26 @@ public:
         return {};
     }
     /**
-     * @brief Transform Task into awaitable
+     * @brief Transform user defined type
      * 
-     * @tparam T 
+     * @tparam T must be AwaitTransformable
      * @param t 
-     * @return TaskAwaitable<T> 
+     * @return auto 
      */
-    template <typename T>
-    TaskAwaitable<T> await_transform(Task<T> &&t) const noexcept {
-        return TaskAwaitable(std::move(t));
+    template <AwaitTransformable T>
+    auto await_transform(T &&t) const noexcept {
+        return AwaitTransform<T>().transform(std::forward<T>(t));
     }
     /**
-     * @brief Passthrough another things
+     * @brief Passthrough awaitable
      * 
-     * @tparam T 
+     * @tparam T must be Awaitable
      * @param t 
      * @return T 
      */
-    template <typename T>
+    template <Awaitable T>
     T await_transform(T &&t) const noexcept {
-        return std::move(t);
+        return std::forward<T>(t);
     }
 #if defined(ILIAS_COROUTINE_TRACE)
     void unhandled_exception() noexcept {
@@ -225,6 +271,15 @@ public:
                 return false;
             }
             mHandle.resume();
+        }
+    }
+    /**
+     * @brief Resume coroutine handle by push it to event loop
+     * 
+     */
+    void resume_later() {
+        if (!mHandle.done()) {
+            mEventLoop->postCoroutine(*this);
         }
     }
     void ref() noexcept {
@@ -357,7 +412,7 @@ public:
     Task<T> get_return_object() noexcept {
         auto handle = handle_type::from_promise(*this);
         this->mHandle = handle;
-        return Task<T>(handle);
+        return Task<T>::from(handle, false);
     }
 };
 
@@ -402,7 +457,8 @@ private:
 template <typename T>
 class TaskAwaitable {
 public:
-    TaskAwaitable(Task<T> &&t) : mTask(std::move(t)) {}
+    TaskAwaitable(Task<T> &t) : mTask(std::move(t)) { }
+    TaskAwaitable(const Task<T> &t) : mTask(t) { }
     TaskAwaitable(const TaskAwaitable &) = delete;
     TaskAwaitable(TaskAwaitable &&) = default;
     ~TaskAwaitable() = default;
@@ -454,7 +510,7 @@ private:
         mTask.promise().set_await_handle(h);
 
         // Run mHandle at EventLoop
-        mTask.promise().event_loop()->postTask(mTask);
+        mTask.promise().resume_later();
     }
     T _await_resume() const {
         return mTask.get();
@@ -506,7 +562,7 @@ private:
     void _resume(PromiseBase &promise, T &&value) {
         new (&mStorage.value) T(std::move(value));
         mHasValue = true;
-        promise.event_loop()->postCoroutine(promise);
+        promise.resume_later();
     }
 
     union Storage {
@@ -533,8 +589,8 @@ public:
     void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
         Promise<U> *promise = &h.promise();
         promise->set_suspend_by_await(true);
-        mFunc([loop = EventLoop::instance(), p = PromiseRef(promise)]() {
-            loop->postCoroutine(*p);
+        mFunc([p = PromiseRef(promise)]() {
+            p->resume_later();
         });
     }
     void await_resume() const noexcept {}
@@ -542,42 +598,58 @@ private:
     SuspendFunc mFunc;
 };
 
-//--- GetPromiseAwaitable Impl
-// Helper for get PromsieBase in co env
-class GetPromiseAwaitable {
+// --- AwaitTransform Impl for Task<T>
+template <typename T>
+class AwaitTransform<Task<T> > {
 public:
-    bool await_ready() const noexcept {
-        return false;
+    TaskAwaitable<T> transform(const Task<T> &t) const noexcept {
+        return TaskAwaitable<T>(t);
     }
-    template <typename T>
-    bool await_suspend(std::coroutine_handle<T> h) noexcept {
-        T *promise = &h.promise();
-        mPromise = promise;
-        return false;
+    TaskAwaitable<T> transform(Task<T> &&t) const noexcept {
+        return TaskAwaitable<T>(std::move(t));
     }
-    PromiseBase *await_resume() const noexcept {
-        return mPromise;   
+};
+
+// --- AwaitableImpl
+template <typename Self>
+class AwaitableImpl {
+public:
+    bool await_ready() noexcept {
+        return _self()->ready();
+    }
+    template <typename U>
+    void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
+        
+    }
+    auto await_resume() {
+        return _self()->resume();
     }
 private:
-    PromiseBase *mPromise = nullptr;
+    Self *_self() noexcept {
+        return static_cast<Self*>(this);
+    }
 };
 
 // --- EventLoop Impl
 inline EventLoop::EventLoop() {
     ILIAS_ASSERT(instance() == nullptr);
-    instance() = this;
+    setInstance(this);
 }
 inline EventLoop::~EventLoop() {
     ILIAS_ASSERT(instance() == this);
-    instance() = nullptr;
+    setInstance(nullptr);
 }
-inline EventLoop *&EventLoop::instance() noexcept {
-#ifdef ILIAS_EVENTLOOP_INSTANCE
-    return ILIAS_EVENTLOOP_INSTANCE;
-#else
-    static thread_local EventLoop *eventLoop = nullptr;
-    return eventLoop;
-#endif
+inline EventLoop *EventLoop::instance() noexcept {
+    return _tls().loop;
+}
+inline EventLoop *EventLoop::setInstance(EventLoop *loop) noexcept {
+    auto prev = instance();
+    _tls().loop = loop;
+    return prev;
+}
+inline EventLoop::Tls &EventLoop::_tls() noexcept {
+    static thread_local Tls tls;
+    return tls;
 }
 
 template <typename Callable, typename ...Args>

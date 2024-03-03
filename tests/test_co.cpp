@@ -6,9 +6,21 @@
 
 using namespace ILIAS_NAMESPACE;
 
+// Test AwaitTransform
+template <>
+struct AwaitTransform<std::string> {
+    std::suspend_never transform(const std::string &s) {
+        return {};
+    }
+};
+
+static_assert(AwaitTransformable<Task<int> >);
+static_assert(AwaitTransformable<Task<std::string> >);
+
 auto a() -> Task<> {
     // throw std::runtime_error("Error");
     // co_await msleep(1000);
+    co_await std::string("a");
     co_return;
 }
 auto b() -> Task<> {
