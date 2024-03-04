@@ -110,7 +110,7 @@ bool IOCPContext::asyncCancel(SocketView socket, void *operation) {
 }
 
 void *IOCPContext::asyncConnect(SocketView socket, const IPEndpoint &ep,
-                                    std::function<void(expected<void, SockError>)> &&callback) {
+                                    std::function<void(Expected<void, SockError>)> &&callback) {
     std::lock_guard<std::mutex> lock(mMutex);
     auto iter = mIOCPOverlappedMap.find(socket.get());
     
@@ -128,7 +128,7 @@ void *IOCPContext::asyncConnect(SocketView socket, const IPEndpoint &ep,
     if (!mFnConnectEx(socket.get(), &ep.data<sockaddr>(), ep.length(),
                         nullptr, 0, &iter->second->dwflag, (LPOVERLAPPED)iter->second.get())) {
         if (WSAGetLastError () != ERROR_IO_PENDING) {
-            iter->second->ConnectCallback(unexpected<SockError>(SockError::fromErrno()));
+            iter->second->ConnectCallback(Unexpected<SockError>(SockError::fromErrno()));
             iter->second->isCompleted = true;
             return nullptr;
         } else {
@@ -136,14 +136,14 @@ void *IOCPContext::asyncConnect(SocketView socket, const IPEndpoint &ep,
         }
     }
     setsockopt(iter->second->sockfd, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0);
-    iter->second->ConnectCallback(expected<void, SockError>());
+    iter->second->ConnectCallback(Expected<void, SockError>());
     iter->second->isCompleted = true;
     return nullptr;
 }
 
 void *IOCPContext::asyncAccept(
     SocketView socket,
-    std::function<void(expected<std::pair<Socket, IPEndpoint>, SockError>)>
+    std::function<void(Expected<std::pair<Socket, IPEndpoint>, SockError>)>
         &&callback) {
     std::lock_guard<std::mutex> lock(mMutex);
     auto iter = mIOCPOverlappedMap.find(socket.get());
@@ -168,7 +168,7 @@ void *IOCPContext::asyncAccept(
                         sizeof(sockaddr_storage) + 16, &iter->second->byteTrans, (LPOVERLAPPED)iter->second.get()))
     {
         if (WSAGetLastError () != ERROR_IO_PENDING) {
-            iter->second->AcceptCallback(unexpected<SockError>(SockError::fromErrno()));
+            iter->second->AcceptCallback(Unexpected<SockError>(SockError::fromErrno()));
             iter->second->isCompleted = true;
             return nullptr;
         } else {
@@ -196,7 +196,7 @@ void *IOCPContext::asyncAccept(
 
 void *IOCPContext::asyncRecv(
     SocketView socket, void *buf, size_t n,
-    std::function<void(expected<size_t, SockError>)> &&callback) {
+    std::function<void(Expected<size_t, SockError>)> &&callback) {
     std::lock_guard<std::mutex> lock(mMutex);
     auto iter = mIOCPOverlappedMap.find(socket.get());
 
@@ -222,7 +222,7 @@ void *IOCPContext::asyncRecv(
                 &iter->second->dwflag, 
                 &iter->second->overlap, nullptr)) {
         if (WSAGetLastError () != ERROR_IO_PENDING) {
-            iter->second->RecvSendCallback(unexpected<SockError>(SockError::fromErrno()));
+            iter->second->RecvSendCallback(Unexpected<SockError>(SockError::fromErrno()));
             iter->second->isCompleted = true;
             return nullptr;
         } else {
@@ -236,7 +236,7 @@ void *IOCPContext::asyncRecv(
 
 void *IOCPContext::asyncSend(
     SocketView socket, const void *buf, size_t n,
-    std::function<void(expected<size_t, SockError>)> &&callback) {
+    std::function<void(Expected<size_t, SockError>)> &&callback) {
     std::lock_guard<std::mutex> lock(mMutex);
     auto iter = mIOCPOverlappedMap.find(socket.get());
 
@@ -262,7 +262,7 @@ void *IOCPContext::asyncSend(
                 iter->second->dwflag, 
                 &iter->second->overlap, nullptr)) {
         if (WSAGetLastError () != ERROR_IO_PENDING) {
-            iter->second->RecvSendCallback(unexpected<SockError>(SockError::fromErrno()));
+            iter->second->RecvSendCallback(Unexpected<SockError>(SockError::fromErrno()));
             iter->second->isCompleted = true;
             return nullptr;
         } else {
@@ -345,7 +345,7 @@ inline void IOCPContext::onEvent(IOCPOverlapped *overlapped) {
     } else if (overlapped->event & IOCPEvent::Accept) {
         ILIAS_ASSERT(overlapped->AcceptCallback != nullptr);
         if (overlapped->event & IOCPEvent::Error) {
-            overlapped->AcceptCallback(unexpected<SockError>(SockError::fromErrno()));
+            overlapped->AcceptCallback(Unexpected<SockError>(SockError::fromErrno()));
         } else {
             ILIAS_ASSERT(overlapped->peerfd != INVALID_SOCKET);
             sockaddr *remote, *local;
@@ -366,10 +366,10 @@ inline void IOCPContext::onEvent(IOCPOverlapped *overlapped) {
     } else if (overlapped->event & IOCPEvent::Connect) {
         ILIAS_ASSERT(overlapped->ConnectCallback != nullptr);
         if (overlapped->event & IOCPEvent::Error) {
-            overlapped->ConnectCallback(unexpected<SockError>(SockError::fromErrno()));
+            overlapped->ConnectCallback(Unexpected<SockError>(SockError::fromErrno()));
         } else {
             setsockopt(overlapped->sockfd, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0);
-            overlapped->ConnectCallback(expected<void, SockError>());
+            overlapped->ConnectCallback(Expected<void, SockError>());
         }
     } else {
         fprintf(stderr, "Unknown event: %d\n", overlapped->event);

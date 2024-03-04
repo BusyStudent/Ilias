@@ -845,6 +845,10 @@ inline std::pair<Socket, IPEndpoint> Socket::accept() const {
     return SocketView::accept<Socket>();
 }
 
+inline Socket Socket::create(int family, int type, int proto) {
+    return Socket(family, type, proto);
+}
+
 // -- Network order / Host
 inline uint16_t ToNetworkOrder(uint16_t v) {
     return ::htons(v);

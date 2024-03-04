@@ -32,9 +32,9 @@ struct IOCPOverlapped {
     socket_t peerfd;
     DWORD dwflag;
     std::atomic_bool isCompleted;
-    std::function<void(expected<std::pair<Socket, IPEndpoint>, SockError>)> AcceptCallback;
-    std::function<void(expected<void, SockError>)> ConnectCallback;
-    std::function<void(expected<size_t, SockError>)> RecvSendCallback;
+    std::function<void(Expected<std::pair<Socket, IPEndpoint>, SockError>)> AcceptCallback;
+    std::function<void(Expected<void, SockError>)> ConnectCallback;
+    std::function<void(Expected<size_t, SockError>)> RecvSendCallback;
 };
 
 /**
@@ -53,17 +53,17 @@ public:
     bool asyncCancel(SocketView socket, void *operation);
     void *asyncConnect(SocketView socket,
                             const IPEndpoint &ep, 
-                            std::function<void(expected<void, SockError>)> &&callback);
+                            std::function<void(Expected<void, SockError>)> &&callback);
     void *asyncAccept(SocketView socket,
-                        std::function<void(expected<std::pair<Socket, IPEndpoint>, SockError>)> &&callback);
+                        std::function<void(Expected<std::pair<Socket, IPEndpoint>, SockError>)> &&callback);
     void *asyncRecv(SocketView socket,
                     void *buf,
                     size_t n,
-                    std::function<void(expected<size_t, SockError>)> &&callback);
+                    std::function<void(Expected<size_t, SockError>)> &&callback);
     void *asyncSend(SocketView socket,
                     const void *buf,
                     size_t n,
-                    std::function<void(expected<size_t, SockError>)> &&callback);
+                    std::function<void(Expected<size_t, SockError>)> &&callback);
 private:
     struct Fn {
         void (*fn)(void *);

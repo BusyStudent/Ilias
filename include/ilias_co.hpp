@@ -99,7 +99,7 @@ public:
      * @return T 
      */
     template <typename T>
-    T runTask(Task<T> task);
+    T runTask(const Task<T> &task);
 
     static void quit();
     static EventLoop *instance() noexcept;
@@ -537,7 +537,7 @@ public:
     using ResumeFunc = Function<void(Type)>;
     using SuspendFunc = Function<void(ResumeFunc &&)>;
 
-    CallbackAwaitable(SuspendFunc &&func) : mFunc(func) { }
+    CallbackAwaitable(SuspendFunc &&func) : mFunc(std::move(func)) { }
     CallbackAwaitable(const CallbackAwaitable &) = delete;
     CallbackAwaitable(CallbackAwaitable &&) = default;
     ~CallbackAwaitable() {
@@ -576,6 +576,9 @@ private:
     }
 
     union Storage {
+        Storage() { }
+        ~Storage() { }
+
         T value;
         uint8_t _pad[sizeof(T)];
     } mStorage;
@@ -668,7 +671,7 @@ inline void EventLoop::spawn(Callable &&cb, Args &&...args) {
 }
 
 template <typename T>
-inline T EventLoop::runTask(Task<T> task) {
+inline T EventLoop::runTask(const Task<T> &task) {
     task.promise().set_quit_at_done(true);
     postCoroutine(task.promise());
     run(); //< Enter event loop

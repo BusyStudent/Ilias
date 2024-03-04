@@ -59,7 +59,7 @@ public:
     PollOperation() = default;
     ~PollOperation() = default;
 
-    void onEvent(int revents) override;
+    void onEvent(int revents) override { mCallback(revents); mCallback = nullptr; }
     void setCallback(Function<void(int revents)> &&callback) { mCallback = std::move(callback); }
 private:
     Function<void(int revents)> mCallback;
@@ -86,10 +86,10 @@ public:
     bool asyncCleanup(SocketView socket);
     bool asyncCancel(SocketView, void *operation);
 
-    void *asyncRecv(SocketView socket, void *buffer, size_t n, Function<void(expected<size_t, SockError> &&)> &&cb);
-    void *asyncSend(SocketView socket, const void *buffer, size_t n, Function<void(expected<size_t, SockError> &&)> &&cb);
-    void *asyncAccept(SocketView socket, Function<void(expected<std::pair<Socket, IPEndpoint> , SockError> &&)> &&cb);
-    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, Function<void(expected<void, SockError> &&)> &&cb);
+    void *asyncRecv(SocketView socket, void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&cb);
+    void *asyncSend(SocketView socket, const void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&cb);
+    void *asyncAccept(SocketView socket, Function<void(Expected<std::pair<Socket, IPEndpoint> , SockError> &&)> &&cb);
+    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, Function<void(Expected<void, SockError> &&)> &&cb);
 
     // Poll
     void *asyncPoll(SocketView socket, int revent, Function<void(int revents)> &&cb);
@@ -374,15 +374,81 @@ inline bool PollContext::asyncCancel(SocketView socket, void *op) {
     return modifyWatcher(operation, PollEvent::None); //< Let it poll nothing
 }
 inline void *PollContext::asyncPoll(SocketView socket, int revent, Function<void(int revents)> &&cb) {
-    auto operation = findWatcher(socket);
+    auto operation = static_cast<PollOperation*>(findWatcher(socket));
     if (!operation) {
         return 0;
     }
-    static_cast<PollOperation*>(operation)->setCallback(std::move(cb));
+    operation->setCallback([this, operation, b = std::move(cb)](int revents) mutable {
+        // Let it watch nothing
+        modifyWatcher(operation, PollEvent::None);
+        // Invoke User callback
+        b(revents);
+    });
     modifyWatcher(operation, revent);
     return operation;
 }
+inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&callback) {
+    auto bytes = socket.send(buffer, n);
+    if (bytes >= 0) {
+        // Ok, call callback
+        callback(bytes);
+        return nullptr;
+    }
+    auto err = SockError::fromErrno();
+    if (!err.isInProgress() && err.isWouldBlock()) {
+        // Not async operation, return error by callback
+        callback(Unexpected(err));
+        return nullptr;
+    }
 
+    // Ok, we need to wait for the socket to be writable
+    return asyncPoll(socket, PollEvent::Out, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
+        if (revents & PollEvent::Out) {
+            // Ok, call callback
+            auto bytes = socket.send(buffer, n);
+            if (bytes >= 0) {
+                cb(bytes);
+                return;
+            }
+            // Error, call callback
+            cb(Unexpected(SockError::fromErrno()));
+        }
+        if (revents & PollEvent::Err) {
+            // Error, call callback
+            cb(Unexpected(SockError::fromErrno()));
+        }
+    });
+}
+inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&callback) {
+    auto bytes = socket.recv(buffer, n);
+    if (bytes >= 0) {
+        // Ok, call callback
+        callback(bytes);
+        return nullptr;
+    }
+    auto err = SockError::fromErrno();
+    if (!err.isInProgress() && err.isWouldBlock()) {
+        // Not async operation, return error by callback
+        callback(Unexpected(err));
+        return nullptr;
+    }
+    // Ok, wait readable
+    return asyncPoll(socket, PollEvent::Out, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
+        if (revents & PollEvent::In) {
+            auto bytes = socket.recv(buffer, n);
+            if (bytes >= 0) {
+                cb(bytes);
+                return;
+            }
+            // Error, call callback
+            cb(Unexpected(SockError::fromErrno()));
+        }
+        if (revents & PollEvent::Err) {
+            // Error, call callback
+            cb(Unexpected(SockError::fromErrno()));
+        }
+    });
+}
 
 
 using IOContext = PollContext;
