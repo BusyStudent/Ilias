@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ilias.hpp"
-#include "ilias_async_p.hpp"
+#include "ilias_async.hpp"
 
 ILIAS_NS_BEGIN
 

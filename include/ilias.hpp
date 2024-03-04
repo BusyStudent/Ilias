@@ -232,6 +232,7 @@ public:
      */
     error_t error() const;
 
+    bool isOk() const;
     /**
      * @brief Is Posix like code EWOULDBLOCK or EAGAIN
      * 
@@ -666,6 +667,10 @@ inline std::string SockError::u8message() const {
 #else
     return message();
 #endif
+}
+
+inline bool SockError::isOk() const {
+    return mError == 0;
 }
 
 #ifdef _WIN32

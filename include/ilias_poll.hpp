@@ -1,17 +1,28 @@
 #pragma once
 
+#include "ilias_expected.hpp"
 #include "ilias_latch.hpp"
 #include "ilias.hpp"
+#include <functional>
 #include <thread>
 #include <atomic>
 #include <mutex>
 #include <map>
 
 #if defined(__cpp_lib_coroutine)
-    #include "ilias_co.hpp"
+#include "ilias_co.hpp"
 #endif
 
 ILIAS_NS_BEGIN
+
+// --- Function
+#if defined(__cpp_lib_move_only_function)
+template <typename ...Args>
+using Function = std::move_only_function<Args...>;
+#else
+template <typename ...Args>
+using Function = std::function<Args...>;
+#endif
 
 enum PollEvent : int {
     Timeout = -1,
@@ -40,29 +51,48 @@ friend class PollContext;
 };
 
 /**
+ * @brief A callback like watcher
+ * 
+ */
+class PollOperation final : public IOWatcher {
+public:
+    PollOperation() = default;
+    ~PollOperation() = default;
+
+    void onEvent(int revents) override;
+    void setCallback(Function<void(int revents)> &&callback) { mCallback = std::move(callback); }
+private:
+    Function<void(int revents)> mCallback;
+};
+
+/**
  * @brief A Context for add watcher 
  * 
  */
-class PollContext : private IOWatcher {
+class PollContext final : private IOWatcher {
 public:
     PollContext();
     PollContext(const PollContext&) = delete;
     ~PollContext();
 
+    // Poll Watcher interface
     void addWatcher(SocketView socket, IOWatcher* watcher, int events);
     bool modifyWatcher(IOWatcher* watcher, int events);
     bool removeWatcher(IOWatcher* watcher);
     IOWatcher *findWatcher(SocketView socket);
 
-#ifdef __cpp_lib_coroutine
-    Task<int>     asyncPoll(SocketView socket, int events);
-    Task<ssize_t> asyncRecv(SocketView socket, void* buffer, size_t length, int flags = 0);
-    Task<ssize_t> asyncSend(SocketView socket, const void* buffer, size_t length, int flags = 0);
-    Task<bool>    asyncConnect(SocketView socket, const IPEndpoint& endpoint);
-    template <typename T>
-    Task<std::pair<T, IPEndpoint> > asyncAccept(const T &socket);
-#endif
+    // Async Interface
+    bool asyncInitialize(SocketView socket);
+    bool asyncCleanup(SocketView socket);
+    bool asyncCancel(SocketView, void *operation);
 
+    void *asyncRecv(SocketView socket, void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&cb);
+    void *asyncSend(SocketView socket, const void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&cb);
+    void *asyncAccept(SocketView socket, Function<void(Expected<std::pair<Socket, IPEndpoint> , SockError> &&)> &&cb);
+    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, Function<void(Expected<void, SockError> &&)> &&cb);
+
+    // Poll
+    void *asyncPoll(SocketView socket, int revent, Function<void(int revents)> &&cb);
 private:
     struct Fn {
         void (*fn)(void *);
@@ -312,75 +342,48 @@ inline void PollContext::_invoke4(Callable &&callable) {
     _invoke(fn);
 }
 
-#ifdef __cpp_lib_coroutine
-// Coroutine 
-inline Task<int> PollContext::asyncPoll(SocketView socket, int events) {
-    if (events == 0 || !socket.isValid()) {
-        co_return 0;
+// Async Interface
+inline bool PollContext::asyncInitialize(SocketView socket) {
+    if (!socket.isValid()) {
+        return false;
     }
-    struct Watcher : IOWatcher {
-        void onEvent(int revents) override {
-            resume(std::move(revents));
-            ctxt->removeWatcher(this);
-            delete this;
-        }
-        PollContext *ctxt;
-        CallbackAwaitable<int>::ResumeFunc resume;
-    };
-    int revents = co_await CallbackAwaitable<int>(
-        [=, this](CallbackAwaitable<int>::ResumeFunc &&func) {
-            auto watcher = new Watcher();
-            watcher->ctxt = this;
-            watcher->resume = std::move(func);
-            addWatcher(socket, watcher, events);
-        }
-    );
-    co_return revents;
+    if (!socket.setBlocking(false)) {
+        return false;
+    }
+    addWatcher(socket, new PollOperation, PollEvent::None);
+    return true;
 }
-inline Task<ssize_t> PollContext::asyncRecv(SocketView socket, void *buf, size_t count, int flags) {
-    ssize_t n = socket.recv(buf, count, flags);
-    if (n == -1) {
-        auto err = SockError::fromErrno();
-        if (!err.isWouldBlock()) {
-            co_return n; //< Just Error
-        }
-        auto event = co_await asyncPoll(socket, PollEvent::In);
-        if (event & PollEvent::In) {
-            co_return socket.recv(buf, count, flags);
-        }
+inline bool PollContext::asyncCleanup(SocketView socket) {
+    if (!socket.isValid()) {
+        return false;
     }
-    co_return n;
+    auto watcher = findWatcher(socket);
+    if (!watcher) {
+        return false;
+    }
+    return removeWatcher(watcher);
 }
-inline Task<ssize_t> PollContext::asyncSend(SocketView socket, const void *buf, size_t count, int flags) {
-    ssize_t n = socket.send(buf, count, flags);
-    if (n == -1) {
-        auto err = SockError::fromErrno();
-        if (!err.isWouldBlock()) {
-            co_return n; //< Just Error
-        }
-        auto event = co_await asyncPoll(socket, PollEvent::Out);
-        if (event & PollEvent::Out) {
-            co_return socket.send(buf, count, flags);
-        }
+inline bool PollContext::asyncCancel(SocketView socket, void *op) {
+    PollOperation *operation = static_cast<PollOperation*>(op);
+    if (!operation) {
+        operation = static_cast<PollOperation*>(findWatcher(socket));
     }
-    co_return n;
+    if (!operation) {
+        return false;
+    }
+    return modifyWatcher(operation, PollEvent::None); //< Let it poll nothing
 }
-inline Task<bool> PollContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint) {
-    bool connected = socket.connect(endpoint);
-    if (!connected) {
-        auto err = SockError::fromErrno();
-        if (!err.isInProgress() && !err.isWouldBlock()) {
-            co_return connected; //< Just Error
-        }
-        auto event = co_await asyncPoll(socket, PollEvent::Out);
-        if (event & (PollEvent::Out | PollEvent::Err)) {
-            co_return true;
-        }
+inline void *PollContext::asyncPoll(SocketView socket, int revent, Function<void(int revents)> &&cb) {
+    auto operation = findWatcher(socket);
+    if (!operation) {
+        return 0;
     }
-    co_return connected;
+    static_cast<PollOperation*>(operation)->setCallback(std::move(cb));
+    modifyWatcher(operation, revent);
+    return operation;
 }
 
-#endif
+
 
 using IOContext = PollContext;
 

@@ -19,7 +19,7 @@ static_assert(AwaitTransformable<Task<std::string> >);
 
 auto a() -> Task<> {
     // throw std::runtime_error("Error");
-    // co_await msleep(1000);
+    co_await msleep(1000);
     co_await std::string("a");
     co_return;
 }

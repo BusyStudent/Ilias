@@ -18,6 +18,15 @@
 
 ILIAS_NS_BEGIN
 
+// --- Function
+#if defined(__cpp_lib_move_only_function)
+template <typename ...Args>
+using Function = std::move_only_function<Args...>;
+#else
+template <typename ...Args>
+using Function = std::function<Args...>;
+#endif
+
 // --- Coroutine 
 template <typename T = void>
 class Task;
@@ -524,8 +533,9 @@ private:
 template <typename T = void>
 class CallbackAwaitable {
 public:
-    using ResumeFunc = std::function<void(T &&)>;
-    using SuspendFunc = std::function<void(ResumeFunc &&)>;
+    using Type = std::conditional_t<std::is_pod_v<T>, T, T &&>;
+    using ResumeFunc = Function<void(Type)>;
+    using SuspendFunc = Function<void(ResumeFunc &&)>;
 
     CallbackAwaitable(SuspendFunc &&func) : mFunc(func) { }
     CallbackAwaitable(const CallbackAwaitable &) = delete;
@@ -575,10 +585,10 @@ private:
 template <>
 class CallbackAwaitable<void> {
 public:
-    using ResumeFunc = std::function<void()>;
-    using SuspendFunc = std::function<void(ResumeFunc &&)>;
+    using ResumeFunc = Function<void()>;
+    using SuspendFunc = Function<void(ResumeFunc &&)>;
 
-    CallbackAwaitable(SuspendFunc &&func) : mFunc(func) { }
+    CallbackAwaitable(SuspendFunc &&func) : mFunc(std::move(func)) { }
     CallbackAwaitable(const CallbackAwaitable &) = delete;
     CallbackAwaitable(CallbackAwaitable &&) = default;
 
