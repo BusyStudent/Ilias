@@ -86,10 +86,10 @@ public:
     bool asyncCleanup(SocketView socket);
     bool asyncCancel(SocketView, void *operation);
 
-    void *asyncRecv(SocketView socket, void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&cb);
-    void *asyncSend(SocketView socket, const void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&cb);
-    void *asyncAccept(SocketView socket, Function<void(Expected<std::pair<Socket, IPEndpoint> , SockError> &&)> &&cb);
-    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, Function<void(Expected<void, SockError> &&)> &&cb);
+    void *asyncRecv(SocketView socket, void *buffer, size_t n, Function<void(expected<size_t, SockError> &&)> &&cb);
+    void *asyncSend(SocketView socket, const void *buffer, size_t n, Function<void(expected<size_t, SockError> &&)> &&cb);
+    void *asyncAccept(SocketView socket, Function<void(expected<std::pair<Socket, IPEndpoint> , SockError> &&)> &&cb);
+    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, Function<void(expected<void, SockError> &&)> &&cb);
 
     // Poll
     void *asyncPoll(SocketView socket, int revent, Function<void(int revents)> &&cb);

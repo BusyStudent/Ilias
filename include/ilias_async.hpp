@@ -32,7 +32,7 @@ public:
     socket_t get() const noexcept {
         return mFd.get();
     }
-    auto close() -> Expected<void, SockError>;
+    auto close() -> expected<void, SockError>;
 protected:
     IOContext *mContext = nullptr;
     Socket     mFd;
@@ -51,9 +51,9 @@ public:
      * @param n 
      * @return Task<std::expected<size_t, SockError> > bytes on ok, error on fail
      */
-    auto recv(void *buffer, size_t n) -> Task<Expected<size_t, SockError> >;
-    auto send(const void *buffer, size_t n) -> Task<Expected<size_t, SockError> >;
-    auto connect(const IPEndpoint &addr) -> Task<Expected<void, SockError> >;
+    auto recv(void *buffer, size_t n) -> Task<expected<size_t, SockError> >;
+    auto send(const void *buffer, size_t n) -> Task<expected<size_t, SockError> >;
+    auto connect(const IPEndpoint &addr) -> Task<expected<void, SockError> >;
 #endif
     /**
      * @brief Create a socket from a raw socket fd, this return object will take the fd ownship !!!
@@ -74,12 +74,12 @@ public:
      * 
      * @param endpoint 
      * @param backlog 
-     * @return Expected<void, SockError> 
+     * @return expected<void, SockError> 
      */
-    auto bind(const IPEndpoint &endpoint, int backlog = 0) -> Expected<void, SockError>;
+    auto bind(const IPEndpoint &endpoint, int backlog = 0) -> expected<void, SockError>;
 
 #if defined(__cpp_lib_coroutine)
-    auto accept() -> Task<Expected<std::pair<TcpClient, IPEndpoint> , SockError> >;
+    auto accept() -> Task<expected<std::pair<TcpClient, IPEndpoint> , SockError> >;
 #endif
 
     static TcpServer from(socket_t sockfd);
@@ -105,14 +105,14 @@ inline AsyncSocket::~AsyncSocket() {
         mContext->asyncCleanup(mFd);
     }
 }
-inline auto AsyncSocket::close() -> Expected<void, SockError> {
+inline auto AsyncSocket::close() -> expected<void, SockError> {
     if (mContext && mFd.isValid()) {
         mContext->asyncCleanup(mFd);
         if (!mFd.close()) {
-            return Unexpected(SockError::fromErrno());
+            return unexpected(SockError::fromErrno());
         }
     }
-    return Expected<void, SockError>();
+    return expected<void, SockError>();
 }
 
 // --- TcpServer Impl
@@ -122,14 +122,14 @@ inline TcpServer::TcpServer(IOContext &ctxt, int family) :
 {
 
 }
-inline auto TcpServer::bind(const IPEndpoint &endpoint, int backlog) -> Expected<void, SockError> {
+inline auto TcpServer::bind(const IPEndpoint &endpoint, int backlog) -> expected<void, SockError> {
     if (!mFd.bind(endpoint)) {
-        return Unexpected(SockError::fromErrno());
+        return unexpected(SockError::fromErrno());
     }
     if (!mFd.listen(backlog)) {
-        return Unexpected(SockError::fromErrno());
+        return unexpected(SockError::fromErrno());
     }
-    return Expected<void, SockError>();
+    return expected<void, SockError>();
 }
 
 
