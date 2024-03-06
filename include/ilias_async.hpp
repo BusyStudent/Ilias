@@ -21,6 +21,11 @@
 
 ILIAS_NS_BEGIN
 
+#if defined(__cpp_lib_coroutine)
+template <typename T>
+using AwaitResult = CallbackAwaitable<T>;
+#endif
+
 /**
  * @brief A helper class for impl async socket
  * 
@@ -78,26 +83,26 @@ public:
      * @param buffer 
      * @param n 
      * @param timeout
-     * @return Task<std::Expected<size_t, SockError> > bytes on ok, error on fail
+     * @return AwaitResult<std::Expected<size_t, SockError> > bytes on ok, error on fail
      */
-    auto recv(void *buffer, size_t n, int timeout = -1) -> Task<Expected<size_t, SockError> >;
+    auto recv(void *buffer, size_t n, int timeout = -1) -> AwaitResult<Expected<size_t, SockError> >;
     /**
      * @brief Send data to
      * 
      * @param buffer 
      * @param n 
      * @param timeout
-     * @return Task<Expected<size_t, SockError> > 
+     * @return AwaitResult<Expected<size_t, SockError> > 
      */
-    auto send(const void *buffer, size_t n, int timeout = -1) -> Task<Expected<size_t, SockError> >;
+    auto send(const void *buffer, size_t n, int timeout = -1) -> AwaitResult<Expected<size_t, SockError> >;
     /**
      * @brief Connect to
      * 
      * @param addr 
      * @param timeout
-     * @return Task<Expected<void, SockError> > 
+     * @return AwaitResult<Expected<void, SockError> > 
      */
-    auto connect(const IPEndpoint &addr, int timeout = -1) -> Task<Expected<void, SockError> >;
+    auto connect(const IPEndpoint &addr, int timeout = -1) -> AwaitResult<Expected<void, SockError> >;
 #endif
 };
 
@@ -120,9 +125,9 @@ public:
     /**
      * @brief Waiting accept socket
      * 
-     * @return Task<Expected<std::pair<TcpClient, IPEndpoint> , SockError> > 
+     * @return AwaitResult<Expected<std::pair<TcpClient, IPEndpoint> , SockError> > 
      */
-    auto accept() -> Task<Expected<std::pair<TcpClient, IPEndpoint> , SockError> >;
+    auto accept() -> AwaitResult<Expected<std::pair<TcpClient, IPEndpoint> , SockError> >;
 #endif
 };
 
@@ -186,28 +191,31 @@ inline auto TcpClient::remoteEndpoint() const -> IPEndpoint {
 }
 
 #if defined(__cpp_lib_coroutine)
-inline auto TcpClient::recv(void *buffer, size_t n, int timeout) -> Task<Expected<size_t, SockError> > {
-    co_return co_await CallbackAwaitable<Expected<size_t, SockError> >(
-        [=, this](CallbackAwaitable<Expected<size_t, SockError> >::ResumeFunc &&func) {
-            mContext->asyncRecv(mFd, buffer, n, [=, f = std::move(func)](Expected<size_t, SockError> result) mutable {
+inline auto TcpClient::recv(void *buffer, size_t n, int timeout) -> AwaitResult<Expected<size_t, SockError> > {
+    using Awaitable = AwaitResult<Expected<size_t, SockError> >;
+    return Awaitable(
+        [=, this](Awaitable::ResumeFunc &&func) {
+            mContext->asyncRecv(mFd, buffer, n, [=, f = std::move(func)](auto result) mutable {
                 f(std::move(result));  
             });
         }
     );
 }
-inline auto TcpClient::send(const void *buffer, size_t n, int timeout) -> Task<Expected<size_t, SockError> > {
-    co_return co_await CallbackAwaitable<Expected<size_t, SockError> >(
-        [=, this](CallbackAwaitable<Expected<size_t, SockError> >::ResumeFunc &&func) {
-            mContext->asyncSend(mFd, buffer, n, [=, f = std::move(func)](Expected<size_t, SockError> result) mutable {
+inline auto TcpClient::send(const void *buffer, size_t n, int timeout) -> AwaitResult<Expected<size_t, SockError> > {
+    using Awaitable = AwaitResult<Expected<size_t, SockError> >;
+    return Awaitable(
+        [=, this](Awaitable::ResumeFunc &&func) {
+            mContext->asyncSend(mFd, buffer, n, [=, f = std::move(func)](auto result) mutable {
                 f(std::move(result));  
             });
         }
     );
 }
-inline auto TcpClient::connect(const IPEndpoint &endpoint, int timeout) -> Task<Expected<void, SockError> > {
-    co_return co_await CallbackAwaitable<Expected<void, SockError> >(
-        [=, this](CallbackAwaitable<Expected<void, SockError> >::ResumeFunc &&func) {
-            mContext->asyncConnect(mFd, endpoint, [=, f = std::move(func)](Expected<void, SockError> result) mutable {
+inline auto TcpClient::connect(const IPEndpoint &endpoint, int timeout) -> AwaitResult<Expected<void, SockError> > {
+    using Awaitable = AwaitResult<Expected<void, SockError> >;
+    return Awaitable(
+        [=, this](Awaitable::ResumeFunc &&func) {
+            mContext->asyncConnect(mFd, endpoint, [=, f = std::move(func)](auto result) mutable {
                 f(std::move(result));  
             });
         }
@@ -239,6 +247,25 @@ inline auto TcpServer::bind(const IPEndpoint &endpoint, int backlog) -> Expected
     }
     return Expected<void, SockError>();
 }
+#if defined(__cpp_lib_coroutine)
+inline auto TcpServer::accept() -> AwaitResult<Expected<std::pair<TcpClient, IPEndpoint> , SockError> > {
+    using Awaitable = AwaitResult<Expected<std::pair<TcpClient, IPEndpoint> , SockError> >;
+    return Awaitable([this](Awaitable::ResumeFunc &&func) {
+        mContext->asyncAccept(mFd, [this, cb = std::move(func)](auto &&result) mutable {
+            if (!result) {
+                // Has Error
+                cb(Unexpected<SockError>(result.error()));
+                return;
+            }
+            else {
+                auto &[sock, addr] = *result;
+                cb(std::make_pair(TcpClient(*mContext, std::move(sock)), addr));
+                return;
+            }
+        });
+    });
+}
+#endif
 
 
 ILIAS_NS_END

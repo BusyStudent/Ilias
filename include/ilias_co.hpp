@@ -426,10 +426,9 @@ public:
 };
 
 // --- PromiseRef Impl
-template <typename T>
 class PromiseRef {
 public:
-    PromiseRef(Promise<T> *promise) : mPtr(promise) {
+    PromiseRef(PromiseBase *promise) : mPtr(promise) {
         _ref();
     }
     PromiseRef(const PromiseRef &ref) : mPtr(ref.mPtr) {
@@ -439,10 +438,10 @@ public:
         _deref();
     }
 
-    Promise<T> &operator *() const noexcept {
+    PromiseBase &operator *() const noexcept {
         return *mPtr;
     }
-    Promise<T> *operator ->() const noexcept {
+    PromiseBase *operator ->() const noexcept {
         return mPtr;
     }
 
@@ -459,7 +458,7 @@ private:
             mPtr->deref();
         }
     }
-    Promise<T> *mPtr = nullptr;
+    PromiseBase *mPtr = nullptr;
 };
 
 // --- TaskAwaitable Impl
@@ -551,11 +550,7 @@ public:
     }
     template <typename U>
     void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
-        Promise<U> *promise = &h.promise();
-        promise->set_suspend_by_await(true);
-        mFunc([p = PromiseRef(promise), this](T &&v) {
-            _resume(*p, std::move(v));
-        });
+        _await_suspend(&h.promise());
     }
     T await_resume() noexcept {
         ILIAS_ASSERT(mHasValue);
@@ -569,6 +564,12 @@ public:
         return std::move(mStorage.value);
     }
 private:
+    void _await_suspend(PromiseBase *promise) {
+        promise->set_suspend_by_await(true);
+        mFunc([p = PromiseRef(promise), this](T &&v) {
+            _resume(*p, std::move(v));
+        });
+    }
     void _resume(PromiseBase &promise, T &&value) {
         new (&mStorage.value) T(std::move(value));
         mHasValue = true;
@@ -600,14 +601,17 @@ public:
     }
     template <typename U>
     void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
-        Promise<U> *promise = &h.promise();
+        _await_suspend(&h.promise());
+    }
+    void await_resume() const noexcept {}
+private:
+    void _await_suspend(PromiseBase *promise) noexcept {
         promise->set_suspend_by_await(true);
         mFunc([p = PromiseRef(promise)]() {
             p->resume_later();
         });
     }
-    void await_resume() const noexcept {}
-private:
+
     SuspendFunc mFunc;
 };
 
@@ -620,26 +624,6 @@ public:
     }
     TaskAwaitable<T> transform(Task<T> &&t) const noexcept {
         return TaskAwaitable<T>(std::move(t));
-    }
-};
-
-// --- AwaitableImpl
-template <typename Self>
-class AwaitableImpl {
-public:
-    bool await_ready() noexcept {
-        return _self()->ready();
-    }
-    template <typename U>
-    void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
-        
-    }
-    auto await_resume() {
-        return _self()->resume();
-    }
-private:
-    Self *_self() noexcept {
-        return static_cast<Self*>(this);
     }
 };
 

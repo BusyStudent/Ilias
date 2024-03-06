@@ -74,6 +74,20 @@ public:
     PollContext();
     PollContext(const PollContext&) = delete;
     ~PollContext();
+    
+    using RecvHandlerArgs = Expected<size_t, SockError>;
+    using RecvHandler = Function<void (RecvHandlerArgs &&)>;
+    using SendHandlerArgs = Expected<size_t, SockError>;
+    using SendHandler = Function<void (SendHandlerArgs &&)>;
+    using AcceptHandlerArgs = Expected<std::pair<Socket, IPEndpoint> , SockError>;
+    using AcceptHandler = Function<void (AcceptHandlerArgs &&)>;
+    using ConnectHandlerArgs = Expected<void, SockError>;
+    using ConnectHandler = Function<void (ConnectHandlerArgs &&)>;
+    
+    using RecvfromHandlerArgs = Expected<std::pair<size_t, IPEndpoint>, SockError>;
+    using RecvfromHandler = Function<void (RecvfromHandlerArgs &&)>;
+    using SendtoHandlerArgs = Expected<size_t, SockError>;
+    using SendtoHandler = Function<void (SendtoHandlerArgs &&)>;
 
     // Poll Watcher interface
     void addWatcher(SocketView socket, IOWatcher* watcher, int events);
@@ -86,13 +100,13 @@ public:
     bool asyncCleanup(SocketView socket);
     bool asyncCancel(SocketView, void *operation);
 
-    void *asyncRecv(SocketView socket, void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&cb);
-    void *asyncSend(SocketView socket, const void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&cb);
-    void *asyncAccept(SocketView socket, Function<void(Expected<std::pair<Socket, IPEndpoint> , SockError> &&)> &&cb);
-    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, Function<void(Expected<void, SockError> &&)> &&cb);
+    void *asyncRecv(SocketView socket, void *buffer, size_t n, RecvHandler &&cb);
+    void *asyncSend(SocketView socket, const void *buffer, size_t n, SendHandler &&cb);
+    void *asyncAccept(SocketView socket, AcceptHandler &&cb);
+    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, ConnectHandler &&cb);
 
-    void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, Function<void(Expected<std::pair<size_t, IPEndpoint> , SockError> &&)> &&cb);
-    void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, Function<void(Expected<size_t, SockError> &&)> &&cb);
+    void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, RecvfromHandler &&cb);
+    void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, SendtoHandler &&cb);
 
     // Poll
     void *asyncPoll(SocketView socket, int revent, Function<void(int revents)> &&cb);
@@ -388,7 +402,7 @@ inline void *PollContext::asyncPoll(SocketView socket, int revent, Function<void
     addWatcher(socket, operation, revent);
     return operation;
 }
-inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&callback) {
+inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, SendHandler &&callback) {
     auto bytes = socket.send(buffer, n);
     if (bytes >= 0) {
         // Ok, call callback
@@ -420,7 +434,7 @@ inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_
         }
     });
 }
-inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&callback) {
+inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, RecvHandler &&callback) {
     auto bytes = socket.recv(buffer, n);
     if (bytes >= 0) {
         // Ok, call callback
@@ -450,7 +464,7 @@ inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, F
         }
     });
 }
-inline void *PollContext::asyncAccept(SocketView socket, Function<void(Expected<std::pair<Socket, IPEndpoint> , SockError> &&)> &&callback) {
+inline void *PollContext::asyncAccept(SocketView socket, AcceptHandler &&callback) {
     auto pair = socket.accept<Socket>();
     if (pair.first.isValid()) {
         // Got value
@@ -477,7 +491,7 @@ inline void *PollContext::asyncAccept(SocketView socket, Function<void(Expected<
         }
     });
 }
-inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, Function<void(Expected<void, SockError> &&)> &&callback) {
+inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, ConnectHandler &&callback) {
     if (socket.connect(endpoint)) {
         callback(Expected<void, SockError>());
         return nullptr;
