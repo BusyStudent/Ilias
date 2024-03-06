@@ -15,6 +15,10 @@
 #include "ilias_co.hpp"
 #endif
 
+#if defined(__cpp_lib_span)
+#include <span>
+#endif
+
 ILIAS_NS_BEGIN
 
 /**
@@ -34,8 +38,9 @@ public:
     }
     auto isValid() const -> bool;
     auto localEndpoint() const -> IPEndpoint;
-    explicit operator SocketView() const noexcept;
     auto close() -> Expected<void, SockError>;
+    
+    explicit operator SocketView() const noexcept;
 protected:
     IOContext *mContext = nullptr;
     Socket     mFd;
@@ -44,7 +49,20 @@ protected:
 class TcpClient final : public AsyncSocket {
 public:
     TcpClient();
+    /**
+     * @brief Construct a new Tcp Client object by family
+     * 
+     * @param ctxt The IOContext ref
+     * @param family The family
+     */
     TcpClient(IOContext &ctxt, int family);
+    /**
+     * @brief Construct a new Tcp Client object by extsts socket
+     * 
+     * @param ctxt 
+     * @param socket 
+     */
+    TcpClient(IOContext &ctxt, Socket &&socket);
 
     /**
      * @brief Get the remote endpoint
@@ -55,31 +73,39 @@ public:
 
 #if defined(__cpp_lib_coroutine)
     /**
-     * @brief Recv 
+     * @brief Recv data from
      * 
      * @param buffer 
      * @param n 
+     * @param timeout
      * @return Task<std::Expected<size_t, SockError> > bytes on ok, error on fail
      */
-    auto recv(void *buffer, size_t n) -> Task<Expected<size_t, SockError> >;
-    auto send(const void *buffer, size_t n) -> Task<Expected<size_t, SockError> >;
-    auto connect(const IPEndpoint &addr) -> Task<Expected<void, SockError> >;
-#endif
+    auto recv(void *buffer, size_t n, int timeout = -1) -> Task<Expected<size_t, SockError> >;
     /**
-     * @brief Create a socket from a raw socket fd, this return object will take the fd ownship !!!
+     * @brief Send data to
      * 
-     * @param sockfd 
-     * @return TcpClient 
+     * @param buffer 
+     * @param n 
+     * @param timeout
+     * @return Task<Expected<size_t, SockError> > 
      */
-    static TcpClient from(socket_t sockfd);
+    auto send(const void *buffer, size_t n, int timeout = -1) -> Task<Expected<size_t, SockError> >;
+    /**
+     * @brief Connect to
+     * 
+     * @param addr 
+     * @param timeout
+     * @return Task<Expected<void, SockError> > 
+     */
+    auto connect(const IPEndpoint &addr, int timeout = -1) -> Task<Expected<void, SockError> >;
+#endif
 };
 
 class TcpServer final : public AsyncSocket {
 public:
     TcpServer();
     TcpServer(IOContext &ctxt, int family);
-
-    auto remoteEndpoint() const -> IPEndpoint;
+    TcpServer(IOContext &ctxt, Socket &&socket);
 
     /**
      * @brief Bind the socket with endpoint
@@ -91,16 +117,20 @@ public:
     auto bind(const IPEndpoint &endpoint, int backlog = 0) -> Expected<void, SockError>;
 
 #if defined(__cpp_lib_coroutine)
+    /**
+     * @brief Waiting accept socket
+     * 
+     * @return Task<Expected<std::pair<TcpClient, IPEndpoint> , SockError> > 
+     */
     auto accept() -> Task<Expected<std::pair<TcpClient, IPEndpoint> , SockError> >;
 #endif
-
-    static TcpServer from(socket_t sockfd);
 };
 
 class UdpSocket final : public AsyncSocket {
 public:
     UdpSocket();
     UdpSocket(IOContext &ctxt, int family);
+    UdpSocket(IOContext &ctxt, Socket &&socket);
 
     static UdpSocket from(socket_t sockfd);
 };
@@ -145,13 +175,18 @@ inline TcpClient::TcpClient(IOContext &ctxt, int family) :
 { 
 
 }
+inline TcpClient::TcpClient(IOContext &ctxt, Socket &&socket):
+    AsyncSocket(ctxt, std::move(socket))
+{
+
+}
 
 inline auto TcpClient::remoteEndpoint() const -> IPEndpoint {
     return mFd.remoteEndpoint();
 }
 
 #if defined(__cpp_lib_coroutine)
-inline auto TcpClient::recv(void *buffer, size_t n) -> Task<Expected<size_t, SockError> > {
+inline auto TcpClient::recv(void *buffer, size_t n, int timeout) -> Task<Expected<size_t, SockError> > {
     co_return co_await CallbackAwaitable<Expected<size_t, SockError> >(
         [=, this](CallbackAwaitable<Expected<size_t, SockError> >::ResumeFunc &&func) {
             mContext->asyncRecv(mFd, buffer, n, [=, f = std::move(func)](Expected<size_t, SockError> result) mutable {
@@ -160,7 +195,7 @@ inline auto TcpClient::recv(void *buffer, size_t n) -> Task<Expected<size_t, Soc
         }
     );
 }
-inline auto TcpClient::send(const void *buffer, size_t n) -> Task<Expected<size_t, SockError> > {
+inline auto TcpClient::send(const void *buffer, size_t n, int timeout) -> Task<Expected<size_t, SockError> > {
     co_return co_await CallbackAwaitable<Expected<size_t, SockError> >(
         [=, this](CallbackAwaitable<Expected<size_t, SockError> >::ResumeFunc &&func) {
             mContext->asyncSend(mFd, buffer, n, [=, f = std::move(func)](Expected<size_t, SockError> result) mutable {
@@ -169,6 +204,16 @@ inline auto TcpClient::send(const void *buffer, size_t n) -> Task<Expected<size_
         }
     );
 }
+inline auto TcpClient::connect(const IPEndpoint &endpoint, int timeout) -> Task<Expected<void, SockError> > {
+    co_return co_await CallbackAwaitable<Expected<void, SockError> >(
+        [=, this](CallbackAwaitable<Expected<void, SockError> >::ResumeFunc &&func) {
+            mContext->asyncConnect(mFd, endpoint, [=, f = std::move(func)](Expected<void, SockError> result) mutable {
+                f(std::move(result));  
+            });
+        }
+    );
+}
+
 #endif
 
 
@@ -179,6 +224,12 @@ inline TcpServer::TcpServer(IOContext &ctxt, int family) :
 {
 
 }
+inline TcpServer::TcpServer(IOContext &ctxt, Socket &&socket):
+    AsyncSocket(ctxt, std::move(socket))
+{
+
+}
+
 inline auto TcpServer::bind(const IPEndpoint &endpoint, int backlog) -> Expected<void, SockError> {
     if (!mFd.bind(endpoint)) {
         return Unexpected(SockError::fromErrno());

@@ -34,6 +34,7 @@
     #define ILIAS_BYTE_T      char
     #define ILIAS_CLOSE(s)  ::closesocket(s)
     #define ILIAS_POLL      ::WSAPoll
+    #define ILIAS_ETIMEOUT  (WSAETIMEOUT)
     #include <WinSock2.h>
     #include <WS2tcpip.h>
 
@@ -50,6 +51,7 @@
     #define ILIAS_BYTE_T      void
     #define ILIAS_CLOSE(s)  ::close(s)
     #define ILIAS_POLL      ::poll
+    #define ILIAS_ETIMEOUT  (ETIMEDOUT)
 
     #include <sys/socket.h>
     #include <netinet/in.h>
@@ -233,6 +235,13 @@ public:
     error_t error() const;
 
     bool isOk() const;
+    /**
+     * @brief Is Posix like code ETIMEDOUT
+     * 
+     * @return true 
+     * @return false 
+     */
+    bool isTimedOut() const;
     /**
      * @brief Is Posix like code EWOULDBLOCK or EAGAIN
      * 
@@ -674,6 +683,9 @@ inline bool SockError::isOk() const {
 }
 
 #ifdef _WIN32
+inline bool SockError::isTimedOut() const {
+    return mError == WSAETIMEDOUT;
+}
 inline bool SockError::isWouldBlock() const {
     return mError == WSAEWOULDBLOCK;
 }
@@ -801,7 +813,7 @@ inline IPEndpoint SocketView::remoteEndpoint() const {
 }
 inline SockError SocketView::error() const {
     error_t err;
-    ::socklen_t len = 0;
+    ::socklen_t len = sizeof(error_t);
     if (::getsockopt(mFd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&err), &len) == 0) {
         return SockError(err);
     }

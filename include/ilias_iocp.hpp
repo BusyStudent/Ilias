@@ -94,6 +94,6 @@ private:
     Socket mControl; //< Socket for sending message
 };
 
-using IOContext = IOCPContext;
+// using IOContext = IOCPContext;
 
 ILIAS_NS_END

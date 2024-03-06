@@ -59,7 +59,7 @@ public:
     PollOperation() = default;
     ~PollOperation() = default;
 
-    void onEvent(int revents) override { mCallback(revents); mCallback = nullptr; }
+    void onEvent(int revents) override { mCallback(revents); }
     void setCallback(Function<void(int revents)> &&callback) { mCallback = std::move(callback); }
 private:
     Function<void(int revents)> mCallback;
@@ -90,6 +90,9 @@ public:
     void *asyncSend(SocketView socket, const void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&cb);
     void *asyncAccept(SocketView socket, Function<void(Expected<std::pair<Socket, IPEndpoint> , SockError> &&)> &&cb);
     void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, Function<void(Expected<void, SockError> &&)> &&cb);
+
+    void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, Function<void(Expected<std::pair<size_t, IPEndpoint> , SockError> &&)> &&cb);
+    void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, Function<void(Expected<size_t, SockError> &&)> &&cb);
 
     // Poll
     void *asyncPoll(SocketView socket, int revent, Function<void(int revents)> &&cb);
@@ -350,18 +353,13 @@ inline bool PollContext::asyncInitialize(SocketView socket) {
     if (!socket.setBlocking(false)) {
         return false;
     }
-    addWatcher(socket, new PollOperation, PollEvent::None);
     return true;
 }
 inline bool PollContext::asyncCleanup(SocketView socket) {
     if (!socket.isValid()) {
         return false;
     }
-    auto watcher = findWatcher(socket);
-    if (!watcher) {
-        return false;
-    }
-    return removeWatcher(watcher);
+    return asyncCancel(socket, nullptr); //< Cancel all operation
 }
 inline bool PollContext::asyncCancel(SocketView socket, void *op) {
     PollOperation *operation = static_cast<PollOperation*>(op);
@@ -371,20 +369,23 @@ inline bool PollContext::asyncCancel(SocketView socket, void *op) {
     if (!operation) {
         return false;
     }
-    return modifyWatcher(operation, PollEvent::None); //< Let it poll nothing
+    auto v = removeWatcher(operation);
+    delete operation;
+    return v;
 }
 inline void *PollContext::asyncPoll(SocketView socket, int revent, Function<void(int revents)> &&cb) {
-    auto operation = static_cast<PollOperation*>(findWatcher(socket));
+    auto operation = new PollOperation;
     if (!operation) {
         return 0;
     }
     operation->setCallback([this, operation, b = std::move(cb)](int revents) mutable {
-        // Let it watch nothing
-        modifyWatcher(operation, PollEvent::None);
+        // Remove it
+        removeWatcher(operation);
         // Invoke User callback
         b(revents);
+        delete operation;
     });
-    modifyWatcher(operation, revent);
+    addWatcher(socket, operation, revent);
     return operation;
 }
 inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, Function<void(Expected<size_t, SockError> &&)> &&callback) {
@@ -395,7 +396,7 @@ inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_
         return nullptr;
     }
     auto err = SockError::fromErrno();
-    if (!err.isInProgress() && err.isWouldBlock()) {
+    if (!err.isInProgress() && !err.isWouldBlock()) {
         // Not async operation, return error by callback
         callback(Unexpected(err));
         return nullptr;
@@ -427,13 +428,13 @@ inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, F
         return nullptr;
     }
     auto err = SockError::fromErrno();
-    if (!err.isInProgress() && err.isWouldBlock()) {
+    if (!err.isInProgress() && !err.isWouldBlock()) {
         // Not async operation, return error by callback
         callback(Unexpected(err));
         return nullptr;
     }
     // Ok, wait readable
-    return asyncPoll(socket, PollEvent::Out, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
+    return asyncPoll(socket, PollEvent::In, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
         if (revents & PollEvent::In) {
             auto bytes = socket.recv(buffer, n);
             if (bytes >= 0) {
@@ -449,6 +450,56 @@ inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, F
         }
     });
 }
+inline void *PollContext::asyncAccept(SocketView socket, Function<void(Expected<std::pair<Socket, IPEndpoint> , SockError> &&)> &&callback) {
+    auto pair = socket.accept<Socket>();
+    if (pair.first.isValid()) {
+        // Got value
+        callback(std::move(pair));
+        return nullptr;
+    }
+    auto err = SockError::fromErrno();
+    if (!err.isInProgress() && !err.isWouldBlock()) {
+        callback(Unexpected(err));
+        return nullptr;
+    }
+    return asyncPoll(socket, PollEvent::In, [cb = std::move(callback), socket](int revents) mutable {
+        if (revents & PollEvent::In) {
+            auto pair = socket.accept<Socket>();
+            if (pair.first.isValid()) {
+                // Got value
+                cb(std::move(pair));
+                return;
+            }
+        }
+        if (revents & PollEvent::Err) {
+            // Error, call callback
+            cb(Unexpected(SockError::fromErrno()));
+        }
+    });
+}
+inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, Function<void(Expected<void, SockError> &&)> &&callback) {
+    if (socket.connect(endpoint)) {
+        callback(Expected<void, SockError>());
+        return nullptr;
+    }
+    auto err = SockError::fromErrno();
+    if (!err.isInProgress() && !err.isWouldBlock()) {
+        callback(Unexpected(err));
+        return nullptr;
+    }
+    // Ok, we need to wait for the socket to be writable
+    return asyncPoll(socket, PollEvent::Out, [cb = std::move(callback), socket, endpoint](int revents) mutable {
+        auto err = socket.error();
+        if (err.isOk() && (revents & PollEvent::Out)) {
+            // Ok
+            cb(Expected<void, SockError>());
+            return;
+        }
+        // Error, call callback
+        cb(Unexpected(err));
+    });
+}
+
 
 
 using IOContext = PollContext;

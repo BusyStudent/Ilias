@@ -23,14 +23,14 @@ using Unexpected = ::std::unexpected<E>;
 #else
 inline namespace _ilias_fallback {
 template <typename E>
-class unexpected {
+class Unexpected {
 public:
-    unexpected(const E &error)
+    Unexpected(const E &error)
         : mError(error)
     {
     }
 
-    unexpected(E &&error)
+    Unexpected(E &&error)
         : mError(std::move(error))
     {
     }
@@ -41,9 +41,9 @@ private:
     const E mError;
 };
 template <typename T, typename E, class enable = void>
-class expected;
+class Expected;
 template <typename T, typename E>
-class expected<T, E, typename std::enable_if<!std::is_void<T>::value>::type> {
+class Expected<T, E, typename std::enable_if<!std::is_void<T>::value>::type> {
 public:
     using ValueT = T;
     using ErrorT = E;
@@ -61,31 +61,31 @@ private:
     } mType;
 
 public:
-    expected(const ValueT &value)
+    Expected(const ValueT &value)
         : mType(ValueType)
     {
         new (&mValue) ValueT(value);
     }
 
-    expected(ValueT &&value)
+    Expected(ValueT &&value)
         : mType(ValueType)
     {
         new (&mValue) ValueT(std::move(value));
     }
 
-    expected(const ErrorT &error)
+    Expected(const ErrorT &error)
         : mType(ErrorType)
     {
         new (&mError) ErrorT(error);
     }
 
-    expected(ErrorT &&error)
+    Expected(ErrorT &&error)
         : mType(ErrorType)
     {
         new (&mError) ErrorT(std::move(error));
     }
 
-    expected(const expected &other) CS_NOEXCEPT
+    Expected(const Expected &other) CS_NOEXCEPT
         : mType(other.mType)
     {
         if (mType == ErrorType) {
@@ -95,26 +95,26 @@ public:
         }
     }
 
-    expected(const UnexpectedT &error)
+    Expected(const UnexpectedT &error)
         : mType(ErrorType)
     {
         new (&mError) ErrorT(error.error());
     }
 
-    expected(UnexpectedT &&error)
+    Expected(UnexpectedT &&error)
         : mType(ErrorType)
     {
         new (&mError) ErrorT(error.error());
     }
 
-    expected &operator=(const UnexpectedT &other) CS_NOEXCEPT
+    Expected &operator=(const UnexpectedT &other) CS_NOEXCEPT
     {
         destory();
         mType = ErrorType;
         new (&mError) ErrorT(other.error());
         return *this;
     }
-    expected &operator=(const expected &other) CS_NOEXCEPT
+    Expected &operator=(const Expected &other) CS_NOEXCEPT
     {
         destory();
         mType = other.mType;
@@ -125,28 +125,28 @@ public:
         }
         return *this;
     }
-    expected &operator=(ValueT &&value)
+    Expected &operator=(ValueT &&value)
     {
         destory();
         mType = ValueType;
         new (&mValue) ValueT(std::move(value));
         return *this;
     }
-    expected &operator=(const ValueT &value)
+    Expected &operator=(const ValueT &value)
     {
         destory();
         mType = ValueType;
         new (&mValue) ValueT(value);
         return *this;
     }
-    expected &operator=(ErrorT &&error) CS_NOEXCEPT
+    Expected &operator=(ErrorT &&error) CS_NOEXCEPT
     {
         destory();
         mType = ErrorType;
         new (&mError) ErrorT(std::move(error));
         return *this;
     }
-    expected &operator=(const ErrorT &error) CS_NOEXCEPT
+    Expected &operator=(const ErrorT &error) CS_NOEXCEPT
     {
         destory();
         mType = ErrorType;
@@ -169,7 +169,7 @@ public:
     ErrorT &error() { return mError; }
     const ErrorT &error() const { return mError; }
 
-    ~expected() { destory(); }
+    ~Expected() { destory(); }
 
 private:
     inline void destory()
@@ -183,7 +183,7 @@ private:
 };
 
 template <typename T>
-class expected<T, T, typename std::enable_if<!std::is_void<T>::value>::type> {
+class Expected<T, T, typename std::enable_if<!std::is_void<T>::value>::type> {
 public:
     using ValueT = T;
     using ErrorT = T;
@@ -201,19 +201,19 @@ private:
     } mType;
 
 public:
-    expected(const ValueT &value)
+    Expected(const ValueT &value)
         : mType(ValueType)
     {
         new (&mValue) ValueT(value);
     }
 
-    expected(ValueT &&value)
+    Expected(ValueT &&value)
         : mType(ValueType)
     {
         new (&mValue) ValueT(std::move(value));
     }
 
-    expected(const expected &other) CS_NOEXCEPT
+    Expected(const Expected &other) CS_NOEXCEPT
         : mType(other.mType)
     {
         if (mType == ValueType) {
@@ -223,19 +223,19 @@ public:
         }
     }
 
-    expected(const UnexpectedT &error)
+    Expected(const UnexpectedT &error)
         : mType(ErrorType)
     {
         new (&mError) ErrorT(error.error());
     }
 
-    expected(UnexpectedT &&error)
+    Expected(UnexpectedT &&error)
         : mType(ErrorType)
     {
         new (&mError) ErrorT(error.error());
     }
 
-    expected operator=(const UnexpectedT &error)
+    Expected operator=(const UnexpectedT &error)
     {
         destory();
         mType = ErrorType;
@@ -243,7 +243,7 @@ public:
         return *this;
     }
 
-    expected operator=(const expected &other) CS_NOEXCEPT
+    Expected operator=(const Expected &other) CS_NOEXCEPT
     {
         destory();
         if (other.mType == ErrorType) {
@@ -256,7 +256,7 @@ public:
         return *this;
     }
 
-    expected operator=(ValueT &&value)
+    Expected operator=(ValueT &&value)
     {
         destory();
         if (mType == ErrorType) {
@@ -267,7 +267,7 @@ public:
         return *this;
     }
 
-    expected operator=(const ValueT &value)
+    Expected operator=(const ValueT &value)
     {
         destory();
         if (mType == ErrorType) {
@@ -294,7 +294,7 @@ public:
     ErrorT error() { return mError; }
     const ErrorT &error() const { return mError; }
 
-    ~expected() { destory(); }
+    ~Expected() { destory(); }
 
 private:
     inline void destory()
@@ -308,7 +308,7 @@ private:
 };
 
 template <typename T, typename E>
-class expected<T, E, typename std::enable_if<std::is_void<T>::value>::type> {
+class Expected<T, E, typename std::enable_if<std::is_void<T>::value>::type> {
 public:
     using ValueT = T;
     using ErrorT = E;
@@ -323,49 +323,49 @@ private:
     } mType;
 
 public:
-    expected()
+    Expected()
         : mType(ValueType)
     {
     }
 
-    expected(const ErrorT &error)
+    Expected(const ErrorT &error)
         : mType(ErrorType)
         , mError(error)
     {
     }
 
-    expected(ErrorT &&error)
+    Expected(ErrorT &&error)
         : mType(ErrorType)
         , mError(std::move(error))
     {
     }
 
-    expected(const expected &other) CS_NOEXCEPT
+    Expected(const Expected &other) CS_NOEXCEPT
         : mType(other.mType),
           mError(other.mError)
     {
     }
 
-    expected(const UnexpectedT &error)
+    Expected(const UnexpectedT &error)
         : mType(ErrorType)
         , mError(error.error())
     {
     }
 
-    expected(UnexpectedT &&error)
+    Expected(UnexpectedT &&error)
         : mType(ErrorType)
         , ErrorT(error.error());
     {
     }
 
-    expected operator=(const UnexpectedT &error)
+    Expected operator=(const UnexpectedT &error)
     {
         mType = ErrorType;
         mError = error.error();
         return *this;
     }
 
-    expected operator=(const expected &other) CS_NOEXCEPT
+    Expected operator=(const Expected &other) CS_NOEXCEPT
     {
         if (other.mType == ErrorType) {
             mError = other.mError;
@@ -376,14 +376,14 @@ public:
         return *this;
     }
 
-    expected operator=(const ErrorT &error) CS_NOEXCEPT
+    Expected operator=(const ErrorT &error) CS_NOEXCEPT
     {
         mType = ErrorType;
         mError = error;
         return *this;
     }
 
-    expected operator=(ErrorT &&error) CS_NOEXCEPT
+    Expected operator=(ErrorT &&error) CS_NOEXCEPT
     {
         mType = ErrorType;
         mError = std::move(error);
@@ -399,7 +399,7 @@ public:
     ErrorT &error() { return mError; }
     const ErrorT &error() const { return mError; }
 
-    ~expected() = default;
+    ~Expected() = default;
 };
 }
 
