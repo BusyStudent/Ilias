@@ -13,16 +13,20 @@
 #include "ilias_co.hpp"
 #endif
 
+#if defined(__linux) 
+#include <sys/epoll.h>
+#include <array>
+#endif
+
 ILIAS_NS_BEGIN
 
 enum PollEvent : int {
-    Timeout = -1,
     None = 0,
     In  = POLLIN,
     Out = POLLOUT,
     Err = POLLERR,
     Hup = POLLHUP,
-    All = In | Out
+    All = In | Out,
 };
 
 /**
@@ -38,6 +42,7 @@ protected:
 private:
     socket_t mFd = ILIAS_INVALID_SOCKET;
     int64_t  mPollfdIdx = -1; //< Location of it's pollfd
+    int      mPollEvents = 0; //< Info of it's request events
 friend class PollContext;
 };
 
@@ -67,7 +72,7 @@ public:
     ~PollContext();
     
     // Poll Watcher interface
-    void addWatcher(SocketView socket, IOWatcher* watcher, int events);
+    bool addWatcher(SocketView socket, IOWatcher* watcher, int events);
     bool modifyWatcher(IOWatcher* watcher, int events);
     bool removeWatcher(IOWatcher* watcher);
     IOWatcher *findWatcher(SocketView socket);
@@ -106,9 +111,14 @@ private:
 
     std::thread           mThread; //< Threads for network poll
     std::atomic_bool      mRunning {true}; //< Flag to stop the thread
-    std::vector<::pollfd> mPollfds;
     std::mutex            mMutex;
     std::map<socket_t, IOWatcher*> mWatchers;
+
+#if defined(__linux)
+    int mEpollfd = -1;
+#else
+    std::vector<::pollfd> mPollfds;
+#endif
 
     Socket mEvent; //< Socket poll in workThread
     Socket mControl; //< Socket for sending message
@@ -129,6 +139,7 @@ inline PollContext::PollContext() {
     ::socketpair(AF_UNIX, SOCK_STREAM, 0, fds);
     mEvent.reset(fds[0]);
     mControl.reset(fds[1]);
+    mEpollfd = ::epoll_create1(0);
 #endif
     mEvent.setBlocking(false);
 
@@ -141,8 +152,14 @@ inline PollContext::PollContext() {
 inline PollContext::~PollContext() {
     _stop();
     mThread.join();
+
+#ifdef __linux
+    ::close(mEpollfd);
+#endif
 }
 inline void PollContext::_run() {
+    // < Common Poll
+#ifndef __linux
     std::vector<::pollfd> collected;
     while (mRunning) {
         auto n = ILIAS_POLL(mPollfds.data(), mPollfds.size(), -1);
@@ -166,6 +183,29 @@ inline void PollContext::_run() {
         }
         collected.clear();
     }
+#else
+    // Check EPoll Events as same as Poll
+    static_assert(EPOLLIN == POLLIN);
+    static_assert(EPOLLOUT == POLLOUT);
+    static_assert(EPOLLERR == POLLERR);
+    static_assert(EPOLLHUP == POLLHUP);
+
+    std::array<::epoll_event, 1024> events;
+    while (mRunning) {
+        auto n = ::epoll_wait(mEpollfd, events.data(), events.size(), -1);
+        if (n < 0) {
+            ::printf("[Ilias::PollContext] Epoll Error %s\n", SockError::fromErrno().message().c_str());
+        }
+        for (int i = 0; i < n; i++) {
+            auto watcher = static_cast<IOWatcher*>(events[i].data.ptr);
+            if (!watcher) {
+                continue;
+            }
+            watcher->onEvent(events[i].events);
+        }
+    }
+#endif
+
 }
 inline void PollContext::_notify(const ::pollfd &pfd) {
     auto iter = mWatchers.find(pfd.fd);
@@ -176,50 +216,69 @@ inline void PollContext::_notify(const ::pollfd &pfd) {
     watcher->onEvent(pfd.revents);
 }
 inline void PollContext::_dump() {
-#ifndef NDEBUG
+#if !defined(NDEBUG)
     ::printf("[Ilias::PollContext] Dump Watchers\n");
-    for (const auto &pfd : mPollfds) {
-        if (pfd.fd == mEvent.get()) {
+    for (const auto &pair : mWatchers) {
+        auto watcher = pair.second;
+        if (watcher->mFd == mEvent.get()) {
             continue;
         }
         std::string events;
-        if (pfd.events & PollEvent::In) {
+        if (watcher->mPollEvents & PollEvent::In) {
             events += "In ";
         }
-        if (pfd.events & PollEvent::Out) {
+        if (watcher->mPollEvents & PollEvent::Out) {
             events += "Out ";
         }
         ::printf(
             "[Ilias::PollContext] IOWatcher %p Socket %lu Event %s\n",
-            mWatchers[pfd.fd], 
-            uintptr_t(pfd.fd), 
+            watcher, 
+            uintptr_t(watcher->mFd), 
             events.c_str()
         );
     }
 #endif
 }
-inline void PollContext::addWatcher(SocketView socket, IOWatcher *watcher, int events) {
+inline bool PollContext::addWatcher(SocketView socket, IOWatcher *watcher, int events) {
     if (mThread.joinable()) {
         if (mThread.get_id() != std::this_thread::get_id()) {
-            return _invoke4([=, this]() {
-                addWatcher(socket, watcher, events);
+            bool val = false;
+            _invoke4([=, this, &val]() {
+                val = addWatcher(socket, watcher, events);
             });
+            return val;
         }
     }
     ILIAS_ASSERT(!(events & PollEvent::Err));
     ILIAS_ASSERT(!(events & PollEvent::Hup));
 
+#ifndef __linux
     ::pollfd pfd;
     pfd.events = events;
     pfd.revents = 0;
     pfd.fd = socket.get();
 
     watcher->mFd = socket.get();
+    watcher->mPollEvents = events;
     watcher->mPollfdIdx = mPollfds.size(); //< Store the location
     mWatchers.emplace(socket.get(), watcher);
     mPollfds.push_back(pfd);
+#else
+    ::epoll_event epevent {};
+    epevent.events = events;
+    epevent.data.ptr = watcher;
+
+    if (::epoll_ctl(mEpollfd, EPOLL_CTL_ADD, socket.get(), &epevent) != 0) {
+        // Error
+        return false;
+    }
+    watcher->mFd = socket.get();
+    watcher->mPollEvents = events;
+    mWatchers.emplace(socket.get(), watcher);
+#endif
 
     _dump();
+    return true;
 }
 inline bool PollContext::modifyWatcher(IOWatcher *watcher, int events) {
     if (mThread.get_id() != std::this_thread::get_id()) {
@@ -229,12 +288,26 @@ inline bool PollContext::modifyWatcher(IOWatcher *watcher, int events) {
         });
         return val;
     }
+
+#ifndef __linux
     if (watcher->mPollfdIdx <= 0) {
         return false;
     }
 
     mPollfds[watcher->mPollfdIdx].events = events;
     mPollfds[watcher->mPollfdIdx].revents = 0;
+#else
+    ::epoll_event epevent {};
+    epevent.events = events;
+    epevent.data.ptr = watcher;
+
+    if (::epoll_ctl(mEpollfd, EPOLL_CTL_MOD, watcher->mFd, &epevent) != 0) {
+        // Error
+        return false;
+    }
+#endif
+    // Ok, do Common
+    watcher->mPollEvents = events;
 
     _dump();
     return true;
@@ -248,6 +321,7 @@ inline bool PollContext::removeWatcher(IOWatcher *watcher) {
         return val;
     }
 
+#ifndef __linux
     auto fd = watcher->mFd;
     auto idx = watcher->mPollfdIdx;
     auto iter = mWatchers.find(fd);
@@ -273,6 +347,16 @@ inline bool PollContext::removeWatcher(IOWatcher *watcher) {
 
     watcher->mFd = ILIAS_INVALID_SOCKET;
     watcher->mPollfdIdx = -1;
+    watcher->mPollEvents = 0;
+#else
+    if (::epoll_ctl(mEpollfd, EPOLL_CTL_DEL, watcher->mFd, nullptr) != 0) {
+        // Fail to remove
+        return false;
+    }
+    mWatchers.erase(watcher->mFd);
+    watcher->mFd = ILIAS_INVALID_SOCKET;
+    watcher->mPollEvents = 0;
+#endif
 
     _dump();
     return true;

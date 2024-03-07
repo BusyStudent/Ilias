@@ -56,8 +56,8 @@
     #include <sys/socket.h>
     #include <netinet/in.h>
     #include <sys/epoll.h>
+    #include <sys/poll.h>
     #include <arpa/inet.h>
-    #include <poll.h>
     #include <errno.h>
     #include <unistd.h>
     #include <netdb.h>
