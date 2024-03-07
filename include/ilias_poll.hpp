@@ -490,25 +490,25 @@ inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endp
         cb(Unexpected(err));
     });
 }
-inline void *PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t n, RecvfromHandler &&cb) {
+inline void *PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t n, RecvfromHandler &&callback) {
     IPEndpoint endpoint;
     auto bytes = socket.recvfrom(buffer, n, 0, &endpoint);
     if (bytes >= 0) {
-        cb(std::make_pair(bytes, endpoint));
+        callback(std::make_pair(size_t(bytes), endpoint));
         return nullptr;
     }
     auto err = SockError::fromErrno();
     if (!err.isInProgress() && !err.isWouldBlock()) {
-        cb(Unexpected(err));
+        callback(Unexpected(err));
         return nullptr;
     }
     // Ok, we need to wait for the socket to be readable
-    return asyncPoll(socket, PollEvent::In, [cb = std::move(cb), socket, buffer, n](int revents) mutable {
+    return asyncPoll(socket, PollEvent::In, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
         if (revents & PollEvent::In) {
             IPEndpoint endpoint;
             auto bytes = socket.recvfrom(buffer, n, 0, &endpoint);
             if (bytes >= 0) {
-                cb(std::make_pair(bytes, endpoint));
+                cb(std::make_pair(size_t(bytes), endpoint));
                 return;
             }
         }
@@ -516,19 +516,19 @@ inline void *PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t 
         cb(Unexpected(SockError::fromErrno()));
     });
 }
-inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, SendtoHandler &&cb) {
+inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, SendtoHandler &&callback) {
     auto bytes = socket.sendto(buffer, n, 0, &endpoint);
     if (bytes >= 0) {
-        cb(bytes);
+        callback(bytes);
         return nullptr;
     }
     auto err = SockError::fromErrno();
     if (!err.isInProgress() && !err.isWouldBlock()) {
-        cb(Unexpected(err));
+        callback(Unexpected(err));
         return nullptr;
     }
     // Ok, we need to wait for the socket to be writable
-    return asyncPoll(socket, PollEvent::Out, [cb = std::move(cb), socket, buffer, n, ep = endpoint](int revents) mutable {
+    return asyncPoll(socket, PollEvent::Out, [cb = std::move(callback), socket, buffer, n, ep = endpoint](int revents) mutable {
         if (revents & PollEvent::Out) {
             auto bytes = socket.sendto(buffer, n, 0, &ep);
             if (bytes >= 0) {

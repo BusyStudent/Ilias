@@ -3,3 +3,9 @@
 /build
 /.cache
 compile_commands.json
+a.out
+*.o
+*.pch
+*.exe
+*.so
+*.dll

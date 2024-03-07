@@ -105,8 +105,8 @@ inline void MiniEventLoop::post(void (*fn)(void *), void *arg) {
 }
 inline void MiniEventLoop::timerSingleShot(int64_t ms, void (*fn)(void *), void *arg) {
     std::unique_lock<std::mutex> lock(mTimerMutex);
-    mTimers.emplace_back(
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(ms), fn, arg
+    mTimers.push_back(
+        {std::chrono::steady_clock::now() + std::chrono::milliseconds(ms), fn, arg}
     );
     std::push_heap(mTimers.begin(), mTimers.end());
     mTimerCond.notify_one();

@@ -8,7 +8,7 @@ using namespace ILIAS_NAMESPACE;
 
 // Test AwaitTransform
 template <>
-struct AwaitTransform<std::string> {
+struct ILIAS_NAMESPACE::AwaitTransform<std::string> {
     std::suspend_never transform(const std::string &s) {
         return {};
     }

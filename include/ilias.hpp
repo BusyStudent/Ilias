@@ -733,7 +733,7 @@ inline ssize_t SocketView::sendto(const void *buf, size_t len, int flags, const 
 // Helper 
 template <typename T, size_t N>
 ssize_t SocketView::send(const T (&buf)[N], int flags) const {
-    static_assert(std::is_pod<T>::value, "T must be POD type");
+    static_assert(std::is_standard_layout<T>::value && std::is_trivial<T>::value, "T must be POD type");
     return send(buf, sizeof(T) * N, flags);
 }
 

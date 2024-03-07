@@ -85,7 +85,7 @@ public:
         new (&mError) ErrorT(std::move(error));
     }
 
-    Expected(const Expected &other) CS_NOEXCEPT
+    Expected(const Expected &other) 
         : mType(other.mType)
     {
         if (mType == ErrorType) {
@@ -107,14 +107,14 @@ public:
         new (&mError) ErrorT(error.error());
     }
 
-    Expected &operator=(const UnexpectedT &other) CS_NOEXCEPT
+    Expected &operator=(const UnexpectedT &other) 
     {
         destory();
         mType = ErrorType;
         new (&mError) ErrorT(other.error());
         return *this;
     }
-    Expected &operator=(const Expected &other) CS_NOEXCEPT
+    Expected &operator=(const Expected &other) 
     {
         destory();
         mType = other.mType;
@@ -139,14 +139,14 @@ public:
         new (&mValue) ValueT(value);
         return *this;
     }
-    Expected &operator=(ErrorT &&error) CS_NOEXCEPT
+    Expected &operator=(ErrorT &&error) 
     {
         destory();
         mType = ErrorType;
         new (&mError) ErrorT(std::move(error));
         return *this;
     }
-    Expected &operator=(const ErrorT &error) CS_NOEXCEPT
+    Expected &operator=(const ErrorT &error) 
     {
         destory();
         mType = ErrorType;
@@ -154,7 +154,7 @@ public:
         return *this;
     }
 
-    operator bool() const CS_NOEXCEPT { return !mType; }
+    operator bool() const  { return !mType; }
     ValueT &operator*() { return mValue; }
     const ValueT &operator*() const { return mValue; }
     ValueT *operator->() { return &mValue; }
@@ -213,7 +213,7 @@ public:
         new (&mValue) ValueT(std::move(value));
     }
 
-    Expected(const Expected &other) CS_NOEXCEPT
+    Expected(const Expected &other) 
         : mType(other.mType)
     {
         if (mType == ValueType) {
@@ -243,7 +243,7 @@ public:
         return *this;
     }
 
-    Expected operator=(const Expected &other) CS_NOEXCEPT
+    Expected operator=(const Expected &other) 
     {
         destory();
         if (other.mType == ErrorType) {
@@ -278,7 +278,7 @@ public:
         return *this;
     }
 
-    operator bool() const CS_NOEXCEPT { return !mType; }
+    operator bool() const  { return !mType; }
 
     ValueT &operator*() { return mValue; }
     const ValueT &operator*() const { return mValue; }
@@ -340,7 +340,7 @@ public:
     {
     }
 
-    Expected(const Expected &other) CS_NOEXCEPT
+    Expected(const Expected &other) 
         : mType(other.mType),
           mError(other.mError)
     {
@@ -354,7 +354,7 @@ public:
 
     Expected(UnexpectedT &&error)
         : mType(ErrorType)
-        , ErrorT(error.error());
+        , mError(error.error())
     {
     }
 
@@ -365,7 +365,7 @@ public:
         return *this;
     }
 
-    Expected operator=(const Expected &other) CS_NOEXCEPT
+    Expected operator=(const Expected &other) 
     {
         if (other.mType == ErrorType) {
             mError = other.mError;
@@ -376,21 +376,21 @@ public:
         return *this;
     }
 
-    Expected operator=(const ErrorT &error) CS_NOEXCEPT
+    Expected operator=(const ErrorT &error) 
     {
         mType = ErrorType;
         mError = error;
         return *this;
     }
 
-    Expected operator=(ErrorT &&error) CS_NOEXCEPT
+    Expected operator=(ErrorT &&error) 
     {
         mType = ErrorType;
         mError = std::move(error);
         return *this;
     }
 
-    operator bool() const CS_NOEXCEPT { return !mType; }
+    operator bool() const  { return !mType; }
 
     bool has_value() const { return !mType; }
     ValueT value() const { }

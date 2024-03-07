@@ -532,7 +532,7 @@ private:
 template <typename T = void>
 class CallbackAwaitable {
 public:
-    using Type = std::conditional_t<std::is_pod_v<T>, T, T &&>;
+    using Type = std::conditional_t<std::is_trivial_v<T> && std::is_standard_layout_v<T>, T, T &&>;
     using ResumeFunc = Function<void(Type)>;
     using SuspendFunc = Function<void(ResumeFunc &&)>;
 
@@ -578,6 +578,8 @@ private:
 
     union Storage {
         Storage() { }
+        Storage(Storage &&) { }
+        Storage(const Storage &) { }
         ~Storage() { }
 
         T value;
