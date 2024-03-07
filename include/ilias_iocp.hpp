@@ -1,13 +1,16 @@
 #pragma once
 
-#include "ilias_async.hpp"
 #include "ilias.hpp"
 #include "ilias_expected.hpp"
+#include "ilias_backend.hpp"
 
 #include <Windows.h>
 #include <WinSock2.h>
 #include <MSWSock.h>
 #include <atomic>
+#include <thread>
+#include <mutex>
+#include <map>
 
 #pragma comment(lib, "mswsock.lib")
 
@@ -32,38 +35,38 @@ struct IOCPOverlapped {
     socket_t peerfd;
     DWORD dwflag;
     std::atomic_bool isCompleted;
-    std::function<void(Expected<std::pair<Socket, IPEndpoint>, SockError>)> AcceptCallback;
-    std::function<void(Expected<void, SockError>)> ConnectCallback;
-    std::function<void(Expected<size_t, SockError>)> RecvSendCallback;
+    AcceptHandler AcceptCallback;
+    ConnectHandler ConnectCallback;
+    Function<void(Expected<size_t, SockError>)> RecvSendCallback;
 };
 
 /**
  * @brief A Context for add watcher 
  * 
  */
-class IOCPContext {
+class IOCPContext final : public IOContext {
 public:
     IOCPContext();
     IOCPContext(const IOCPContext&) = delete;
     ~IOCPContext();
 
-    bool asyncInitalize(SocketView socket);
-    bool asyncCleanup(SocketView sock);
+    bool asyncInitialize(SocketView socket) override;
+    bool asyncCleanup(SocketView sock) override;
 
-    bool asyncCancel(SocketView socket, void *operation);
+    bool asyncCancel(SocketView socket, void *operation) override;
     void *asyncConnect(SocketView socket,
                             const IPEndpoint &ep, 
-                            std::function<void(Expected<void, SockError>)> &&callback);
+                            ConnectHandler &&callback) override;
     void *asyncAccept(SocketView socket,
-                        std::function<void(Expected<std::pair<Socket, IPEndpoint>, SockError>)> &&callback);
+                        AcceptHandler &&callback) override;
     void *asyncRecv(SocketView socket,
                     void *buf,
                     size_t n,
-                    std::function<void(Expected<size_t, SockError>)> &&callback);
+                    RecvHandler &&callback) override;
     void *asyncSend(SocketView socket,
                     const void *buf,
                     size_t n,
-                    std::function<void(Expected<size_t, SockError>)> &&callback);
+                    SendHandler &&callback) override;
 private:
     struct Fn {
         void (*fn)(void *);

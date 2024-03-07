@@ -2,6 +2,7 @@
 
 #include "ilias.hpp"
 #include "ilias_expected.hpp"
+#include "ilias_backend.hpp"
 
 // --- Import async backend
 #if 0
@@ -15,16 +16,7 @@
 #include "ilias_co.hpp"
 #endif
 
-#if defined(__cpp_lib_span)
-#include <span>
-#endif
-
 ILIAS_NS_BEGIN
-
-#if defined(__cpp_lib_coroutine)
-template <typename T>
-using AwaitResult = CallbackAwaitable<T>;
-#endif
 
 /**
  * @brief A helper class for impl async socket
@@ -44,6 +36,7 @@ public:
     auto isValid() const -> bool;
     auto localEndpoint() const -> IPEndpoint;
     auto close() -> Expected<void, SockError>;
+    auto context() const -> IOContext *;
     
     explicit operator SocketView() const noexcept;
 protected:
@@ -85,7 +78,7 @@ public:
      * @param timeout
      * @return AwaitResult<std::Expected<size_t, SockError> > bytes on ok, error on fail
      */
-    auto recv(void *buffer, size_t n, int timeout = -1) -> AwaitResult<Expected<size_t, SockError> >;
+    auto recv(void *buffer, size_t n, int timeout = -1) -> AwaitResult<RecvHandlerArgs>;
     /**
      * @brief Send data to
      * 
@@ -94,7 +87,7 @@ public:
      * @param timeout
      * @return AwaitResult<Expected<size_t, SockError> > 
      */
-    auto send(const void *buffer, size_t n, int timeout = -1) -> AwaitResult<Expected<size_t, SockError> >;
+    auto send(const void *buffer, size_t n, int timeout = -1) -> AwaitResult<SendHandlerArgs>;
     /**
      * @brief Connect to
      * 
@@ -102,7 +95,7 @@ public:
      * @param timeout
      * @return AwaitResult<Expected<void, SockError> > 
      */
-    auto connect(const IPEndpoint &addr, int timeout = -1) -> AwaitResult<Expected<void, SockError> >;
+    auto connect(const IPEndpoint &addr, int timeout = -1) -> AwaitResult<ConnectHandlerArgs>;
 #endif
 };
 
@@ -125,9 +118,9 @@ public:
     /**
      * @brief Waiting accept socket
      * 
-     * @return AwaitResult<Expected<std::pair<TcpClient, IPEndpoint> , SockError> > 
+     * @return AwaitResult<AcceptHandlerArgsT<TcpClient> > 
      */
-    auto accept() -> AwaitResult<Expected<std::pair<TcpClient, IPEndpoint> , SockError> >;
+    auto accept() -> AwaitResult<AcceptHandlerArgsT<TcpClient> >;
 #endif
 };
 
@@ -137,7 +130,10 @@ public:
     UdpSocket(IOContext &ctxt, int family);
     UdpSocket(IOContext &ctxt, Socket &&socket);
 
-    static UdpSocket from(socket_t sockfd);
+#if defined(__cpp_lib_coroutine)
+    auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint) -> AwaitResult<SendtoHandlerArgs>;
+    auto recvfrom(void *buffer, size_t n) -> AwaitResult<RecvfromHandlerArgs>;
+#endif
 };
 
 
@@ -153,6 +149,9 @@ inline AsyncSocket::~AsyncSocket() {
     if (mContext && mFd.isValid()) {
         mContext->asyncCleanup(mFd);
     }
+}
+inline auto AsyncSocket::context() const -> IOContext * {
+    return mContext;
 }
 inline auto AsyncSocket::close() -> Expected<void, SockError> {
     if (mContext && mFd.isValid()) {
@@ -191,8 +190,8 @@ inline auto TcpClient::remoteEndpoint() const -> IPEndpoint {
 }
 
 #if defined(__cpp_lib_coroutine)
-inline auto TcpClient::recv(void *buffer, size_t n, int timeout) -> AwaitResult<Expected<size_t, SockError> > {
-    using Awaitable = AwaitResult<Expected<size_t, SockError> >;
+inline auto TcpClient::recv(void *buffer, size_t n, int timeout) -> AwaitResult<RecvHandlerArgs> {
+    using Awaitable = AwaitResult<RecvHandlerArgs>;
     return Awaitable(
         [=, this](Awaitable::ResumeFunc &&func) {
             mContext->asyncRecv(mFd, buffer, n, [=, f = std::move(func)](auto result) mutable {
@@ -201,8 +200,8 @@ inline auto TcpClient::recv(void *buffer, size_t n, int timeout) -> AwaitResult<
         }
     );
 }
-inline auto TcpClient::send(const void *buffer, size_t n, int timeout) -> AwaitResult<Expected<size_t, SockError> > {
-    using Awaitable = AwaitResult<Expected<size_t, SockError> >;
+inline auto TcpClient::send(const void *buffer, size_t n, int timeout) -> AwaitResult<SendHandlerArgs> {
+    using Awaitable = AwaitResult<SendHandlerArgs>;
     return Awaitable(
         [=, this](Awaitable::ResumeFunc &&func) {
             mContext->asyncSend(mFd, buffer, n, [=, f = std::move(func)](auto result) mutable {
@@ -211,8 +210,8 @@ inline auto TcpClient::send(const void *buffer, size_t n, int timeout) -> AwaitR
         }
     );
 }
-inline auto TcpClient::connect(const IPEndpoint &endpoint, int timeout) -> AwaitResult<Expected<void, SockError> > {
-    using Awaitable = AwaitResult<Expected<void, SockError> >;
+inline auto TcpClient::connect(const IPEndpoint &endpoint, int timeout) -> AwaitResult<ConnectHandlerArgs> {
+    using Awaitable = AwaitResult<ConnectHandlerArgs>;
     return Awaitable(
         [=, this](Awaitable::ResumeFunc &&func) {
             mContext->asyncConnect(mFd, endpoint, [=, f = std::move(func)](auto result) mutable {
@@ -248,8 +247,8 @@ inline auto TcpServer::bind(const IPEndpoint &endpoint, int backlog) -> Expected
     return Expected<void, SockError>();
 }
 #if defined(__cpp_lib_coroutine)
-inline auto TcpServer::accept() -> AwaitResult<Expected<std::pair<TcpClient, IPEndpoint> , SockError> > {
-    using Awaitable = AwaitResult<Expected<std::pair<TcpClient, IPEndpoint> , SockError> >;
+inline auto TcpServer::accept() -> AwaitResult<AcceptHandlerArgsT<TcpClient> > {
+    using Awaitable = AwaitResult<AcceptHandlerArgsT<TcpClient> >;
     return Awaitable([this](Awaitable::ResumeFunc &&func) {
         mContext->asyncAccept(mFd, [this, cb = std::move(func)](auto &&result) mutable {
             if (!result) {
@@ -267,5 +266,17 @@ inline auto TcpServer::accept() -> AwaitResult<Expected<std::pair<TcpClient, IPE
 }
 #endif
 
+// --- UdpSocket Impl
+inline UdpSocket::UdpSocket() { }
+inline UdpSocket::UdpSocket(IOContext &ctxt, int family) :
+    AsyncSocket(ctxt, Socket::create(family, SOCK_DGRAM, IPPROTO_UDP)) 
+{
+
+}
+inline UdpSocket::UdpSocket(IOContext &ctxt, Socket &&socket): 
+    AsyncSocket(ctxt, std::move(socket)) 
+{
+
+}
 
 ILIAS_NS_END

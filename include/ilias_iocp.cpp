@@ -1,4 +1,5 @@
 #include "ilias_iocp.hpp"
+#include "ilias_latch.hpp"
 
 ILIAS_NS_BEGIN
 
@@ -51,7 +52,7 @@ inline IOCPContext::IOCPContext() {
     }
 
     // Add event socket
-    asyncInitalize(mEvent);
+    asyncInitialize(mEvent);
     // TODO:read event
     // asyncRecv(socket, buf, n)
     // Start Work ThrearegistWatcher = std::thread(&IOCPContext:addWatcher
@@ -61,7 +62,7 @@ inline IOCPContext::~IOCPContext() {
     mThread.join();
 }
 
-inline bool IOCPContext::asyncInitalize(SocketView socket) {
+inline bool IOCPContext::asyncInitialize(SocketView socket) {
     std::lock_guard<std::mutex> lock(mMutex);
     auto ret = ::CreateIoCompletionPort((HANDLE)socket.get(), mIocpFd, 0, mNumberOfCurrentThreads);
     if (ret == nullptr) {
@@ -110,7 +111,7 @@ bool IOCPContext::asyncCancel(SocketView socket, void *operation) {
 }
 
 void *IOCPContext::asyncConnect(SocketView socket, const IPEndpoint &ep,
-                                    std::function<void(Expected<void, SockError>)> &&callback) {
+                                    ConnectHandler &&callback) {
     std::lock_guard<std::mutex> lock(mMutex);
     auto iter = mIOCPOverlappedMap.find(socket.get());
     
@@ -143,8 +144,7 @@ void *IOCPContext::asyncConnect(SocketView socket, const IPEndpoint &ep,
 
 void *IOCPContext::asyncAccept(
     SocketView socket,
-    std::function<void(Expected<std::pair<Socket, IPEndpoint>, SockError>)>
-        &&callback) {
+    AcceptHandler &&callback) {
     std::lock_guard<std::mutex> lock(mMutex);
     auto iter = mIOCPOverlappedMap.find(socket.get());
 
@@ -196,7 +196,7 @@ void *IOCPContext::asyncAccept(
 
 void *IOCPContext::asyncRecv(
     SocketView socket, void *buf, size_t n,
-    std::function<void(Expected<size_t, SockError>)> &&callback) {
+    RecvHandler &&callback) {
     std::lock_guard<std::mutex> lock(mMutex);
     auto iter = mIOCPOverlappedMap.find(socket.get());
 
@@ -236,7 +236,7 @@ void *IOCPContext::asyncRecv(
 
 void *IOCPContext::asyncSend(
     SocketView socket, const void *buf, size_t n,
-    std::function<void(Expected<size_t, SockError>)> &&callback) {
+    SendHandler &&callback) {
     std::lock_guard<std::mutex> lock(mMutex);
     auto iter = mIOCPOverlappedMap.find(socket.get());
 

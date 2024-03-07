@@ -6,7 +6,7 @@ using namespace ILIAS_NAMESPACE;
 
 int main() {
     NativeEventLoop loop;
-    IOContext ctxt;
+    PollContext ctxt;
 
     loop.runTask([&]() -> Task<> {
         TcpClient client(ctxt, AF_INET);

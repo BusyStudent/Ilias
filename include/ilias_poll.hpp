@@ -1,9 +1,9 @@
 #pragma once
 
 #include "ilias_expected.hpp"
+#include "ilias_backend.hpp"
 #include "ilias_latch.hpp"
 #include "ilias.hpp"
-#include <functional>
 #include <thread>
 #include <atomic>
 #include <mutex>
@@ -14,15 +14,6 @@
 #endif
 
 ILIAS_NS_BEGIN
-
-// --- Function
-#if defined(__cpp_lib_move_only_function)
-template <typename ...Args>
-using Function = std::move_only_function<Args...>;
-#else
-template <typename ...Args>
-using Function = std::function<Args...>;
-#endif
 
 enum PollEvent : int {
     Timeout = -1,
@@ -69,26 +60,12 @@ private:
  * @brief A Context for add watcher 
  * 
  */
-class PollContext final : private IOWatcher {
+class PollContext final : public IOContext, private IOWatcher {
 public:
     PollContext();
     PollContext(const PollContext&) = delete;
     ~PollContext();
     
-    using RecvHandlerArgs = Expected<size_t, SockError>;
-    using RecvHandler = Function<void (RecvHandlerArgs &&)>;
-    using SendHandlerArgs = Expected<size_t, SockError>;
-    using SendHandler = Function<void (SendHandlerArgs &&)>;
-    using AcceptHandlerArgs = Expected<std::pair<Socket, IPEndpoint> , SockError>;
-    using AcceptHandler = Function<void (AcceptHandlerArgs &&)>;
-    using ConnectHandlerArgs = Expected<void, SockError>;
-    using ConnectHandler = Function<void (ConnectHandlerArgs &&)>;
-    
-    using RecvfromHandlerArgs = Expected<std::pair<size_t, IPEndpoint>, SockError>;
-    using RecvfromHandler = Function<void (RecvfromHandlerArgs &&)>;
-    using SendtoHandlerArgs = Expected<size_t, SockError>;
-    using SendtoHandler = Function<void (SendtoHandlerArgs &&)>;
-
     // Poll Watcher interface
     void addWatcher(SocketView socket, IOWatcher* watcher, int events);
     bool modifyWatcher(IOWatcher* watcher, int events);
@@ -96,17 +73,17 @@ public:
     IOWatcher *findWatcher(SocketView socket);
 
     // Async Interface
-    bool asyncInitialize(SocketView socket);
-    bool asyncCleanup(SocketView socket);
-    bool asyncCancel(SocketView, void *operation);
+    bool asyncInitialize(SocketView socket) override;
+    bool asyncCleanup(SocketView socket) override;
+    bool asyncCancel(SocketView, void *operation) override;
 
-    void *asyncRecv(SocketView socket, void *buffer, size_t n, RecvHandler &&cb);
-    void *asyncSend(SocketView socket, const void *buffer, size_t n, SendHandler &&cb);
-    void *asyncAccept(SocketView socket, AcceptHandler &&cb);
-    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, ConnectHandler &&cb);
+    void *asyncRecv(SocketView socket, void *buffer, size_t n, RecvHandler &&cb) override;
+    void *asyncSend(SocketView socket, const void *buffer, size_t n, SendHandler &&cb) override;
+    void *asyncAccept(SocketView socket, AcceptHandler &&cb) override;
+    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, ConnectHandler &&cb) override;
 
-    void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, RecvfromHandler &&cb);
-    void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, SendtoHandler &&cb);
+    void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, RecvfromHandler &&cb) override;
+    void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, SendtoHandler &&cb) override;
 
     // Poll
     void *asyncPoll(SocketView socket, int revent, Function<void(int revents)> &&cb);
@@ -513,9 +490,59 @@ inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endp
         cb(Unexpected(err));
     });
 }
+inline void *PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t n, RecvfromHandler &&cb) {
+    IPEndpoint endpoint;
+    auto bytes = socket.recvfrom(buffer, n, 0, &endpoint);
+    if (bytes >= 0) {
+        cb(std::make_pair(bytes, endpoint));
+        return nullptr;
+    }
+    auto err = SockError::fromErrno();
+    if (!err.isInProgress() && !err.isWouldBlock()) {
+        cb(Unexpected(err));
+        return nullptr;
+    }
+    // Ok, we need to wait for the socket to be readable
+    return asyncPoll(socket, PollEvent::In, [cb = std::move(cb), socket, buffer, n](int revents) mutable {
+        if (revents & PollEvent::In) {
+            IPEndpoint endpoint;
+            auto bytes = socket.recvfrom(buffer, n, 0, &endpoint);
+            if (bytes >= 0) {
+                cb(std::make_pair(bytes, endpoint));
+                return;
+            }
+        }
+        // Error, call callback
+        cb(Unexpected(SockError::fromErrno()));
+    });
+}
+inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, SendtoHandler &&cb) {
+    auto bytes = socket.sendto(buffer, n, 0, &endpoint);
+    if (bytes >= 0) {
+        cb(bytes);
+        return nullptr;
+    }
+    auto err = SockError::fromErrno();
+    if (!err.isInProgress() && !err.isWouldBlock()) {
+        cb(Unexpected(err));
+        return nullptr;
+    }
+    // Ok, we need to wait for the socket to be writable
+    return asyncPoll(socket, PollEvent::Out, [cb = std::move(cb), socket, buffer, n, ep = endpoint](int revents) mutable {
+        if (revents & PollEvent::Out) {
+            auto bytes = socket.sendto(buffer, n, 0, &ep);
+            if (bytes >= 0) {
+                cb(bytes);
+                return;
+            }
+        }
+        // Error, call callback
+        cb(Unexpected(SockError::fromErrno()));
+    });
+}
 
-
-
-using IOContext = PollContext;
+#if !defined(_WIN32)
+using NativeIOContext = PollContext;
+#endif
 
 ILIAS_NS_END
