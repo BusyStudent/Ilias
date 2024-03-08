@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdlib>
 #include <type_traits>
 
@@ -95,6 +96,16 @@ public:
         }
     }
 
+    Expected(Expected &&other) 
+        : mType(std::move(other.mType))
+    {
+        if (mType == ErrorType) {
+            new (&mError) ErrorT(std::move(other.mError));
+        } else {
+            new (&mValue) ValueT(std::move(other.mValue));
+        }
+    }
+
     Expected(const UnexpectedT &error)
         : mType(ErrorType)
     {
@@ -114,6 +125,15 @@ public:
         new (&mError) ErrorT(other.error());
         return *this;
     }
+
+    Expected &operator=(UnexpectedT &&other) 
+    {
+        destory();
+        mType = ErrorType;
+        new (&mError) ErrorT(std::move(other.error()));
+        return *this;
+    }
+
     Expected &operator=(const Expected &other) 
     {
         destory();
@@ -125,6 +145,19 @@ public:
         }
         return *this;
     }
+
+    Expected &operator=(Expected &&other) 
+    {
+        destory();
+        mType = std::move(other.mType);
+        if (mType == ErrorType) {
+            new (&mError) ErrorT(std::move(other.mError));
+        } else {
+            new (&mValue) ValueT(std::move(other.mValue));
+        }
+        return *this;
+    }
+
     Expected &operator=(ValueT &&value)
     {
         destory();
@@ -223,6 +256,16 @@ public:
         }
     }
 
+    Expected(Expected &&other) 
+        : mType(std::move(other.mType))
+    {
+        if (mType == ValueType) {
+            new (&mValue) ValueT(std::move(other.mValue));
+        } else {
+            new (&mError) ErrorT(std::move(other.mError));
+        }
+    }
+
     Expected(const UnexpectedT &error)
         : mType(ErrorType)
     {
@@ -243,6 +286,14 @@ public:
         return *this;
     }
 
+    Expected operator=(UnexpectedT &&error)
+    {
+        destory();
+        mType = ErrorType;
+        new (&mError) ErrorT(std::move(error.error()));
+        return *this;
+    }
+
     Expected operator=(const Expected &other) 
     {
         destory();
@@ -252,6 +303,18 @@ public:
         } else {
             new (&mValue) ValueT(other.mValue);
             mType = ValueType;
+        }
+        return *this;
+    }
+
+    Expected operator=(Expected &&other) 
+    {
+        destory();
+        mType = std::move(other.mType);
+        if (mType == ErrorType) {
+            new (&mError) ErrorT(std::move(other.mError));
+        } else {
+            new (&mValue) ValueT(std::move(other.mValue));
         }
         return *this;
     }
@@ -346,6 +409,12 @@ public:
     {
     }
 
+    Expected(Expected &&other) 
+        : mType(std::move(other.mType)),
+          mError(std::move(other.mError))
+    {
+    }
+
     Expected(const UnexpectedT &error)
         : mType(ErrorType)
         , mError(error.error())
@@ -365,6 +434,13 @@ public:
         return *this;
     }
 
+    Expected operator=(UnexpectedT &&error)
+    {
+        mType = ErrorType;
+        mError = std::move(error.error());
+        return *this;
+    }
+
     Expected operator=(const Expected &other) 
     {
         if (other.mType == ErrorType) {
@@ -372,6 +448,15 @@ public:
             mType = ErrorType;
         } else {
             mType = ValueType;
+        }
+        return *this;
+    }
+
+    Expected operator=(Expected &&other) 
+    {
+        mType = std::move(other.mType);
+        if (mType == ErrorType) {
+            mError = std::move(other.mError);
         }
         return *this;
     }
