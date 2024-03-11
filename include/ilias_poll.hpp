@@ -21,7 +21,6 @@
 ILIAS_NS_BEGIN
 
 enum PollEvent : int {
-    None = 0,
     In  = POLLIN,
     Out = POLLOUT,
     Err = POLLERR,
@@ -626,7 +625,7 @@ inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, siz
 }
 
 #if !defined(_WIN32)
-using NativeIOContext = PollContext;
+using PlatformIOContext = PollContext;
 #endif
 
 ILIAS_NS_END

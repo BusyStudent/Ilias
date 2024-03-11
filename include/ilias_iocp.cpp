@@ -56,9 +56,10 @@ inline IOCPContext::IOCPContext() {
     // TODO:read event
     // asyncRecv(socket, buf, n)
     // Start Work ThrearegistWatcher = std::thread(&IOCPContext:addWatcher
+    mThread = std::thread(&IOCPContext::_run, this);
 }
 inline IOCPContext::~IOCPContext() {
-    _stop();
+    // _stop();
     mThread.join();
 }
 
@@ -273,6 +274,27 @@ void *IOCPContext::asyncSend(
     iter->second->isCompleted = true;
     return nullptr;
 }
+void *IOCPContext::asyncRecvfrom(
+    SocketView socket,
+    void *buf,
+    size_t n,
+    RecvfromHandler &&callback) {
+
+    ILIAS_ASSERT_MSG(false, "Not Impl");
+
+    return nullptr;
+}
+void *IOCPContext::asyncSendto(
+    SocketView socket,
+    const void *buf,
+    size_t n,
+    const IPEndpoint &ep,
+    SendtoHandler &&callback) {
+    
+    ILIAS_ASSERT_MSG(false, "Not Impl");
+
+    return nullptr;
+}
 
 inline void IOCPContext::_run() {
     static IOCPOverlapped *data = nullptr;
@@ -387,34 +409,6 @@ inline void IOCPContext::_stop() {
     Fn fn;
     fn.fn = [](void *arg) { static_cast<IOCPContext *>(arg)->mRunning = false; };
     fn.arg = this;
-    _invoke(fn);
-}
-inline void IOCPContext::_invoke(Fn fn) {
-    struct Args {
-        Fn fn;
-        std::latch latch {1};
-    } args {fn};
-
-    Fn helperFn;
-    helperFn.fn = [](void *ptr) {
-        auto arg = static_cast<Args *>(ptr);
-        arg->fn.fn(arg->fn.arg);
-        arg->latch.count_down();
-    };
-    helperFn.arg = &args;
-    std::unique_lock<std::mutex> lock(mMutex);
-    mControl.send(&helperFn, sizeof(Fn));
-    lock.unlock();
-    args.latch.wait();
-}
-template <typename Callable>
-inline void IOCPContext::_invoke4(Callable &&callable) {
-    Fn fn;
-    fn.fn = [](void *callable) {
-        auto c = static_cast<Callable *>(callable);
-        (*c)();
-    };
-    fn.arg = &callable;
     _invoke(fn);
 }
 

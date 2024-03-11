@@ -67,6 +67,17 @@ public:
                     const void *buf,
                     size_t n,
                     SendHandler &&callback) override;
+    void *asyncRecvfrom(
+                    SocketView socket,
+                    void *buf,
+                    size_t n,
+                    RecvfromHandler &&callback) override;
+    void *asyncSendto(
+                    SocketView socket,
+                    const void *buf,
+                    size_t n,
+                    const IPEndpoint &ep,
+                    SendtoHandler &&callback) override;
 private:
     struct Fn {
         void (*fn)(void *);

@@ -4,9 +4,21 @@
 
 using namespace ILIAS_NAMESPACE;
 
+#ifdef _WIN32
+    #include "../include/ilias_iocp.hpp"
+    #include "../include/ilias_iocp.cpp"
+#else
+    #include "../include/ilias_poll.hpp"
+#endif
+
 int main() {
     NativeEventLoop loop;
+
+#ifdef _WIN32
+    IOCPContext ctxt;
+#else
     PollContext ctxt;
+#endif
 
     loop.runTask([&]() -> Task<> {
         TcpClient client(ctxt, AF_INET);

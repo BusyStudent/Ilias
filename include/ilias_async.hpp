@@ -4,13 +4,6 @@
 #include "ilias_expected.hpp"
 #include "ilias_backend.hpp"
 
-// --- Import async backend
-#if 0
-#include "ilias_iocp.hpp"
-#else
-#include "ilias_poll.hpp"
-#endif
-
 // --- Import coroutine if
 #if defined(__cpp_lib_coroutine)
 #include "ilias_co.hpp"
@@ -37,6 +30,7 @@ public:
     auto localEndpoint() const -> IPEndpoint;
     auto close() -> Expected<void, SockError>;
     auto context() const -> IOContext *;
+    auto cancel() const -> bool;
     
     explicit operator SocketView() const noexcept;
 protected:
@@ -162,6 +156,9 @@ inline auto AsyncSocket::close() -> Expected<void, SockError> {
     }
     return Expected<void, SockError>();
 }
+inline auto AsyncSocket::cancel() const -> bool {
+    return mContext->asyncCancel(mFd, nullptr);
+}
 inline auto AsyncSocket::localEndpoint() const -> IPEndpoint {
     return mFd.localEndpoint();
 }
@@ -278,5 +275,23 @@ inline UdpSocket::UdpSocket(IOContext &ctxt, Socket &&socket):
 {
 
 }
+#if defined(__cpp_lib_coroutine)
+inline auto UdpSocket::sendto(const void *buffer, size_t n, const IPEndpoint &endpoint) -> AwaitResult<SendtoHandlerArgs> {
+    using Awaitable = AwaitResult<SendtoHandlerArgs>;
+    return Awaitable([this, buffer, n, endpoint](Awaitable::ResumeFunc &&func) {
+        mContext->asyncSendto(mFd, buffer, n, endpoint, [this, cb = std::move(func)](auto &&result) mutable {
+            cb(std::move(result));
+        });
+    });
+}
+inline auto UdpSocket::recvfrom(void *buffer, size_t n) -> AwaitResult<RecvfromHandlerArgs> {
+    using Awaitable = AwaitResult<RecvfromHandlerArgs>;
+    return Awaitable([this, buffer, n](Awaitable::ResumeFunc &&func) {
+        mContext->asyncRecvfrom(mFd, buffer, n, [this, cb = std::move(func)](auto &&result) mutable {
+            cb(std::move(result));
+        });
+    });
+}
+#endif
 
 ILIAS_NS_END
