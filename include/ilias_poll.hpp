@@ -625,7 +625,7 @@ inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, siz
 }
 
 #if !defined(_WIN32)
-using PlatformIOContext = PollContext;
+using NativeIOContext = PollContext;
 #endif
 
 ILIAS_NS_END

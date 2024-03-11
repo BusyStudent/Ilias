@@ -320,6 +320,9 @@ public:
     bool    isValid() const;
     bool    isBlocking() const;
 
+    int     family() const;
+    int     type() const;
+    
     SockError error() const;
 
     template <typename T>
@@ -783,6 +786,31 @@ inline bool SocketView::ioctl(long cmd, u_long *pargs) const {
     return ::ioctlsocket(mFd, cmd, pargs) == 0;
 }
 #endif
+
+inline int SocketView::family() const {
+#ifdef _WIN32
+    ::WSAPROTOCOL_INFO info;
+    ::socklen_t len = sizeof(info);
+    if (::getsockopt(mFd, SOL_SOCKET, SO_PROTOCOL_INFO, (char*) &info, &len) != 0) {
+        return AF_UNSPEC;
+    }
+    return info.iAddressFamily;
+#else
+    return AF_UNSPEC; // TODO
+#endif
+}
+inline int SocketView::type() const {
+#ifdef _WIN32
+    ::WSAPROTOCOL_INFO info;
+    ::socklen_t len = sizeof(info);
+    if (::getsockopt(mFd, SOL_SOCKET, SO_PROTOCOL_INFO, (char*) &info, &len) != 0) {
+        return AF_UNSPEC;
+    }
+    return info.iSocketType;
+#else
+    return AF_UNSPEC; // TODO
+#endif
+}
 
 template <typename T>
 inline std::pair<T, IPEndpoint> SocketView::accept() const {

@@ -17,13 +17,12 @@
 ILIAS_NS_BEGIN
 
 enum IOCPEvent : int {
-    Timeout = -1,
-    None = 0,
-    Read = 1 << 0,
-    Write = 1 << 1,
-    Accept = 1 << 2,
-    Connect = 1 << 3,
-    Error = 1 << 4
+    Read     = 1 << 0,
+    ReadFrom = 1 << 1,
+    Write    = 1 << 2,
+    Accept   = 1 << 3,
+    Connect  = 1 << 4,
+    Error    = 1 << 5
 };
 
 struct IOCPOverlapped {
@@ -35,8 +34,13 @@ struct IOCPOverlapped {
     socket_t peerfd;
     DWORD dwflag;
     std::atomic_bool isCompleted;
+
+    uint8_t addressBuffer[sizeof(::sockaddr_storage) + 16]; //< Internal Used address buffer
+    int addressLength; //< address length (used by recvfrom)
+
     AcceptHandler AcceptCallback;
     ConnectHandler ConnectCallback;
+    RecvfromHandler RecvfromCallback;
     Function<void(Expected<size_t, SockError>)> RecvSendCallback;
 };
 
@@ -79,18 +83,10 @@ public:
                     const IPEndpoint &ep,
                     SendtoHandler &&callback) override;
 private:
-    struct Fn {
-        void (*fn)(void *);
-        void *arg;
-    };
-
     void _run();
     void _stop();
     void _dump();
-    void _invoke(Fn);
-    template <typename T>
-    void _invoke4(T &&callable);
-    void onEvent(IOCPOverlapped *overlapped);
+    void _onEvent(IOCPOverlapped *overlapped);
     
     SockInitializer       mInitalizer;
     LPFN_GETACCEPTEXSOCKADDRS mFnGetAcceptExSocketAddress = nullptr;
@@ -98,14 +94,10 @@ private:
     LPFN_CONNECTEX mFnConnectEx = nullptr;
 
     std::thread           mThread; //< Threads for network poll
-    std::atomic_bool      mRunning {true}; //< Flag to stop the thread
     std::mutex            mMutex;
     std::map<socket_t, std::unique_ptr<IOCPOverlapped>> mIOCPOverlappedMap;
     HANDLE mIocpFd = INVALID_HANDLE_VALUE; //< iocp fd
     const int mNumberOfCurrentThreads = 16;
-
-    Socket mEvent; //< Socket poll in workThread
-    Socket mControl; //< Socket for sending message
 };
 
 // using IOContext = IOCPContext;
