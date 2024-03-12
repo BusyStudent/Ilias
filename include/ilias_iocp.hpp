@@ -16,36 +16,9 @@
 
 ILIAS_NS_BEGIN
 
-enum IOCPEvent : int {
-    Read     = 1 << 0,
-    ReadFrom = 1 << 1,
-    Write    = 1 << 2,
-    Accept   = 1 << 3,
-    Connect  = 1 << 4,
-    Error    = 1 << 5
-};
-
-struct IOCPOverlapped {
-    OVERLAPPED overlap;
-    int event;
-    WSABUF wsaBuf;
-    DWORD byteTrans;
-    socket_t sockfd;
-    socket_t peerfd;
-    DWORD dwflag;
-    std::atomic_bool isCompleted;
-
-    uint8_t addressBuffer[sizeof(::sockaddr_storage) + 16]; //< Internal Used address buffer
-    int addressLength; //< address length (used by recvfrom)
-
-    AcceptHandler AcceptCallback;
-    ConnectHandler ConnectCallback;
-    RecvfromHandler RecvfromCallback;
-    Function<void(Expected<size_t, SockError>)> RecvSendCallback;
-};
-
+struct IOCPOverlapped;
 /**
- * @brief A Context for add watcher 
+ * @brief A Context for Windows IOCP
  * 
  */
 class IOCPContext final : public IOContext {
@@ -85,13 +58,14 @@ public:
 private:
     void _run();
     void _stop();
-    void _dump();
     void _onEvent(IOCPOverlapped *overlapped);
+    void _dump(IOCPOverlapped *overlapped);
     
     SockInitializer       mInitalizer;
     LPFN_GETACCEPTEXSOCKADDRS mFnGetAcceptExSocketAddress = nullptr;
     LPFN_ACCEPTEX mFnAcceptEx = nullptr;
     LPFN_CONNECTEX mFnConnectEx = nullptr;
+    LPFN_TRANSMITFILE mFnTransmitFile = nullptr;
 
     std::thread           mThread; //< Threads for network poll
     std::mutex            mMutex;
