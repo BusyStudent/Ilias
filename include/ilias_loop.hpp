@@ -162,7 +162,8 @@ inline void MiniEventLoop::_timerRun() {
 
         if (!mTimers.empty()) {
             // Wait
-            mTimerCond.wait_until(lock, mTimers.begin()->first);
+            auto expireTime = mTimers.begin()->first;
+            mTimerCond.wait_until(lock, expireTime);
         }
     }
 }

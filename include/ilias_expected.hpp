@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cstdlib>
 #include <type_traits>
 
 #if __cplusplus >= 202002L
@@ -22,7 +21,6 @@ template <typename E>
 using Unexpected = ::std::unexpected<E>;
 
 #else
-inline namespace _ilias_fallback {
 template <typename E>
 class Unexpected {
 public:
@@ -486,7 +484,6 @@ public:
 
     ~Expected() = default;
 };
-}
 
 #endif
 

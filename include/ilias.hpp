@@ -114,6 +114,20 @@ public:
     IPAddress6(const IPAddress6 &other) = default;
 
     std::string toString() const;
+
+    bool isAny() const;
+    bool isNone() const;
+    bool isLoopback() const;
+    bool isMulticast() const;
+
+    bool operator ==(const IPAddress6 &other) const;
+    bool operator !=(const IPAddress6 &other) const;
+
+    static IPAddress6 any();
+    static IPAddress6 none();
+    static IPAddress6 loopback();
+    static IPAddress6 fromString(const char *value);
+    static IPAddress6 fromHostname(const char *hostname);
 };
 
 /**
@@ -413,7 +427,9 @@ inline IPAddress4 IPAddress4::none() {
 }
 inline IPAddress4 IPAddress4::fromString(const char *address) {
     IPAddress4 addr;
-    addr.s_addr = ::inet_addr(address);
+    if (::inet_pton(AF_INET, address, &addr) != 1) {
+        return IPAddress4::none();
+    }
     return addr;
 }
 inline IPAddress4 IPAddress4::fromHostname(const char *hostnamne) {
@@ -440,6 +456,41 @@ inline std::string IPAddress6::toString() const {
     char buf[INET6_ADDRSTRLEN] {0};
     ::inet_ntop(AF_INET6, this, buf, sizeof(buf));
     return buf;
+}
+inline bool IPAddress6::isAny() const {
+    return IN6_IS_ADDR_UNSPECIFIED(this);
+}
+inline bool IPAddress6::isNone() const {
+    return IN6_IS_ADDR_UNSPECIFIED(this);
+}
+inline bool IPAddress6::isLoopback() const {
+    return IN6_IS_ADDR_LOOPBACK(this);
+}
+inline bool IPAddress6::isMulticast() const {
+    return IN6_IS_ADDR_MULTICAST(this);
+}
+inline bool IPAddress6::operator ==(const IPAddress6 &addr) const {
+    return IN6_ARE_ADDR_EQUAL(this, &addr);
+}
+inline bool IPAddress6::operator !=(const IPAddress6 &addr) const {
+    return !IN6_ARE_ADDR_EQUAL(this, &addr);
+}
+
+inline IPAddress6 IPAddress6::any() {
+    return ::in6_addr IN6ADDR_ANY_INIT;
+}
+inline IPAddress6 IPAddress6::none() {
+    return ::in6_addr IN6ADDR_ANY_INIT;
+}
+inline IPAddress6 IPAddress6::loopback() {
+    return ::in6_addr IN6ADDR_LOOPBACK_INIT;
+}
+inline IPAddress6 IPAddress6::fromString(const char *str) {
+    IPAddress6 addr;
+    if (::inet_pton(AF_INET6, str, &addr) != 1) {
+        return IPAddress6::any();
+    }
+    return addr;
 }
 
 // --- IPAddress Impl
@@ -796,7 +847,12 @@ inline int SocketView::family() const {
     }
     return info.iAddressFamily;
 #else
-    return AF_UNSPEC; // TODO
+    int family = 0;
+    ::socklen_t len = sizeof(family);
+    if (::getsockopt(mFd, SOL_SOCKET, SO_DOMAIN, &family, &len) != 0) {
+        return AF_UNSPEC;
+    }
+    return family;
 #endif
 }
 inline int SocketView::type() const {
@@ -804,11 +860,16 @@ inline int SocketView::type() const {
     ::WSAPROTOCOL_INFO info;
     ::socklen_t len = sizeof(info);
     if (::getsockopt(mFd, SOL_SOCKET, SO_PROTOCOL_INFO, (char*) &info, &len) != 0) {
-        return AF_UNSPEC;
+        return 0;
     }
     return info.iSocketType;
 #else
-    return AF_UNSPEC; // TODO
+    int type = 0;
+    ::socklen_t len = sizeof(type);
+    if (::getsockopt(mFd, SOL_SOCKET, SO_TYPE, &type, &len) != 0) {
+        return 0;
+    }
+    return type;
 #endif
 }
 

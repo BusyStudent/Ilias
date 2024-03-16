@@ -78,6 +78,7 @@ int main() {
         std::cout << "coToString return :" << str << std::endl;
         std::cout << "Part 2" << std::endl;
         co_await msleep(3000);
+        std::cout << "Part 3" << std::endl;
         co_return 0;
     }());
 }
