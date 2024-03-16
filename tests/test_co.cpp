@@ -66,7 +66,7 @@ auto anotherTask() -> Task<> {
 
 int main() {
     std::ios::sync_with_stdio(true);
-    NativeEventLoop loop;
+    MiniEventLoop loop;
 
     return loop.runTask([&]() -> Task<int> {
         std::cout << "Part 1" << std::endl;

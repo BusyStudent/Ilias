@@ -61,10 +61,16 @@ concept Awaitable = requires(T t) {
  */
 class EventLoop {
 public:
+    enum TimerFlags : int {
+        TimerDefault    = 0 << 0,
+        TimerSingleShot = 1 << 0, //< This timer is single shot (it will auto remove self)
+    };
+
     virtual void requestStop() = 0;
     virtual void run() = 0;
     virtual void post(void (*fn)(void *), void *arg = nullptr) = 0;
-    virtual void timerSingleShot(int64_t ms, void (*fn)(void *), void *arg) = 0;
+    virtual bool delTimer(uintptr_t timer) = 0;
+    virtual uintptr_t addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags = 0) = 0;
 
     /**
      * @brief Spawn a task add post it
@@ -693,11 +699,11 @@ inline CallbackAwaitable<> msleep(int64_t ms) {
             func();
             return;
         }
-        EventLoop::instance()->timerSingleShot(ms, [](void *ptr) {
+        EventLoop::instance()->addTimer(ms, [](void *ptr) {
             auto func = static_cast<CallbackAwaitable<>::ResumeFunc*>(ptr);
             (*func)();
             delete func;
-        }, new CallbackAwaitable<>::ResumeFunc(std::move(func)));
+        }, new CallbackAwaitable<>::ResumeFunc(std::move(func)), EventLoop::TimerSingleShot);
     });
 }
 

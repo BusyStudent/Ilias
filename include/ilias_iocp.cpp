@@ -42,7 +42,7 @@ struct IOCPOverlapped : OVERLAPPED {
     }
 };
 
-inline IOCPContext::IOCPContext() {
+IOCPContext::IOCPContext() {
     // Init iocp
     mIocpFd = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, mNumberOfCurrentThreads);
     ILIAS_ASSERT(mIocpFd != INVALID_HANDLE_VALUE);
@@ -98,7 +98,7 @@ inline IOCPContext::IOCPContext() {
 
     mThread = std::thread(&IOCPContext::_run, this);
 }
-inline IOCPContext::~IOCPContext() {
+IOCPContext::~IOCPContext() {
     _stop();
     mThread.join();
 
@@ -106,7 +106,7 @@ inline IOCPContext::~IOCPContext() {
     ::CloseHandle(mIocpFd);
 }
 
-inline bool IOCPContext::asyncInitialize(SocketView socket) {
+bool IOCPContext::asyncInitialize(SocketView socket) {
     std::lock_guard<std::mutex> lock(mMutex);
     auto ret = ::CreateIoCompletionPort((HANDLE)socket.get(), mIocpFd, 0, mNumberOfCurrentThreads);
     if (ret == nullptr) {
