@@ -30,6 +30,7 @@
     #define ILIAS_H_ERRNO   ::WSAGetLastError()
     #define ILIAS_ERROR_T   ::DWORD
     #define ILIAS_SOCKET_T  ::SOCKET
+    #define ILIAS_FD_T      ::HANDLE
     #define ILIAS_SSIZE_T     int
     #define ILIAS_BYTE_T      char
     #define ILIAS_CLOSE(s)  ::closesocket(s)
@@ -37,6 +38,8 @@
     #define ILIAS_ETIMEOUT  (WSAETIMEOUT)
     #include <WinSock2.h>
     #include <WS2tcpip.h>
+    #include <MSWSock.h>
+    #include <io.h>
 
     #ifdef _MSC_VER
         #pragma comment(lib, "Ws2_32.lib")
@@ -47,7 +50,8 @@
     #define ILIAS_H_ERRNO   (h_errno)
     #define ILIAS_ERROR_T     int
     #define ILIAS_SOCKET_T    int
-    #define ILIAS_SSIZE_T     int
+    #define ILIAS_FD_T        int
+    #define ILIAS_SSIZE_T   ::ssize_t
     #define ILIAS_BYTE_T      void
     #define ILIAS_CLOSE(s)  ::close(s)
     #define ILIAS_POLL      ::poll
@@ -71,6 +75,7 @@ using socket_t = ILIAS_SOCKET_T;
 using ssize_t  = ILIAS_SSIZE_T;
 using byte_t   = ILIAS_BYTE_T;
 using error_t  = ILIAS_ERROR_T;
+using fd_t     = ILIAS_FD_T;
 
 /**
  * @brief Wrapper for v4
@@ -171,7 +176,8 @@ private:
     enum {
         None = AF_UNSPEC,
         V4 = AF_INET,
-        V6 = AF_INET6
+        V6 = AF_INET6,
+        Unix = AF_UNIX,
     } mFamily = None;
 };
 
@@ -185,6 +191,7 @@ public:
     static_assert(AF_UNSPEC == 0, "We use mAddr.ss_family == 0 on invalid");
 
     IPEndpoint();
+    IPEndpoint(const char *str);
     IPEndpoint(::sockaddr_in addr4);
     IPEndpoint(::sockaddr_in6 addr6);
     IPEndpoint(::sockaddr_storage storage);
@@ -211,6 +218,7 @@ public:
     bool operator ==(const IPEndpoint &rhs) const;
     bool operator !=(const IPEndpoint &rhs) const;
 
+    static IPEndpoint fromString(const char *str);
     static IPEndpoint fromRaw(const void *data, size_t size);
     template <typename T>
     static IPEndpoint fromRaw(const T &data);
@@ -536,7 +544,11 @@ inline bool IPAddress::compare(const IPAddress &other) const {
     if (family() != other.family()) {
         return false;
     }
-    return ::memcmp(&mStorage, &other.mStorage, length()) == 0;
+    switch (mFamily) {
+        case V4:  return data<IPAddress4>() == other.data<IPAddress4>();
+        case V6:  return data<IPAddress6>() == other.data<IPAddress6>();
+        default:  return true; //< All are invalid address
+    }
 }
 inline bool IPAddress::operator ==(const IPAddress &other) const {
     return compare(other);
@@ -576,6 +588,7 @@ inline IPAddress IPAddress::fromRaw(const T &data) {
 
 // --- IPEndpoint Impl
 inline IPEndpoint::IPEndpoint() { }
+inline IPEndpoint::IPEndpoint(const char *str) : IPEndpoint(fromString(str)) { }
 inline IPEndpoint::IPEndpoint(::sockaddr_in addr4) { ::memcpy(&mAddr, &addr4, sizeof(addr4)); }
 inline IPEndpoint::IPEndpoint(::sockaddr_in6 addr6) { ::memcpy(&mAddr, &addr6, sizeof(addr6)); }
 inline IPEndpoint::IPEndpoint(::sockaddr_storage addr) : mAddr(addr) { }
@@ -640,6 +653,9 @@ inline std::string IPEndpoint::toString() const {
     if (!isValid()) {
         return std::string();
     }
+    if (family() == AF_INET6) {
+        return '[' + address().toString() + ']' + ':' + std::to_string(port());
+    }
     return address().toString() + ':' + std::to_string(port());
 }
 inline const void *IPEndpoint::data() const {
@@ -664,6 +680,30 @@ inline bool IPEndpoint::operator !=(const IPEndpoint &other) const {
     return !compare(other);
 }
 
+inline IPEndpoint IPEndpoint::fromString(const char *str) {
+    std::string buffer(str);
+
+    // Split to addr and port
+    auto pos = buffer.find(':');
+    if (pos == buffer.npos || pos == 0) {
+        return IPEndpoint();
+    }
+    buffer[pos] = '\0';
+    
+    int port = 0;
+    if (::sscanf(buffer.c_str() + pos + 1, "%d", &port) != 1) {
+        return IPEndpoint();
+    }
+    IPAddress addr;
+    if (buffer.front() == '[' && buffer[pos - 1] == ']') {
+        buffer[pos - 1] = '\0';
+        addr = IPAddress::fromString(buffer.c_str() + 1);
+    }
+    else {
+        addr = IPAddress::fromString(buffer.c_str());
+    }
+    return IPEndpoint(addr, port);
+}
 inline IPEndpoint IPEndpoint::fromRaw(const void *raw, size_t len) {
     switch (len) {
         case sizeof(::sockaddr_in):

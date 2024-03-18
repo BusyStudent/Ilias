@@ -7,6 +7,11 @@ end
 
 set_languages("c++latest")
 
+target("test_httpserver")
+    set_kind("binary")
+    add_files("tests/test_httpserver.cpp")
+target_end()
+
 target("test_addr")
     set_kind("binary")
     add_files("tests/test_addr.cpp")
