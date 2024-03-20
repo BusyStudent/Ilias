@@ -37,7 +37,7 @@ static_assert(sizeof(DnsHeader) == 12, "DnsHeader size mismatch");
 class DnsQuery {
 public:    
     DnsQuery(const char *hostname);
-    DnsQuery();
+    ~DnsQuery();
 
     /**
      * @brief Fill the query request data to buffer
@@ -92,7 +92,7 @@ inline DnsQuery::DnsQuery(const char *name) : mHostname(name) {
 }
 inline DnsQuery::~DnsQuery() { }
 
-bool DnsQuery::fillBuffer(uint16_t transId, std::vector<uint8_t> &buffer) const {
+inline bool DnsQuery::fillBuffer(uint16_t transId, std::vector<uint8_t> &buffer) const {
     if (!mEncodedName.empty()) {
         return false;
     }

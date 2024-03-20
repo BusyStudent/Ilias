@@ -716,8 +716,8 @@ inline auto msleep(int64_t ms) {
         bool await_ready() const noexcept {
             return ms <= 0;
         }
-        void await_suspend(ResumeHandle &&resumeHandle) noexcept {
-            resumeHandle = std::move(resumeHandle);
+        void await_suspend(ResumeHandle &&handle) noexcept {
+            resumeHandle = std::move(handle);
             EventLoop::instance()->addTimer(ms, [](void *resume) {
                 auto a = static_cast<Awaitable*>(resume);
                 a->resumeHandle();

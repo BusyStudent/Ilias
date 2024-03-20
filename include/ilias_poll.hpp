@@ -22,6 +22,7 @@
 ILIAS_NS_BEGIN
 
 enum PollEvent : int {
+    Timeout = -1,
     In  = POLLIN,
     Out = POLLOUT,
     Err = POLLERR,
@@ -43,6 +44,8 @@ private:
     socket_t mFd = ILIAS_INVALID_SOCKET;
     int64_t  mPollfdIdx = -1; //< Location of it's pollfd
     int      mPollEvents = 0; //< Info of it's request events
+    bool     mTimeoutCheck = false; //< Is this watcher has timeout check
+    std::multimap<std::chrono::steady_clock::time_point, IOWatcher*>::iterator mTimeout;
 friend class PollContext;
 };
 
@@ -72,8 +75,8 @@ public:
     ~PollContext();
     
     // Poll Watcher interface
-    bool addWatcher(SocketView socket, IOWatcher* watcher, int events);
-    bool modifyWatcher(IOWatcher* watcher, int events);
+    bool addWatcher(SocketView socket, IOWatcher* watcher, int events, int64_t timeout = -1);
+    bool modifyWatcher(IOWatcher* watcher, int events, int64_t timeout = -1);
     bool removeWatcher(IOWatcher* watcher);
     IOWatcher *findWatcher(SocketView socket);
 
@@ -105,14 +108,19 @@ private:
     void _invoke(Fn);
     template <typename T>
     void _invoke4(T &&callable);
+    void _notifyTimeout();
+    void _removeTimeout(IOWatcher *);
+    void _addTimeout(IOWatcher *, int64_t timeout);
+    int  _waitDuration();
     void onEvent(int events) override;
     
-    SockInitializer       mInitalizer;
+    SockInitializer mInitalizer;
 
-    std::thread           mThread; //< Threads for network poll
-    std::atomic_bool      mRunning {true}; //< Flag to stop the thread
-    std::mutex            mMutex;
+    std::thread      mThread; //< Threads for network poll
+    std::atomic_bool mRunning {true}; //< Flag to stop the thread
+    std::mutex       mMutex;
     std::map<socket_t, IOWatcher*> mWatchers;
+    std::multimap<std::chrono::steady_clock::time_point, IOWatcher *> mTimeoutQueue; //< For collect timeout
 
 #if defined(__linux)
     int mEpollfd = -1;
@@ -162,7 +170,7 @@ inline void PollContext::_run() {
 #ifndef __linux
     std::vector<::pollfd> collected;
     while (mRunning) {
-        auto n = ILIAS_POLL(mPollfds.data(), mPollfds.size(), -1);
+        auto n = ILIAS_POLL(mPollfds.data(), mPollfds.size(), _waitDuration());
         if (n < 0) {
             ::printf("[Ilias::PollContext] Poll Error %s\n", SockError::fromErrno().message().c_str());
         }
@@ -182,6 +190,8 @@ inline void PollContext::_run() {
             _notify(v);
         }
         collected.clear();
+        //< Check timeouted
+        _notifyTimeout();
     }
 #else
     // Check EPoll Events as same as Poll
@@ -192,7 +202,7 @@ inline void PollContext::_run() {
 
     std::array<::epoll_event, 1024> events;
     while (mRunning) {
-        auto n = ::epoll_wait(mEpollfd, events.data(), events.size(), -1);
+        auto n = ::epoll_wait(mEpollfd, events.data(), events.size(), _waitDuration());
         if (n < 0) {
             ::printf("[Ilias::PollContext] Epoll Error %s\n", SockError::fromErrno().message().c_str());
         }
@@ -201,8 +211,11 @@ inline void PollContext::_run() {
             if (!watcher) {
                 continue;
             }
+            _removeTimeout(watcher);
             watcher->onEvent(events[i].events);
         }
+        //< Check timeouted
+        _notifyTimeout();
     }
 #endif
 
@@ -213,7 +226,50 @@ inline void PollContext::_notify(const ::pollfd &pfd) {
         return;
     }
     auto &watcher = iter->second;
+    _removeTimeout(watcher);
     watcher->onEvent(pfd.revents);
+}
+inline void PollContext::_notifyTimeout() {
+    auto now = std::chrono::steady_clock::now();
+    for (auto iter = mTimeoutQueue.begin(); iter != mTimeoutQueue.end(); ) {
+        if (iter->first > now) {
+            break;
+        }
+        auto watcher = iter->second;
+        // Reset timeout flags
+        watcher->mTimeoutCheck = false;
+        watcher->mTimeout = mTimeoutQueue.end();
+        iter = mTimeoutQueue.erase(iter);
+
+        // Notify
+        watcher->onEvent(PollEvent::Timeout);
+    }
+}
+inline void PollContext::_removeTimeout(IOWatcher *watcher) {
+    if (!watcher->mTimeoutCheck) {
+        return;
+    }
+    mTimeoutQueue.erase(watcher->mTimeout);
+    watcher->mTimeoutCheck = false;
+    watcher->mTimeout = mTimeoutQueue.end();
+}
+inline void PollContext::_addTimeout(IOWatcher *watcher, int64_t timeout) {
+    if (timeout <= 0) {
+        return;
+    }
+    ILIAS_ASSERT(!watcher->mTimeoutCheck);
+    watcher->mTimeoutCheck = true;
+    watcher->mTimeout = mTimeoutQueue.emplace(
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout),
+        watcher
+    );
+}
+inline int PollContext::_waitDuration() {
+    if (mTimeoutQueue.empty()) {
+        return -1;
+    }
+    auto diff = mTimeoutQueue.begin()->first - std::chrono::steady_clock::now();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(diff).count();
 }
 inline void PollContext::_dump() {
 #if !defined(NDEBUG)
@@ -239,7 +295,7 @@ inline void PollContext::_dump() {
     }
 #endif
 }
-inline bool PollContext::addWatcher(SocketView socket, IOWatcher *watcher, int events) {
+inline bool PollContext::addWatcher(SocketView socket, IOWatcher *watcher, int events, int64_t timeout) {
     if (mThread.joinable()) {
         if (mThread.get_id() != std::this_thread::get_id()) {
             bool val = false;
@@ -277,10 +333,12 @@ inline bool PollContext::addWatcher(SocketView socket, IOWatcher *watcher, int e
     mWatchers.emplace(socket.get(), watcher);
 #endif
 
+    _addTimeout(watcher, timeout);
+
     _dump();
     return true;
 }
-inline bool PollContext::modifyWatcher(IOWatcher *watcher, int events) {
+inline bool PollContext::modifyWatcher(IOWatcher *watcher, int events, int64_t timeout) {
     if (mThread.get_id() != std::this_thread::get_id()) {
         bool val = false;
         _invoke4([=, this, &val]() {
@@ -308,6 +366,8 @@ inline bool PollContext::modifyWatcher(IOWatcher *watcher, int events) {
 #endif
     // Ok, do Common
     watcher->mPollEvents = events;
+    _removeTimeout(watcher);
+    _addTimeout(watcher, timeout);
 
     _dump();
     return true;
@@ -357,6 +417,7 @@ inline bool PollContext::removeWatcher(IOWatcher *watcher) {
     watcher->mFd = ILIAS_INVALID_SOCKET;
     watcher->mPollEvents = 0;
 #endif
+    _removeTimeout(watcher);
 
     _dump();
     return true;
@@ -453,10 +514,6 @@ inline void *PollContext::asyncPoll(SocketView socket, int revent, int64_t timeo
     if (!operation) {
         return 0;
     }
-    if (timeout > 0) {
-        // TODO Timeout
-        ::printf("TODO: Timeout\n");
-    }
     operation->setCallback([this, operation, b = std::move(cb)](int revents) mutable {
         // Remove it
         removeWatcher(operation);
@@ -464,7 +521,7 @@ inline void *PollContext::asyncPoll(SocketView socket, int revent, int64_t timeo
         b(revents);
         delete operation;
     });
-    addWatcher(socket, operation, revent);
+    addWatcher(socket, operation, revent, timeout);
     return operation;
 }
 inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout, SendHandler &&callback) {
@@ -483,6 +540,10 @@ inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_
 
     // Ok, we need to wait for the socket to be writable
     return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
+        if (revents == PollEvent::Timeout) {
+            cb(Unexpected(SockError(ETIMEDOUT)));
+            return;
+        }
         if (revents & PollEvent::Out) {
             // Ok, call callback
             auto bytes = socket.send(buffer, n);
@@ -514,6 +575,10 @@ inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, i
     }
     // Ok, wait readable
     return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
+        if (revents == PollEvent::Timeout) {
+            cb(Unexpected(SockError(ETIMEDOUT)));
+            return;
+        }
         if (revents & PollEvent::In) {
             auto bytes = socket.recv(buffer, n);
             if (bytes >= 0) {
@@ -542,6 +607,10 @@ inline void *PollContext::asyncAccept(SocketView socket, int64_t timeout, Accept
         return nullptr;
     }
     return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket](int revents) mutable {
+        if (revents == PollEvent::Timeout) {
+            cb(Unexpected(SockError(ETIMEDOUT)));
+            return;
+        }
         if (revents & PollEvent::In) {
             auto pair = socket.accept<Socket>();
             if (pair.first.isValid()) {
@@ -568,6 +637,10 @@ inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endp
     }
     // Ok, we need to wait for the socket to be writable
     return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, endpoint](int revents) mutable {
+        if (revents == PollEvent::Timeout) {
+            cb(Unexpected(SockError(ETIMEDOUT)));
+            return;
+        }
         auto err = socket.error();
         if (err.isOk() && (revents & PollEvent::Out)) {
             // Ok
@@ -592,6 +665,10 @@ inline void *PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t 
     }
     // Ok, we need to wait for the socket to be readable
     return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
+        if (revents == PollEvent::Timeout) {
+            cb(Unexpected(SockError(ETIMEDOUT)));
+            return;
+        }
         if (revents & PollEvent::In) {
             IPEndpoint endpoint;
             auto bytes = socket.recvfrom(buffer, n, 0, &endpoint);
@@ -617,6 +694,10 @@ inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, siz
     }
     // Ok, we need to wait for the socket to be writable
     return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, buffer, n, ep = endpoint](int revents) mutable {
+        if (revents == PollEvent::Timeout) {
+            cb(Unexpected(SockError(ETIMEDOUT)));
+            return;
+        }
         if (revents & PollEvent::Out) {
             auto bytes = socket.sendto(buffer, n, 0, &ep);
             if (bytes >= 0) {
