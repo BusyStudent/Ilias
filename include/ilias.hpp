@@ -35,11 +35,10 @@
     #define ILIAS_BYTE_T      char
     #define ILIAS_CLOSE(s)  ::closesocket(s)
     #define ILIAS_POLL      ::WSAPoll
-    #define ILIAS_ETIMEOUT  (WSAETIMEOUT)
+    #define ILIAS_ETIMEDOUT  (WSAETIMEDOUT)
     #include <WinSock2.h>
     #include <WS2tcpip.h>
     #include <MSWSock.h>
-    #include <io.h>
 
     #ifdef _MSC_VER
         #pragma comment(lib, "Ws2_32.lib")
@@ -55,7 +54,7 @@
     #define ILIAS_BYTE_T      void
     #define ILIAS_CLOSE(s)  ::close(s)
     #define ILIAS_POLL      ::poll
-    #define ILIAS_ETIMEOUT  (ETIMEDOUT)
+    #define ILIAS_ETIMEDOUT  (ETIMEDOUT)
 
     #include <sys/socket.h>
     #include <netinet/in.h>

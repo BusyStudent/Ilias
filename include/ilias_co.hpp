@@ -431,28 +431,51 @@ public:
     }
 };
 
-// --- PromiseRef Impl
-class PromiseRef {
+// --- ResumeHandle
+class ResumeHandle : public AllocBase {
 public:
-    PromiseRef(PromiseBase *promise) : mPtr(promise) {
+    ResumeHandle() { }
+    template <typename T>
+    ResumeHandle(std::coroutine_handle<Promise<T> > handle) : mPtr(&handle.promise()) {
+        _ref();
+        mPtr->set_suspend_by_await(true);
+    }
+    ResumeHandle(const ResumeHandle &h) : mPtr(h.mPtr) {
         _ref();
     }
-    PromiseRef(const PromiseRef &ref) : mPtr(ref.mPtr) {
-        _ref();
+    ResumeHandle(ResumeHandle &&h) : mPtr(h.mPtr) {
+        h.mPtr = nullptr;
     }
-    ~PromiseRef() {
+    ~ResumeHandle() {
         _deref();
     }
 
-    PromiseBase &operator *() const noexcept {
-        return *mPtr;
+    void resume() noexcept {
+        ILIAS_ASSERT(mPtr);
+        mPtr->resume_later();
+        mPtr = nullptr;
     }
-    PromiseBase *operator ->() const noexcept {
-        return mPtr;
+    void operator ()() noexcept {
+        resume();
     }
-
-    PromiseRef &operator =(const PromiseRef &ref) = delete;
-    PromiseRef &operator =(PromiseRef &&ref) = delete;
+    ResumeHandle &operator =(const ResumeHandle &ref) {
+        if (this == &ref) {
+            return *this;
+        }
+        _deref();
+        mPtr = ref.mPtr;
+        _ref();
+        return *this;
+    }
+    ResumeHandle &operator =(ResumeHandle &&ref) {
+        if (this == &ref) {
+            return *this;
+        }
+        _deref();
+        mPtr = ref.mPtr;
+        ref.mPtr = nullptr;
+        return *this;
+    }
 private:
     void _ref() {
         if (mPtr) {
@@ -465,13 +488,14 @@ private:
         }
     }
     PromiseBase *mPtr = nullptr;
+    void        *mUser = nullptr;
 };
 
 // --- TaskAwaitable Impl
 template <typename T>
 class TaskAwaitable {
 public:
-    TaskAwaitable(Task<T> &t) : mTask(std::move(t)) { }
+    TaskAwaitable(Task<T> &&t) : mTask(std::move(t)) { }
     TaskAwaitable(const Task<T> &t) : mTask(t) { }
     TaskAwaitable(const TaskAwaitable &) = delete;
     TaskAwaitable(TaskAwaitable &&) = default;
@@ -538,8 +562,16 @@ private:
 template <typename T = void>
 class CallbackAwaitable {
 public:
-    using Type = std::conditional_t<std::is_trivial_v<T> && std::is_standard_layout_v<T>, T, T &&>;
-    using ResumeFunc = Function<void(Type)>;
+    struct ResumeFunc : ResumeHandle {
+        using Type = std::conditional_t<std::is_trivial_v<T> && std::is_standard_layout_v<T>, T, T &&>;
+        using ResumeHandle::ResumeHandle;
+
+        void operator ()(Type t) noexcept {
+            awaitable->_put(std::forward<T>(t));
+            resume();
+        }
+        CallbackAwaitable *awaitable;
+    };
     using SuspendFunc = Function<void(ResumeFunc &&)>;
 
     CallbackAwaitable(SuspendFunc &&func) : mFunc(std::move(func)) { }
@@ -554,10 +586,11 @@ public:
     bool await_ready() const noexcept {
         return false;
     }
-    template <typename U>
-    void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
-        _await_suspend(&h.promise());
+    void await_suspend(ResumeFunc &&func) noexcept {
+        func.awaitable = this;
+        mFunc(std::move(func));
     }
+
     T await_resume() noexcept {
         ILIAS_ASSERT(mHasValue);
         struct Guard {
@@ -570,16 +603,9 @@ public:
         return std::move(mStorage.value);
     }
 private:
-    void _await_suspend(PromiseBase *promise) {
-        promise->set_suspend_by_await(true);
-        mFunc([p = PromiseRef(promise), this](T &&v) {
-            _resume(*p, std::move(v));
-        });
-    }
-    void _resume(PromiseBase &promise, T &&value) {
+    void _put(T &&value) {
         new (&mStorage.value) T(std::move(value));
         mHasValue = true;
-        promise.resume_later();
     }
 
     union Storage {
@@ -597,7 +623,7 @@ private:
 template <>
 class CallbackAwaitable<void> {
 public:
-    using ResumeFunc = Function<void()>;
+    using ResumeFunc = ResumeHandle;
     using SuspendFunc = Function<void(ResumeFunc &&)>;
 
     CallbackAwaitable(SuspendFunc &&func) : mFunc(std::move(func)) { }
@@ -607,19 +633,11 @@ public:
     bool await_ready() const noexcept {
         return false;
     }
-    template <typename U>
-    void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
-        _await_suspend(&h.promise());
+    void await_suspend(ResumeHandle resumeHandle) noexcept {
+        mFunc(std::move(resumeHandle));
     }
     void await_resume() const noexcept {}
 private:
-    void _await_suspend(PromiseBase *promise) noexcept {
-        promise->set_suspend_by_await(true);
-        mFunc([p = PromiseRef(promise)]() {
-            p->resume_later();
-        });
-    }
-
     SuspendFunc mFunc;
 };
 
@@ -693,18 +711,25 @@ inline void EventLoop::quit() {
 }
 
 // --- Utils Function
-inline CallbackAwaitable<> msleep(int64_t ms) {
-    return CallbackAwaitable<>([ms](CallbackAwaitable<>::ResumeFunc &&func) {
-        if (ms == 0) {
-            func();
-            return;
+inline auto msleep(int64_t ms) {
+    struct Awaitable {
+        bool await_ready() const noexcept {
+            return ms <= 0;
         }
-        EventLoop::instance()->addTimer(ms, [](void *ptr) {
-            auto func = static_cast<CallbackAwaitable<>::ResumeFunc*>(ptr);
-            (*func)();
-            delete func;
-        }, new CallbackAwaitable<>::ResumeFunc(std::move(func)), EventLoop::TimerSingleShot);
-    });
+        void await_suspend(ResumeHandle &&resumeHandle) noexcept {
+            resumeHandle = std::move(resumeHandle);
+            EventLoop::instance()->addTimer(ms, [](void *resume) {
+                auto a = static_cast<Awaitable*>(resume);
+                a->resumeHandle();
+            }, this, EventLoop::TimerSingleShot);
+        }
+        void await_resume() const noexcept {
+
+        }
+        int64_t ms;
+        ResumeHandle resumeHandle;
+    };
+    return Awaitable {ms};
 }
 
 ILIAS_NS_END

@@ -5,6 +5,7 @@
 #include "ilias_latch.hpp"
 #include "ilias.hpp"
 #include <thread>
+#include <chrono>
 #include <atomic>
 #include <mutex>
 #include <map>
@@ -81,16 +82,16 @@ public:
     bool asyncCleanup(SocketView socket) override;
     bool asyncCancel(SocketView, void *operation) override;
 
-    void *asyncRecv(SocketView socket, void *buffer, size_t n, RecvHandler &&cb) override;
-    void *asyncSend(SocketView socket, const void *buffer, size_t n, SendHandler &&cb) override;
-    void *asyncAccept(SocketView socket, AcceptHandler &&cb) override;
-    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, ConnectHandler &&cb) override;
+    void *asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvHandler &&cb) override;
+    void *asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout, SendHandler &&cb) override;
+    void *asyncAccept(SocketView socket, int64_t timeout, AcceptHandler &&cb) override;
+    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout, ConnectHandler &&cb) override;
 
-    void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, RecvfromHandler &&cb) override;
-    void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, SendtoHandler &&cb) override;
+    void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvfromHandler &&cb) override;
+    void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout, SendtoHandler &&cb) override;
 
     // Poll
-    void *asyncPoll(SocketView socket, int revent, Function<void(int revents)> &&cb);
+    void *asyncPoll(SocketView socket, int revent, int64_t timeout, Function<void(int revents)> &&cb);
 private:
     struct Fn {
         void (*fn)(void *);
@@ -447,10 +448,14 @@ inline bool PollContext::asyncCancel(SocketView socket, void *op) {
     delete operation;
     return v;
 }
-inline void *PollContext::asyncPoll(SocketView socket, int revent, Function<void(int revents)> &&cb) {
+inline void *PollContext::asyncPoll(SocketView socket, int revent, int64_t timeout, Function<void(int revents)> &&cb) {
     auto operation = new PollOperation;
     if (!operation) {
         return 0;
+    }
+    if (timeout > 0) {
+        // TODO Timeout
+        ::printf("TODO: Timeout\n");
     }
     operation->setCallback([this, operation, b = std::move(cb)](int revents) mutable {
         // Remove it
@@ -462,7 +467,7 @@ inline void *PollContext::asyncPoll(SocketView socket, int revent, Function<void
     addWatcher(socket, operation, revent);
     return operation;
 }
-inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, SendHandler &&callback) {
+inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout, SendHandler &&callback) {
     auto bytes = socket.send(buffer, n);
     if (bytes >= 0) {
         // Ok, call callback
@@ -477,7 +482,7 @@ inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_
     }
 
     // Ok, we need to wait for the socket to be writable
-    return asyncPoll(socket, PollEvent::Out, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
+    return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
         if (revents & PollEvent::Out) {
             // Ok, call callback
             auto bytes = socket.send(buffer, n);
@@ -494,7 +499,7 @@ inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_
         }
     });
 }
-inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, RecvHandler &&callback) {
+inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvHandler &&callback) {
     auto bytes = socket.recv(buffer, n);
     if (bytes >= 0) {
         // Ok, call callback
@@ -508,7 +513,7 @@ inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, R
         return nullptr;
     }
     // Ok, wait readable
-    return asyncPoll(socket, PollEvent::In, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
+    return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
         if (revents & PollEvent::In) {
             auto bytes = socket.recv(buffer, n);
             if (bytes >= 0) {
@@ -524,7 +529,7 @@ inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, R
         }
     });
 }
-inline void *PollContext::asyncAccept(SocketView socket, AcceptHandler &&callback) {
+inline void *PollContext::asyncAccept(SocketView socket, int64_t timeout, AcceptHandler &&callback) {
     auto pair = socket.accept<Socket>();
     if (pair.first.isValid()) {
         // Got value
@@ -536,7 +541,7 @@ inline void *PollContext::asyncAccept(SocketView socket, AcceptHandler &&callbac
         callback(Unexpected(err));
         return nullptr;
     }
-    return asyncPoll(socket, PollEvent::In, [cb = std::move(callback), socket](int revents) mutable {
+    return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket](int revents) mutable {
         if (revents & PollEvent::In) {
             auto pair = socket.accept<Socket>();
             if (pair.first.isValid()) {
@@ -551,7 +556,7 @@ inline void *PollContext::asyncAccept(SocketView socket, AcceptHandler &&callbac
         }
     });
 }
-inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, ConnectHandler &&callback) {
+inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout, ConnectHandler &&callback) {
     if (socket.connect(endpoint)) {
         callback(Expected<void, SockError>());
         return nullptr;
@@ -562,7 +567,7 @@ inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endp
         return nullptr;
     }
     // Ok, we need to wait for the socket to be writable
-    return asyncPoll(socket, PollEvent::Out, [cb = std::move(callback), socket, endpoint](int revents) mutable {
+    return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, endpoint](int revents) mutable {
         auto err = socket.error();
         if (err.isOk() && (revents & PollEvent::Out)) {
             // Ok
@@ -573,7 +578,7 @@ inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endp
         cb(Unexpected(err));
     });
 }
-inline void *PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t n, RecvfromHandler &&callback) {
+inline void *PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvfromHandler &&callback) {
     IPEndpoint endpoint;
     auto bytes = socket.recvfrom(buffer, n, 0, &endpoint);
     if (bytes >= 0) {
@@ -586,7 +591,7 @@ inline void *PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t 
         return nullptr;
     }
     // Ok, we need to wait for the socket to be readable
-    return asyncPoll(socket, PollEvent::In, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
+    return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
         if (revents & PollEvent::In) {
             IPEndpoint endpoint;
             auto bytes = socket.recvfrom(buffer, n, 0, &endpoint);
@@ -599,7 +604,7 @@ inline void *PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t 
         cb(Unexpected(SockError::fromErrno()));
     });
 }
-inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, SendtoHandler &&callback) {
+inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout, SendtoHandler &&callback) {
     auto bytes = socket.sendto(buffer, n, 0, &endpoint);
     if (bytes >= 0) {
         callback(bytes);
@@ -611,7 +616,7 @@ inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, siz
         return nullptr;
     }
     // Ok, we need to wait for the socket to be writable
-    return asyncPoll(socket, PollEvent::Out, [cb = std::move(callback), socket, buffer, n, ep = endpoint](int revents) mutable {
+    return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, buffer, n, ep = endpoint](int revents) mutable {
         if (revents & PollEvent::Out) {
             auto bytes = socket.sendto(buffer, n, 0, &ep);
             if (bytes >= 0) {

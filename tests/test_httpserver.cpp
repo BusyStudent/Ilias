@@ -1,9 +1,15 @@
 #include "../include/ilias_async.hpp"
-#include "../include/ilias_poll.hpp"
 #include "../include/ilias_loop.hpp"
 #include <filesystem>
 #include <iostream>
 #include <regex>
+
+#ifdef _WIN32
+    #include "../include/ilias_iocp.hpp"
+    #include "../include/ilias_iocp.cpp"
+#else
+    #include "../include/ilias_poll.hpp"
+#endif
 
 using namespace ILIAS_NAMESPACE;
 
@@ -16,15 +22,29 @@ const char *statusString(int statusCode) {
     }
 }
 
-Task<> sendResponse(TcpClient &client, int statusCode, const void *body, int n = -1) {
+Task<> sendResponse(TcpClient &client, int statusCode, const void *body, int64_t n = -1) {
     if (n == -1) {
         n = ::strlen((char*)body);
     }
     char headers[1024] {0};
     ::sprintf(headers, "HTTP/1.1 %d %s\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", statusCode, statusString(statusCode), int(n));
 
-    co_await client.send(headers, strlen(headers));
-    co_await client.send(body, n);
+    auto num = co_await client.send(headers, strlen(headers));
+    if (!num) {
+        co_return;
+    }
+    while (n > 0) {
+        num = co_await client.send(body, n);
+        if (!num) {
+            std::cout << "Client send error " << num.error().message() << std::endl;
+            co_return;
+        }
+        if (*num == 0) {
+            break;
+        }
+        n -= *num;
+        body = ((uint8_t*) body) + *num;
+    }
     co_return;
 }
 
@@ -51,7 +71,6 @@ Task<> handleClient(TcpClient client) {
         co_return;
     }
     if (std::filesystem::is_directory(path)) {
-        ::sockaddr_dl;
         std::string response = R"(<html><body><meta http-equiv="Content-Type" content="text/html; charset=utf-8" />)";
         for (auto &file : std::filesystem::directory_iterator(path)) {
             if (!file.exists()) {
@@ -92,7 +111,12 @@ Task<> handleClient(TcpClient client) {
 
 int main() {
     MiniEventLoop loop;
+#ifdef _WIN32
+    IOCPContext ctxt;
+#else
     PollContext ctxt;
+#endif
+
 
     loop.runTask([&]() -> Task<> {
         TcpServer server(ctxt, AF_INET);

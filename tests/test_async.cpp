@@ -23,7 +23,7 @@ int main() {
     loop.runTask([&]() -> Task<> {
         TcpClient client(ctxt, AF_INET);
         IPEndpoint endpoint(IPAddress4::fromHostname("www.baidu.com"), 80);
-        if (auto result = co_await client.connect(endpoint); !result) {
+        if (auto result = co_await client.connect(endpoint, 1000); !result) {
             std::cout << result.error().message() << std::endl;
             co_return;
         }

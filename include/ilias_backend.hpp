@@ -55,13 +55,13 @@ public:
     virtual bool asyncCleanup(SocketView socket) = 0;
     virtual bool asyncCancel(SocketView, void *operation) = 0;
 
-    virtual void *asyncRecv(SocketView socket, void *buffer, size_t n, RecvHandler &&cb) = 0;
-    virtual void *asyncSend(SocketView socket, const void *buffer, size_t n, SendHandler &&cb) = 0;
-    virtual void *asyncAccept(SocketView socket, AcceptHandler &&cb) = 0;
-    virtual void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, ConnectHandler &&cb) = 0;
+    virtual void *asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvHandler &&cb) = 0;
+    virtual void *asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout, SendHandler &&cb) = 0;
+    virtual void *asyncAccept(SocketView socket, int64_t timeout, AcceptHandler &&cb) = 0;
+    virtual void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout, ConnectHandler &&cb) = 0;
     
-    virtual void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, RecvfromHandler &&cb) = 0;
-    virtual void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, SendtoHandler &&cb) = 0;
+    virtual void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvfromHandler &&cb) = 0;
+    virtual void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout, SendtoHandler &&cb) = 0;
 };
 
 ILIAS_NS_END
