@@ -497,8 +497,17 @@ inline void IOCPContext::_addTimeout(IOCPOverlapped *overlapped, int64_t timeout
         return;
     }
 
-    bool needWakeup = mTimeoutQueue.empty();
-    overlapped->timeout = mTimeoutQueue.emplace(::GetTickCount64() + timeout, overlapped);
+    bool needWakeup = false;
+    auto expireTime = ::GetTickCount64() + timeout;
+    if (mTimeoutQueue.empty()) {
+        needWakeup = true;
+    }
+    else {
+        if (expireTime < mTimeoutQueue.begin()->first) {
+            needWakeup = true;
+        }
+    }
+    overlapped->timeout = mTimeoutQueue.emplace(expireTime, overlapped);
     overlapped->hasTimeoutCheck = true;
     if (needWakeup) {
         _wakeup();

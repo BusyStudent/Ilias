@@ -63,6 +63,36 @@ public:
      */
     auto remoteEndpoint() const -> IPEndpoint;
 
+    /**
+     * @brief Recv data from
+     * 
+     * @param buffer 
+     * @param n 
+     * @param timeout 
+     * @param handler 
+     * @return void * 
+     */
+    auto recv(void *buffer, size_t n, int64_t timeout, RecvHandler &&handler) -> void *;
+    /**
+     * @brief Send data to
+     * 
+     * @param buffer 
+     * @param n 
+     * @param timeout 
+     * @param handler 
+     * @return void * 
+     */
+    auto send(const void *buffer, size_t n, int64_t timeout, SendHandler &&handler) -> void *;
+    /**
+     * @brief Connect to
+     * 
+     * @param endpoint 
+     * @param timeout 
+     * @param handler 
+     * @return void * 
+     */
+    auto connect(const IPEndpoint &endpoint, int64_t timeout, ConnectHandler &&handler) -> void *;
+
 #if defined(__cpp_lib_coroutine)
     /**
      * @brief Recv data from
@@ -185,13 +215,22 @@ inline TcpClient::TcpClient(IOContext &ctxt, Socket &&socket):
 inline auto TcpClient::remoteEndpoint() const -> IPEndpoint {
     return mFd.remoteEndpoint();
 }
+inline auto TcpClient::recv(void *buffer, size_t n, int64_t timeout, RecvHandler &&fn) -> void * {
+    return mContext->asyncRecv(mFd, buffer, n, timeout, std::move(fn));
+}
+inline auto TcpClient::send(const void *buffer, size_t n, int64_t timeout, SendHandler &&fn) -> void * {
+    return mContext->asyncSend(mFd, buffer, n, timeout, std::move(fn));
+}
+inline auto TcpClient::connect(const IPEndpoint &endpoint, int64_t timeout, ConnectHandler &&fn) -> void * {
+    return mContext->asyncConnect(mFd, endpoint, timeout, std::move(fn));
+}
 
 #if defined(__cpp_lib_coroutine)
 inline auto TcpClient::recv(void *buffer, size_t n, int64_t timeout) -> AwaitResult<RecvHandlerArgs> {
     using Awaitable = AwaitResult<RecvHandlerArgs>;
     return Awaitable(
         [=, this](Awaitable::ResumeFunc &&func) {
-            mContext->asyncRecv(mFd, buffer, n, timeout, [=, f = std::move(func)](auto result) mutable {
+            this->recv(buffer, n, timeout, [=, f = std::move(func)](auto result) mutable {
                 f(std::move(result));  
             });
         }
@@ -201,7 +240,7 @@ inline auto TcpClient::send(const void *buffer, size_t n, int64_t timeout) -> Aw
     using Awaitable = AwaitResult<SendHandlerArgs>;
     return Awaitable(
         [=, this](Awaitable::ResumeFunc &&func) {
-            mContext->asyncSend(mFd, buffer, n, timeout, [=, f = std::move(func)](auto result) mutable {
+            this->send(buffer, n, timeout, [=, f = std::move(func)](auto result) mutable {
                 f(std::move(result));  
             });
         }
@@ -211,7 +250,7 @@ inline auto TcpClient::connect(const IPEndpoint &endpoint, int64_t timeout) -> A
     using Awaitable = AwaitResult<ConnectHandlerArgs>;
     return Awaitable(
         [=, this](Awaitable::ResumeFunc &&func) {
-            mContext->asyncConnect(mFd, endpoint, timeout, [=, f = std::move(func)](auto result) mutable {
+            this->connect(endpoint, timeout, [=, f = std::move(func)](auto result) mutable {
                 f(std::move(result));  
             });
         }

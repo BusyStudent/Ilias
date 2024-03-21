@@ -31,10 +31,18 @@ target("test_co")
 target_end()
 
 add_requires("gtest")
-
 target("test_expected")
     set_kind("binary")
     add_packages("gtest")
     add_files("tests/test_expected.cpp")
     add_tests("expected")
+target_end()
+
+add_requires("openssl")
+target("test_ssl")
+    set_kind("binary")
+    add_files("tests/test_ssl.cpp")
+    add_tests("ssl")
+
+    add_packages("openssl")
 target_end()
