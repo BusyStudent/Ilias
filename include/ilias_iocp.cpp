@@ -1,3 +1,4 @@
+#ifdef _WIN32
 #include "ilias_iocp.hpp"
 #include "ilias_latch.hpp"
 #include <memory>
@@ -666,5 +667,6 @@ inline void IOCPContext::_wakeup() {
     );
 }
 
-
 ILIAS_NS_END
+
+#endif

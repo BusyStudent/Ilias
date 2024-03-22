@@ -46,3 +46,14 @@ target("test_ssl")
 
     add_packages("openssl")
 target_end()
+
+add_requires("openssl")
+target("test_ring")
+    set_kind("binary")
+    add_files("tests/test_ring.cpp")
+    add_tests("ssl")
+    set_group("ring")
+
+    add_packages("openssl")
+    add_packages("gtest")
+target_end()

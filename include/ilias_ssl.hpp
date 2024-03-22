@@ -11,6 +11,8 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
+#include <memory> //< for std::make_unique<T []>
+
 ILIAS_NS_BEGIN
 
 class SslContext {
@@ -80,35 +82,109 @@ public:
         return true;
     }
     size_t push(const void *buffer, size_t n) noexcept {
-        size_t num = 0;
-        while (n > 0) {
-            if (!push(*((const uint8_t *) buffer))) {
-                break;
-            }
-            buffer = ((const uint8_t *) buffer) + 1;
-            n -= 1;
-            num += 1;
+        int copySize = std::min(n, mCapicity - mSize);
+        int cp1 = mTail + copySize > mCapicity ? mCapicity - mTail : copySize;
+        ::memcpy(mBuffer + mTail, buffer, cp1);
+        ::memcpy(mBuffer, (uint8_t *)buffer + cp1, copySize - cp1);
+
+#ifdef ILIAS_SSL_RING_DEBUG
+        for (int i = 0; i < mCapicity; ++i) {
+            ::printf("%03d ", mBuffer[i]);
         }
-        return num;
+        ::printf("\n");
+        for (int i = 0; i < mCapicity; ++i) {
+            if (cp1 == copySize) {
+                ::printf("%s", (i >= mTail && i < mTail + copySize) ? "^^^ " : "    ");
+            }
+            else {
+                ::printf("%s", (i < (mTail + copySize) % mCapicity || i >= mTail) ? "^^^ " : "    ");
+            }
+        }
+        ::printf("\n");
+#endif
+
+        mTail = (copySize == cp1) ? mTail + copySize : mTail + copySize - mCapicity;
+        mTail = (mTail == mCapicity) ? 0 : mTail;
+        mSize += copySize;
+
+#ifdef ILIAS_SSL_RING_DEBUG
+        for (int i = 0; i < mCapicity; ++i) {
+            if (i == mHead && i == mTail) {
+                ::printf(">HT<");
+            }
+            else if (i == mHead) {
+                ::printf(">H<<");
+            }
+            else if (i == mTail) {
+                ::printf(">T<<");
+            }
+            else {
+                ::printf("    ");
+            }
+        }
+        ::printf("\n");
+#endif
+
+        return copySize;
     }
     size_t pop(void *buffer, size_t n) noexcept {
-        size_t num = 0;
-        while (n > 0) {
-            if (!pop(*((uint8_t *) buffer))) {
-                break;
-            }
-            buffer = ((uint8_t *) buffer) + 1;
-            n -= 1;
-            num += 1;
+        int copySize = std::min(n, mSize);
+        int cp1 = mHead + copySize > mCapicity ? mCapicity - mHead : copySize;
+        ::memcpy(buffer, mBuffer + mHead, cp1);
+        ::memcpy((uint8_t *)buffer + cp1, mBuffer, copySize - cp1);
+
+#ifdef ILIAS_SSL_RING_DEBUG
+        for (int i = 0; i < mCapicity; ++i) {
+            ::printf("%03d ", mBuffer[i]);
         }
-        return num;
+        ::printf("\n");
+        for (int i = 0; i < mCapicity; ++i) {
+            if (cp1 == copySize) {
+                ::printf("%s", (i >= mHead && i < mHead + copySize) ? "### " : "    ");
+            }
+            else {
+                ::printf("%s", (i < (mHead + copySize) % mCapicity || i >= mHead) ? "### " : "    ");
+            }
+        }
+        ::printf("\n");
+#endif
+
+        if (copySize == mSize) {
+            mHead = mTail = 0;
+            mSize = 0;
+        }
+        else {
+            mHead = cp1 == copySize ? mHead + copySize : mHead + copySize - mCapicity;
+            mHead = mHead == mCapicity ? 0 : mHead;
+            mSize -= copySize;
+        }
+
+#ifdef ILIAS_SSL_RING_DEBUG
+        for (int i = 0; i < mCapicity; ++i) {
+            if (i == mHead && i == mTail) {
+                ::printf(">HT<");
+            }
+            else if (i == mHead) {
+                ::printf(">>H<");
+            }
+            else if (i == mTail) {
+                ::printf(">>T<");
+            }
+            else {
+                ::printf("    ");
+            }
+        }
+        ::printf("\n");
+        ::printf("mSize :%zu\n", mSize);
+#endif
+        return copySize;
     }
 private:
     size_t mCapicity = N;
     size_t mSize = 0;
     size_t mHead = 0;
     size_t mTail = 0;
-    uint8_t mBuffer[N];
+    uint8_t mBuffer[N] = {0};
 };
 
 /**
@@ -120,8 +196,8 @@ template <typename T>
 class SslBio {
 public:
     SslBio(T &&f) : mFd(std::move(f)) {
-        static auto method = _register();
-        mBio = BIO_new(method);
+        static Method method = _register();
+        mBio = BIO_new(method.method);
         BIO_set_data(mBio, this);
         BIO_set_init(mBio, 1);
         BIO_set_shutdown(mBio, 0);
@@ -131,6 +207,14 @@ public:
 
     }
 private:
+    struct Method {
+        Method(BIO_METHOD *method) : method(method) { }
+        Method(const Method &) = delete;
+        ~Method() {
+            BIO_meth_free(method);
+        }
+        BIO_METHOD *method;
+    };
     static BIO_METHOD *_register() {
         BIO_METHOD *method = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_SOURCE_SINK, "IliasSslBio");
         BIO_meth_set_write(method, [](BIO *b, const char *data, int len) {
@@ -178,7 +262,7 @@ private:
     SslRing<1024 * 8> mReadRing;
     SslRing<1024 * 8> mWriteRing;
     bool              mFlush = false;
-template <typename T>
+template <typename U>
 friend class SslClient;
 };
 

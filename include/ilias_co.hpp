@@ -453,6 +453,7 @@ public:
     void resume() noexcept {
         ILIAS_ASSERT(mPtr);
         mPtr->resume_later();
+        mPtr->deref();
         mPtr = nullptr;
     }
     void operator ()() noexcept {

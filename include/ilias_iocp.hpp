@@ -1,3 +1,4 @@
+#ifdef _WIN32
 #pragma once
 
 #include "ilias.hpp"
@@ -89,3 +90,5 @@ private:
 // using IOContext = IOCPContext;
 
 ILIAS_NS_END
+
+#endif
