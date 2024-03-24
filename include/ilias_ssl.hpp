@@ -1,3 +1,4 @@
+#if __has_include(<openssl/ssl.h>)
 #pragma once
 
 #include "ilias.hpp"
@@ -82,17 +83,17 @@ public:
         return true;
     }
     size_t push(const void *buffer, size_t n) noexcept {
-        int copySize = std::min(n, mCapicity - mSize);
-        int cp1 = mTail + copySize > mCapicity ? mCapicity - mTail : copySize;
+        int64_t copySize = (std::min)(n, mCapicity - mSize);
+        int64_t cp1 = mTail + copySize > mCapicity ? mCapicity - mTail : copySize;
         ::memcpy(mBuffer + mTail, buffer, cp1);
         ::memcpy(mBuffer, (uint8_t *)buffer + cp1, copySize - cp1);
 
 #ifdef ILIAS_SSL_RING_DEBUG
-        for (int i = 0; i < mCapicity; ++i) {
+        for (int64_t i = 0; i < mCapicity; ++i) {
             ::printf("%03d ", mBuffer[i]);
         }
         ::printf("\n");
-        for (int i = 0; i < mCapicity; ++i) {
+        for (int64_t i = 0; i < mCapicity; ++i) {
             if (cp1 == copySize) {
                 ::printf("%s", (i >= mTail && i < mTail + copySize) ? "^^^ " : "    ");
             }
@@ -108,7 +109,7 @@ public:
         mSize += copySize;
 
 #ifdef ILIAS_SSL_RING_DEBUG
-        for (int i = 0; i < mCapicity; ++i) {
+        for (int64_t i = 0; i < mCapicity; ++i) {
             if (i == mHead && i == mTail) {
                 ::printf(">HT<");
             }
@@ -128,8 +129,8 @@ public:
         return copySize;
     }
     size_t pop(void *buffer, size_t n) noexcept {
-        int copySize = std::min(n, mSize);
-        int cp1 = mHead + copySize > mCapicity ? mCapicity - mHead : copySize;
+        int64_t copySize = (std::min)(n, mSize);
+        int64_t cp1 = mHead + copySize > mCapicity ? mCapicity - mHead : copySize;
         ::memcpy(buffer, mBuffer + mHead, cp1);
         ::memcpy((uint8_t *)buffer + cp1, mBuffer, copySize - cp1);
 
@@ -263,70 +264,51 @@ private:
     SslRing<1024 * 8> mWriteRing;
     bool              mFlush = false;
 template <typename U>
+friend class SslSocket;
+template <StreamClient V>
 friend class SslClient;
+template <StreamListener W>
+friend class SslListener;
 };
 
+/**
+ * @brief Generic Ssl Class
+ * 
+ * @tparam T 
+ */
 template <typename T>
-class SslClient {
+class SslSocket {
 public:
-    SslClient() = default;
-    SslClient(SslContext &ctxt, T &&f) {
+    SslSocket() = default;
+    SslSocket(SSL_CTX *ctxt, T &&f) {
         mBio = new SslBio<T>(std::move(f));
-        mSsl = SSL_new(ctxt.get());
-        SSL_set_connect_state(mSsl);
+        mSsl = SSL_new(ctxt);
+        mCtxt = ctxt;
         SSL_set_bio(mSsl, mBio->mBio, mBio->mBio);
         SSL_set_mode(mSsl, SSL_MODE_AUTO_RETRY);
     }
-    ~SslClient() {
+    SslSocket(SslContext &ctxt, T &&f) : SslSocket(ctxt.mCtxt, std::move(f)) { }
+    SslSocket(SslSocket &&sock) {
+        mBio = sock.mBio;
+        sock.mBio = nullptr;
+
+        mSsl = sock.mSsl;
+        sock.mSsl = nullptr;
+    }
+    ~SslSocket() {
         SSL_free(mSsl);
         delete mBio;
     }
-
+    /**
+     * @brief Get local endpoint
+     * 
+     * @return IPEndpoint 
+     */
+    auto localEndpoint() const -> IPEndpoint {
+        return mBio->mFd.localEndpoint();
+    }
+protected:
 #if defined(__cpp_impl_coroutine)
-    auto connect(const IPEndpoint &endpoint, int64_t timeout = -1) -> Task<ConnectHandlerArgs> {
-        auto ret = co_await mBio->mFd.connect(endpoint, timeout);
-        if (!ret) {
-            co_return ret;
-        }
-        while (true) {
-            int sslCon = SSL_connect(mSsl);
-            if (sslCon == 1) {
-                co_return ConnectHandlerArgs();
-            }
-            int errcode = SSL_get_error(mSsl, sslCon);
-            if (auto ret = co_await _handleError(errcode, timeout); !ret) {
-                co_return Unexpected(ret.error());
-            }
-        }
-    }
-    auto recv(void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvHandlerArgs> {
-        while (true) {
-            size_t readed = 0;
-            int readret = SSL_read_ex(mSsl, buffer, n, &readed);
-            if (readret == 1) {
-                co_return readed;
-            }
-            int errcode = 0;
-            errcode = SSL_get_error(mSsl, readret);
-            if (auto ret = co_await _handleError(errcode, timeout); !ret) {
-                co_return Unexpected(ret.error());
-            }
-        }
-    }
-    auto send(const void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvHandlerArgs> {
-        while (true) {
-            size_t written = 0;
-            int writret = SSL_write_ex(mSsl, buffer, n, &written);
-            if (writret == 1) {
-                co_return written;
-            }
-            int errcode = 0;
-            errcode = SSL_get_error(mSsl, writret);
-            if (auto ret = co_await _handleError(errcode, timeout); !ret) {
-                co_return Unexpected(ret.error());
-            }
-        }
-    }
     auto _handleError(int errcode, int64_t timeout) -> Task<Expected<void, SockError> > {
         if (errcode == SSL_ERROR_WANT_READ) {
             auto ret = co_await _waitReadable(timeout);
@@ -383,11 +365,135 @@ public:
         ILIAS_ASSERT(written == *ret);
         co_return Expected<void, SockError>();
     }
+    auto _accept(int64_t timeout) -> Task<Expected<void, SockError> > {
+        while (true) {
+            int sslAccept = SSL_accept(mSsl);
+            if (sslAccept == 1) {
+                co_return Expected<void, SockError>();
+            }
+            int errcode = SSL_get_error(mSsl, sslAccept);
+            if (auto ret = co_await this->_handleError(errcode, timeout); !ret) {
+                co_return Unexpected(ret.error());
+            }
+        }
+    }
 #endif
 
-private:
     SSL *mSsl = nullptr;
     SslBio<T> *mBio = nullptr;
+    SSL_CTX *mCtxt = nullptr;
+};
+
+/**
+ * @brief Client Ssl Class, require StreamClient as T
+ * 
+ * @tparam T 
+ */
+template <StreamClient T = IStreamClient>
+class SslClient : public SslSocket<T> {
+public:
+    SslClient() = default;
+    SslClient(const SslClient &) = delete;
+    SslClient(SslClient &&) = default;
+    SslClient(SslContext &ctxt, T &&f) : SslSocket<T>(ctxt.get(), std::move(f)) {
+        SSL_set_connect_state(this->mSsl);
+    }
+    SslClient(SSL_CTX *ctxt, T &&f) : SslSocket<T>(ctxt, std::move(f)) {
+        SSL_set_connect_state(this->mSsl);
+    }
+    /**
+     * @brief Get remote Endpoint
+     * 
+     * @return IPEndpoint 
+     */
+    auto remoteEndpoint() const -> IPEndpoint {
+        return this->mBio->mFd.remoteEndpoint();
+    }
+
+#if defined(__cpp_impl_coroutine)
+    auto connect(const IPEndpoint &endpoint, int64_t timeout = -1) -> Task<ConnectHandlerArgs> {
+        auto ret = co_await this->mBio->mFd.connect(endpoint, timeout);
+        if (!ret) {
+            co_return ret;
+        }
+        while (true) {
+            int sslCon = SSL_connect(this->mSsl);
+            if (sslCon == 1) {
+                co_return ConnectHandlerArgs();
+            }
+            int errcode = SSL_get_error(this->mSsl, sslCon);
+            if (auto ret = co_await this->_handleError(errcode, timeout); !ret) {
+                co_return Unexpected(ret.error());
+            }
+        }
+    }
+    auto recv(void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvHandlerArgs> {
+        while (true) {
+            size_t readed = 0;
+            int readret = SSL_read_ex(this->mSsl, buffer, n, &readed);
+            if (readret == 1) {
+                co_return readed;
+            }
+            int errcode = 0;
+            errcode = SSL_get_error(this->mSsl, readret);
+            if (auto ret = co_await this->_handleError(errcode, timeout); !ret) {
+                co_return Unexpected(ret.error());
+            }
+        }
+    }
+    auto send(const void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvHandlerArgs> {
+        while (true) {
+            size_t written = 0;
+            int writret = SSL_write_ex(this->mSsl, buffer, n, &written);
+            if (writret == 1) {
+                co_return written;
+            }
+            int errcode = 0;
+            errcode = SSL_get_error(this->mSsl, writret);
+            if (auto ret = co_await this->_handleError(errcode, timeout); !ret) {
+                co_return Unexpected(ret.error());
+            }
+        }
+    }
+#endif
+};
+
+/**
+ * @brief Listener Ssl class, require stream listener as T
+ * 
+ * @tparam T 
+ */
+template <StreamListener T = IStreamListener>
+class SslListener : public SslSocket<T> {
+public:
+    using RawClient = typename T::Client;
+    using Client    = SslClient<RawClient>;
+
+    SslListener() = default;
+    SslListener(SslListener &&) = default;
+    SslListener(SslContext &ctxt, T &&f) : SslSocket<T>(ctxt, std::move(f)) {
+        SSL_set_accept_state(this->mSsl);
+    }
+
+#if defined(__cpp_impl_coroutine)
+    auto accept(int64_t timeout = -1) -> Task<AcceptHandlerArgsT<Client> > {
+        // TODO 
+        auto val = co_await this->mBio->mFd.accept(timeout);
+        if (!val) {
+            co_return Unexpected(val.error());            
+        }
+        auto &[rawClient, addr] = *val;
+        Client client(this->mCtxt, std::move(rawClient));
+        if (auto ret = co_await client._accept(timeout); !ret) {
+            co_return Unexpected(ret.error());
+        }
+        co_return std::pair{std::move(client), addr};
+    }
+#endif
 };
 
 ILIAS_NS_END
+
+#else
+#define ILIAS_NO_SSL_SUPPORT
+#endif

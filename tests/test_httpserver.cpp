@@ -22,7 +22,7 @@ const char *statusString(int statusCode) {
     }
 }
 
-Task<> sendResponse(TcpClient &client, int statusCode, const void *body, int64_t n = -1) {
+Task<> sendResponse(IStreamClient &client, int statusCode, const void *body, int64_t n = -1) {
     if (n == -1) {
         n = ::strlen((char*)body);
     }
@@ -48,7 +48,7 @@ Task<> sendResponse(TcpClient &client, int statusCode, const void *body, int64_t
     co_return;
 }
 
-Task<> handleClient(TcpClient client) {
+Task<> handleClient(IStreamClient client) {
     char headers[1024] {0};
     char requestFile[1024] {0};
 
@@ -119,14 +119,15 @@ int main() {
 
 
     loop.runTask([&]() -> Task<> {
-        TcpServer server(ctxt, AF_INET);
-        if (auto ret = server.bind("127.0.0.1:61183"); !ret) {
+        TcpListener tcpListener(ctxt, AF_INET);
+        IStreamListener listener = std::move(tcpListener);
+        if (auto ret = listener.bind("127.0.0.1:61183"); !ret) {
             std::cout << ret.error().message() << std::endl;
             co_return;
         }
-        std::cout << "Server bound to " << server.localEndpoint().toString() << std::endl;
+        std::cout << "Server bound to " << listener.localEndpoint().toString() << std::endl;
         while (true) {
-            auto ret = co_await server.accept();
+            auto ret = co_await listener.accept();
             if (!ret) {
                 std::cout << ret.error().message() << std::endl;
                 co_return;

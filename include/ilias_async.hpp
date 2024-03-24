@@ -123,12 +123,13 @@ public:
 #endif
 };
 
-class TcpServer final : public AsyncSocket {
+class TcpListener final : public AsyncSocket {
 public:
-    TcpServer();
-    TcpServer(IOContext &ctxt, int family);
-    TcpServer(IOContext &ctxt, Socket &&socket);
+    using Client = TcpClient;
 
+    TcpListener();
+    TcpListener(IOContext &ctxt, int family);
+    TcpListener(IOContext &ctxt, Socket &&socket);
     /**
      * @brief Bind the socket with endpoint
      * 
@@ -136,7 +137,7 @@ public:
      * @param backlog 
      * @return Expected<void, SockError> 
      */
-    auto bind(const IPEndpoint &endpoint, int backlog = 0) -> Expected<void, SockError>;
+    auto bind(const IPEndpoint &endpoint, int backlog = 0) -> BindHandlerArgs;
 
 #if defined(__cpp_lib_coroutine)
     /**
@@ -148,11 +149,11 @@ public:
 #endif
 };
 
-class UdpSocket final : public AsyncSocket {
+class UdpClient final : public AsyncSocket {
 public:
-    UdpSocket();
-    UdpSocket(IOContext &ctxt, int family);
-    UdpSocket(IOContext &ctxt, Socket &&socket);
+    UdpClient();
+    UdpClient(IOContext &ctxt, int family);
+    UdpClient(IOContext &ctxt, Socket &&socket);
 
 #if defined(__cpp_lib_coroutine)
     auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> AwaitResult<SendtoHandlerArgs>;
@@ -260,20 +261,20 @@ inline auto TcpClient::connect(const IPEndpoint &endpoint, int64_t timeout) -> A
 #endif
 
 
-// --- TcpServer Impl
-inline TcpServer::TcpServer() { }
-inline TcpServer::TcpServer(IOContext &ctxt, int family) : 
+// --- TcpListener Impl
+inline TcpListener::TcpListener() { }
+inline TcpListener::TcpListener(IOContext &ctxt, int family) : 
     AsyncSocket(ctxt, Socket::create(family, SOCK_STREAM, IPPROTO_TCP)) 
 {
 
 }
-inline TcpServer::TcpServer(IOContext &ctxt, Socket &&socket):
+inline TcpListener::TcpListener(IOContext &ctxt, Socket &&socket):
     AsyncSocket(ctxt, std::move(socket))
 {
 
 }
 
-inline auto TcpServer::bind(const IPEndpoint &endpoint, int backlog) -> Expected<void, SockError> {
+inline auto TcpListener::bind(const IPEndpoint &endpoint, int backlog) -> Expected<void, SockError> {
     if (!mFd.bind(endpoint)) {
         return Unexpected(SockError::fromErrno());
     }
@@ -283,7 +284,7 @@ inline auto TcpServer::bind(const IPEndpoint &endpoint, int backlog) -> Expected
     return Expected<void, SockError>();
 }
 #if defined(__cpp_lib_coroutine)
-inline auto TcpServer::accept(int64_t timeout) -> AwaitResult<AcceptHandlerArgsT<TcpClient> > {
+inline auto TcpListener::accept(int64_t timeout) -> AwaitResult<AcceptHandlerArgsT<TcpClient> > {
     using Awaitable = AwaitResult<AcceptHandlerArgsT<TcpClient> >;
     return Awaitable([=, this](Awaitable::ResumeFunc &&func) {
         mContext->asyncAccept(mFd, timeout, [this, cb = std::move(func)](auto &&result) mutable {
@@ -303,19 +304,19 @@ inline auto TcpServer::accept(int64_t timeout) -> AwaitResult<AcceptHandlerArgsT
 #endif
 
 // --- UdpSocket Impl
-inline UdpSocket::UdpSocket() { }
-inline UdpSocket::UdpSocket(IOContext &ctxt, int family) :
+inline UdpClient::UdpClient() { }
+inline UdpClient::UdpClient(IOContext &ctxt, int family) :
     AsyncSocket(ctxt, Socket::create(family, SOCK_DGRAM, IPPROTO_UDP)) 
 {
 
 }
-inline UdpSocket::UdpSocket(IOContext &ctxt, Socket &&socket): 
+inline UdpClient::UdpClient(IOContext &ctxt, Socket &&socket): 
     AsyncSocket(ctxt, std::move(socket)) 
 {
 
 }
 #if defined(__cpp_lib_coroutine)
-inline auto UdpSocket::sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> AwaitResult<SendtoHandlerArgs> {
+inline auto UdpClient::sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> AwaitResult<SendtoHandlerArgs> {
     using Awaitable = AwaitResult<SendtoHandlerArgs>;
     return Awaitable([=, this](Awaitable::ResumeFunc &&func) {
         mContext->asyncSendto(mFd, buffer, n, endpoint, timeout, [this, cb = std::move(func)](auto &&result) mutable {
@@ -323,7 +324,7 @@ inline auto UdpSocket::sendto(const void *buffer, size_t n, const IPEndpoint &en
         });
     });
 }
-inline auto UdpSocket::recvfrom(void *buffer, size_t n, int64_t timeout) -> AwaitResult<RecvfromHandlerArgs> {
+inline auto UdpClient::recvfrom(void *buffer, size_t n, int64_t timeout) -> AwaitResult<RecvfromHandlerArgs> {
     using Awaitable = AwaitResult<RecvfromHandlerArgs>;
     return Awaitable([=, this](Awaitable::ResumeFunc &&func) {
         mContext->asyncRecvfrom(mFd, buffer, n, timeout, [this, cb = std::move(func)](auto &&result) mutable {

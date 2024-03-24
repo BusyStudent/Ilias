@@ -23,8 +23,9 @@ int main() {
     SslContext sslCtxt;
 
     loop.runTask([&]() -> Task<> {
-        TcpClient tcpClient(ctxt, AF_INET);
-        SslClient<TcpClient> client(sslCtxt, std::move(tcpClient));
+        TcpClient tcpClient = TcpClient(ctxt, AF_INET);
+        SslClient<> sslClient(sslCtxt, std::move(tcpClient));
+        IStreamClient client = std::move(sslClient);
 
         IPEndpoint endpoint(IPAddress4::fromHostname("www.baidu.com"), 443);
         if (auto result = co_await client.connect(endpoint); !result) {
