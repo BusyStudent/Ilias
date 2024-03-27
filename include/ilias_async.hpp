@@ -155,6 +155,14 @@ public:
     UdpClient(IOContext &ctxt, int family);
     UdpClient(IOContext &ctxt, Socket &&socket);
 
+    /**
+     * @brief Bind the socket with endpoint
+     * 
+     * @param endpoint 
+     * @return Expected<void, SockError> 
+     */
+    auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs;
+
 #if defined(__cpp_lib_coroutine)
     auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> AwaitResult<SendtoHandlerArgs>;
     auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> AwaitResult<RecvfromHandlerArgs>;
@@ -274,14 +282,14 @@ inline TcpListener::TcpListener(IOContext &ctxt, Socket &&socket):
 
 }
 
-inline auto TcpListener::bind(const IPEndpoint &endpoint, int backlog) -> Expected<void, SockError> {
+inline auto TcpListener::bind(const IPEndpoint &endpoint, int backlog) -> BindHandlerArgs {
     if (!mFd.bind(endpoint)) {
         return Unexpected(SockError::fromErrno());
     }
     if (!mFd.listen(backlog)) {
         return Unexpected(SockError::fromErrno());
     }
-    return Expected<void, SockError>();
+    return BindHandlerArgs();
 }
 #if defined(__cpp_lib_coroutine)
 inline auto TcpListener::accept(int64_t timeout) -> AwaitResult<AcceptHandlerArgsT<TcpClient> > {
@@ -315,6 +323,14 @@ inline UdpClient::UdpClient(IOContext &ctxt, Socket &&socket):
 {
 
 }
+inline auto UdpClient::bind(const IPEndpoint &endpoint) -> BindHandlerArgs {
+    if (!mFd.bind(endpoint)) {
+        return Unexpected(SockError::fromErrno());
+    }
+    return BindHandlerArgs();
+}
+
+
 #if defined(__cpp_lib_coroutine)
 inline auto UdpClient::sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> AwaitResult<SendtoHandlerArgs> {
     using Awaitable = AwaitResult<SendtoHandlerArgs>;

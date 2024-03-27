@@ -324,7 +324,7 @@ protected:
         }
         else {
             // Error
-            co_return Unexpected(SockError());
+            co_return Unexpected(SockError(ILIAS_EOTHER));
         }
         co_return Expected<void, SockError>();
     }

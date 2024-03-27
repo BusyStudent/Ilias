@@ -111,10 +111,12 @@ public:
 
     template <StreamClient T>
     T &view() const noexcept {
+        ILIAS_ASSERT(dynamic_cast<Impl<T> *>(mPtr) != nullptr);
         return static_cast<Impl<T> *>(mPtr).value;
     }
     template <StreamClient T>
     T  release() noexcept {
+        ILIAS_ASSERT(dynamic_cast<Impl<T> *>(mPtr) != nullptr);
         T v = std::move(static_cast<Impl<T> *>(mPtr)->value);
         delete mPtr;
         mPtr = nullptr;
@@ -191,10 +193,12 @@ public:
 
     template <StreamListener T>
     T &view() const noexcept {
+        ILIAS_ASSERT(dynamic_cast<Impl<T> *>(mPtr) != nullptr);
         return static_cast<Impl<T> *>(mPtr)->value;
     }
     template <StreamListener T>
     T  release() noexcept {
+        ILIAS_ASSERT(dynamic_cast<Impl<T> *>(mPtr) != nullptr);
         T v = std::move(static_cast<Impl<T> *>(mPtr)->value);
         delete mPtr;
         mPtr = nullptr;
@@ -248,10 +252,78 @@ private:
     };
     Base *mPtr = nullptr;
 };
+static_assert(StreamListener<IStreamListener>); //< Make sure IStreamListener is a has StreamListener concept
 
+/**
+ * @brief Helper class to wrap a DatagramClient as dynamic type
+ * 
+ */
 class IDatagramClient {
+public:
+    IDatagramClient() = default;
+    IDatagramClient(const IDatagramClient &) = delete;
+    IDatagramClient(IDatagramClient &&client) : mPtr(client.mPtr) { client.mPtr = nullptr; }
+    ~IDatagramClient() { delete mPtr; }
+
+    template <DatagramClient T>
+    IDatagramClient(T &&value) : mPtr(new Impl<T>(std::move(value))) { }
+
+    auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> Task<SendtoHandlerArgs> {
+        return mPtr->sendto(buffer, n, endpoint, timeout);
+    }
+    auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvfromHandlerArgs> {
+        return mPtr->recvfrom(buffer, n, timeout);
+    }
+
+    template <DatagramClient T>
+    T &view() const noexcept {
+        ILIAS_ASSERT(dynamic_cast<Impl<T> *>(mPtr) != nullptr);
+        return static_cast<Impl<T> *>(mPtr)->value;
+    }
+    template <DatagramClient T>
+    T  release() noexcept {
+        ILIAS_ASSERT(dynamic_cast<Impl<T> *>(mPtr) != nullptr);
+        T v = std::move(static_cast<Impl<T> *>(mPtr)->value);
+        delete mPtr;
+        mPtr = nullptr;
+        return v;
+    }
     
+    IDatagramClient &operator =(const IDatagramClient &client) = delete;
+    IDatagramClient &operator =(IDatagramClient &&client) {
+        delete mPtr;
+        mPtr = client.mPtr;
+        client.mPtr = nullptr;
+        return *this;
+    }
+    IDatagramClient &operator =(std::nullptr_t) {
+        delete mPtr;
+        mPtr = nullptr;
+        return *this;
+    }
+private:
+    struct Base {
+        virtual auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> Task<SendtoHandlerArgs> = 0;
+        virtual auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvfromHandlerArgs> = 0;
+        virtual ~Base() = default;
+    };
+    template <DatagramClient T>
+    struct Impl final : Base {
+        Impl(T &&value) : value(std::move(value)) { }
+        Impl(const Impl &) = delete;
+        ~Impl() = default;
+        auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> Task<SendtoHandlerArgs> override {
+            co_return co_await value.sendto(buffer, n, endpoint, timeout);
+        }
+        auto recvfrom(void *buffer, size_t n, int64_t timeout) -> Task<RecvfromHandlerArgs> override {
+            co_return co_await value.recvfrom(buffer, n, timeout);
+        }
+        T value;
+    };
+
+    Base *mPtr = nullptr;
 };
+static_assert(DatagramClient<IDatagramClient>); //< Make sure IDatagramClient is a has DatagramClient concept
 
 #endif
 

@@ -30,6 +30,12 @@ target("test_co")
     add_tests("co")
 target_end()
 
+target("test_dns")
+    set_kind("binary")
+    add_files("tests/test_dns.cpp")
+    add_tests("dns")
+target_end()
+
 add_requires("gtest")
 target("test_expected")
     set_kind("binary")

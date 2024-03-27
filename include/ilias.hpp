@@ -36,6 +36,7 @@
     #define ILIAS_CLOSE(s)  ::closesocket(s)
     #define ILIAS_POLL      ::WSAPoll
     #define ILIAS_ETIMEDOUT  (WSAETIMEDOUT)
+    #define ILIAS_EOTHER     (0)
     #include <WinSock2.h>
     #include <WS2tcpip.h>
     #include <MSWSock.h>
@@ -55,6 +56,7 @@
     #define ILIAS_CLOSE(s)  ::close(s)
     #define ILIAS_POLL      ::poll
     #define ILIAS_ETIMEDOUT  (ETIMEDOUT)
+    #define ILIAS_EOTHER     (EOTHER)
 
     #include <sys/socket.h>
     #include <netinet/in.h>
