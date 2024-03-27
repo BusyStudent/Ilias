@@ -50,7 +50,6 @@ int main() {
         if (!response) {
             std::cout << "Parse error " << "Stop at" << response.error() << std::endl;
             co_return;
-            co_return;
         }
         for (auto &addr : response->addresses()) {
             std::cout << addr.toString() << std::endl;

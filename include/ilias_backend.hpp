@@ -81,6 +81,7 @@ concept StreamListener = requires(T t) {
 };
 template <typename T>
 concept DatagramClient = requires(T t) {
+    t.bind(IPEndpoint{ });
     t.sendto(nullptr, size_t{ }, IPEndpoint{ }, int64_t{ });
     t.recvfrom(nullptr, size_t{ }, int64_t{ });
 };
@@ -112,7 +113,7 @@ public:
     template <StreamClient T>
     T &view() const noexcept {
         ILIAS_ASSERT(dynamic_cast<Impl<T> *>(mPtr) != nullptr);
-        return static_cast<Impl<T> *>(mPtr).value;
+        return static_cast<Impl<T> *>(mPtr)->value;
     }
     template <StreamClient T>
     T  release() noexcept {
@@ -274,6 +275,9 @@ public:
     auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvfromHandlerArgs> {
         return mPtr->recvfrom(buffer, n, timeout);
     }
+    auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs {
+        return mPtr->bind(endpoint);
+    }
 
     template <DatagramClient T>
     T &view() const noexcept {
@@ -305,6 +309,7 @@ private:
     struct Base {
         virtual auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> Task<SendtoHandlerArgs> = 0;
         virtual auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvfromHandlerArgs> = 0;
+        virtual auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs= 0;
         virtual ~Base() = default;
     };
     template <DatagramClient T>
@@ -317,6 +322,9 @@ private:
         }
         auto recvfrom(void *buffer, size_t n, int64_t timeout) -> Task<RecvfromHandlerArgs> override {
             co_return co_await value.recvfrom(buffer, n, timeout);
+        }
+        auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs override {
+            return value.bind(endpoint);
         }
         T value;
     };

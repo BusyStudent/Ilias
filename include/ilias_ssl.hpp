@@ -287,7 +287,7 @@ public:
         SSL_set_bio(mSsl, mBio->mBio, mBio->mBio);
         SSL_set_mode(mSsl, SSL_MODE_AUTO_RETRY);
     }
-    SslSocket(SslContext &ctxt, T &&f) : SslSocket(ctxt.mCtxt, std::move(f)) { }
+    SslSocket(SslContext &ctxt, T &&f) : SslSocket(ctxt.get(), std::move(f)) { }
     SslSocket(SslSocket &&sock) {
         mBio = sock.mBio;
         sock.mBio = nullptr;

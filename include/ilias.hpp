@@ -56,7 +56,7 @@
     #define ILIAS_CLOSE(s)  ::close(s)
     #define ILIAS_POLL      ::poll
     #define ILIAS_ETIMEDOUT  (ETIMEDOUT)
-    #define ILIAS_EOTHER     (EOTHER)
+    #define ILIAS_EOTHER     (0)
 
     #include <sys/socket.h>
     #include <netinet/in.h>
