@@ -95,6 +95,16 @@ public:
 
     // Poll
     void *asyncPoll(SocketView socket, int revent, int64_t timeout, Function<void(int revents)> &&cb);
+
+#if defined(__cpp_lib_coroutine)
+    // auto asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs> override;
+    // auto asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> override;
+    // auto asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgsT<Socket>> override;
+    // auto asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> override;
+
+    // auto asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> override;
+    // auto asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs> override;
+#endif
 private:
     struct Fn {
         void (*fn)(void *);
@@ -709,6 +719,40 @@ inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, siz
         cb(Unexpected(SockError::fromErrno()));
     });
 }
+
+// #if defined(__cpp_lib_coroutine)
+// inline auto PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs>{
+//     struct Awaitable {
+//         bool await_ready() const {
+
+//         }
+//         bool
+
+//         PollContext *self;
+//         SocketView sock;
+//         void *buffer;
+//         size_t n;
+//         int64_t timeout;
+//         RecvHandlerArgs result;
+//     };
+//     return {};
+// }
+// inline auto PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> {
+//     return {};
+// }
+// inline auto PollContext::asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgs> {
+//     return {};
+// }
+// inline auto PollContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> {
+//     return {};
+// }
+// inline auto asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> {
+//     return {};
+// }
+// inline auto asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) {
+//     return {};
+// }
+// #endif
 
 #if !defined(_WIN32)
 using NativeIOContext = PollContext;

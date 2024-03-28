@@ -104,6 +104,7 @@ void print(T &&arg)
 
 TEST(Expected, Basic)
 {
+#if !defined(__cpp_lib_expected)
     // T == E
     Expected<int, int> a(23); // Correct value construction
     EXPECT_EQ(a.value(), 23);
@@ -182,6 +183,7 @@ TEST(Expected, Basic)
     EXPECT_STREQ(e.error().message().c_str(), "error note");
 
     Error err = std::move(e.error());
+#endif
 }
 
 int main(int argc, char **argv)

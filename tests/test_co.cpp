@@ -1,4 +1,4 @@
-#define ILIAS_ENABLE_GO
+#define ILIAS_COROUTINE_TRACE
 #include "../include/ilias_co.hpp"
 #include "../include/ilias_loop.hpp"
 #include <iostream>
@@ -23,11 +23,15 @@ auto a() -> Task<> {
     co_await std::string("a");
     co_return;
 }
-auto b() -> Task<> {
-    co_return co_await a();
+auto b() -> Task<int> {
+    co_await a();
+    co_return 1;
 }
 auto c() -> Task<> {
-    co_return co_await b();
+    // Test erase awaitable detailed type
+    IAwaitable awaitable = b();
+    co_await awaitable;
+    co_return;
 }
 
 auto d() -> Task<> {

@@ -11,12 +11,6 @@
 
 ILIAS_NS_BEGIN
 
-// --- AwaitResult
-#if defined(__cpp_lib_coroutine)
-template <typename T>
-using AwaitResult = CallbackAwaitable<T>;
-#endif
-
 // --- Function
 #if defined(__cpp_lib_move_only_function)
 template <typename ...Args>
@@ -64,6 +58,16 @@ public:
     
     virtual void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvfromHandler &&cb) = 0;
     virtual void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout, SendtoHandler &&cb) = 0;
+
+#if defined(__cpp_lib_coroutine)
+    virtual auto asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs>;
+    virtual auto asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs>;
+    virtual auto asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgs>;
+    virtual auto asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs>;
+
+    virtual auto asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs>;
+    virtual auto asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs>;
+#endif
 };
 
 #if defined(__cpp_concepts)
@@ -100,13 +104,13 @@ public:
     template <StreamClient T>
     IStreamClient(T &&value) : mPtr(new Impl<T>(std::move(value))) {}
 
-    auto connect(const IPEndpoint &endpoint, int64_t timeout = -1) -> Task<ConnectHandlerArgs> {
+    auto connect(const IPEndpoint &endpoint, int64_t timeout = -1) -> IAwaitable<ConnectHandlerArgs> {
         return mPtr->connect(endpoint, timeout);
     }
-    auto send(const void *buffer, size_t n, int64_t timeout = -1) -> Task<SendHandlerArgs> {
+    auto send(const void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<SendHandlerArgs> {
         return mPtr->send(buffer, n, timeout);
     }
-    auto recv(void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvHandlerArgs> {
+    auto recv(void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<RecvHandlerArgs> {
         return mPtr->recv(buffer, n, timeout);
     }
 
@@ -141,9 +145,9 @@ public:
     }
 private:
     struct Base {
-        virtual auto connect(const IPEndpoint &endpoint, int64_t timeout) -> Task<ConnectHandlerArgs> = 0;
-        virtual auto send(const void *buffer, size_t n, int64_t timeout) -> Task<SendHandlerArgs> = 0;
-        virtual auto recv(void *buffer, size_t n, int64_t timeout) -> Task<RecvHandlerArgs> = 0;
+        virtual auto connect(const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> = 0;
+        virtual auto send(const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> = 0;
+        virtual auto recv(void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs> = 0;
         virtual ~Base() = default;
     };
     template <StreamClient T>
@@ -151,14 +155,14 @@ private:
         Impl(T &&value) : value(std::move(value)) { }
         Impl(const Impl &) = delete;
         ~Impl() = default;
-        auto connect(const IPEndpoint &endpoint, int64_t timeout) -> Task<ConnectHandlerArgs> override {
-            co_return co_await value.connect(endpoint, timeout);
+        auto connect(const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> override {
+            return value.connect(endpoint, timeout);
         }
-        auto send(const void *buffer, size_t n, int64_t timeout) -> Task<SendHandlerArgs> override {
-            co_return co_await value.send(buffer, n, timeout);
+        auto send(const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> override {
+            return value.send(buffer, n, timeout);
         }
-        auto recv(void *buffer, size_t n, int64_t timeout) -> Task<RecvHandlerArgs> override {
-            co_return co_await value.recv(buffer, n, timeout);
+        auto recv(void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs> override {
+            return value.recv(buffer, n, timeout);
         }
         T value;
     };
@@ -269,10 +273,10 @@ public:
     template <DatagramClient T>
     IDatagramClient(T &&value) : mPtr(new Impl<T>(std::move(value))) { }
 
-    auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> Task<SendtoHandlerArgs> {
+    auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> IAwaitable<SendtoHandlerArgs> {
         return mPtr->sendto(buffer, n, endpoint, timeout);
     }
-    auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvfromHandlerArgs> {
+    auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<RecvfromHandlerArgs> {
         return mPtr->recvfrom(buffer, n, timeout);
     }
     auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs {
@@ -307,8 +311,8 @@ public:
     }
 private:
     struct Base {
-        virtual auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> Task<SendtoHandlerArgs> = 0;
-        virtual auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvfromHandlerArgs> = 0;
+        virtual auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> IAwaitable<SendtoHandlerArgs> = 0;
+        virtual auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<RecvfromHandlerArgs> = 0;
         virtual auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs= 0;
         virtual ~Base() = default;
     };
@@ -317,10 +321,10 @@ private:
         Impl(T &&value) : value(std::move(value)) { }
         Impl(const Impl &) = delete;
         ~Impl() = default;
-        auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> Task<SendtoHandlerArgs> override {
+        auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs> override {
             co_return co_await value.sendto(buffer, n, endpoint, timeout);
         }
-        auto recvfrom(void *buffer, size_t n, int64_t timeout) -> Task<RecvfromHandlerArgs> override {
+        auto recvfrom(void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> override {
             co_return co_await value.recvfrom(buffer, n, timeout);
         }
         auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs override {
@@ -333,6 +337,59 @@ private:
 };
 static_assert(DatagramClient<IDatagramClient>); //< Make sure IDatagramClient is a has DatagramClient concept
 
+#endif
+
+// --- Coroutinue for IOContext's fallback
+#if defined(__cpp_lib_coroutine)
+inline auto IOContext::asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs> {
+    using Awaitable = CallbackAwaitable<RecvHandlerArgs>;
+    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
+        asyncRecv(socket, buffer, n, timeout, [func](RecvHandlerArgs &&args) mutable {
+            func(std::move(args));
+        });
+    });
+}
+inline auto IOContext::asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> {
+    using Awaitable = CallbackAwaitable<SendHandlerArgs>;
+    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
+        asyncSend(socket, buffer, n, timeout, [func](SendHandlerArgs &&args) mutable {
+            func(std::move(args));
+        });
+    });
+}
+inline auto IOContext::asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgs> {
+    using Awaitable = CallbackAwaitable<AcceptHandlerArgs>;
+    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
+        asyncAccept(socket, timeout, [func](AcceptHandlerArgs &&args) mutable {
+            func(std::move(args));
+        });
+    });
+}
+inline auto IOContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> {
+    using Awaitable = CallbackAwaitable<ConnectHandlerArgs>;
+    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
+        asyncConnect(socket, endpoint, timeout, [func](ConnectHandlerArgs &&args) mutable {
+            func(std::move(args));
+        });
+    });
+}
+
+inline auto IOContext::asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> {
+    using Awaitable = CallbackAwaitable<RecvfromHandlerArgs>;
+    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
+        asyncRecvfrom(socket, buffer, n, timeout, [func](RecvfromHandlerArgs &&args) mutable {
+            func(std::move(args));
+        });
+    });
+}
+inline auto IOContext::asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs> {
+    using Awaitable = CallbackAwaitable<SendtoHandlerArgs>;
+    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
+        asyncSendto(socket, buffer, n, endpoint, timeout, [func](RecvHandlerArgs &&args) mutable {
+            func(std::move(args));
+        });
+    });
+}
 #endif
 
 ILIAS_NS_END

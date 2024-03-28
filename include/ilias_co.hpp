@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <version>
+#include <concepts>
 #include <coroutine>
 #include <exception>
 #include <functional>
@@ -12,8 +13,8 @@
 #error "Compiler does not support coroutines"
 #endif
 
-#if !defined(ILIAS_NO_SOURCE_LOCATION) && !defined(NDEBUG)
-#define ILIAS_COROUTINE_TRACE
+#if  defined(ILIAS_NO_SOURCE_LOCATION)
+#undef ILIAS_COROUTINE_TRACE
 #endif
 
 ILIAS_NS_BEGIN
@@ -35,6 +36,8 @@ class Promise;
 class PromiseBase;
 template <typename T>
 class AwaitTransform;
+template <typename T>
+class IAwaitable;
 
 /**
  * @brief Check this type user has defined transform
@@ -53,6 +56,7 @@ concept AwaitTransformable = requires(AwaitTransform<T> t) {
 template <typename T>
 concept Awaitable = requires(T t) {
     t.await_ready();
+    t.await_resume();
 };
 
 /**
@@ -314,9 +318,8 @@ public:
     void set_quit_at_done(bool v) noexcept {
         mQuitAtDone = v;
     }
-    template <typename T>
-    void set_await_handle(std::coroutine_handle<Promise<T> > h) {
-        mAwaitPromise = &h.promise();
+    void set_await_promise(PromiseBase &promise) {
+        mAwaitPromise = &promise;
         mAwaitPromise->ref();
     }
     void set_event_loop(EventLoop *event_loop) noexcept {
@@ -423,7 +426,6 @@ public:
     ~Promise() = default;
 #endif
 
-public:
     Task<T> get_return_object() noexcept {
         auto handle = handle_type::from_promise(*this);
         this->mHandle = handle;
@@ -458,6 +460,12 @@ public:
     }
     void operator ()() noexcept {
         resume();
+    }
+    PromiseBase *get() const noexcept {
+        return mPtr;
+    }
+    PromiseBase &promise() const noexcept {
+        return *mPtr;
     }
     ResumeHandle &operator =(const ResumeHandle &ref) {
         if (this == &ref) {
@@ -506,8 +514,7 @@ public:
     bool await_ready() const noexcept {
         return false;
     }
-    template <typename U>
-    bool await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
+    bool await_suspend(const ResumeHandle &h) noexcept {
         mName = h.promise().name();
         ::fprintf(stderr, "[Ilias] co '%s' was try to await '%s'\n", mName, mTask.promise().name());
         if (_await_ready()) {
@@ -528,8 +535,7 @@ private:
     bool await_ready() const noexcept {
         return _await_ready();
     }
-    template <typename U>
-    void await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
+    void await_suspend(const ResumeHandle &h) noexcept {
         return _await_suspend(h);
     }
     T await_resume() const {
@@ -543,10 +549,8 @@ private:
         // So on true, this awaitable is ready
         return mTask.promise().resume_util_done_or_await();
     }
-    template <typename U>
-    void _await_suspend(std::coroutine_handle<Promise<U> > h) noexcept {
-        h.promise().set_suspend_by_await(true);
-        mTask.promise().set_await_handle(h);
+    void _await_suspend(const ResumeHandle &h) noexcept {
+        mTask.promise().set_await_promise(h.promise());
 
         // Run mHandle at EventLoop
         mTask.promise().resume_later();
@@ -558,20 +562,94 @@ private:
     Task<T> mTask;
 };
 
-// --- CallbackAwaitable Impl
-// Helper for wrapper callback
+/**
+ * @brief Helper for make Awaitable as dynamic type
+ * 
+ * @tparam T 
+ */
+template <typename T = void>
+class IAwaitable {
+public:
+    IAwaitable() = default;
+    IAwaitable(const IAwaitable &) = delete;
+    IAwaitable(IAwaitable &&other) : mPtr(other.mPtr) { other.mPtr = nullptr; }
+    ~IAwaitable() { delete mPtr; }
+
+    template <Awaitable U>
+    IAwaitable(U &&other) : mPtr(new Impl<U>(std::move(other))) { }
+    template <AwaitTransformable U>
+    IAwaitable(U &&other) : IAwaitable(AwaitTransform<U>().transform(std::move(other))) { }
+
+    bool await_ready() const {
+        return mPtr->await_ready();
+    }
+    bool await_suspend(ResumeHandle &&h) const {
+        return mPtr->await_suspend(std::move(h));
+    }
+    T await_resume() const {
+        return mPtr->await_resume();
+    }
+
+    template <typename U>
+    U &view() {
+        ILIAS_ASSERT_MSG(dynamic_cast<Impl<U> *>(mPtr) != nullptr, "Invalid type");
+        return static_cast<Impl<U> *>(mPtr)->value;
+    }
+private:
+    struct Base {
+        virtual ~Base() = default;
+        virtual bool await_ready() = 0;
+        virtual bool await_suspend(ResumeHandle &&handle) = 0;
+        virtual T await_resume() = 0;
+    };
+    template <typename U>
+    struct Impl final : public Base {
+        Impl(U &&value) : value(std::move(value)) { }
+        Impl(const Impl &) = delete;
+        ~Impl() = default;
+        bool await_ready() override {
+            return value.await_ready();
+        }
+        bool await_suspend(ResumeHandle &&handle) override {
+            using RetT = decltype(value.await_suspend(std::move(handle)));
+            if constexpr(std::is_same_v<RetT, void>) {
+                value.await_suspend(std::move(handle));
+                return true;
+            }
+            else {
+                return value.await_suspend(std::move(handle));
+            }
+        }
+        T await_resume() override {
+            return value.await_resume();
+        }
+        U value;
+    };
+
+    Base *mPtr = nullptr;
+};
+
+template <Awaitable T>
+IAwaitable(T &&u) -> IAwaitable<decltype(std::declval<T>().await_resume())>;
+template <AwaitTransformable T>
+IAwaitable(T &&u) -> IAwaitable<decltype(std::declval<decltype(AwaitTransform<T>().transform(T()))>().await_resume())>;
+
+/**
+ * @brief Helper for wrapping callback into awaitable
+ * 
+ * @tparam T 
+ */
 template <typename T = void>
 class CallbackAwaitable {
 public:
-    struct ResumeFunc : ResumeHandle {
+    struct ResumeFunc {
         using Type = std::conditional_t<std::is_trivial_v<T> && std::is_standard_layout_v<T>, T, T &&>;
-        using ResumeHandle::ResumeHandle;
-
         void operator ()(Type t) noexcept {
             awaitable->_put(std::forward<T>(t));
-            resume();
+            handle.resume();
         }
         CallbackAwaitable *awaitable;
+        ResumeHandle handle;
     };
     using SuspendFunc = Function<void(ResumeFunc &&)>;
 
@@ -587,8 +665,10 @@ public:
     bool await_ready() const noexcept {
         return false;
     }
-    void await_suspend(ResumeFunc &&func) noexcept {
+    void await_suspend(ResumeHandle &&handle) noexcept {
+        ResumeFunc func;
         func.awaitable = this;
+        func.handle = handle;
         mFunc(std::move(func));
     }
 
@@ -637,7 +717,7 @@ public:
     void await_suspend(ResumeHandle resumeHandle) noexcept {
         mFunc(std::move(resumeHandle));
     }
-    void await_resume() const noexcept {}
+    void await_resume() const noexcept { }
 private:
     SuspendFunc mFunc;
 };
@@ -712,7 +792,7 @@ inline void EventLoop::quit() {
 }
 
 // --- Utils Function
-inline auto msleep(int64_t ms) {
+inline auto msleep(int64_t ms) noexcept {
     struct Awaitable {
         bool await_ready() const noexcept {
             return ms <= 0;

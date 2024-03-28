@@ -100,26 +100,26 @@ public:
      * @param buffer 
      * @param n 
      * @param timeout
-     * @return AwaitResult<std::Expected<size_t, SockError> > bytes on ok, error on fail
+     * @return IAwaitable<std::Expected<size_t, SockError> > bytes on ok, error on fail
      */
-    auto recv(void *buffer, size_t n, int64_t timeout = -1) -> AwaitResult<RecvHandlerArgs>;
+    auto recv(void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<RecvHandlerArgs>;
     /**
      * @brief Send data to
      * 
      * @param buffer 
      * @param n 
      * @param timeout
-     * @return AwaitResult<Expected<size_t, SockError> > 
+     * @return IAwaitable<Expected<size_t, SockError> > 
      */
-    auto send(const void *buffer, size_t n, int64_t timeout = -1) -> AwaitResult<SendHandlerArgs>;
+    auto send(const void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<SendHandlerArgs>;
     /**
      * @brief Connect to
      * 
      * @param addr 
      * @param timeout
-     * @return AwaitResult<Expected<void, SockError> > 
+     * @return IAwaitable<Expected<void, SockError> > 
      */
-    auto connect(const IPEndpoint &addr, int64_t timeout = -1) -> AwaitResult<ConnectHandlerArgs>;
+    auto connect(const IPEndpoint &addr, int64_t timeout = -1) -> IAwaitable<ConnectHandlerArgs>;
 #endif
 };
 
@@ -143,9 +143,9 @@ public:
     /**
      * @brief Waiting accept socket
      * 
-     * @return AwaitResult<AcceptHandlerArgsT<TcpClient> > 
+     * @return IAwaitable<AcceptHandlerArgsT<TcpClient> > 
      */
-    auto accept(int64_t timeout = -1) -> AwaitResult<AcceptHandlerArgsT<TcpClient> >;
+    auto accept(int64_t timeout = -1) -> IAwaitable<AcceptHandlerArgsT<TcpClient> >;
 #endif
 };
 
@@ -164,8 +164,8 @@ public:
     auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs;
 
 #if defined(__cpp_lib_coroutine)
-    auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> AwaitResult<SendtoHandlerArgs>;
-    auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> AwaitResult<RecvfromHandlerArgs>;
+    auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> IAwaitable<SendtoHandlerArgs>;
+    auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<RecvfromHandlerArgs>;
 #endif
 };
 
@@ -235,37 +235,15 @@ inline auto TcpClient::connect(const IPEndpoint &endpoint, int64_t timeout, Conn
 }
 
 #if defined(__cpp_lib_coroutine)
-inline auto TcpClient::recv(void *buffer, size_t n, int64_t timeout) -> AwaitResult<RecvHandlerArgs> {
-    using Awaitable = AwaitResult<RecvHandlerArgs>;
-    return Awaitable(
-        [=, this](Awaitable::ResumeFunc &&func) {
-            this->recv(buffer, n, timeout, [=, f = std::move(func)](auto result) mutable {
-                f(std::move(result));  
-            });
-        }
-    );
+inline auto TcpClient::recv(void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs> {
+    return mContext->asyncRecv(mFd, buffer, n, timeout);
 }
-inline auto TcpClient::send(const void *buffer, size_t n, int64_t timeout) -> AwaitResult<SendHandlerArgs> {
-    using Awaitable = AwaitResult<SendHandlerArgs>;
-    return Awaitable(
-        [=, this](Awaitable::ResumeFunc &&func) {
-            this->send(buffer, n, timeout, [=, f = std::move(func)](auto result) mutable {
-                f(std::move(result));  
-            });
-        }
-    );
+inline auto TcpClient::send(const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> {
+    return mContext->asyncSend(mFd, buffer, n, timeout);
 }
-inline auto TcpClient::connect(const IPEndpoint &endpoint, int64_t timeout) -> AwaitResult<ConnectHandlerArgs> {
-    using Awaitable = AwaitResult<ConnectHandlerArgs>;
-    return Awaitable(
-        [=, this](Awaitable::ResumeFunc &&func) {
-            this->connect(endpoint, timeout, [=, f = std::move(func)](auto result) mutable {
-                f(std::move(result));  
-            });
-        }
-    );
+inline auto TcpClient::connect(const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> {
+    return mContext->asyncConnect(mFd, endpoint, timeout);
 }
-
 #endif
 
 
@@ -292,22 +270,14 @@ inline auto TcpListener::bind(const IPEndpoint &endpoint, int backlog) -> BindHa
     return BindHandlerArgs();
 }
 #if defined(__cpp_lib_coroutine)
-inline auto TcpListener::accept(int64_t timeout) -> AwaitResult<AcceptHandlerArgsT<TcpClient> > {
-    using Awaitable = AwaitResult<AcceptHandlerArgsT<TcpClient> >;
-    return Awaitable([=, this](Awaitable::ResumeFunc &&func) {
-        mContext->asyncAccept(mFd, timeout, [this, cb = std::move(func)](auto &&result) mutable {
-            if (!result) {
-                // Has Error
-                cb(Unexpected<SockError>(result.error()));
-                return;
-            }
-            else {
-                auto &[sock, addr] = *result;
-                cb(std::make_pair(TcpClient(*mContext, std::move(sock)), addr));
-                return;
-            }
-        });
-    });
+inline auto TcpListener::accept(int64_t timeout) -> IAwaitable<AcceptHandlerArgsT<TcpClient> > {
+    return [](IOContext *ctxt, SocketView fd, int64_t timeout) -> Task<AcceptHandlerArgsT<TcpClient>> {
+        auto ret = co_await ctxt->asyncAccept(fd, timeout);
+        if (!ret) {
+            co_return Unexpected(ret.error());
+        }
+        co_return std::pair{TcpClient(*ctxt, std::move(ret->first)), ret->second};
+    }(mContext, mFd, timeout);
 }
 #endif
 
@@ -332,21 +302,11 @@ inline auto UdpClient::bind(const IPEndpoint &endpoint) -> BindHandlerArgs {
 
 
 #if defined(__cpp_lib_coroutine)
-inline auto UdpClient::sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> AwaitResult<SendtoHandlerArgs> {
-    using Awaitable = AwaitResult<SendtoHandlerArgs>;
-    return Awaitable([=, this](Awaitable::ResumeFunc &&func) {
-        mContext->asyncSendto(mFd, buffer, n, endpoint, timeout, [this, cb = std::move(func)](auto &&result) mutable {
-            cb(std::move(result));
-        });
-    });
+inline auto UdpClient::sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs> {
+    return mContext->asyncSendto(mFd, buffer, n, endpoint, timeout);
 }
-inline auto UdpClient::recvfrom(void *buffer, size_t n, int64_t timeout) -> AwaitResult<RecvfromHandlerArgs> {
-    using Awaitable = AwaitResult<RecvfromHandlerArgs>;
-    return Awaitable([=, this](Awaitable::ResumeFunc &&func) {
-        mContext->asyncRecvfrom(mFd, buffer, n, timeout, [this, cb = std::move(func)](auto &&result) mutable {
-            cb(std::move(result));
-        });
-    });
+inline auto UdpClient::recvfrom(void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> {
+    return mContext->asyncRecvfrom(mFd, buffer, n, timeout);
 }
 #endif
 
