@@ -68,7 +68,7 @@ private:
  * @brief A Context for add watcher 
  * 
  */
-class PollContext final : public IOContext, private IOWatcher {
+class PollContext final : public IOContext {
 public:
     PollContext();
     PollContext(const PollContext&) = delete;
@@ -97,18 +97,22 @@ public:
     void *asyncPoll(SocketView socket, int revent, int64_t timeout, Function<void(int revents)> &&cb);
 
 #if defined(__cpp_lib_coroutine)
-    // auto asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs> override;
-    // auto asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> override;
-    // auto asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgsT<Socket>> override;
-    // auto asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> override;
+    auto asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs> override;
+    auto asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> override;
+    auto asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgs> override;
+    auto asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> override;
 
-    // auto asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> override;
-    // auto asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs> override;
+    auto asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> override;
+    auto asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs> override;
 #endif
 private:
     struct Fn {
         void (*fn)(void *);
         void *arg;    
+    };
+    struct Watcher : IOWatcher {
+        void onEvent(int revents) override;
+        PollContext *self;
     };
 
     void _run();
@@ -122,7 +126,6 @@ private:
     void _removeTimeout(IOWatcher *);
     void _addTimeout(IOWatcher *, int64_t timeout);
     int  _waitDuration();
-    void onEvent(int events) override;
     
     SockInitializer mInitalizer;
 
@@ -140,6 +143,7 @@ private:
 
     Socket mEvent; //< Socket poll in workThread
     Socket mControl; //< Socket for sending message
+    Watcher mEventWatcher;
 };
 
 // --- PollContext Impl
@@ -162,7 +166,8 @@ inline PollContext::PollContext() {
     mEvent.setBlocking(false);
 
     // Add event socket
-    addWatcher(mEvent, this, PollEvent::In);
+    mEventWatcher.self = this;
+    addWatcher(mEvent, &mEventWatcher, PollEvent::In);
 
     // Start Work Thread
     mThread = std::thread(&PollContext::_run, this);
@@ -447,12 +452,12 @@ inline IOWatcher *PollContext::findWatcher(SocketView socket) {
     }
     return iter->second;
 }
-inline void PollContext::onEvent(int events) {
+inline void PollContext::Watcher::onEvent(int events) {
     if (!(events & PollEvent::In)) {
         return;
     }
     Fn fn;
-    while (mEvent.recv(&fn, sizeof(Fn)) == sizeof(Fn)) {
+    while (self->mEvent.recv(&fn, sizeof(Fn)) == sizeof(Fn)) {
         fn.fn(fn.arg);
     }
 }
@@ -490,6 +495,8 @@ inline void PollContext::_invoke4(Callable &&callable) {
     fn.arg = &callable;
     _invoke(fn);
 }
+
+// TODO : Clean the code below
 
 // Async Interface
 inline bool PollContext::asyncInitialize(SocketView socket) {
@@ -551,7 +558,7 @@ inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_
     // Ok, we need to wait for the socket to be writable
     return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
         if (revents == PollEvent::Timeout) {
-            cb(Unexpected(SockError(ETIMEDOUT)));
+            cb(Unexpected(SockError(ILIAS_ETIMEDOUT)));
             return;
         }
         if (revents & PollEvent::Out) {
@@ -586,7 +593,7 @@ inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, i
     // Ok, wait readable
     return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
         if (revents == PollEvent::Timeout) {
-            cb(Unexpected(SockError(ETIMEDOUT)));
+            cb(Unexpected(SockError(ILIAS_ETIMEDOUT)));
             return;
         }
         if (revents & PollEvent::In) {
@@ -618,7 +625,7 @@ inline void *PollContext::asyncAccept(SocketView socket, int64_t timeout, Accept
     }
     return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket](int revents) mutable {
         if (revents == PollEvent::Timeout) {
-            cb(Unexpected(SockError(ETIMEDOUT)));
+            cb(Unexpected(SockError(ILIAS_ETIMEDOUT)));
             return;
         }
         if (revents & PollEvent::In) {
@@ -648,7 +655,7 @@ inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endp
     // Ok, we need to wait for the socket to be writable
     return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, endpoint](int revents) mutable {
         if (revents == PollEvent::Timeout) {
-            cb(Unexpected(SockError(ETIMEDOUT)));
+            cb(Unexpected(SockError(ILIAS_ETIMEDOUT)));
             return;
         }
         auto err = socket.error();
@@ -676,7 +683,7 @@ inline void *PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t 
     // Ok, we need to wait for the socket to be readable
     return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
         if (revents == PollEvent::Timeout) {
-            cb(Unexpected(SockError(ETIMEDOUT)));
+            cb(Unexpected(SockError(ILIAS_ETIMEDOUT)));
             return;
         }
         if (revents & PollEvent::In) {
@@ -705,7 +712,7 @@ inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, siz
     // Ok, we need to wait for the socket to be writable
     return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, buffer, n, ep = endpoint](int revents) mutable {
         if (revents == PollEvent::Timeout) {
-            cb(Unexpected(SockError(ETIMEDOUT)));
+            cb(Unexpected(SockError(ILIAS_ETIMEDOUT)));
             return;
         }
         if (revents & PollEvent::Out) {
@@ -720,39 +727,314 @@ inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, siz
     });
 }
 
-// #if defined(__cpp_lib_coroutine)
-// inline auto PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs>{
-//     struct Awaitable {
-//         bool await_ready() const {
+// Coroutine version
+#if defined(__cpp_lib_coroutine)
+inline auto PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs>{
+    struct Awaitable {
+        bool await_ready() {
+            ssize_t ret = sock.recv(buffer, n);
+            if (ret >= 0) {
+                result = RecvHandlerArgs(ret);
+                return true;
+            }
+            auto error = SockError::fromErrno();
+            if (!error.isWouldBlock() && !error.isInProgress()) {
+                result = Unexpected(error);
+                return true;
+            }
+            return false;
+        }
+        void await_suspend(ResumeHandle &&h) {
+            self->asyncPoll(sock, PollEvent::In, timeout, [this, handle = std::move(h)](int revents) mutable {
+                _onEvent(revents);
+                handle.resume();
+            });
+        }
+        RecvHandlerArgs await_resume() {
+            return result;
+        }
+        void _onEvent(int revents) {
+            if (revents == PollEvent::Timeout) {
+                result = Unexpected(SockError(ILIAS_ETIMEDOUT));
+                return;
+            }
+            if (revents & PollEvent::In) {
+                ssize_t ret = sock.recv(buffer, n);
+                if (ret >= 0) {
+                    result = ret;
+                    return;
+                }
+            }
+            if (revents & PollEvent::Err) {
+                auto error = SockError::fromErrno();
+                result = Unexpected(error);
+            }
+        }
 
-//         }
-//         bool
+        PollContext *self;
+        SocketView sock;
+        void *buffer;
+        size_t n;
+        int64_t timeout;
+        RecvHandlerArgs result;
+    };
+    return Awaitable {
+        this, socket, buffer, n, timeout
+    };
+}
+inline auto PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> {
+    struct Awaitable {
+        bool await_ready() {
+            ssize_t ret = sock.send(buffer, n);
+            if (ret >= 0) {
+                result = SendHandlerArgs(ret);
+                return true;
+            }
+            auto error = SockError::fromErrno();
+            if (!error.isWouldBlock() && !error.isInProgress()) {
+                result = Unexpected(error);
+                return true;
+            }
+            return false;
+        }
+        void await_suspend(ResumeHandle &&h) {
+            self->asyncPoll(sock, PollEvent::Out, timeout, [this, handle = std::move(h)](int revents) mutable {
+                _onEvent(revents);
+                handle.resume();
+            });
+        }
+        SendHandlerArgs await_resume() {
+            return result;
+        }
+        void _onEvent(int revents) {
+            if (revents == PollEvent::Timeout) {
+                result = Unexpected(SockError(ILIAS_ETIMEDOUT));
+                return;
+            }
+            if (revents & PollEvent::Out) {
+                ssize_t ret = sock.send(buffer, n);
+                if (ret >= 0) {
+                    result = ret;
+                    return;
+                }
+            }
+            if (revents & PollEvent::Err) {
+                auto error = SockError::fromErrno();
+                result = Unexpected(error);
+            }
+        }
 
-//         PollContext *self;
-//         SocketView sock;
-//         void *buffer;
-//         size_t n;
-//         int64_t timeout;
-//         RecvHandlerArgs result;
-//     };
-//     return {};
-// }
-// inline auto PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> {
-//     return {};
-// }
-// inline auto PollContext::asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgs> {
-//     return {};
-// }
-// inline auto PollContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> {
-//     return {};
-// }
-// inline auto asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> {
-//     return {};
-// }
-// inline auto asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) {
-//     return {};
-// }
-// #endif
+        PollContext *self;
+        SocketView sock;
+        const void *buffer;
+        size_t n;
+        int64_t timeout;
+        SendHandlerArgs result;
+    };
+    return Awaitable {
+        this, socket, buffer, n, timeout
+    };
+}
+inline auto PollContext::asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgs> {
+    struct Awaitable {
+        bool await_ready() {
+            auto [client, addr] = sock.accept<Socket>();
+            if (!client.isValid()) {
+                auto err = SockError::fromErrno();
+                if (!err.isWouldBlock() && !err.isInProgress()) {
+                    result = Unexpected(err);
+                    return true;
+                }
+                return false; //< No ready
+            }
+            result = AcceptHandlerArgs(std::pair<Socket, IPEndpoint>{std::move(client), std::move(addr)});
+            return true;
+        }
+        void await_suspend(ResumeHandle &&h) {
+            self->asyncPoll(sock, PollEvent::In, timeout, [this, handle = std::move(h)](int revents) mutable {
+                _onEvent(revents);
+                handle.resume();
+            });
+        }
+        void _onEvent(int revents) {
+            if (revents == PollEvent::Timeout) {
+                result = Unexpected(SockError(ILIAS_ETIMEDOUT));
+                return;
+            }
+            if (revents & PollEvent::In) {
+                auto [client, addr] = sock.accept<Socket>();
+                if (client.isValid()) {
+                    result = AcceptHandlerArgs(std::pair<Socket, IPEndpoint>{std::move(client), std::move(addr)});
+                    return;
+                }
+            }
+            result = Unexpected(SockError::fromErrno());
+        }
+        AcceptHandlerArgs await_resume() {
+            return std::move(result);
+        }
+
+        PollContext *self;
+        SocketView sock;
+        int64_t timeout;
+
+        AcceptHandlerArgs result {Unexpected(SockError())};
+    };
+    return Awaitable {
+        this, socket, timeout
+    };
+}
+inline auto PollContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> {
+    struct Awaitable {
+        bool await_ready() {
+            bool ret = sock.connect(endpoint);
+            if (ret) {
+                result = ConnectHandlerArgs();
+                return true;
+            }
+            auto err = SockError::fromErrno();
+            if (!err.isWouldBlock() && !err.isInProgress()) {
+                result = Unexpected(err);
+                return true;
+            }
+            return false;
+        }
+        void await_suspend(ResumeHandle &&h) {
+            self->asyncPoll(sock, PollEvent::Out, timeout, [this, handle = std::move(h)](int revents) mutable {
+                _onEvent(revents);
+                handle.resume();
+            });
+        }
+        ConnectHandlerArgs await_resume() {
+            return result;
+        }
+        void _onEvent(int revents) {
+            if (revents == PollEvent::Timeout) {
+                result = Unexpected(SockError(ILIAS_ETIMEDOUT));
+                return;
+            }
+            if (revents & PollEvent::Out) {
+                result = ConnectHandlerArgs();
+                return;
+            }
+            result = Unexpected(sock.error());
+        }
+        PollContext *self;
+        SocketView sock;
+        IPEndpoint endpoint;
+        int64_t timeout;
+
+        ConnectHandlerArgs result {Unexpected(SockError())};
+    };
+    return Awaitable {
+        this, socket, endpoint, timeout
+    };
+}
+inline auto PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> {
+    struct Awaitable {
+        bool await_ready() {
+            IPEndpoint endpoint;
+            ssize_t ret = sock.recvfrom(buffer, n, 0, &endpoint);
+            if (ret >= 0) {
+                result = RecvfromHandlerArgs(std::pair(ret, endpoint));
+                return true;
+            }
+            auto error = SockError::fromErrno();
+            if (!error.isWouldBlock() && !error.isInProgress()) {
+                result = Unexpected(error);
+                return true;
+            }
+            return false;
+        }
+        void await_suspend(ResumeHandle &&h) {
+            self->asyncPoll(sock, PollEvent::In, timeout, [this, handle = std::move(h)](int revents) mutable {
+                _onEvent(revents);
+                handle.resume();
+            });
+        }
+        RecvfromHandlerArgs await_resume() {
+            return result;
+        }
+        void _onEvent(int revents) {
+            if (revents == PollEvent::Timeout) {
+                result = Unexpected(SockError(ILIAS_ETIMEDOUT));
+                return;
+            }
+            if (revents & PollEvent::In) {
+                IPEndpoint endpoint;
+                ssize_t ret = sock.recvfrom(buffer, n, 0, &endpoint);
+                if (ret >= 0) {
+                    result = RecvfromHandlerArgs(std::pair(ret, endpoint));
+                    return;
+                }
+            }
+            result = Unexpected(SockError::fromErrno());
+        }
+        PollContext *self;
+        SocketView sock;
+        void *buffer;
+        size_t n;
+        int64_t timeout;
+
+        RecvfromHandlerArgs result;
+    };
+    return Awaitable {
+        this, socket, buffer, n, timeout
+    };
+}
+inline auto PollContext::asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs> {
+    struct Awaitable {
+        bool await_ready() {
+            ssize_t ret = sock.sendto(buffer, n, 0, &endpoint);
+            if (ret >= 0) {
+                result = ret;
+                return true;
+            }
+            auto error = SockError::fromErrno();
+            if (!error.isWouldBlock() && !error.isInProgress()) {
+                result = Unexpected(error);
+                return true;
+            }
+            return false;
+        }
+        void await_suspend(ResumeHandle &&h) {
+            self->asyncPoll(sock, PollEvent::Out, timeout, [this, handle = std::move(h)](int revents) mutable {
+                _onEvent(revents);
+                handle.resume();
+            });
+        }
+        SendtoHandlerArgs await_resume() {
+            return result;
+        }
+        void _onEvent(int revents) {
+            if (revents == PollEvent::Timeout) {
+                result = Unexpected<SockError>(ILIAS_ETIMEDOUT);
+                return;
+            }
+            if (revents & PollEvent::Out) {
+                auto bytes = sock.sendto(buffer, n, 0, &endpoint);
+                if (bytes >= 0) {
+                    result = bytes;
+                    return;
+                }
+            }
+            result = Unexpected(SockError::fromErrno());
+        }
+
+        PollContext *self;
+        SocketView sock;
+        const void *buffer;
+        size_t n;
+        IPEndpoint endpoint;
+        int64_t timeout;
+
+        SendtoHandlerArgs result;
+    };
+    return Awaitable {
+        this, socket, buffer, n, endpoint, timeout
+    };
+}
+#endif
 
 #if !defined(_WIN32)
 using NativeIOContext = PollContext;

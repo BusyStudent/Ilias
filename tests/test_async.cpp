@@ -4,7 +4,8 @@
 
 using namespace ILIAS_NAMESPACE;
 
-#ifdef _WIN32
+// #ifdef _WIN32
+#if 0
     #include "../include/ilias_iocp.hpp"
     #include "../include/ilias_iocp.cpp"
 #else
@@ -14,7 +15,8 @@ using namespace ILIAS_NAMESPACE;
 int main() {
     NativeEventLoop loop;
 
-#ifdef _WIN32
+// #ifdef _WIN32
+#if 0
     IOCPContext ctxt;
 #else
     PollContext ctxt;
