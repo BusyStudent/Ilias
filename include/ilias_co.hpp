@@ -59,6 +59,26 @@ concept Awaitable = requires(T t) {
     t.await_resume();
 };
 
+template <typename T>
+concept Resumeable = requires(T t) {
+    t.resume();
+};
+
+/**
+ * @brief Get Awaitable's result
+ * 
+ * @tparam T 
+ */
+template <Awaitable T> 
+using AwaitableResult = decltype(std::declval<T>().await_resume());
+/**
+ * @brief Get AwaitTransformable's result
+ * 
+ * @tparam T 
+ */
+template <AwaitTransformable T>
+using AwaitTransformResult = decltype(std::declval<AwaitTransform<T> >().transform(std::declval<T>()));
+
 /**
  * @brief Abstraction of event loop
  * 
@@ -630,9 +650,9 @@ private:
 };
 
 template <Awaitable T>
-IAwaitable(T &&u) -> IAwaitable<decltype(std::declval<T>().await_resume())>;
+IAwaitable(T &&u) -> IAwaitable<AwaitableResult<T> >;
 template <AwaitTransformable T>
-IAwaitable(T &&u) -> IAwaitable<decltype(std::declval<decltype(AwaitTransform<T>().transform(T()))>().await_resume())>;
+IAwaitable(T &&u) -> IAwaitable<AwaitableResult<AwaitTransformResult<T> > >;
 
 /**
  * @brief Helper for wrapping callback into awaitable

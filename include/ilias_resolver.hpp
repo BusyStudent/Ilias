@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <vector>
+#include <map>
 
 ILIAS_NS_BEGIN
 
@@ -146,12 +147,20 @@ public:
      * @return IPAddress 
      */
     IPAddress address() const;
+    /**
+     * @brief Check if the answer is expired
+     * 
+     * @return true 
+     * @return false 
+     */
+    bool isExpired() const noexcept;
 private:
     std::string mName;
     uint16_t mType = 0;
     uint16_t mClass = 0;
     uint32_t mTTL = 0;
     std::string mData;
+    std::chrono::steady_clock::time_point mExpireTime;
 friend class DnsResponse;
 };
 /**
@@ -233,8 +242,19 @@ public:
     Resolver(IOContext &);
     Resolver(const Resolver &) = delete;
     ~Resolver();
+
+#if defined(__cpp_lib_coroutine)
+    auto resolve(const char *hostname) -> IAwaitable<std::vector<IPAddress> >;
+#endif
+
 private:
-    IOContext *mCtxt = nullptr;
+    IOContext &mCtxt;
+    UdpClient  mClient4;
+    UdpClient  mClient6;
+    IPEndpoint mServer4;
+    IPEndpoint mServer6;
+    int64_t    mTimeout = 5000;
+    std::multimap<std::string, DnsAnswer> mCache;
 };
 
 // --- DnsQuery Impl
@@ -332,6 +352,9 @@ inline IPAddress DnsAnswer::address() const {
         return IPAddress();
     }
     return IPAddress::fromRaw(mData.data(), mData.size());
+}
+inline bool DnsAnswer::isExpired() const noexcept {
+    return std::chrono::steady_clock::now() > mExpireTime;
 }
 
 // --- DnsResponse Impl
@@ -447,6 +470,7 @@ inline bool DnsResponse::_parseAnswer(const uint8_t *buffer, size_t size, const 
     output.mType = type;
     output.mClass = class_;
     output.mTTL = ttl;
+    output.mExpireTime = std::chrono::steady_clock::now() + std::chrono::seconds(ttl);
 
     if ((now + rdlength) > (buffer + size)) {
         return false;
@@ -556,5 +580,13 @@ inline auto DnsResponse::addresses() const -> std::vector<IPAddress> {
     return addrs;
 }
 
+// --- Resolver
+inline Resolver::Resolver(IOContext &ctxt) : mCtxt(ctxt) {
+    mServer4 = "8.8.8.8";
+    // Detect Default dns server
+}
+inline Resolver::~Resolver() {
+
+}
 
 ILIAS_NS_END
