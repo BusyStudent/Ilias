@@ -458,7 +458,7 @@ inline void PollContext::Watcher::onEvent(int events) {
         return;
     }
     Fn fn;
-    while (self->mEvent.recv(&fn, sizeof(Fn)) == sizeof(Fn)) {
+    while (self->mEvent.recv(&fn, sizeof(Fn))) {
         fn.fn(fn.arg);
     }
 }

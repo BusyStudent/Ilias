@@ -45,8 +45,6 @@ class Expected<T, E, typename std::enable_if<!std::is_void<T>::value>::type> {
 public:
     using ValueT = T;
     using ErrorT = E;
-    using UnexpectedT = Unexpected<E>;
-
 private:
     union {
         ValueT mValue;
@@ -103,19 +101,22 @@ public:
         }
     }
 
-    Expected(const UnexpectedT &error)
+    template <typename U>
+    Expected(const Unexpected<U> &error)
         : mType(ErrorType)
     {
         new (&mError) ErrorT(error.error());
     }
 
-    Expected(UnexpectedT &&error)
+    template <typename U>
+    Expected(Unexpected<U> &&error)
         : mType(ErrorType)
     {
         new (&mError) ErrorT(error.error());
     }
 
-    Expected &operator=(const UnexpectedT &other) 
+    template <typename U>
+    Expected &operator=(const Unexpected<U> &other) 
     {
         destory();
         mType = ErrorType;
@@ -123,7 +124,8 @@ public:
         return *this;
     }
 
-    Expected &operator=(UnexpectedT &&other) 
+    template <typename U>
+    Expected &operator=(Unexpected<U> &&other) 
     {
         destory();
         mType = ErrorType;
@@ -372,8 +374,6 @@ class Expected<T, E, typename std::enable_if<std::is_void<T>::value>::type> {
 public:
     using ValueT = T;
     using ErrorT = E;
-    using UnexpectedT = Unexpected<E>;
-
 private:
     ErrorT mError;
 
@@ -412,26 +412,30 @@ public:
     {
     }
 
-    Expected(const UnexpectedT &error)
+    template <typename U>
+    Expected(const Unexpected<U> &error)
         : mType(ErrorType)
         , mError(error.error())
     {
     }
 
-    Expected(UnexpectedT &&error)
+    template <typename U>
+    Expected(Unexpected<U> &&error)
         : mType(ErrorType)
         , mError(error.error())
     {
     }
 
-    Expected operator=(const UnexpectedT &error)
+    template <typename U>
+    Expected operator=(const Unexpected<U> &error)
     {
         mType = ErrorType;
         mError = error.error();
         return *this;
     }
 
-    Expected operator=(UnexpectedT &&error)
+    template <typename U>
+    Expected operator=(Unexpected<U> &&error)
     {
         mType = ErrorType;
         mError = std::move(error.error());

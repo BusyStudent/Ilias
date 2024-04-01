@@ -26,7 +26,7 @@ int main() {
     if (!socket.isValid()) {
         return 0;
     }
-    if (auto ret = socket.bind(IPEndpoint()); !ret) {
+    if (auto ret = socket.bind(IPEndpoint("127.0.0.1", 1145)); !ret) {
         printError("FAIL TO BIND", ret.error());
     }
     if (auto ret = socket.listen(); !ret) {
