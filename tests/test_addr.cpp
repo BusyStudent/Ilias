@@ -1,11 +1,11 @@
-#include "../include/ilias.hpp"
+#include "../include/ilias_inet.hpp"
 #include <iostream>
 
 using namespace ILIAS_NAMESPACE;
 
-void printError(const char *str) {
-    std::cout << str << std::endl;
-    std::cout << SockError::fromErrno().message() << std::endl;
+void printError(const char *where, Error err) {
+    std::cerr << where << ": " << err.message() << std::endl;
+    ::exit(1);
 }
 
 int main() {
@@ -26,13 +26,13 @@ int main() {
     if (!socket.isValid()) {
         return 0;
     }
-    if (!socket.bind(IPEndpoint(IPAddress4::loopback(), 1145))) {
-        printError("FAIL TO BIND");
+    if (auto ret = socket.bind(IPEndpoint()); !ret) {
+        printError("FAIL TO BIND", ret.error());
     }
-    if (!socket.listen()) {
-        printError("FAIL TO LISTEN");
+    if (auto ret = socket.listen(); !ret) {
+        printError("FAIL TO LISTEN", ret.error());
     }
-    auto local = socket.localEndpoint();
+    auto local = socket.localEndpoint().value();
     std::cout << local.toString() << std::endl;
     std::cout << (local.address() == "127.0.0.1") << std::endl;
     std::cout << (local.port() == 1145) << std::endl;

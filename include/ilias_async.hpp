@@ -27,8 +27,8 @@ public:
         return mFd.get();
     }
     auto isValid() const -> bool;
-    auto localEndpoint() const -> IPEndpoint;
-    auto close() -> Expected<void, SockError>;
+    auto localEndpoint() const -> Result<IPEndpoint>;
+    auto close() -> Expected<void, Error>;
     auto context() const -> IOContext *;
     auto cancel() const -> bool;
     
@@ -61,7 +61,7 @@ public:
      * 
      * @return IPEndpoint 
      */
-    auto remoteEndpoint() const -> IPEndpoint;
+    auto remoteEndpoint() const -> Result<IPEndpoint>;
 
     /**
      * @brief Recv data from
@@ -100,7 +100,7 @@ public:
      * @param buffer 
      * @param n 
      * @param timeout
-     * @return IAwaitable<std::Expected<size_t, SockError> > bytes on ok, error on fail
+     * @return IAwaitable<std::Expected<size_t, Error> > bytes on ok, error on fail
      */
     auto recv(void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<RecvHandlerArgs>;
     /**
@@ -109,7 +109,7 @@ public:
      * @param buffer 
      * @param n 
      * @param timeout
-     * @return IAwaitable<Expected<size_t, SockError> > 
+     * @return IAwaitable<Expected<size_t, Error> > 
      */
     auto send(const void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<SendHandlerArgs>;
     /**
@@ -117,7 +117,7 @@ public:
      * 
      * @param addr 
      * @param timeout
-     * @return IAwaitable<Expected<void, SockError> > 
+     * @return IAwaitable<Expected<void, Error> > 
      */
     auto connect(const IPEndpoint &addr, int64_t timeout = -1) -> IAwaitable<ConnectHandlerArgs>;
 #endif
@@ -135,7 +135,7 @@ public:
      * 
      * @param endpoint 
      * @param backlog 
-     * @return Expected<void, SockError> 
+     * @return Expected<void, Error> 
      */
     auto bind(const IPEndpoint &endpoint, int backlog = 0) -> BindHandlerArgs;
 
@@ -159,7 +159,7 @@ public:
      * @brief Bind the socket with endpoint
      * 
      * @param endpoint 
-     * @return Expected<void, SockError> 
+     * @return Expected<void, Error> 
      */
     auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs;
 
@@ -186,19 +186,19 @@ inline AsyncSocket::~AsyncSocket() {
 inline auto AsyncSocket::context() const -> IOContext * {
     return mContext;
 }
-inline auto AsyncSocket::close() -> Expected<void, SockError> {
+inline auto AsyncSocket::close() -> Expected<void, Error> {
     if (mContext && mFd.isValid()) {
         mContext->asyncCleanup(mFd);
         if (!mFd.close()) {
-            return Unexpected(SockError::fromErrno());
+            return Unexpected(Error::fromErrno());
         }
     }
-    return Expected<void, SockError>();
+    return Expected<void, Error>();
 }
 inline auto AsyncSocket::cancel() const -> bool {
     return mContext->asyncCancel(mFd, nullptr);
 }
-inline auto AsyncSocket::localEndpoint() const -> IPEndpoint {
+inline auto AsyncSocket::localEndpoint() const -> Result<IPEndpoint> {
     return mFd.localEndpoint();
 }
 inline auto AsyncSocket::isValid() const -> bool {
@@ -211,7 +211,7 @@ inline AsyncSocket::operator SocketView() const noexcept {
 // --- TcpClient Impl
 inline TcpClient::TcpClient() { }
 inline TcpClient::TcpClient(IOContext &ctxt, int family) :
-    AsyncSocket(ctxt, Socket::create(family, SOCK_STREAM, IPPROTO_TCP))
+    AsyncSocket(ctxt, Socket(family, SOCK_STREAM, IPPROTO_TCP))
 { 
 
 }
@@ -221,7 +221,7 @@ inline TcpClient::TcpClient(IOContext &ctxt, Socket &&socket):
 
 }
 
-inline auto TcpClient::remoteEndpoint() const -> IPEndpoint {
+inline auto TcpClient::remoteEndpoint() const -> Result<IPEndpoint> {
     return mFd.remoteEndpoint();
 }
 inline auto TcpClient::recv(void *buffer, size_t n, int64_t timeout, RecvHandler &&fn) -> void * {
@@ -250,7 +250,7 @@ inline auto TcpClient::connect(const IPEndpoint &endpoint, int64_t timeout) -> I
 // --- TcpListener Impl
 inline TcpListener::TcpListener() { }
 inline TcpListener::TcpListener(IOContext &ctxt, int family) : 
-    AsyncSocket(ctxt, Socket::create(family, SOCK_STREAM, IPPROTO_TCP)) 
+    AsyncSocket(ctxt, Socket(family, SOCK_STREAM, IPPROTO_TCP)) 
 {
 
 }
@@ -261,11 +261,11 @@ inline TcpListener::TcpListener(IOContext &ctxt, Socket &&socket):
 }
 
 inline auto TcpListener::bind(const IPEndpoint &endpoint, int backlog) -> BindHandlerArgs {
-    if (!mFd.bind(endpoint)) {
-        return Unexpected(SockError::fromErrno());
+    if (auto ret = mFd.bind(endpoint); !ret) {
+        return Unexpected(ret.error());
     }
-    if (!mFd.listen(backlog)) {
-        return Unexpected(SockError::fromErrno());
+    if (auto ret = mFd.listen(backlog); !ret) {
+        return Unexpected(ret.error());
     }
     return BindHandlerArgs();
 }
@@ -284,7 +284,7 @@ inline auto TcpListener::accept(int64_t timeout) -> IAwaitable<AcceptHandlerArgs
 // --- UdpSocket Impl
 inline UdpClient::UdpClient() { }
 inline UdpClient::UdpClient(IOContext &ctxt, int family) :
-    AsyncSocket(ctxt, Socket::create(family, SOCK_DGRAM, IPPROTO_UDP)) 
+    AsyncSocket(ctxt, Socket(family, SOCK_DGRAM, IPPROTO_UDP)) 
 {
 
 }
@@ -294,10 +294,7 @@ inline UdpClient::UdpClient(IOContext &ctxt, Socket &&socket):
 
 }
 inline auto UdpClient::bind(const IPEndpoint &endpoint) -> BindHandlerArgs {
-    if (!mFd.bind(endpoint)) {
-        return Unexpected(SockError::fromErrno());
-    }
-    return BindHandlerArgs();
+    return mFd.bind(endpoint);
 }
 
 

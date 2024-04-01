@@ -309,7 +309,7 @@ public:
     }
 protected:
 #if defined(__cpp_impl_coroutine)
-    auto _handleError(int errcode, int64_t timeout) -> Task<Expected<void, SockError> > {
+    auto _handleError(int errcode, int64_t timeout) -> Task<Expected<void, Error> > {
         if (errcode == SSL_ERROR_WANT_READ) {
             auto ret = co_await _waitReadable(timeout);
             if (!ret) {
@@ -324,11 +324,11 @@ protected:
         }
         else {
             // Error
-            co_return Unexpected(SockError(ILIAS_EOTHER));
+            co_return Unexpected(Error::SSL);
         }
-        co_return Expected<void, SockError>();
+        co_return Expected<void, Error>();
     }
-    auto _flushWrite(int64_t timeout) -> Task<Expected<void, SockError> > {
+    auto _flushWrite(int64_t timeout) -> Task<Expected<void, Error> > {
         // Flush the data
         size_t dataLeft = mBio->mWriteRing.size();
         auto tmpbuffer = std::make_unique<uint8_t[]>(dataLeft);
@@ -344,9 +344,9 @@ protected:
             dataLeft -= *ret;
             current += *ret;
         }
-        co_return Expected<void, SockError>();
+        co_return Expected<void, Error>();
     }
-    auto _waitReadable(int64_t timeout) -> Task<Expected<void, SockError> > {
+    auto _waitReadable(int64_t timeout) -> Task<Expected<void, Error> > {
         if (!mBio->mWriteRing.empty()) {
             // Require flush
             auto ret = co_await _flushWrite(timeout);
@@ -363,13 +363,13 @@ protected:
         }
         auto written = mBio->mReadRing.push(tmpbuffer.get(), *ret);
         ILIAS_ASSERT(written == *ret);
-        co_return Expected<void, SockError>();
+        co_return Expected<void, Error>();
     }
-    auto _accept(int64_t timeout) -> Task<Expected<void, SockError> > {
+    auto _accept(int64_t timeout) -> Task<Expected<void, Error> > {
         while (true) {
             int sslAccept = SSL_accept(mSsl);
             if (sslAccept == 1) {
-                co_return Expected<void, SockError>();
+                co_return Expected<void, Error>();
             }
             int errcode = SSL_get_error(mSsl, sslAccept);
             if (auto ret = co_await this->_handleError(errcode, timeout); !ret) {

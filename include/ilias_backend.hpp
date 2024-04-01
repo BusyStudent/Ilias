@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ilias.hpp"
+#include "ilias_inet.hpp"
 #include "ilias_expected.hpp"
 
 // --- Import coroutine if
@@ -21,27 +22,27 @@ using Function = std::function<Args...>;
 #endif
 
 // --- Types
-using RecvHandlerArgs = Expected<size_t, SockError>;
+using RecvHandlerArgs = Expected<size_t, Error>;
 using RecvHandler = Function<void (RecvHandlerArgs &&)>;
 
-using SendHandlerArgs = Expected<size_t, SockError>;
+using SendHandlerArgs = Expected<size_t, Error>;
 using SendHandler = Function<void (SendHandlerArgs &&)>;
 
 template <typename T>
-using AcceptHandlerArgsT = Expected<std::pair<T, IPEndpoint>, SockError>;
-using AcceptHandlerArgs = Expected<std::pair<Socket, IPEndpoint> , SockError>;
+using AcceptHandlerArgsT = Expected<std::pair<T, IPEndpoint>, Error>;
+using AcceptHandlerArgs = Expected<std::pair<Socket, IPEndpoint> , Error>;
 using AcceptHandler = Function<void (AcceptHandlerArgs &&)>;
 
-using ConnectHandlerArgs = Expected<void, SockError>;
+using ConnectHandlerArgs = Expected<void, Error>;
 using ConnectHandler = Function<void (ConnectHandlerArgs &&)>;
 
-using RecvfromHandlerArgs = Expected<std::pair<size_t, IPEndpoint>, SockError>;
+using RecvfromHandlerArgs = Expected<std::pair<size_t, IPEndpoint>, Error>;
 using RecvfromHandler = Function<void (RecvfromHandlerArgs &&)>;
 
-using SendtoHandlerArgs = Expected<size_t, SockError>;
+using SendtoHandlerArgs = Expected<size_t, Error>;
 using SendtoHandler = Function<void (SendtoHandlerArgs &&)>;
 
-using BindHandlerArgs = Expected<void, SockError>;
+using BindHandlerArgs = Expected<void, Error>;
 
 // --- IOContext
 class IOContext {
@@ -192,7 +193,7 @@ public:
     auto accept(int64_t timeout = -1) const -> Task<AcceptHandlerArgsT<IStreamClient> > {
         return mPtr->accept(timeout);
     }
-    auto localEndpoint() const -> IPEndpoint {
+    auto localEndpoint() const -> Result<IPEndpoint> {
         return mPtr->localEndpoint();
     }
 
@@ -229,7 +230,7 @@ private:
     struct Base {
         virtual auto bind(const IPEndpoint &endpoint, int backlog) -> BindHandlerArgs = 0;
         virtual auto accept(int64_t timeout) -> Task<AcceptHandlerArgsT<IStreamClient> > = 0;
-        virtual auto localEndpoint() -> IPEndpoint = 0;
+        virtual auto localEndpoint() -> Result<IPEndpoint> = 0;
         virtual ~Base() = default;
     };
     template <StreamListener T>
@@ -250,7 +251,7 @@ private:
                 co_return std::pair {IStreamClient(std::move(client)), addr};
             }
         }
-        auto localEndpoint() -> IPEndpoint override {
+        auto localEndpoint() -> Result<IPEndpoint> override {
             return value.localEndpoint();
         }
         T value;

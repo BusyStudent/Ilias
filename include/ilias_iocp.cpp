@@ -12,7 +12,7 @@ enum IOCPEvent : int {
     Send     = 1 << 2,
     Accept   = 1 << 3,
     Connect  = 1 << 4,
-    Error    = 1 << 5,
+    SysError = 1 << 5,
     Timeout  = 1 << 6, //< As same as Error, spec our timeout
 };
 
@@ -33,7 +33,7 @@ struct IOCPOverlapped : OVERLAPPED {
     AcceptHandler AcceptCallback;
     ConnectHandler ConnectCallback;
     RecvfromHandler RecvfromCallback;
-    Function<void(Expected<size_t, SockError>)> RecvSendCallback;
+    Function<void(Expected<size_t, Error>)> RecvSendCallback;
 
     void clear() {
         ::memset(static_cast<OVERLAPPED*>(this), 0, sizeof(OVERLAPPED));
@@ -185,9 +185,9 @@ void *IOCPContext::asyncConnect(SocketView socket, const IPEndpoint &ep, int64_t
     // Before ConnectEx, we need bind first
     ::sockaddr_storage storage {};
     ::memset(&storage, 0, sizeof(storage));
-    storage.ss_family = socket.family();
+    storage.ss_family = socket.family().value();
     if (!socket.bind(storage)) {
-        overlapped->ConnectCallback(Unexpected<SockError>(SockError::fromErrno()));
+        overlapped->ConnectCallback(Unexpected<Error>(Error::fromErrno()));
         overlapped->isCompleted = true;
         return nullptr;
     }
@@ -196,7 +196,7 @@ void *IOCPContext::asyncConnect(SocketView socket, const IPEndpoint &ep, int64_t
     if (!mFnConnectEx(socket.get(), &ep.data<sockaddr>(), ep.length(),
                         nullptr, 0, &overlapped->dwflag, overlapped)) {
         if (WSAGetLastError () != ERROR_IO_PENDING) {
-            overlapped->ConnectCallback(Unexpected<SockError>(SockError::fromErrno()));
+            overlapped->ConnectCallback(Unexpected<Error>(Error::fromErrno()));
             overlapped->isCompleted = true;
             return nullptr;
         }
@@ -229,7 +229,7 @@ void *IOCPContext::asyncAccept(
     ::WSAPROTOCOL_INFO info;
     ::socklen_t len = sizeof(info);
     if (::getsockopt(socket.get(), SOL_SOCKET, SO_PROTOCOL_INFO, (char *)&info, &len) == SOCKET_ERROR) {
-        overlapped->AcceptCallback(Unexpected<SockError>(SockError::fromErrno()));
+        overlapped->AcceptCallback(Unexpected<Error>(Error::fromErrno()));
         overlapped->isCompleted = true;
         return nullptr;
     }
@@ -248,7 +248,7 @@ void *IOCPContext::asyncAccept(
     {
         auto error = ::WSAGetLastError();
         if (error != ERROR_IO_PENDING) {
-            overlapped->AcceptCallback(Unexpected<SockError>(error));
+            overlapped->AcceptCallback(Unexpected<Error>(error));
             overlapped->isCompleted = true;
             return nullptr;
         } else {
@@ -291,7 +291,7 @@ void *IOCPContext::asyncRecv(
     if (ret == SOCKET_ERROR) {
         auto error = ::WSAGetLastError();
         if (error != ERROR_IO_PENDING) {
-            overlapped->RecvSendCallback(Unexpected<SockError>(error));
+            overlapped->RecvSendCallback(Unexpected<Error>(error));
             overlapped->isCompleted = true;
             return nullptr;
         }
@@ -335,7 +335,7 @@ void *IOCPContext::asyncSend(
     if (ret == SOCKET_ERROR) {
         auto error = ::WSAGetLastError();
         if (error != ERROR_IO_PENDING) {
-            overlapped->RecvSendCallback(Unexpected<SockError>(error));
+            overlapped->RecvSendCallback(Unexpected<Error>(error));
             overlapped->isCompleted = true;
             return nullptr;
         } else {
@@ -385,7 +385,7 @@ void *IOCPContext::asyncRecvfrom(
     if (ret == SOCKET_ERROR) {
         auto error = ::WSAGetLastError();
         if (error != ERROR_IO_PENDING) {
-            overlapped->RecvfromCallback(Unexpected<SockError>(error));
+            overlapped->RecvfromCallback(Unexpected<Error>(error));
             overlapped->isCompleted = true;
             return nullptr;
         } else {
@@ -434,7 +434,7 @@ void *IOCPContext::asyncSendto(
     if (ret == SOCKET_ERROR) {
         auto error = ::WSAGetLastError();
         if (error != ERROR_IO_PENDING) {
-            overlapped->RecvSendCallback(Unexpected<SockError>(error));
+            overlapped->RecvSendCallback(Unexpected<Error>(error));
             overlapped->isCompleted = true;
             return nullptr;
         } else {
@@ -467,7 +467,7 @@ inline void IOCPContext::_run() {
         ILIAS_ASSERT(data != nullptr);
         data->byteTrans = byteTrans;
         if (!ret) {
-            data->event |= IOCPEvent::Error;
+            data->event |= IOCPEvent::SysError;
         }
         // Dispatch
         _dump(data);
@@ -533,7 +533,7 @@ inline void IOCPContext::_dump(IOCPOverlapped *overlapped) {
     if (overlapped->event & IOCPEvent::Connect) {
         events += "Connect ";
     }
-    if (overlapped->event & IOCPEvent::Error) {
+    if (overlapped->event & IOCPEvent::SysError) {
         events += "Error ";
     }
     if (overlapped->event & IOCPEvent::Timeout) {
@@ -551,15 +551,15 @@ inline void IOCPContext::_onEvent(IOCPOverlapped *overlapped) {
     
 #if 1
     if (overlapped->event & IOCPEvent::Timeout) {
-        overlapped->event |= IOCPEvent::Error;
+        overlapped->event |= IOCPEvent::SysError;
 
         ::WSASetLastError(WSAETIMEDOUT);
     }
 #endif
     if (overlapped->event & IOCPEvent::Recv) {
         ILIAS_ASSERT(overlapped->RecvSendCallback != nullptr);
-        if (overlapped->event & IOCPEvent::Error) {
-            overlapped->RecvSendCallback(SockError::fromErrno());
+        if (overlapped->event & IOCPEvent::SysError) {
+            overlapped->RecvSendCallback(Error::fromErrno());
         }
         else {
             overlapped->RecvSendCallback(overlapped->byteTrans);
@@ -568,8 +568,8 @@ inline void IOCPContext::_onEvent(IOCPOverlapped *overlapped) {
     }
     else if (overlapped->event & IOCPEvent::Send) {
         ILIAS_ASSERT(overlapped->RecvSendCallback != nullptr);
-        if (overlapped->event & IOCPEvent::Error) {
-            overlapped->RecvSendCallback(SockError::fromErrno());
+        if (overlapped->event & IOCPEvent::SysError) {
+            overlapped->RecvSendCallback(Error::fromErrno());
         }
         else {
             overlapped->RecvSendCallback(overlapped->byteTrans);
@@ -578,10 +578,10 @@ inline void IOCPContext::_onEvent(IOCPOverlapped *overlapped) {
     }
     else if (overlapped->event & IOCPEvent::Accept) {
         ILIAS_ASSERT(overlapped->AcceptCallback != nullptr);
-        if (overlapped->event & IOCPEvent::Error) {
+        if (overlapped->event & IOCPEvent::SysError) {
             ::closesocket(overlapped->peerfd);
             overlapped->peerfd = INVALID_SOCKET;
-            overlapped->AcceptCallback(Unexpected<SockError>(SockError::fromErrno()));
+            overlapped->AcceptCallback(Unexpected<Error>(Error::fromErrno()));
         }
         else {
             ILIAS_ASSERT(overlapped->peerfd != INVALID_SOCKET);
@@ -608,19 +608,19 @@ inline void IOCPContext::_onEvent(IOCPOverlapped *overlapped) {
     } 
     else if (overlapped->event & IOCPEvent::Connect) {
         ILIAS_ASSERT(overlapped->ConnectCallback != nullptr);
-        if (overlapped->event & IOCPEvent::Error) {
-            overlapped->ConnectCallback(Unexpected<SockError>(SockError::fromErrno()));
+        if (overlapped->event & IOCPEvent::SysError) {
+            overlapped->ConnectCallback(Unexpected<Error>(Error::fromErrno()));
         }
         else {
             ::setsockopt(overlapped->sockfd, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0);
-            overlapped->ConnectCallback(Expected<void, SockError>());
+            overlapped->ConnectCallback(Expected<void, Error>());
         }
         overlapped->ConnectCallback = nullptr;
     } 
     else if (overlapped->event & IOCPEvent::Recvfrom) {
         ILIAS_ASSERT(overlapped->RecvfromCallback != nullptr);
-        if (overlapped->event & IOCPEvent::Error) {
-            overlapped->RecvfromCallback(Unexpected<SockError>(SockError::fromErrno()));
+        if (overlapped->event & IOCPEvent::SysError) {
+            overlapped->RecvfromCallback(Unexpected<Error>(Error::fromErrno()));
         }
         else {
             overlapped->RecvfromCallback(
@@ -635,7 +635,7 @@ inline void IOCPContext::_onEvent(IOCPOverlapped *overlapped) {
     else {
         fprintf(stderr, "Unknown event: %d\n", overlapped->event);
         ILIAS_ASSERT(false);
-        // overlapped->RecvSendCallback(SockError::fromErrno());
+        // overlapped->RecvSendCallback(Error::fromErrno());
     }
 
     // This request is done

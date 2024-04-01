@@ -121,11 +121,11 @@ int main() {
     loop.runTask([&]() -> Task<> {
         TcpListener tcpListener(ctxt, AF_INET);
         IStreamListener listener = std::move(tcpListener);
-        if (auto ret = listener.bind("127.0.0.1:61183"); !ret) {
+        if (auto ret = listener.bind("127.0.0.1:0"); !ret) {
             std::cout << ret.error().message() << std::endl;
             co_return;
         }
-        std::cout << "Server bound to " << listener.localEndpoint().toString() << std::endl;
+        std::cout << "Server bound to " << listener.localEndpoint()->toString() << std::endl;
         while (true) {
             auto ret = co_await listener.accept();
             if (!ret) {

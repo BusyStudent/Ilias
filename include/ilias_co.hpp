@@ -29,9 +29,9 @@ using Function = std::function<Args...>;
 #endif
 
 // --- Coroutine 
-template <typename T = void>
+template <typename T>
 class Task;
-template <typename T = void>
+template <typename T>
 class Promise;
 class PromiseBase;
 template <typename T>

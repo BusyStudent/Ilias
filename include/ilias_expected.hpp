@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <type_traits>
 
 #if __cplusplus >= 202002L
@@ -486,5 +485,8 @@ public:
 };
 
 #endif
+
+template <typename T>
+using Result = Expected<T, Error>;
 
 ILIAS_NS_END

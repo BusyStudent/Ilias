@@ -33,7 +33,7 @@ int main() {
             std::cout << ret.error().message() << std::endl;
             co_return;
         }
-        std::cout << client.localEndpoint().toString() << std::endl;
+        std::cout << client.localEndpoint()->toString() << std::endl;
         auto ret = co_await client.sendto(data.data(), data.size(), IPEndpoint("114.114.114.114", 53));
         if (!ret) {
             std::cout << ret.error().message() << std::endl;
