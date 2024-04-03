@@ -4,74 +4,12 @@
 #include "ilias_inet.hpp"
 #include "ilias_expected.hpp"
 
-// --- Import coroutine if
-#if defined(__cpp_lib_coroutine)
+// --- Import coroutine
 #include "ilias_co.hpp"
-#endif
 
 
 ILIAS_NS_BEGIN
 
-// --- Function
-#if defined(__cpp_lib_move_only_function)
-template <typename ...Args>
-using Function = std::move_only_function<Args...>;
-#else
-template <typename ...Args>
-using Function = std::function<Args...>;
-#endif
-
-// --- Types
-using RecvHandlerArgs = Expected<size_t, Error>;
-using RecvHandler = Function<void (RecvHandlerArgs &&)>;
-
-using SendHandlerArgs = Expected<size_t, Error>;
-using SendHandler = Function<void (SendHandlerArgs &&)>;
-
-template <typename T>
-using AcceptHandlerArgsT = Expected<std::pair<T, IPEndpoint>, Error>;
-using AcceptHandlerArgs = Expected<std::pair<Socket, IPEndpoint> , Error>;
-using AcceptHandler = Function<void (AcceptHandlerArgs &&)>;
-
-using ConnectHandlerArgs = Expected<void, Error>;
-using ConnectHandler = Function<void (ConnectHandlerArgs &&)>;
-
-using RecvfromHandlerArgs = Expected<std::pair<size_t, IPEndpoint>, Error>;
-using RecvfromHandler = Function<void (RecvfromHandlerArgs &&)>;
-
-using SendtoHandlerArgs = Expected<size_t, Error>;
-using SendtoHandler = Function<void (SendtoHandlerArgs &&)>;
-
-using BindHandlerArgs = Expected<void, Error>;
-
-// --- IOContext
-class IOContext {
-public:
-    // Async Interface
-    virtual bool asyncInitialize(SocketView socket) = 0;
-    virtual bool asyncCleanup(SocketView socket) = 0;
-    virtual bool asyncCancel(SocketView, void *operation) = 0;
-
-    virtual void *asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvHandler &&cb) = 0;
-    virtual void *asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout, SendHandler &&cb) = 0;
-    virtual void *asyncAccept(SocketView socket, int64_t timeout, AcceptHandler &&cb) = 0;
-    virtual void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout, ConnectHandler &&cb) = 0;
-    
-    virtual void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvfromHandler &&cb) = 0;
-    virtual void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout, SendtoHandler &&cb) = 0;
-
-#if defined(__cpp_lib_coroutine)
-    virtual auto asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs>;
-    virtual auto asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs>;
-    virtual auto asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgs>;
-    virtual auto asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs>;
-
-    virtual auto asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs>;
-    virtual auto asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs>;
-#endif
-};
-
-#if defined(__cpp_concepts)
 // --- Concepts
 template <typename T>
 concept StreamClient = requires(T t) {
@@ -91,6 +29,24 @@ concept DatagramClient = requires(T t) {
     t.recvfrom(nullptr, size_t{ }, int64_t{ });
 };
 
+/**
+ * @brief Interface for provide async network services
+ * 
+ */
+class IoContext : public EventLoop {
+public:
+    virtual auto addSocket(SocketView fd) -> Result<void> = 0;
+    virtual auto removeSocket(SocketView fd) -> Result<void> = 0;
+    
+    virtual auto send(SocketView fd, const void *buffer, size_t n) -> Task<size_t> = 0;
+    virtual auto recv(SocketView fd, void *buffer, size_t n) -> Task<size_t> = 0;
+    virtual auto connect(SocketView fd, const IPEndpoint &endpoint) -> Task<void> = 0;
+    virtual auto accept(SocketView fd) -> Task<std::pair<Socket, IPEndpoint> > = 0;
+    virtual auto sendto(SocketView fd, const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> = 0;
+    virtual auto recvfrom(SocketView fd, void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > = 0;
+};
+
+#if 0
 /**
  * @brief Helper class to wrap a StreamClient as dynamic type
  * 
@@ -337,60 +293,7 @@ private:
     Base *mPtr = nullptr;
 };
 static_assert(DatagramClient<IDatagramClient>); //< Make sure IDatagramClient is a has DatagramClient concept
-
 #endif
 
-// --- Coroutinue for IOContext's fallback
-#if defined(__cpp_lib_coroutine)
-inline auto IOContext::asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs> {
-    using Awaitable = CallbackAwaitable<RecvHandlerArgs>;
-    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
-        asyncRecv(socket, buffer, n, timeout, [func](RecvHandlerArgs &&args) mutable {
-            func(std::move(args));
-        });
-    });
-}
-inline auto IOContext::asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> {
-    using Awaitable = CallbackAwaitable<SendHandlerArgs>;
-    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
-        asyncSend(socket, buffer, n, timeout, [func](SendHandlerArgs &&args) mutable {
-            func(std::move(args));
-        });
-    });
-}
-inline auto IOContext::asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgs> {
-    using Awaitable = CallbackAwaitable<AcceptHandlerArgs>;
-    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
-        asyncAccept(socket, timeout, [func](AcceptHandlerArgs &&args) mutable {
-            func(std::move(args));
-        });
-    });
-}
-inline auto IOContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> {
-    using Awaitable = CallbackAwaitable<ConnectHandlerArgs>;
-    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
-        asyncConnect(socket, endpoint, timeout, [func](ConnectHandlerArgs &&args) mutable {
-            func(std::move(args));
-        });
-    });
-}
-
-inline auto IOContext::asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> {
-    using Awaitable = CallbackAwaitable<RecvfromHandlerArgs>;
-    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
-        asyncRecvfrom(socket, buffer, n, timeout, [func](RecvfromHandlerArgs &&args) mutable {
-            func(std::move(args));
-        });
-    });
-}
-inline auto IOContext::asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs> {
-    using Awaitable = CallbackAwaitable<SendtoHandlerArgs>;
-    return Awaitable([=, this](Awaitable::ResumeFunc &&func) mutable {
-        asyncSendto(socket, buffer, n, endpoint, timeout, [func](RecvHandlerArgs &&args) mutable {
-            func(std::move(args));
-        });
-    });
-}
-#endif
 
 ILIAS_NS_END

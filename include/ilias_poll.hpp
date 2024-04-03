@@ -1,3 +1,4 @@
+#if 0
 #pragma once
 
 #include "ilias_expected.hpp"
@@ -1045,3 +1046,4 @@ using NativeIOContext = PollContext;
 #endif
 
 ILIAS_NS_END
+#endif

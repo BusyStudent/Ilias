@@ -241,6 +241,7 @@ public:
     Result<void> setBlocking(bool blocking) const;
     Result<void> setReuseAddr(bool reuse) const;
     Result<void> setOption(int level, int optname, const void *optval, socklen_t optlen) const;
+    Result<void> getOption(int level, int optname, void *optval, socklen_t *optlen) const;
 
 #ifdef _WIN32
     Result<void> ioctl(long cmd, u_long *args) const;
@@ -698,6 +699,12 @@ inline Result<void> SocketView::bind(const IPEndpoint &ep) const {
 inline bool SocketView::isValid() const {
     return mFd != ILIAS_INVALID_SOCKET;
 }
+inline Result<void> SocketView::getOption(int level, int optname, void *optval, socklen_t *optlen) const {
+    if (::getsockopt(mFd, level, optname, static_cast<byte_t*>(optval), optlen) == 0) {
+        return Result<void>();
+    }
+    return Unexpected(Error::fromErrno());
+}
 inline Result<void> SocketView::setOption(int level, int optname, const void *optval, socklen_t optlen) const {
     if (::setsockopt(mFd, level, optname, static_cast<const byte_t*>(optval), optlen) == 0) {
         return Result<void>();
@@ -904,39 +911,39 @@ inline Error Error::fromErrno(uint32_t code) {
 
     switch (code) {
         case 0: return Error::Ok;
-        case MAP(EBADF): return Error::BadFileDescriptor;
         case MAP(EACCES): return Error::AccessDenied;
-        case MAP(EFAULT): return Error::BadAddress;
-        case MAP(EINVAL): return Error::InvalidArgument;
-        case MAP(EMFILE): return Error::TooManyOpenFiles;
-        case MAP(EWOULDBLOCK): return Error::WouldBlock;
-        case MAP(EINPROGRESS): return Error::InProgress;
-        case MAP(EALREADY): return Error::AlreadyInProgress;
-        case MAP(ENOTSOCK): return Error::NotASocket;
-        case MAP(EDESTADDRREQ): return Error::DestinationAddressRequired;
-        case MAP(EMSGSIZE): return Error::MessageTooLarge;
-        case MAP(EPROTOTYPE): return Error::ProtocolNotSupported;
-        case MAP(ENOPROTOOPT): return Error::ProtocolOptionNotSupported;
-        case MAP(EPROTONOSUPPORT): return Error::ProtocolNotSupported;
-        case MAP(ESOCKTNOSUPPORT): return Error::SocketTypeNotSupported;
-        case MAP(EOPNOTSUPP): return Error::OperationNotSupported;
-        case MAP(EPFNOSUPPORT): return Error::ProtocolFamilyNotSupported;
-        case MAP(EAFNOSUPPORT): return Error::AddressFamilyNotSupported;
         case MAP(EADDRINUSE): return Error::AddressInUse;
         case MAP(EADDRNOTAVAIL): return Error::AddressNotAvailable;
-        case MAP(ENETDOWN): return Error::NetworkDown;
-        case MAP(ENETUNREACH): return Error::NetworkUnreachable;
-        case MAP(ENETRESET): return Error::NetworkReset;
+        case MAP(EAFNOSUPPORT): return Error::AddressFamilyNotSupported;
+        case MAP(EALREADY): return Error::AlreadyInProgress;
+        case MAP(EBADF): return Error::BadFileDescriptor;
         case MAP(ECONNABORTED): return Error::ConnectionAborted;
-        case MAP(ECONNRESET): return Error::ConnectionReset;
-        case MAP(ENOBUFS): return Error::NoBufferSpaceAvailable;
-        case MAP(EISCONN): return Error::SocketIsConnected;
-        case MAP(ENOTCONN): return Error::SocketIsNotConnected;
-        case MAP(ESHUTDOWN): return Error::SocketShutdown;
-        case MAP(ETIMEDOUT): return Error::TimedOut;
         case MAP(ECONNREFUSED): return Error::ConnectionRefused;
+        case MAP(ECONNRESET): return Error::ConnectionReset;
+        case MAP(EDESTADDRREQ): return Error::DestinationAddressRequired;
+        case MAP(EFAULT): return Error::BadAddress;
         case MAP(EHOSTDOWN): return Error::HostDown;
         case MAP(EHOSTUNREACH): return Error::HostUnreachable;
+        case MAP(EINPROGRESS): return Error::InProgress;
+        case MAP(EINVAL): return Error::InvalidArgument;
+        case MAP(EISCONN): return Error::SocketIsConnected;
+        case MAP(EMFILE): return Error::TooManyOpenFiles;
+        case MAP(EMSGSIZE): return Error::MessageTooLarge;
+        case MAP(ENETDOWN): return Error::NetworkDown;
+        case MAP(ENETRESET): return Error::NetworkReset;
+        case MAP(ENETUNREACH): return Error::NetworkUnreachable;
+        case MAP(ENOBUFS): return Error::NoBufferSpaceAvailable;
+        case MAP(ENOPROTOOPT): return Error::ProtocolOptionNotSupported;
+        case MAP(ENOTCONN): return Error::SocketIsNotConnected;
+        case MAP(ENOTSOCK): return Error::NotASocket;
+        case MAP(EOPNOTSUPP): return Error::OperationNotSupported;
+        case MAP(EPFNOSUPPORT): return Error::ProtocolFamilyNotSupported;
+        case MAP(EPROTONOSUPPORT): return Error::ProtocolNotSupported;
+        case MAP(EPROTOTYPE): return Error::ProtocolNotSupported;
+        case MAP(ESHUTDOWN): return Error::SocketShutdown;
+        case MAP(ESOCKTNOSUPPORT): return Error::SocketTypeNotSupported;
+        case MAP(ETIMEDOUT): return Error::TimedOut;
+        case MAP(EWOULDBLOCK): return Error::WouldBlock;
         default: return Error::Unknown;
     }
 #undef MAP

@@ -53,7 +53,8 @@ public:
         Unknown,                     //< Unknown Error
 
         // --- Coroutine
-        Canceled,
+        Aborted,                     //< Task is aborted
+        Pending,                     //< Task is pending
 
         // --- Socket
         AccessDenied,                //< Access is denied
@@ -77,7 +78,6 @@ public:
         NetworkUnreachable,          //< Network is unreachable
         NoBufferSpaceAvailable,      //< No buffer space available
         NotASocket,                  //< fd is not a socket
-        NotSupported,                //< Operation is not supported
         OperationNotSupported,       //< Operation is not supported
         ProtocolFamilyNotSupported,  //< Protocol family is not supported
         ProtocolNotSupported,        //< Protocol is not supported

@@ -7,13 +7,14 @@
 #endif
 #ifdef __cpp_lib_expected
 #include <expected>
+#define ILIAS_STD_EXPECTED_HPP
 #endif
 
 #include "ilias.hpp"
 
 ILIAS_NS_BEGIN
 
-#ifdef __cpp_lib_expected
+#ifdef ILIAS_STD_EXPECTED_HPP
 template <typename T, typename E>
 using Expected = ::std::expected<T, E>;
 template <typename E>
@@ -45,6 +46,8 @@ class Expected<T, E, typename std::enable_if<!std::is_void<T>::value>::type> {
 public:
     using ValueT = T;
     using ErrorT = E;
+    using value_type = T;
+    using error_type = E;
 private:
     union {
         ValueT mValue;
@@ -220,7 +223,8 @@ public:
     using ValueT = T;
     using ErrorT = T;
     using UnexpectedT = Unexpected<T>;
-
+    using value_type = T;
+    using error_type = T;
 private:
     union {
         ValueT mValue;
@@ -374,6 +378,8 @@ class Expected<T, E, typename std::enable_if<std::is_void<T>::value>::type> {
 public:
     using ValueT = T;
     using ErrorT = E;
+    using value_type = T;
+    using error_type = E;
 private:
     ErrorT mError;
 
@@ -490,7 +496,7 @@ public:
 
 #endif
 
-template <typename T>
+template <typename T = void>
 using Result = Expected<T, Error>;
 
 ILIAS_NS_END

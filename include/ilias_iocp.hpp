@@ -1,4 +1,5 @@
-#ifdef _WIN32
+// #ifdef _WIN32
+#if 0
 #pragma once
 
 #include "ilias.hpp"

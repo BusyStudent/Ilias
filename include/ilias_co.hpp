@@ -2,11 +2,14 @@
 
 #include <cstdio>
 #include <version>
+#include <tuple>
+#include <variant>
 #include <concepts>
 #include <coroutine>
 #include <exception>
 #include <functional>
 #include "ilias.hpp"
+#include "ilias_expected.hpp"
 #include "ilias_source_location.hpp"
 
 #if !defined(__cpp_lib_coroutine)
@@ -19,25 +22,21 @@
 
 ILIAS_NS_BEGIN
 
-// --- Function
-#if defined(__cpp_lib_move_only_function)
-template <typename ...Args>
-using Function = std::move_only_function<Args...>;
-#else
-template <typename ...Args>
-using Function = std::function<Args...>;
-#endif
-
 // --- Coroutine 
 template <typename T>
 class Task;
 template <typename T>
 class Promise;
+class PromiseRef;
 class PromiseBase;
 template <typename T>
 class AwaitTransform;
 template <typename T>
-class IAwaitable;
+class AwaitWrapper;
+class ResumeHandle;
+class AbortHandle;
+template <typename T>
+class JoinHandle;
 
 /**
  * @brief Check this type user has defined transform
@@ -105,7 +104,7 @@ public:
      * @param args 
      */
     template <typename Callable, typename ...Args>
-    void spawn(Callable &&callable, Args &&...args);
+    AbortHandle spawn(Callable &&callable, Args &&...args);
     /**
      * @brief Post a task
      * 
@@ -113,7 +112,7 @@ public:
      * @param task 
      */
     template <typename T>
-    void postTask(const Task<T> &task);
+    AbortHandle postTask(Task<T> &&task);
     /**
      * @brief Resume the giving handle at event loop, it will be destroyed if done, (erase type by PromiseBase)
      * 
@@ -126,10 +125,10 @@ public:
      * 
      * @tparam T 
      * @param task 
-     * @return T 
+     * @return Result<T> 
      */
     template <typename T>
-    T runTask(const Task<T> &task);
+    Result<T> runTask(const Task<T> &task);
 
     static void quit();
     static EventLoop *instance() noexcept;
@@ -146,15 +145,21 @@ protected:
     ~EventLoop();
 };
 
-// --- Task Impl
+/**
+ * @brief A Lazy way to get value
+ * 
+ * @tparam T 
+ */
 template <typename T>
 class Task {
 public:
     using promise_type = Promise<T>;
     using handle_type = std::coroutine_handle<Promise<T> >;
+    using result_type = Result<T>;
+    using value_type = T;
 
     Task() = default;
-    Task(const Task &t) : mHandle(t.mHandle) { if (mHandle) mHandle.promise().ref(); }
+    Task(const Task &t) = delete;
     Task(Task &&t) : mHandle(t.mHandle) { t.mHandle = nullptr; }
     ~Task() {
         if (mHandle) {
@@ -175,7 +180,7 @@ public:
         return mHandle.done();
     }
 
-    T get() const {
+    Result<T> get() const {
         return promise().value();
     }
 
@@ -198,22 +203,11 @@ private:
     handle_type mHandle;
 };
 
-// --- Allocate Impl
-class AllocBase {
-public:
-    void *operator new(size_t n) {
-        return ILIAS_MALLOC(n);
-    }
-    void operator delete(void *p) noexcept {
-        return ILIAS_FREE(p);
-    }
-protected:
-    AllocBase() = default;
-    ~AllocBase() = default;
-};
-
-// --- Promise Impl
-class PromiseBase : public AllocBase {
+/**
+ * @brief The Base of the Promise
+ * 
+ */
+class PromiseBase {
 public:
     PromiseBase() {
 
@@ -256,7 +250,7 @@ public:
      */
     template <AwaitTransformable T>
     auto await_transform(T &&t) const noexcept {
-        return AwaitTransform<T>().transform(std::forward<T>(t));
+        return AwaitWrapper(this, AwaitTransform<T>().transform(std::forward<T>(t)));
     }
     /**
      * @brief Passthrough awaitable
@@ -266,27 +260,12 @@ public:
      * @return T 
      */
     template <Awaitable T>
-    T await_transform(T &&t) const noexcept {
-        return std::forward<T>(t);
+    auto await_transform(T &&t) const noexcept {
+        return AwaitWrapper(this, std::forward<T>(t));
     }
-#if defined(ILIAS_COROUTINE_TRACE)
-    void unhandled_exception() noexcept {
-        mException = std::current_exception();
-        try {
-            std::rethrow_exception(mException);
-        } 
-        catch (const std::exception &e) {
-            ::fprintf(stderr, "[Ilias] co '%s' %s was thrown what(): %s\n", mName, typeid(e).name(), e.what());
-        } 
-        catch (...) {
-            ::fprintf(stderr, "[Ilias] co '%s' exception was thrown\n", mName);
-        }
-    }
-#else
     void unhandled_exception() noexcept {
         mException = std::current_exception();
     }
-#endif
     void rethrow_if_needed() {
         if (mException) {
             std::rethrow_exception(std::move(mException));
@@ -313,6 +292,25 @@ public:
         }
     }
     /**
+     * @brief Abort current coroutine
+     * 
+     */
+    void abort() {
+        if (mAborted) {
+            return;
+        }
+#if defined(ILIAS_COROUTINE_TRACE)
+        ::fprintf(stderr, "[Ilias] co '%s' was aborted\n", mName);
+#endif
+        mAborted = true;
+        set_suspend_by_await(false);
+        resume_util_done_or_await();
+        ILIAS_ASSERT(mHandle.done());
+    }
+    bool aborted() const noexcept {
+        return mAborted;
+    }
+    /**
      * @brief Resume coroutine handle by push it to event loop
      * 
      */
@@ -328,6 +326,7 @@ public:
         if (--mRefcount == 0) {
             mHandle.destroy();
         }
+        ILIAS_ASSERT(mRefcount >= 0);
     }
     bool suspend_by_await() const noexcept {
         return mSuspendByAwait;
@@ -360,6 +359,7 @@ public:
 protected:
     bool mSuspendByAwait = false;
     bool mQuitAtDone = false; //< Quit the event loop if coroutinue is doned
+    bool mAborted = false; //< Does the task was aborted
     int  mRefcount = 1; //< Inited refcount
     const char *mName = nullptr; //< Name for debug track
     EventLoop *mEventLoop = EventLoop::instance();
@@ -368,24 +368,42 @@ protected:
     PromiseBase            *mAwaitPromise = nullptr; //< Another coroutine await you
 };
 
+/**
+ * @brief A detail Promise with T
+ * 
+ * @tparam T 
+ */
 template <typename T>
-class PromiseImpl : public PromiseBase {
+class Promise final : public PromiseBase {
 public:
-    PromiseImpl() {
+    using handle_type = std::coroutine_handle<Promise<T> >;
+    using result_type = Result<T>;
 
+#if defined(ILIAS_COROUTINE_TRACE)
+    Promise(std::source_location loc = std::source_location::current()) {
+        mName = loc.function_name();
+        ::fprintf(stderr, "[Ilias] co '%s' was create\n", mName);
     }
-    ~PromiseImpl() {
-        if (mDestruct) {
-            mStorage.value.~T();
+    ~Promise() {
+        ::fprintf(stderr, "[Ilias] co '%s' was destroy\n", mName);
+        if (mHasValue) {
+            mStorage.value.~result_type();
         }
     }
+#else
+    Promise() = default;
+    ~Promise() {
+        if (mHasValue) {
+            mStorage.value.~result_type();
+        }
+    }
+#endif
 
     template <typename U>
     void return_value(U &&value) noexcept {
         mHasValue = true;
-        mDestruct = true;
 
-        new (&mStorage.value) T(std::forward<U>(value));
+        new (&mStorage.value) result_type(std::forward<U>(value));
     }
     bool has_value() const noexcept {
         return mHasValue;
@@ -393,9 +411,9 @@ public:
     /**
      * @brief Get current value
      * 
-     * @return T 
+     * @return Result<T> 
      */
-    T value() {
+    Result<T> value() {
         ILIAS_ASSERT_MSG(mHasValue, "Promise value not ready!");
         rethrow_if_needed();
 
@@ -403,83 +421,41 @@ public:
         mHasValue = false;
         return std::move(mStorage.value); 
     }
-protected:
-    union Storage {
-        Storage() { }
-        ~Storage() { }
-
-        T value;
-        uint8_t _pad[sizeof(T)];
-    } mStorage;
-
-    bool mDestruct = false; //< Need call destructor 
-    bool mHasValue = false; //< Has value
-};
-
-
-template <>
-class PromiseImpl<void> : public PromiseBase {
-public:
-    void return_void() noexcept {
-
-    }
-    void value() {
-        rethrow_if_needed();
-    }
-};
-
-template <typename T>
-class Promise final : public PromiseImpl<T> {
-public:
-    using handle_type = std::coroutine_handle<Promise<T> >;
-
-#if defined(ILIAS_COROUTINE_TRACE) && !defined(ILIAS_COROUTINE_NO_CREATE_TRACE)
-    Promise(std::source_location loc = std::source_location::current()) {
-        this->mName= loc.function_name();
-        ::fprintf(stderr, "[Ilias] co '%s' was created\n", this->name());
-    }
-    ~Promise() {
-        ::fprintf(stderr, "[Ilias] co '%s' was destroyed\n", this->name());
-    }
-#else
-    Promise() = default;
-    ~Promise() = default;
-#endif
-
     Task<T> get_return_object() noexcept {
         auto handle = handle_type::from_promise(*this);
         this->mHandle = handle;
         return Task<T>::from(handle, false);
     }
+protected:
+    union Storage {
+        Storage() { }
+        ~Storage() { }
+
+        Result<T> value;
+        uint8_t _pad[sizeof(Result<T>)];
+    } mStorage;
+    bool mHasValue = false; //< Has value
 };
 
-// --- ResumeHandle
-class ResumeHandle : public AllocBase {
+/**
+ * @brief A Refcounted Promise Pointer
+ * 
+ */
+class PromiseRef {
 public:
-    ResumeHandle() { }
+    PromiseRef() = default;
     template <typename T>
-    ResumeHandle(std::coroutine_handle<Promise<T> > handle) : mPtr(&handle.promise()) {
-        _ref();
-        mPtr->set_suspend_by_await(true);
-    }
-    ResumeHandle(const ResumeHandle &h) : mPtr(h.mPtr) {
+    PromiseRef(std::coroutine_handle<Promise<T> > handle) : mPtr(&handle.promise()) {
         _ref();
     }
-    ResumeHandle(ResumeHandle &&h) : mPtr(h.mPtr) {
+    PromiseRef(const PromiseRef &h) : mPtr(h.mPtr) {
+        _ref();
+    }
+    PromiseRef(PromiseRef &&h) : mPtr(h.mPtr) {
         h.mPtr = nullptr;
     }
-    ~ResumeHandle() {
+    ~PromiseRef() {
         _deref();
-    }
-
-    void resume() noexcept {
-        ILIAS_ASSERT(mPtr);
-        mPtr->resume_later();
-        mPtr->deref();
-        mPtr = nullptr;
-    }
-    void operator ()() noexcept {
-        resume();
     }
     PromiseBase *get() const noexcept {
         return mPtr;
@@ -487,7 +463,7 @@ public:
     PromiseBase &promise() const noexcept {
         return *mPtr;
     }
-    ResumeHandle &operator =(const ResumeHandle &ref) {
+    PromiseRef &operator =(const PromiseRef &ref) {
         if (this == &ref) {
             return *this;
         }
@@ -496,7 +472,7 @@ public:
         _ref();
         return *this;
     }
-    ResumeHandle &operator =(ResumeHandle &&ref) {
+    PromiseRef &operator =(PromiseRef &&ref) {
         if (this == &ref) {
             return *this;
         }
@@ -505,7 +481,14 @@ public:
         ref.mPtr = nullptr;
         return *this;
     }
-private:
+    PromiseRef &operator =(std::nullptr_t) {
+        _deref();
+        return *this;
+    } 
+    PromiseBase *operator ->() const noexcept {
+        return mPtr;
+    }
+protected:
     void _ref() {
         if (mPtr) {
             mPtr->ref();
@@ -514,21 +497,116 @@ private:
     void _deref() {
         if (mPtr) {
             mPtr->deref();
+            mPtr = nullptr;
         }
     }
     PromiseBase *mPtr = nullptr;
-    void        *mUser = nullptr;
 };
 
-// --- TaskAwaitable Impl
-template <typename T>
-class TaskAwaitable {
+/**
+ * @brief A Handle used to resume task
+ * 
+ */
+class ResumeHandle {
 public:
-    TaskAwaitable(Task<T> &&t) : mTask(std::move(t)) { }
-    TaskAwaitable(const Task<T> &t) : mTask(t) { }
-    TaskAwaitable(const TaskAwaitable &) = delete;
-    TaskAwaitable(TaskAwaitable &&) = default;
-    ~TaskAwaitable() = default;
+    template <typename T>
+    ResumeHandle(std::coroutine_handle<Promise<T> > handle) : mRef(handle) {
+        mRef->set_suspend_by_await(true);
+    }
+    ResumeHandle(const ResumeHandle &) = default;
+    ResumeHandle() = default;
+
+    void resume() noexcept {
+        ILIAS_ASSERT(mRef.get());
+        mRef->resume_later();
+        mRef = nullptr;
+    }
+    void operator ()() noexcept {
+        resume();
+    }
+    PromiseBase &promise() const noexcept {
+        return mRef.promise();
+    }
+    bool isAborted() const noexcept {
+        return mRef->aborted();
+    }
+    explicit operator bool() const noexcept {
+        return mRef.get();
+    }
+private:
+    PromiseRef mRef;
+};
+/**
+ * @brief A handle to observe the task, it can be abort the task
+ * 
+ */
+class AbortHandle {
+public:
+    template <typename T>
+    explicit AbortHandle(std::coroutine_handle<Promise<T> > handle) : mRef(handle) { }
+    AbortHandle(const AbortHandle &) = default;
+    ~AbortHandle() = default;
+
+    void abort() {
+        ILIAS_ASSERT(mRef.get());
+        return mRef->abort();
+    }
+    bool done() const noexcept {
+        ILIAS_ASSERT(mRef.get());
+        return mRef->handle().done();
+    }
+    bool isAborted() const noexcept {
+        ILIAS_ASSERT(mRef.get());
+        return mRef->aborted();
+    }
+    explicit operator bool() const noexcept {
+        return mRef.get();
+    }
+private:
+    PromiseRef mRef;
+};
+/**
+ * @brief A handle to observe the task, it can be abort, join the task
+ * 
+ */
+template <typename T>
+class JoinHandle {
+public:
+    explicit JoinHandle(std::coroutine_handle<Promise<T> > handle) : mRef(handle) { }
+    JoinHandle(const JoinHandle &) = default;
+    ~JoinHandle() = default;
+
+    void abort() {
+        ILIAS_ASSERT(mRef.get());
+        return mRef->abort();
+    }
+    bool done() const noexcept {
+        ILIAS_ASSERT(mRef.get());
+        return mRef->handle().done();
+    }
+    bool isAborted() const noexcept {
+        ILIAS_ASSERT(mRef.get());
+        return mRef->aborted();
+    }
+    explicit operator bool() const noexcept {
+        return mRef.get();
+    }
+private:
+    PromiseRef mRef;
+};
+
+/**
+ * @brief Join a coroutine
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class JoinAwaitable {
+public:
+    JoinAwaitable(Task<T> &&t) : mTask(std::move(t)) { }
+    JoinAwaitable(const JoinAwaitable &) = delete;
+    JoinAwaitable(JoinAwaitable &&) = default;
+    ~JoinAwaitable() = default;
 
 #if defined(ILIAS_COROUTINE_TRACE) && !defined(ILIAS_COROUTINE_NO_AWAIT_TRACE)
     bool await_ready() const noexcept {
@@ -545,7 +623,7 @@ public:
         _await_suspend(h);
         return true;
     }
-    T await_resume() const {
+    Result<T> await_resume() const {
         ::fprintf(stderr, "[Ilias] co '%s' was resumed\n", mName);
         return _await_resume();
     }
@@ -558,7 +636,7 @@ private:
     void await_suspend(const ResumeHandle &h) noexcept {
         return _await_suspend(h);
     }
-    T await_resume() const {
+    Result<T> await_resume() const {
         return _await_resume();
     }
 #endif
@@ -570,187 +648,62 @@ private:
         return mTask.promise().resume_util_done_or_await();
     }
     void _await_suspend(const ResumeHandle &h) noexcept {
+        mSelf = h;
         mTask.promise().set_await_promise(h.promise());
 
         // Run mHandle at EventLoop
         mTask.promise().resume_later();
     }
-    T _await_resume() const {
+    Result<T> _await_resume() const {
+        if (mSelf && mSelf.isAborted()) {
+            mTask.promise().abort(); //< Abort current awaiting task
+            return Unexpected(Error::Aborted);
+        }
         return mTask.get();
     }
 
     Task<T> mTask;
+    ResumeHandle mSelf;
 };
-
 /**
- * @brief Helper for make Awaitable as dynamic type
+ * @brief Wrapping any awaitable, for support abort
  * 
  * @tparam T 
  */
-template <typename T = void>
-class IAwaitable {
+template <typename T>
+class AwaitWrapper {
 public:
-    IAwaitable() = default;
-    IAwaitable(const IAwaitable &) = delete;
-    IAwaitable(IAwaitable &&other) : mPtr(other.mPtr) { other.mPtr = nullptr; }
-    ~IAwaitable() { delete mPtr; }
+    AwaitWrapper(const PromiseBase *p, T &&awaitable) : mPtr(p), mAwait(std::move(awaitable)) { }
 
-    template <Awaitable U>
-    IAwaitable(U &&other) : mPtr(new Impl<U>(std::move(other))) { }
-    template <AwaitTransformable U>
-    IAwaitable(U &&other) : IAwaitable(AwaitTransform<U>().transform(std::move(other))) { }
-
-    bool await_ready() const {
-        return mPtr->await_ready();
+    bool await_ready() {
+        mAborted = mPtr->aborted();
+        if (mAborted) {
+            return true;
+        }
+        return mAwait.await_ready();
     }
-    bool await_suspend(ResumeHandle &&h) const {
-        return mPtr->await_suspend(std::move(h));
-    }
-    T await_resume() const {
-        return mPtr->await_resume();
-    }
-
     template <typename U>
-    U &view() {
-        ILIAS_ASSERT_MSG(dynamic_cast<Impl<U> *>(mPtr) != nullptr, "Invalid type");
-        return static_cast<Impl<U> *>(mPtr)->value;
+    auto await_suspend(std::coroutine_handle<Promise<U> > handle) {
+        return mAwait.await_suspend(handle);
+    }
+    auto await_resume() -> AwaitableResult<T> {
+        if (mAborted) {
+            return Unexpected(Error::Aborted);
+        }
+        return mAwait.await_resume();
     }
 private:
-    struct Base {
-        virtual ~Base() = default;
-        virtual bool await_ready() = 0;
-        virtual bool await_suspend(ResumeHandle &&handle) = 0;
-        virtual T await_resume() = 0;
-    };
-    template <typename U>
-    struct Impl final : public Base {
-        Impl(U &&value) : value(std::move(value)) { }
-        Impl(const Impl &) = delete;
-        ~Impl() = default;
-        bool await_ready() override {
-            return value.await_ready();
-        }
-        bool await_suspend(ResumeHandle &&handle) override {
-            using RetT = decltype(value.await_suspend(std::move(handle)));
-            if constexpr(std::is_same_v<RetT, void>) {
-                value.await_suspend(std::move(handle));
-                return true;
-            }
-            else {
-                return value.await_suspend(std::move(handle));
-            }
-        }
-        T await_resume() override {
-            return value.await_resume();
-        }
-        U value;
-    };
-
-    Base *mPtr = nullptr;
-};
-
-template <Awaitable T>
-IAwaitable(T &&u) -> IAwaitable<AwaitableResult<T> >;
-template <AwaitTransformable T>
-IAwaitable(T &&u) -> IAwaitable<AwaitableResult<AwaitTransformResult<T> > >;
-
-/**
- * @brief Helper for wrapping callback into awaitable
- * 
- * @tparam T 
- */
-template <typename T = void>
-class CallbackAwaitable {
-public:
-    struct ResumeFunc {
-        using Type = std::conditional_t<std::is_trivial_v<T> && std::is_standard_layout_v<T>, T, T &&>;
-        void operator ()(Type t) noexcept {
-            awaitable->_put(std::forward<T>(t));
-            handle.resume();
-        }
-        CallbackAwaitable *awaitable;
-        ResumeHandle handle;
-    };
-    using SuspendFunc = Function<void(ResumeFunc &&)>;
-
-    CallbackAwaitable(SuspendFunc &&func) : mFunc(std::move(func)) { }
-    CallbackAwaitable(const CallbackAwaitable &) = delete;
-    CallbackAwaitable(CallbackAwaitable &&) = default;
-    ~CallbackAwaitable() {
-        if (mHasValue) { 
-            mStorage.value.~T();
-        }
-    }
-
-    bool await_ready() const noexcept {
-        return false;
-    }
-    void await_suspend(ResumeHandle &&handle) noexcept {
-        ResumeFunc func;
-        func.awaitable = this;
-        func.handle = handle;
-        mFunc(std::move(func));
-    }
-
-    T await_resume() noexcept {
-        ILIAS_ASSERT(mHasValue);
-        struct Guard {
-            ~Guard() {
-                self->mStorage.value.~T();
-            }
-            CallbackAwaitable *self;
-        };
-        Guard guard{this};
-        return std::move(mStorage.value);
-    }
-private:
-    void _put(T &&value) {
-        new (&mStorage.value) T(std::move(value));
-        mHasValue = true;
-    }
-
-    union Storage {
-        Storage() { }
-        Storage(Storage &&) { }
-        Storage(const Storage &) { }
-        ~Storage() { }
-
-        T value;
-        uint8_t _pad[sizeof(T)];
-    } mStorage;
-    bool mHasValue = false;
-    SuspendFunc mFunc;
-};
-template <>
-class CallbackAwaitable<void> {
-public:
-    using ResumeFunc = ResumeHandle;
-    using SuspendFunc = Function<void(ResumeFunc &&)>;
-
-    CallbackAwaitable(SuspendFunc &&func) : mFunc(std::move(func)) { }
-    CallbackAwaitable(const CallbackAwaitable &) = delete;
-    CallbackAwaitable(CallbackAwaitable &&) = default;
-
-    bool await_ready() const noexcept {
-        return false;
-    }
-    void await_suspend(ResumeHandle resumeHandle) noexcept {
-        mFunc(std::move(resumeHandle));
-    }
-    void await_resume() const noexcept { }
-private:
-    SuspendFunc mFunc;
+    const PromiseBase *mPtr;
+    T mAwait;
+    bool mAborted = false; //< Before we called wrapped awaitable, current task is already aborted
 };
 
 // --- AwaitTransform Impl for Task<T>
 template <typename T>
 class AwaitTransform<Task<T> > {
 public:
-    TaskAwaitable<T> transform(const Task<T> &t) const noexcept {
-        return TaskAwaitable<T>(t);
-    }
-    TaskAwaitable<T> transform(Task<T> &&t) const noexcept {
-        return TaskAwaitable<T>(std::move(t));
+    JoinAwaitable<T> transform(Task<T> &&t) const noexcept {
+        return JoinAwaitable<T>(std::move(t));
     }
 };
 
@@ -777,12 +730,12 @@ inline EventLoop::Tls &EventLoop::_tls() noexcept {
 }
 
 template <typename Callable, typename ...Args>
-inline void EventLoop::spawn(Callable &&cb, Args &&...args) {
-    postTask(std::invoke(std::forward<Callable>(cb), std::forward<Args>(args)...));
+inline AbortHandle EventLoop::spawn(Callable &&cb, Args &&...args) {
+    return postTask(std::invoke(std::forward<Callable>(cb), std::forward<Args>(args)...));
 }
 
 template <typename T>
-inline T EventLoop::runTask(const Task<T> &task) {
+inline Result<T> EventLoop::runTask(const Task<T> &task) {
     task.promise().set_quit_at_done(true);
     postCoroutine(task.promise());
     run(); //< Enter event loop
@@ -790,10 +743,11 @@ inline T EventLoop::runTask(const Task<T> &task) {
 }
 
 template <typename T>
-inline void EventLoop::postTask(const Task<T> &task) {
+inline AbortHandle EventLoop::postTask(Task<T> &&task) {
     using handle_type = typename Task<T>::handle_type;
     handle_type handle = task.handle(); //< Release the coroutinue ownship
     postCoroutine(handle.promise());
+    return AbortHandle(handle);
 }
 inline void EventLoop::postCoroutine(PromiseBase &promise) {
     promise.ref();
@@ -812,25 +766,31 @@ inline void EventLoop::quit() {
 }
 
 // --- Utils Function
-inline auto msleep(int64_t ms) noexcept {
+inline Task<> msleep(int64_t ms) noexcept {
     struct Awaitable {
         bool await_ready() const noexcept {
             return ms <= 0;
         }
         void await_suspend(ResumeHandle &&handle) noexcept {
             resumeHandle = std::move(handle);
-            EventLoop::instance()->addTimer(ms, [](void *resume) {
+            timerid = EventLoop::instance()->addTimer(ms, [](void *resume) {
                 auto a = static_cast<Awaitable*>(resume);
+                a->timerid = 0;
                 a->resumeHandle();
             }, this, EventLoop::TimerSingleShot);
         }
-        void await_resume() const noexcept {
-
+        Result<> await_resume() const noexcept {
+            if (timerid != 0) {
+                EventLoop::instance()->delTimer(timerid);
+                return Unexpected(Error::Aborted);
+            }
+            return Result<>();
         }
-        int64_t ms;
+        int64_t ms = 0;
+        uintptr_t timerid = 0;
         ResumeHandle resumeHandle;
     };
-    return Awaitable {ms};
+    co_return co_await Awaitable {ms};
 }
 
 ILIAS_NS_END
