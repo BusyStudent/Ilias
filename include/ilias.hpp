@@ -47,13 +47,13 @@ class AwaitTransform;
  */
 class Error {
 public:
-    enum Code : uint32_t {
+    enum class Code : uint32_t {
         // --- Common
         Ok = 0,                      //< No Error
         Unknown,                     //< Unknown Error
 
         // --- Coroutine
-        Aborted,                     //< Task is aborted
+        Canceled,                     //< Task is Canceled
         Pending,                     //< Task is pending
 
         // --- Socket
@@ -96,10 +96,12 @@ public:
         // --- User
         User,                        //< User defined error beginning
     };
-    Error() = default;
-    Error(uint32_t err) : mErr(Code(err)) { }
-    Error(const Error &) = default;
-    ~Error() = default;
+    using enum Code;
+
+    constexpr Error() = default;
+    constexpr Error(Code err) : mErr(err) { }
+    constexpr Error(const Error &) = default;
+    constexpr ~Error() = default;
 
     /**
      * @brief Does this Error is ok?
@@ -141,7 +143,7 @@ public:
      */
     static Error fromHErrno(uint32_t err);
 
-    operator uint32_t() const noexcept {
+    operator Code() const noexcept {
         return mErr;
     }
 private:
@@ -179,11 +181,11 @@ inline consteval auto Error::_errTable(std::index_sequence<N...>) {
     return table;
 }
 inline std::string Error::message() const {
-    constexpr auto table = _errTable(std::make_index_sequence<User>());
-    if (mErr > table.size()) {
+    constexpr auto table = _errTable(std::make_index_sequence<size_t(User)>());
+    if (size_t(mErr) > table.size()) {
         return "Unknown error";
     }
-    return std::string(table[mErr]);
+    return std::string(table[size_t(mErr)]);
 }
 inline bool Error::isOk() const {
     return mErr == Ok;

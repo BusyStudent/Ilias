@@ -6,6 +6,8 @@
 
 // --- Import coroutine
 #include "ilias_co.hpp"
+#include "ilias_task.hpp"
+#include "ilias_await.hpp"
 
 
 ILIAS_NS_BEGIN

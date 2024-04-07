@@ -2,7 +2,6 @@
 
 #include <condition_variable>
 #include <chrono>
-#include <thread>
 #include <deque>
 #include <mutex>
 #include <map>
@@ -32,7 +31,7 @@ public:
     MiniEventLoop(const MiniEventLoop &) = delete;
     ~MiniEventLoop();
 
-    void requestStop() override;
+    void quit() override;
     void run() override;
     void post(void (*fn)(void *), void *arg) override;
     bool delTimer(uintptr_t timer) override;
@@ -71,7 +70,7 @@ inline MiniEventLoop::~MiniEventLoop() {
 
 }
 
-inline void MiniEventLoop::requestStop() {
+inline void MiniEventLoop::quit() {
     post([](void *self) {
         static_cast<MiniEventLoop *>(self)->mQuit = true;
     }, this);

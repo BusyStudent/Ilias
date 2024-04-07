@@ -496,7 +496,18 @@ public:
 
 #endif
 
+/**
+ * @brief A helper class for wrapping result T and error Error
+ * 
+ * @tparam T 
+ */
 template <typename T = void>
-using Result = Expected<T, Error>;
+class Result final : public Expected<T, Error> {
+public:
+    using Expected<T, Error>::Expected;
+    using Expected<T, Error>::operator=;
+
+    constexpr Result(Error code) : Expected<T, Error>(Unexpected(code)) { }
+};
 
 ILIAS_NS_END
