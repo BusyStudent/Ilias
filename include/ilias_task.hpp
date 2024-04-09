@@ -10,6 +10,18 @@
 ILIAS_NS_BEGIN
 
 /**
+ * @brief Check a type is Task<T>
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept IsTask = requires(T t) {
+    t.handle();
+    t.promise();
+    t.cancel();  
+};
+
+/**
  * @brief A Lazy way to get value
  * 
  * @tparam T 
@@ -31,7 +43,7 @@ public:
         }
         if (!mHandle.done()) {
             // Cancel
-            promise().cancel();
+            cancel();
         }
         mHandle.destroy();
     }
@@ -46,26 +58,38 @@ public:
         return mHandle.promise().name();   
     }
     auto cancel() const -> void {
+        ILIAS_CTRACE("[Ilias] Task<{}> Canceling {}", typeid(T).name(), name());
         return promise().cancel();
     }
     auto eventLoop() const -> EventLoop * {
         return promise().eventLoop();
     }
-    auto get() const -> result_type {
-        promise().setQuitEventLoop();
-        eventLoop()->resumeHandle(mHandle);
-        eventLoop()->run();
+    /**
+     * @brief Get the result value
+     * 
+     * @return result_type 
+     */
+    auto value() const -> result_type {
+        if (!mHandle.done()) {
+            promise().setQuitEventLoop();
+            eventLoop()->resumeHandle(mHandle);
+            eventLoop()->run();
+        }
         return promise().value();
     }
 private:
     handle_type mHandle;
 };
 
-class TaskBase {
+/**
+ * @brief All Promise's base
+ * 
+ */
+class PromiseBase {
 public:
-    TaskBase() = default;
-    TaskBase(const TaskBase &) = delete;
-    ~TaskBase() = default;
+    PromiseBase() = default;
+    PromiseBase(const PromiseBase &) = delete; 
+    ~PromiseBase() = default;
 
     auto initial_suspend() noexcept -> std::suspend_always {        
         return {};
@@ -84,7 +108,7 @@ public:
         mException = std::current_exception();
     }
     /**
-     * @brief Cancel the current task
+     * @brief Cancel the current coroutine
      * 
      */
     auto cancel() noexcept -> void {
@@ -102,7 +126,7 @@ public:
     auto name() const -> const char * {
         return mName;
     }
-    auto resumeCaller() const -> TaskBase * {
+    auto resumeCaller() const -> PromiseBase * {
         return mResumeCaller;
     }
     auto setQuitEventLoop() noexcept -> void {
@@ -113,7 +137,7 @@ public:
      * 
      * @param caller Who resume us
      */
-    auto setResumeCaller(TaskBase *caller) noexcept -> void {
+    auto setResumeCaller(PromiseBase *caller) noexcept -> void {
         mResumeCaller = caller;
     }
     /**
@@ -121,25 +145,34 @@ public:
      * 
      * @param awaiting 
      */
-    auto setPrevAwaiting(TaskBase *awaiting) noexcept -> void {
+    auto setPrevAwaiting(PromiseBase *awaiting) noexcept -> void {
         mPrevAwaiting = awaiting;
+    }
+    auto setEventLoop(EventLoop *eventLoop) noexcept -> void {
+        mEventLoop = eventLoop;
     }
 protected:
     bool mCanceled = false;
-    bool mHasValue = false;
     bool mQuitEventLoop = false;
     const char *mName = nullptr;
     EventLoop *mEventLoop = EventLoop::instance();
-    TaskBase  *mPrevAwaiting = nullptr;
-    TaskBase  *mResumeCaller = nullptr;
+    PromiseBase *mPrevAwaiting = nullptr;
+    PromiseBase *mResumeCaller = nullptr;
     std::exception_ptr mException = nullptr;
     std::coroutine_handle<> mHandle = nullptr;
 };
 
+/**
+ * @brief A typed task promise
+ * 
+ * @tparam T 
+ */
 template <typename T>
-class TaskPromise : public TaskBase {
+class TaskPromise : public PromiseBase {
 public:
     using handle_type = std::coroutine_handle<TaskPromise<T> >;
+    using value_type = Result<T>;
+    using return_type = T;
 
     /**
      * @brief Construct a new Task Promise object
@@ -162,9 +195,9 @@ public:
      * @param t 
      * @return auto 
      */
-    template <NotAwaiter T>
-    auto await_transform(T &&t) noexcept {
-        return AwaitTransform<T>().transform(this, std::forward<T>(t));
+    template <NotAwaiter U>
+    auto await_transform(U &&t) noexcept {
+        return AwaitTransform<U>().transform(this, std::forward<U>(t));
     }
     /**
      * @brief Passthrough Awaiter
@@ -173,17 +206,10 @@ public:
      * @param t 
      * @return T 
      */
-    template <Awaiter T>
-    auto await_transform(T &&t) noexcept {
-        return std::forward<T>(t);
+    template <Awaiter U>
+    auto await_transform(U &&t) noexcept {
+        return std::forward<U>(t);
     }
-    /**
-     * @brief Disable using co_await std::suspend_always()
-     * 
-     * @return auto 
-     */
-    auto await_transform(std::suspend_always) const = delete;
-    auto await_transform(std::suspend_never) const = delete;
 
     auto get_return_object() -> Task<T> {
         auto handle = handle_type::from_promise(*this);
@@ -221,15 +247,20 @@ private:
         Result<T> mValue;
         int pad = 0;
     };
+    bool mHasValue = false;
 };
 
-
-inline void EventLoop::resumeHandle(std::coroutine_handle<> handle) noexcept {
+inline auto EventLoop::resumeHandle(std::coroutine_handle<> handle) noexcept -> void {
     // handle.promise()
     post([](void *addr) {
         auto h = std::coroutine_handle<>::from_address(addr);
         h.resume();
     }, handle.address());
+}
+template <typename T>
+inline auto EventLoop::runTask(const Task<T> &task) {
+    task.promise().setEventLoop(this);
+    return task.value();
 }
 
 ILIAS_NS_END

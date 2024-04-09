@@ -104,7 +104,7 @@ inline void MiniEventLoop::run() {
     mQuit = false; //< Restore
 }
 inline void MiniEventLoop::post(void (*fn)(void *), void *arg) {
-    // std::unique_lock lock(mMutex);
+    std::unique_lock lock(mMutex);
     mQueue.push_back({fn, arg});
     mCond.notify_one();
 }
@@ -138,7 +138,7 @@ inline void MiniEventLoop::_timerRun() {
             break;
         }
         // Invoke
-        post(timer.fn, timer.arg);
+        mQueue.push_back({timer.fn, timer.arg});
 
         // Cleanup if
         if (timer.flags & TimerFlags::TimerSingleShot) {

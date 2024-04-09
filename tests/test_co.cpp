@@ -9,16 +9,17 @@ using namespace ILIAS_NAMESPACE;
 using namespace std::chrono_literals;
 
 Task<int> another() {
-    co_await Sleep(10s);
     co_return 42;
 }
 
 Task<int> task() {
-    co_await another();
+    // co_await 
+    auto [a, b] = co_await WhenAll(another(), Sleep(1s));
     co_return 0;
 }
 
+
 int main() {
     MiniEventLoop loop;
-    return task().get().value_or(-1);
+    return loop.runTask(task()).value_or(-1);
 }

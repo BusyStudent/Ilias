@@ -10,11 +10,11 @@
 #error "Compiler does not support coroutines"
 #endif
 
-#if  defined(ILIAS_NO_SOURCE_LOCATION)
+#if  defined(ILIAS_NO_SOURCE_LOCATION) || !defined(__cpp_lib_format)
 #undef ILIAS_COROUTINE_TRACE
 #endif
 
-#if !defined(ILIAS_COROUTINE_TRACE) || !defined(__cpp_lib_format)
+#if !defined(ILIAS_COROUTINE_TRACE)
 #define ILIAS_CTRACE(fmt, ...)
 #define ILIAS_CAPTURE_CALLER(name) std::source_location name = std::source_location()
 #elif defined(__cpp_lib_print)
@@ -33,6 +33,7 @@ template <typename T>
 class AwaitTransform;
 template <typename T>
 class TaskPromise;
+class PromiseBase;
 
 /**
  * @brief Check this type can be directly pass to co_await
@@ -78,11 +79,26 @@ public:
     virtual uintptr_t addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags = 0) = 0;
 
     /**
+     * @brief Blocking execute a task
+     * 
+     * @tparam T 
+     * @param task 
+     * @return auto 
+     */
+    template <typename T>
+    auto runTask(const Task<T> &task);
+    /**
      * @brief Resume a coroutine handle in event loop, it doesnot take the ownship
      * 
      * @param handle 
      */
     void resumeHandle(std::coroutine_handle<> handle) noexcept;
+    /**
+     * @brief Resume a task by task promise pointer
+     * 
+     * @param task 
+     */
+    void resumeCoroutine(PromiseBase *task) noexcept;
 
     static EventLoop *instance() noexcept;
     static EventLoop *setInstance(EventLoop *loop) noexcept;
