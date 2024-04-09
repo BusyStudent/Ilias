@@ -47,7 +47,7 @@ class AwaitTransform;
  */
 class Error {
 public:
-    enum class Code : uint32_t {
+    enum Code : uint32_t {
         // --- Common
         Ok = 0,                      //< No Error
         Unknown,                     //< Unknown Error
@@ -96,7 +96,6 @@ public:
         // --- User
         User,                        //< User defined error beginning
     };
-    using enum Code;
 
     constexpr Error() = default;
     constexpr Error(Code err) : mErr(err) { }

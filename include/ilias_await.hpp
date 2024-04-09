@@ -1,6 +1,5 @@
 #pragma once
 
-#include <concepts>
 #include <coroutine>
 #include <variant>
 #include <chrono>
@@ -21,6 +20,7 @@ class TaskAwaiter {
 public:
     TaskAwaiter(TaskPromise<T> &caller, TaskPromise<U> &task) : mCaller(caller), mTask(task) { }
     TaskAwaiter(const TaskAwaiter &) = delete;
+    TaskAwaiter(TaskAwaiter &&) = default;
     TaskAwaiter& operator=(const TaskAwaiter &) = delete;
 
     auto await_ready() const -> bool {
@@ -72,6 +72,7 @@ public:
         mCaller(caller), mTasks{tasks} { }
     WhenAnyAwaiter(const WhenAnyAwaiter &) = delete;
     WhenAnyAwaiter& operator=(const WhenAnyAwaiter &) = delete;
+    WhenAnyAwaiter(WhenAnyAwaiter &&) = default; 
     ~WhenAnyAwaiter() {
         if (mHasValue) {
             mValue.~Variant();
@@ -162,6 +163,7 @@ public:
 
     WhenAllAwaiter(TaskPromise<T> &caller, const InTuple &tasks) : mCaller(caller), mTasks(tasks) { }
     WhenAllAwaiter(const WhenAllAwaiter &) = delete;
+    WhenAllAwaiter(WhenAllAwaiter &&) = default;
 
     auto await_ready() -> bool {
         if (mCaller.isCanceled()) {
@@ -241,6 +243,7 @@ public:
     SleepAwaiter(TaskPromise<T> &caller, chrono::steady_clock::time_point t) : mCaller(caller), mTime(t) { }
     SleepAwaiter(const SleepAwaiter &) = delete;
     SleepAwaiter& operator=(const SleepAwaiter &) = delete;
+    SleepAwaiter(SleepAwaiter &&) = default;
 
     auto await_ready() const -> bool {
         if (mTime <= chrono::steady_clock::now()) {
