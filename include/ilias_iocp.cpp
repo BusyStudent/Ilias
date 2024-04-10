@@ -1,670 +1,396 @@
-// #ifdef _WIN32
-#if 0
+#ifdef _WIN32
 #include "ilias_iocp.hpp"
 #include "ilias_latch.hpp"
 #include <memory>
+#include <thread>
 
 ILIAS_NS_BEGIN
 
-enum IOCPEvent : int {
-    None     = 0 << 0,
-    Recv     = 1 << 0,
-    Recvfrom = 1 << 1,
-    Send     = 1 << 2,
-    Accept   = 1 << 3,
-    Connect  = 1 << 4,
-    SysError = 1 << 5,
-    Timeout  = 1 << 6, //< As same as Error, spec our timeout
+struct WSAExtFunctions {
+    LPFN_GETACCEPTEXSOCKADDRS GetAcceptExSocketAddress = nullptr;
+    LPFN_ACCEPTEX AcceptEx = nullptr;
+    LPFN_CONNECTEX ConnectEx = nullptr;
+    LPFN_TRANSMITFILE TransmitFile = nullptr;
 };
-
-struct IOCPOverlapped : OVERLAPPED {
-    int event = IOCPEvent::None;
-    WSABUF wsaBuf {0, 0};
-    DWORD byteTrans = 0;
-    socket_t sockfd = INVALID_SOCKET;
-    socket_t peerfd = INVALID_SOCKET; //< Peer fd (used by AcceptEx)
-    DWORD dwflag = 0;
-    std::atomic_bool isCompleted {true}; //< Does it has a operation?
-    std::atomic_bool hasTimeoutCheck {false};
-    std::multimap<uint64_t, IOCPOverlapped*>::iterator timeout; //< Used to easily remove timeout request 
-
-    uint8_t addressBuffer[(sizeof(::sockaddr_storage) + 16) * 2]; //< Internal Used address buffer
-    int addressLength; //< address length (used by recvfrom)
-
-    AcceptHandler AcceptCallback;
-    ConnectHandler ConnectCallback;
-    RecvfromHandler RecvfromCallback;
-    Function<void(Expected<size_t, Error>)> RecvSendCallback;
-
-    void clear() {
-        ::memset(static_cast<OVERLAPPED*>(this), 0, sizeof(OVERLAPPED));
-        event = IOCPEvent::None;
-        wsaBuf.buf = 0;
-        wsaBuf.len = 0;
-        byteTrans = 0;
-        peerfd = 0;
-        dwflag = 0;
-        isCompleted = true;
-    }
-};
+static WSAExtFunctions Fns;
+static std::once_flag FnsOnceFlag;
 
 IOCPContext::IOCPContext() {
-    // Init iocp
-    mIocpFd = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, mNumberOfCurrentThreads);
-    ILIAS_ASSERT(mIocpFd != INVALID_HANDLE_VALUE);
-
-    // Get Socket Ext
-    Socket helper(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-
-    GUID guidAcceptEx = WSAID_ACCEPTEX;
-    DWORD dwBytes;
-    auto rt = ::WSAIoctl(helper.get(),
-                        SIO_GET_EXTENSION_FUNCTION_POINTER,
-                        &guidAcceptEx, sizeof(guidAcceptEx),
-                        &mFnAcceptEx, sizeof(mFnAcceptEx),
-                        &dwBytes, nullptr, nullptr);
-    if (rt == SOCKET_ERROR) {
-        fprintf(stderr, "WSAIoctl get AcceptEx lfp failed with error: %d\n", WSAGetLastError());
-        mFnAcceptEx = nullptr;
-        ILIAS_ASSERT(false);
+    mIocpFd = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
+    if (!mIocpFd) {
+        return;
     }
-    GUID guidGetAcceptExSocketAddress = WSAID_GETACCEPTEXSOCKADDRS;
-    rt = ::WSAIoctl(helper.get(),
-                    SIO_GET_EXTENSION_FUNCTION_POINTER,
-                    &guidGetAcceptExSocketAddress, sizeof(guidGetAcceptExSocketAddress),
-                    &mFnGetAcceptExSocketAddress, sizeof(mFnGetAcceptExSocketAddress),
-                    &dwBytes, nullptr, nullptr);
-    if (rt == SOCKET_ERROR) {
-        fprintf(stderr, "WSAIoctl get GetAcceptExSocketAddress lfp failed with error: %d\n", WSAGetLastError());
-        mFnGetAcceptExSocketAddress = nullptr;
-        ILIAS_ASSERT(false);
-    }
-    GUID guidConnectEx = WSAID_CONNECTEX;
-    rt = ::WSAIoctl(helper.get(),
-                    SIO_GET_EXTENSION_FUNCTION_POINTER,
-                    &guidConnectEx, sizeof(guidConnectEx),
-                    &mFnConnectEx, sizeof(mFnConnectEx),
-                    &dwBytes, nullptr, nullptr);
-    if (rt == SOCKET_ERROR) {
-        fprintf(stderr, "WSAIoctl get ConnectEx lfp failed with error: %d\n", WSAGetLastError());
-        mFnConnectEx = nullptr;
-        ILIAS_ASSERT(false);
-    }
-    GUID guidTransmitFile = WSAID_TRANSMITFILE;
-    rt = ::WSAIoctl(helper.get(),
-                    SIO_GET_EXTENSION_FUNCTION_POINTER,
-                    &guidTransmitFile, sizeof(guidTransmitFile),
-                    &mFnTransmitFile, sizeof(mFnTransmitFile),
-                    &dwBytes, nullptr, nullptr);
-    if (rt == SOCKET_ERROR) {
-        fprintf(stderr, "WSAIoctl get TransmitFile lfp failed with error: %d\n", WSAGetLastError());
-        mFnTransmitFile = nullptr;
-        ILIAS_ASSERT(false);
-    }
-
-    mThread = std::thread(&IOCPContext::_run, this);
+    // Get extension functions
+    std::call_once(FnsOnceFlag, &IOCPContext::_loadFunctions, this);
 }
 IOCPContext::~IOCPContext() {
-    _stop();
-    mThread.join();
-
-    // Close IOCP
     ::CloseHandle(mIocpFd);
 }
 
-bool IOCPContext::asyncInitialize(SocketView socket) {
-    std::lock_guard<std::mutex> lock(mMutex);
-    auto ret = ::CreateIoCompletionPort((HANDLE)socket.get(), mIocpFd, 0, mNumberOfCurrentThreads);
-    if (ret == nullptr) {
-        return false;
+auto IOCPContext::run() -> void {
+    DWORD bytesTrans = 0;
+    ULONG_PTR compeleteKey;
+    LPOVERLAPPED overlapped = nullptr;
+    while (!mQuit) {
+        auto ret = ::GetQueuedCompletionStatus(
+            mIocpFd, 
+            &bytesTrans, 
+            &compeleteKey, 
+            &overlapped,
+            _calcWaiting()
+        );
+        if (!ret) {
+            auto err = ::GetLastError();
+            if (err == ERROR_OPERATION_ABORTED) {
+                // Skip aborted operation
+                continue;
+            }
+        }
+        // Is a normal callback, overlapped is a args
+        if (compeleteKey) {
+            ILIAS_ASSERT(bytesTrans == 0x114514);
+            auto cb = reinterpret_cast<void(*)(void*)>(compeleteKey);
+            cb(overlapped);
+            continue;
+        }
+        if (overlapped) {
+            auto lap = static_cast<IOCPOverlapped*>(overlapped);
+            lap->onCompelete(lap, ret, bytesTrans);            
+        }
     }
-    auto iter = mIOCPOverlappedMap.find(socket.get());
-    if (iter == mIOCPOverlappedMap.end()) {
-        iter = mIOCPOverlappedMap.emplace(socket.get(), std::make_unique<IOCPOverlapped>()).first;
+    mQuit = false;
+}
+auto IOCPContext::post(void (*fn)(void *), void *args) -> void {
+    ::PostQueuedCompletionStatus(
+        mIocpFd, 
+        0x114514, 
+        reinterpret_cast<ULONG_PTR>(fn), 
+        reinterpret_cast<LPOVERLAPPED>(args)
+    );
+}
+auto IOCPContext::quit() -> void {
+    post([](void *self) {
+        static_cast<IOCPContext*>(self)->mQuit = true;
+    }, this);
+}
+
+// Timer TODO
+auto IOCPContext::delTimer(uintptr_t timer) -> bool {
+    return false;
+}
+auto IOCPContext::addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags) -> uintptr_t {
+    return 0;
+}
+
+// Add / Remove
+auto IOCPContext::addSocket(SocketView sock) -> Result<void> {
+    auto ret = ::CreateIoCompletionPort(HANDLE(sock.get()), mIocpFd, 0, 0);
+    if (!ret) {
+        return Unexpected(Error::fromErrno());
     }
-    ::SetFileCompletionNotificationModes(
-        (HANDLE)socket.get(), 
+    ::SetFileCompletionNotificationModes
+        (HANDLE(sock.get()), 
         FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE
     );
-    auto overlapped = iter->second.get();
-
-    overlapped->clear();
-    overlapped->sockfd = socket.get();
-    overlapped->timeout = mTimeoutQueue.end();
-    ::fprintf(stderr, "[Ilias::IOCPContext] asyncInitalize socket(%p)\n", socket.get());
-    return true;
+    return {};
+}
+auto IOCPContext::removeSocket(SocketView sock) -> Result<void> {
+    return {};
 }
 
-bool IOCPContext::asyncCleanup(SocketView sock) {
-    std::lock_guard<std::mutex> lock(mMutex);
-    auto iter = mIOCPOverlappedMap.find(sock.get());
-    if (iter == mIOCPOverlappedMap.end()) {
+// IOCP Recv / Send / Etc...
+template <typename T, typename RetT>
+class IOCPAwaiter : public IOCPOverlapped {
+public:
+    IOCPAwaiter() {
+        onCompelete = [](IOCPOverlapped *data, BOOL ok, DWORD byteTrans) {
+            auto self = static_cast<IOCPAwaiter*>(data);
+            self->mOk = ok;
+            self->bytesTransfered = byteTrans;
+            if (self->mCallerHandle) {
+                self->mCallerHandle.resume();
+            }
+        };
+    }
+    auto await_ready() const noexcept -> bool {
         return false;
     }
-    bool ret = true;
-    if (!iter->second->isCompleted) {
-        ret = ::CancelIoEx((HANDLE)sock.get(), nullptr);
-    }
-    mIOCPOverlappedMap.erase(iter);
+    template <typename U>
+    auto await_suspend(std::coroutine_handle<TaskPromise<U> > h) noexcept -> bool {
+        mCaller = &h.promise();
+        mCallerHandle = h;
 
-    ::fprintf(stderr, "[Ilias::IOCPContext] asyncCleanup socket(%p)\n", sock.get());
-    return ret;
+        if (mCaller->isCanceled()) {
+            return true;
+        }
+        if (static_cast<T*>(this)->doIocp()) {
+            // Return Ok
+            mOk = true;
+            return false; //< Resume
+        }
+        if (::WSAGetLastError() != ERROR_IO_PENDING) {
+            mOk = false;
+            return false; //< Resume
+        }
+        return true; //< Suspend, waiting for IO
+    }
+    auto await_resume() -> RetT {
+        if (mCaller->isCanceled() && !mOverlappedStarted) {
+            return Unexpected(Error::Canceled);
+        }
+        if (mCaller->isCanceled() && mOverlappedStarted) {
+            // Io is started
+            // TODO: How to handle it
+            ::CancelIoEx(HANDLE(sock), this);
+            return Unexpected(Error::Canceled);
+        }
+        // Get result
+        return static_cast<T*>(this)->onCompelete(mOk, bytesTransfered);
+    }
+
+    ::SOCKET sock;
+    ::DWORD bytesTransfered = 0;
+private:
+    PromiseBase *mCaller = nullptr;
+    std::coroutine_handle<> mCallerHandle;
+    bool mOk = false;
+    bool mOverlappedStarted = false;
+};
+
+struct RecvAwaiter : public IOCPAwaiter<RecvAwaiter, Result<size_t> > {
+    auto doIocp() -> bool {
+        return ::WSARecv(sock, &buf, 1, &bytesTransfered, &flags, this, nullptr) == 0;
+    }
+    auto onCompelete(bool ok, DWORD byteTrans) -> Result<size_t> {
+        if (ok) {
+            return byteTrans;
+        } 
+        return Unexpected(Error::fromErrno());
+    }
+
+    ::WSABUF buf;
+    ::DWORD flags = 0;
+};
+
+auto IOCPContext::recv(SocketView sock, void *buf, size_t len) -> Task<size_t> {
+    RecvAwaiter awaiter;
+    awaiter.sock = sock.get();
+    awaiter.buf.buf = (CHAR*) buf;
+    awaiter.buf.len = len;
+    co_return co_await awaiter;
 }
 
-bool IOCPContext::asyncCancel(SocketView socket, void *operation) {
-    std::lock_guard<std::mutex> lock(mMutex);
-    auto iter = mIOCPOverlappedMap.find(socket.get());
-    if (iter == mIOCPOverlappedMap.end()) {
-        return false;
+struct SendAwaiter : public IOCPAwaiter<SendAwaiter, Result<size_t> > {
+    auto doIocp() -> bool {
+        return ::WSASend(sock, &buf, 1, &bytesTransfered, flags, this, nullptr) == 0;
     }
-    if (operation != (void *)iter->second.get() && operation != nullptr) {
-        return false;
+    auto onCompelete(bool ok, DWORD byteTrans) -> Result<size_t> {
+        if (ok) {
+            return byteTrans;
+        }
+        return Unexpected(Error::fromErrno());
     }
-    if (iter->second->hasTimeoutCheck) { //< Remove timeouted
-        std::lock_guard<std::mutex> lock(mMutex);
-        mTimeoutQueue.erase(iter->second->timeout);
-    }
-    return TRUE == ::CancelIoEx((HANDLE)socket.get(), iter->second.get());
-}
-
-void *IOCPContext::asyncConnect(SocketView socket, const IPEndpoint &ep, int64_t timeout,
-                                    ConnectHandler &&callback) 
-{
-    std::lock_guard<std::mutex> lock(mMutex);
-    auto iter = mIOCPOverlappedMap.find(socket.get());
-    auto overlapped = iter->second.get();
     
-    ILIAS_ASSERT(iter != mIOCPOverlappedMap.end());
-    ILIAS_ASSERT(overlapped != nullptr);
-    ILIAS_ASSERT(overlapped->isCompleted == true);
-    ILIAS_ASSERT(callback != nullptr);
+    ::WSABUF buf;
+    ::DWORD flags = 0;
+};
 
-    overlapped->clear();
-    overlapped->ConnectCallback = std::move(callback);
-    overlapped->event = IOCPEvent::Connect;
-
-    // Before ConnectEx, we need bind first
-    ::sockaddr_storage storage {};
-    ::memset(&storage, 0, sizeof(storage));
-    storage.ss_family = socket.family().value();
-    if (!socket.bind(storage)) {
-        overlapped->ConnectCallback(Unexpected<Error>(Error::fromErrno()));
-        overlapped->isCompleted = true;
-        return nullptr;
-    }
-
-    _addTimeout(overlapped, timeout);
-    if (!mFnConnectEx(socket.get(), &ep.data<sockaddr>(), ep.length(),
-                        nullptr, 0, &overlapped->dwflag, overlapped)) {
-        if (WSAGetLastError () != ERROR_IO_PENDING) {
-            overlapped->ConnectCallback(Unexpected<Error>(Error::fromErrno()));
-            overlapped->isCompleted = true;
-            return nullptr;
-        }
-        else {
-            return overlapped;
-        }
-    }
-    // Got 
-    _onEvent(overlapped);
-    return nullptr;
+auto IOCPContext::send(SocketView sock, const void *buf, size_t len) -> Task<size_t> {
+    SendAwaiter awaiter;
+    awaiter.sock = sock.get();
+    awaiter.buf.buf = (CHAR*) buf;
+    awaiter.buf.len = len;
+    co_return co_await awaiter;
 }
 
-void *IOCPContext::asyncAccept(
-    SocketView socket,
-    int64_t timeout,
-    AcceptHandler &&callback)
-{
-    std::lock_guard<std::mutex> lock(mMutex);
-    auto iter = mIOCPOverlappedMap.find(socket.get());
-    auto overlapped = iter->second.get();
-
-    ILIAS_ASSERT(iter != mIOCPOverlappedMap.end());
-    ILIAS_ASSERT(overlapped != nullptr);
-    ILIAS_ASSERT(overlapped->isCompleted == true);
-    ILIAS_ASSERT(callback != nullptr);
-
-    overlapped->clear();
-
-    // Get socket family and type
-    ::WSAPROTOCOL_INFO info;
-    ::socklen_t len = sizeof(info);
-    if (::getsockopt(socket.get(), SOL_SOCKET, SO_PROTOCOL_INFO, (char *)&info, &len) == SOCKET_ERROR) {
-        overlapped->AcceptCallback(Unexpected<Error>(Error::fromErrno()));
-        overlapped->isCompleted = true;
-        return nullptr;
-    }
-
-    overlapped->AcceptCallback = std::move(callback);
-    overlapped->event = IOCPEvent::Accept;
-    overlapped->peerfd = ::socket(info.iAddressFamily, info.iSocketType, info.iProtocol);
-    overlapped->wsaBuf.buf = (char*) overlapped->addressBuffer;
-    overlapped->wsaBuf.len = sizeof(overlapped->addressBuffer);
-
-    _addTimeout(overlapped, timeout);
-    if (!mFnAcceptEx(socket.get(), overlapped->peerfd,
-                        overlapped->wsaBuf.buf, 0, 
-                        sizeof(sockaddr_storage) + 16,
-                        sizeof(sockaddr_storage) + 16, &overlapped->byteTrans, overlapped))
-    {
-        auto error = ::WSAGetLastError();
-        if (error != ERROR_IO_PENDING) {
-            overlapped->AcceptCallback(Unexpected<Error>(error));
-            overlapped->isCompleted = true;
-            return nullptr;
-        } else {
-            return overlapped;
+struct ConnectAwaiter : public IOCPAwaiter<ConnectAwaiter, Result<void> > {
+    auto doIocp() -> bool {
+        ::WSAPROTOCOL_INFO info;
+        ::socklen_t infoLen = sizeof(info);
+        ::sockaddr_storage addr;
+        ::socklen_t len = sizeof(addr);
+        if (::getsockname(sock, reinterpret_cast<::sockaddr*>(&addr), &len) != 0) {
+            if (::getsockopt(sock, SOL_SOCKET, SO_PROTOCOL_INFO, (char*) &info, &infoLen) != 0) {
+                return false;
+            }
+            // Not binded
+            ::memset(&addr, 0, sizeof(addr));
+            addr.ss_family = info.iAddressFamily;
+            ::bind(sock, reinterpret_cast<::sockaddr*>(&addr), endpoint.length());
         }
+        return Fns.ConnectEx(
+            sock, &endpoint.data<::sockaddr>(), endpoint.length(), 
+            nullptr, 0, &bytesTransfered, this
+        );
     }
-    _onEvent(overlapped);
-    return nullptr;
+    auto onCompelete(bool ok, DWORD byteTrans) -> Result<void> {
+        if (ok) {
+            ::setsockopt(sock, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
+            return {};
+        }
+        return Unexpected(Error::fromErrno());
+    }
+
+    IPEndpoint endpoint;
+};
+
+auto IOCPContext::connect(SocketView sock, const IPEndpoint &addr) -> Task<void> {
+    ConnectAwaiter awaiter;
+    awaiter.sock = sock.get();
+    awaiter.endpoint = addr;
+    co_return co_await awaiter;
 }
 
-void *IOCPContext::asyncRecv(
-    SocketView socket, void *buf, size_t n, int64_t timeout,
-    RecvHandler &&callback) 
-{
-    std::lock_guard<std::mutex> lock(mMutex);
-    auto iter = mIOCPOverlappedMap.find(socket.get());
-    auto overlapped = iter->second.get();
-
-    ILIAS_ASSERT(iter != mIOCPOverlappedMap.end());
-    ILIAS_ASSERT(overlapped != nullptr);
-    ILIAS_ASSERT(overlapped->isCompleted == true);
-    ILIAS_ASSERT(callback != nullptr);
-    ILIAS_ASSERT(buf != nullptr);
-    ILIAS_ASSERT(n > 0);
-
-    overlapped->clear();
-
-    overlapped->RecvSendCallback = std::move(callback);
-    overlapped->wsaBuf.buf = (char *)buf;
-    overlapped->wsaBuf.len = n;
-    overlapped->event = IOCPEvent::Recv;
-
-    _addTimeout(overlapped, timeout);
-    int ret = ::WSARecv(socket.get(), 
-                &overlapped->wsaBuf, 1, 
-                &overlapped->byteTrans, 
-                &overlapped->dwflag, 
-                overlapped, nullptr);
-
-    if (ret == SOCKET_ERROR) {
-        auto error = ::WSAGetLastError();
-        if (error != ERROR_IO_PENDING) {
-            overlapped->RecvSendCallback(Unexpected<Error>(error));
-            overlapped->isCompleted = true;
-            return nullptr;
+struct AcceptAwaiter : public IOCPAwaiter<AcceptAwaiter, Result<std::pair<Socket, IPEndpoint> > > {
+    auto doIocp() -> bool {
+        ::WSAPROTOCOL_INFO info;
+        ::socklen_t len = sizeof(info);
+        if (::getsockopt(sock, SOL_SOCKET, SO_PROTOCOL_INFO, (char*) &info, &len) != 0) {
+            return false;
         }
-        else {
-            return overlapped;
+        newSocket = ::socket(info.iAddressFamily, info.iSocketType, info.iProtocol);
+        if (newSocket == INVALID_SOCKET) {
+            return false;
         }
+        return Fns.AcceptEx(
+            sock,
+            newSocket,
+            addressBuffer,
+            0,
+            sizeof(::sockaddr_storage) + 16, //< Max address size
+            sizeof(::sockaddr_storage) + 16, //< Max address size
+            &bytesTransfered,
+            this
+        );
     }
-    _onEvent(overlapped);
-    return nullptr;
+    auto onCompelete(bool ok, DWORD byteTrans) -> Result<std::pair<Socket, IPEndpoint> > {
+        if (!ok) {
+            ::closesocket(newSocket);
+            return Unexpected(Error::fromErrno());
+        }
+        ::sockaddr *remote = nullptr;
+        ::sockaddr *local = nullptr;
+        ::socklen_t remoteLen = 0;
+        ::socklen_t localLen = 0;
+
+        Fns.GetAcceptExSocketAddress(
+            addressBuffer, 0,
+            sizeof(::sockaddr_storage) + 16, //< Max address size
+            sizeof(::sockaddr_storage) + 16, //< Max address size
+            &local, &localLen,
+            &remote, &remoteLen
+        );
+        ::setsockopt(sock, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
+
+        return std::make_pair(Socket(newSocket), IPEndpoint::fromRaw(remote, remoteLen));
+    }
+    ::SOCKET newSocket = INVALID_SOCKET;
+    ::uint8_t addressBuffer[(sizeof(::sockaddr_storage) + 16) * 2];
+};
+
+auto IOCPContext::accept(SocketView sock) -> Task<std::pair<Socket, IPEndpoint> > {
+    AcceptAwaiter awaiter;
+    awaiter.sock = sock.get();
+    co_return co_await awaiter;
 }
 
-void *IOCPContext::asyncSend(
-    SocketView socket, const void *buf, size_t n, int64_t timeout,
-    SendHandler &&callback) 
-{
-    std::lock_guard<std::mutex> lock(mMutex);
-    auto iter = mIOCPOverlappedMap.find(socket.get());
-    auto overlapped = iter->second.get();
 
-    ILIAS_ASSERT(iter != mIOCPOverlappedMap.end());
-    ILIAS_ASSERT(overlapped != nullptr);
-    ILIAS_ASSERT(overlapped->isCompleted == true);
-    ILIAS_ASSERT(callback != nullptr);
-    ILIAS_ASSERT(buf != nullptr);
-    ILIAS_ASSERT(n > 0);
-
-    overlapped->clear();
-
-    overlapped->RecvSendCallback = std::move(callback);
-    overlapped->wsaBuf.buf = (char *)buf;
-    overlapped->wsaBuf.len = n;
-    overlapped->event = IOCPEvent::Send;
-
-    _addTimeout(overlapped, timeout);
-    int ret = ::WSASend(socket.get(), 
-                &overlapped->wsaBuf, 1, 
-                &overlapped->byteTrans, 
-                overlapped->dwflag, 
-                overlapped, nullptr);
-
-    if (ret == SOCKET_ERROR) {
-        auto error = ::WSAGetLastError();
-        if (error != ERROR_IO_PENDING) {
-            overlapped->RecvSendCallback(Unexpected<Error>(error));
-            overlapped->isCompleted = true;
-            return nullptr;
-        } else {
-            return overlapped;
-        }
+struct SendtoAwaiter : public IOCPAwaiter<SendtoAwaiter, Result<size_t> > {
+    auto doIocp() -> bool {
+        return ::WSASendTo(
+            sock,
+            &buf, 1, &bytesTransfered, flags, 
+            &endpoint.data<::sockaddr>(), endpoint.length(),
+            this, nullptr
+        ) == 0;
     }
-    _onEvent(overlapped);
-    return nullptr;
-}
-void *IOCPContext::asyncRecvfrom(
-    SocketView socket,
-    void *buf,
-    size_t n,
-    int64_t timeout,
-    RecvfromHandler &&callback)
-{
-
-    std::lock_guard<std::mutex> lock(mMutex);
-    auto iter = mIOCPOverlappedMap.find(socket.get());
-    auto overlapped = iter->second.get();
-
-    ILIAS_ASSERT(iter != mIOCPOverlappedMap.end());
-    ILIAS_ASSERT(overlapped != nullptr);
-    ILIAS_ASSERT(overlapped->isCompleted == true);
-    ILIAS_ASSERT(callback != nullptr);
-    ILIAS_ASSERT(buf != nullptr);
-    ILIAS_ASSERT(n > 0);
-
-    overlapped->clear();
-
-    overlapped->RecvfromCallback = std::move(callback);
-    overlapped->wsaBuf.buf = (char *)buf;
-    overlapped->wsaBuf.len = n;
-    overlapped->event = IOCPEvent::Recvfrom;
-
-    _addTimeout(overlapped, timeout);
-    int ret = ::WSARecvFrom(
-        socket.get(),
-        &overlapped->wsaBuf, 1,
-        &overlapped->byteTrans,
-        &overlapped->dwflag,
-        (sockaddr*) overlapped->addressBuffer,
-        &overlapped->addressLength,
-        overlapped,
-        nullptr
-    );
-    if (ret == SOCKET_ERROR) {
-        auto error = ::WSAGetLastError();
-        if (error != ERROR_IO_PENDING) {
-            overlapped->RecvfromCallback(Unexpected<Error>(error));
-            overlapped->isCompleted = true;
-            return nullptr;
-        } else {
-            return overlapped;
+    auto onCompelete(bool ok, DWORD byteTrans) -> Result<size_t> {
+        if (ok) {
+            return byteTrans;
         }
+        return Unexpected(Error::fromErrno());
     }
 
-    _onEvent(overlapped);
-    return nullptr;
+    ::WSABUF buf;
+    ::DWORD flags = 0;
+    IPEndpoint endpoint;
+};
+
+auto IOCPContext::sendto(SocketView sock, const void *buf, size_t len, const IPEndpoint &addr) -> Task<size_t> {
+    SendtoAwaiter awaiter;
+    awaiter.sock = sock.get();
+    awaiter.buf.buf = (CHAR*) buf;
+    awaiter.buf.len = len;
+    awaiter.endpoint = addr;
+    co_return co_await awaiter;
 }
-void *IOCPContext::asyncSendto(
-    SocketView socket,
-    const void *buf,
-    size_t n,
-    const IPEndpoint &ep,
-    int64_t timeout,
-    SendtoHandler &&callback) {
-    
-    std::lock_guard<std::mutex> lock(mMutex);
-    auto iter = mIOCPOverlappedMap.find(socket.get());
-    auto overlapped = iter->second.get();
 
-    ILIAS_ASSERT(iter != mIOCPOverlappedMap.end());
-    ILIAS_ASSERT(overlapped != nullptr);
-    ILIAS_ASSERT(overlapped->isCompleted == true);
-    ILIAS_ASSERT(callback != nullptr);
-    ILIAS_ASSERT(buf != nullptr);
-    ILIAS_ASSERT(n > 0);
-
-    overlapped->clear();
-
-    overlapped->RecvSendCallback = std::move(callback);
-    overlapped->wsaBuf.buf = (char *)buf;
-    overlapped->wsaBuf.len = n;
-    overlapped->event = IOCPEvent::Send;
-
-    _addTimeout(overlapped, timeout);
-    int ret = ::WSASendTo(socket.get(), 
-                &overlapped->wsaBuf, 1, 
-                &overlapped->byteTrans, 
-                overlapped->dwflag, 
-                &ep.data<::sockaddr>(),
-                ep.length(),
-                overlapped, nullptr);
-
-    if (ret == SOCKET_ERROR) {
-        auto error = ::WSAGetLastError();
-        if (error != ERROR_IO_PENDING) {
-            overlapped->RecvSendCallback(Unexpected<Error>(error));
-            overlapped->isCompleted = true;
-            return nullptr;
-        } else {
-            return overlapped;
-        }
+struct RecvfromAwaiter : public IOCPAwaiter<RecvfromAwaiter, Result<std::pair<size_t, IPEndpoint> > > {
+    auto doIocp() -> bool {
+        return ::WSARecvFrom(
+            sock,
+            &buf, 1, &bytesTransfered, &flags,
+            reinterpret_cast<::sockaddr*>(&addr), &len,
+            this, nullptr
+        ) == 0;
     }
-    _onEvent(overlapped);
-    return nullptr;
-}
-
-inline void IOCPContext::_run() {
-    IOCPOverlapped *data = nullptr;
-    DWORD byteTrans = 0;
-    void *completionKey = nullptr;
-
-    while (mRunning) {
-        BOOL ret = ::GetQueuedCompletionStatus(mIocpFd, 
-                                              &byteTrans, 
-                                              (PULONG_PTR)&completionKey, 
-                                              (LPOVERLAPPED*)&data,
-                                              _waitDuration());
-        _notifyTimeout(); //< Notify timeout
-        if (data == nullptr) {
-            continue;
+    auto onCompelete(bool ok, DWORD byteTrans) -> Result<std::pair<size_t, IPEndpoint> > {
+        if (ok) {
+            return std::make_pair(byteTrans, IPEndpoint::fromRaw(&addr, len));
         }
-        if (!ret && ::WSAGetLastError() == ERROR_OPERATION_ABORTED) {
-            // Skip aborted operation
-            continue;
-        }
-        ILIAS_ASSERT(data != nullptr);
-        data->byteTrans = byteTrans;
-        if (!ret) {
-            data->event |= IOCPEvent::SysError;
-        }
-        // Dispatch
-        _dump(data);
-        _onEvent(data);
+        return Unexpected(Error::fromErrno());
     }
-}
-inline void IOCPContext::_notifyTimeout() {
-    std::lock_guard<std::mutex> lock(mMutex);
-    auto now = ::GetTickCount64();
-    for (auto iter = mTimeoutQueue.begin(); iter != mTimeoutQueue.end(); ) {
-        if (now < iter->first) {
-            break;
-        }
-        auto overlapped = iter->second;
-        // Cancel the IO
-        ::CancelIoEx((HANDLE)overlapped->sockfd, overlapped);
-        overlapped->hasTimeoutCheck = false;
-        overlapped->timeout = mTimeoutQueue.end();
-        overlapped->event |= IOCPEvent::Timeout; //< Set timeout flag
-        iter = mTimeoutQueue.erase(iter);
 
-        // Dispatch
-        _onEvent(overlapped);
-    }
+    ::WSABUF buf;
+    ::DWORD flags = 0;
+    ::sockaddr_storage addr;
+    ::socklen_t len = 0;
+};
+
+auto IOCPContext::recvfrom(SocketView sock, void *buf, size_t len) -> Task<std::pair<size_t, IPEndpoint> > {
+    RecvfromAwaiter awaiter;
+    awaiter.sock = sock.get();
+    awaiter.buf.buf = (CHAR*) buf;
+    awaiter.buf.len = len;
+    co_return co_await awaiter;
 }
-inline void IOCPContext::_addTimeout(IOCPOverlapped *overlapped, int64_t timeout) {
-    if (timeout <= 0) { //< No timeout, do nothing
+
+// Get WSA Ext functions
+inline auto IOCPContext::_loadFunctions() -> void {
+    ::GUID acceptExId = WSAID_ACCEPTEX;
+    ::GUID connectExId = WSAID_CONNECTEX;
+    ::GUID transFileId = WSAID_TRANSMITFILE;
+    ::GUID getAcceptExSockAddrId = WSAID_GETACCEPTEXSOCKADDRS;
+    ::DWORD bytesReturned = 0;
+    ::DWORD bytesNeeded = 0;
+
+    Socket helper(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (!helper.isValid()) {
         return;
     }
-
-    bool needWakeup = false;
-    auto expireTime = ::GetTickCount64() + timeout;
-    if (mTimeoutQueue.empty()) {
-        needWakeup = true;
-    }
-    else {
-        if (expireTime < mTimeoutQueue.begin()->first) {
-            needWakeup = true;
-        }
-    }
-    overlapped->timeout = mTimeoutQueue.emplace(expireTime, overlapped);
-    overlapped->hasTimeoutCheck = true;
-    if (needWakeup) {
-        _wakeup();
-    }
-}
-
-inline void IOCPContext::_dump(IOCPOverlapped *overlapped) {
-#ifndef NDEBUG
-    std::string events;
-    if (overlapped->event & IOCPEvent::Recvfrom) {
-        events += "Recvfrom ";
-    }
-    if (overlapped->event & IOCPEvent::Recv) {
-        events += "Recv ";
-    }
-    if (overlapped->event & IOCPEvent::Send) {
-        events += "Send ";
-    }
-    if (overlapped->event & IOCPEvent::Accept) {
-        events += "Accept ";
-    }
-    if (overlapped->event & IOCPEvent::Connect) {
-        events += "Connect ";
-    }
-    if (overlapped->event & IOCPEvent::SysError) {
-        events += "Error ";
-    }
-    if (overlapped->event & IOCPEvent::Timeout) {
-        events += "Timeout ";
-    }
-    ::printf(
-        "[Ilias::IOCPContext] Get OVERLAPPED Result : Socket %lu Event %s\n",
-        uintptr_t(overlapped->sockfd), 
-        events.c_str()
+    ::WSAIoctl(
+        helper.get(), SIO_GET_EXTENSION_FUNCTION_POINTER,
+        &acceptExId, sizeof(acceptExId), &Fns.AcceptEx, 
+        sizeof(Fns.AcceptEx), &bytesNeeded, 
+        nullptr, nullptr
     );
-#endif
-}
-
-inline void IOCPContext::_onEvent(IOCPOverlapped *overlapped) {
-    
-#if 1
-    if (overlapped->event & IOCPEvent::Timeout) {
-        overlapped->event |= IOCPEvent::SysError;
-
-        ::WSASetLastError(WSAETIMEDOUT);
-    }
-#endif
-    if (overlapped->event & IOCPEvent::Recv) {
-        ILIAS_ASSERT(overlapped->RecvSendCallback != nullptr);
-        if (overlapped->event & IOCPEvent::SysError) {
-            overlapped->RecvSendCallback(Error::fromErrno());
-        }
-        else {
-            overlapped->RecvSendCallback(overlapped->byteTrans);
-        }
-        overlapped->RecvSendCallback = nullptr;
-    }
-    else if (overlapped->event & IOCPEvent::Send) {
-        ILIAS_ASSERT(overlapped->RecvSendCallback != nullptr);
-        if (overlapped->event & IOCPEvent::SysError) {
-            overlapped->RecvSendCallback(Error::fromErrno());
-        }
-        else {
-            overlapped->RecvSendCallback(overlapped->byteTrans);
-        }
-        overlapped->RecvSendCallback = nullptr;
-    }
-    else if (overlapped->event & IOCPEvent::Accept) {
-        ILIAS_ASSERT(overlapped->AcceptCallback != nullptr);
-        if (overlapped->event & IOCPEvent::SysError) {
-            ::closesocket(overlapped->peerfd);
-            overlapped->peerfd = INVALID_SOCKET;
-            overlapped->AcceptCallback(Unexpected<Error>(Error::fromErrno()));
-        }
-        else {
-            ILIAS_ASSERT(overlapped->peerfd != INVALID_SOCKET);
-            sockaddr *remote, *local;
-            int local_len, remote_len;
-            mFnGetAcceptExSocketAddress(overlapped->wsaBuf.buf, 0, 
-                                        sizeof(sockaddr_storage) + 16, sizeof(sockaddr_storage) + 16, 
-                                        &local, &local_len,
-                                         &remote, &remote_len);
-            ::setsockopt(overlapped->peerfd, SOL_SOCKET, 
-                        SO_UPDATE_ACCEPT_CONTEXT, 
-                        (char*)&overlapped->sockfd, 
-                        sizeof(overlapped->sockfd));
-            overlapped->wsaBuf.buf = nullptr;
-            overlapped->wsaBuf.len = 0;
-            overlapped->AcceptCallback(
-                std::make_pair<Socket, IPEndpoint>(
-                    Socket(overlapped->peerfd), 
-                    IPEndpoint::fromRaw(remote, remote_len)
-                )
-            );
-        }
-        overlapped->AcceptCallback = nullptr;
-    } 
-    else if (overlapped->event & IOCPEvent::Connect) {
-        ILIAS_ASSERT(overlapped->ConnectCallback != nullptr);
-        if (overlapped->event & IOCPEvent::SysError) {
-            overlapped->ConnectCallback(Unexpected<Error>(Error::fromErrno()));
-        }
-        else {
-            ::setsockopt(overlapped->sockfd, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0);
-            overlapped->ConnectCallback(Expected<void, Error>());
-        }
-        overlapped->ConnectCallback = nullptr;
-    } 
-    else if (overlapped->event & IOCPEvent::Recvfrom) {
-        ILIAS_ASSERT(overlapped->RecvfromCallback != nullptr);
-        if (overlapped->event & IOCPEvent::SysError) {
-            overlapped->RecvfromCallback(Unexpected<Error>(Error::fromErrno()));
-        }
-        else {
-            overlapped->RecvfromCallback(
-                std::make_pair<size_t, IPEndpoint>(
-                    overlapped->byteTrans,
-                    IPEndpoint::fromRaw(overlapped->addressBuffer, overlapped->addressLength)
-                )
-            );
-        }
-        overlapped->RecvfromCallback = nullptr;
-    }
-    else {
-        fprintf(stderr, "Unknown event: %d\n", overlapped->event);
-        ILIAS_ASSERT(false);
-        // overlapped->RecvSendCallback(Error::fromErrno());
-    }
-
-    // This request is done
-    if (overlapped->hasTimeoutCheck) {
-        std::lock_guard<std::mutex> lock(mMutex);
-        mTimeoutQueue.erase(overlapped->timeout);
-        overlapped->timeout = mTimeoutQueue.end();
-        overlapped->hasTimeoutCheck = false;
-    }
-    overlapped->isCompleted = true;
-}
-inline DWORD IOCPContext::_waitDuration() {
-    std::lock_guard<std::mutex> lock(mMutex);
-    if (mTimeoutQueue.empty()) {
-        return INFINITE;
-    }
-    return mTimeoutQueue.begin()->first - ::GetTickCount64();
-}
-inline void IOCPContext::_stop() {
-    mRunning = false;
-    _wakeup();
-}
-inline void IOCPContext::_wakeup() {
-    auto ret = ::PostQueuedCompletionStatus(
-        mIocpFd,
-        0,
-        0,
-        nullptr
+    ::WSAIoctl(
+        helper.get(), SIO_GET_EXTENSION_FUNCTION_POINTER,
+        &connectExId, sizeof(connectExId), &Fns.ConnectEx,
+        sizeof(Fns.ConnectEx), &bytesNeeded, 
+        nullptr, nullptr
+    );
+    ::WSAIoctl(
+        helper.get(), SIO_GET_EXTENSION_FUNCTION_POINTER,
+        &transFileId, sizeof(transFileId), &Fns.TransmitFile,
+        sizeof(Fns.TransmitFile), &bytesNeeded, 
+        nullptr, nullptr
+    );
+    ::WSAIoctl(
+        helper.get(), SIO_GET_EXTENSION_FUNCTION_POINTER,
+        &getAcceptExSockAddrId, sizeof(getAcceptExSockAddrId), &Fns.GetAcceptExSocketAddress,
+        sizeof(Fns.GetAcceptExSocketAddress), &bytesNeeded, 
+        nullptr, nullptr
     );
 }
 

@@ -227,7 +227,7 @@ public:
         }
         ILIAS_ASSERT(mHasValue);
         mHasValue = false;
-        return Result<T>(mValue);
+        return std::move(mValue);
     }
     template <typename U>
     auto return_value(U &&value) -> void {

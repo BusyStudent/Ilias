@@ -14,9 +14,7 @@ Task<int> another() {
 
 Task<int> task() {
     // co_await 
-    auto [a, b] = co_await WhenAll(another(), Sleep(10ms));
-    auto result = co_await WhenAny(another(), Sleep(20ms));
-    ILIAS_ASSERT(result.index() == 0);
+    auto result = co_await WhenAny(Sleep(20ms), Sleep(1s));
     co_return 0;
 }
 

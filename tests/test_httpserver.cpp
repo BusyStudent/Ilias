@@ -31,13 +31,13 @@ Task<> sendResponse(IStreamClient &client, int statusCode, const void *body, int
 
     auto num = co_await client.send(headers, strlen(headers));
     if (!num) {
-        co_return;
+        co_return Result<>();
     }
     while (n > 0) {
         num = co_await client.send(body, n);
         if (!num) {
             std::cout << "Client send error " << num.error().message() << std::endl;
-            co_return;
+        co_return Result<>();
         }
         if (*num == 0) {
             break;
@@ -45,7 +45,7 @@ Task<> sendResponse(IStreamClient &client, int statusCode, const void *body, int
         n -= *num;
         body = ((uint8_t*) body) + *num;
     }
-    co_return;
+    co_return Result<>();
 }
 
 Task<> handleClient(IStreamClient client) {
@@ -55,20 +55,20 @@ Task<> handleClient(IStreamClient client) {
     auto n = co_await client.recv(headers, sizeof(headers));
     if (!n) {
         std::cout << "Client recv error " << n.error().message() << std::endl;
-        co_return;
+        co_return Result<>();
     }
     std::cout << "Client said: " << headers << std::endl;
     
     if (::sscanf(headers, "GET %s", requestFile) != 1) {
         co_await sendResponse(client, 500, "<html>Internal Server Error!</html>");
-        co_return;
+        co_return Result<>();
     }
     auto path = std::filesystem::current_path();
     path = path.generic_u8string();
     path += reinterpret_cast<const char8_t*>(requestFile);
     if (!std::filesystem::exists(path)) {
         co_await sendResponse(client, 404, "<html>File not found!</html>");
-        co_return;
+        co_return Result<>();
     }
     if (std::filesystem::is_directory(path)) {
         std::string response = R"(<html><body><meta http-equiv="Content-Type" content="text/html; charset=utf-8" />)";
@@ -87,12 +87,12 @@ Task<> handleClient(IStreamClient client) {
         }
         response += "</body></html>";
         co_await sendResponse(client, 200, response.c_str(), response.size());
-        co_return;
+        co_return Result<>();
     }
     FILE *file = ::fopen(path.string().c_str(), "rb");
     if (!file) {
         co_await sendResponse(client, 500, "<html>Internal Server Error!</html>");
-        co_return;
+        co_return Result<>();
     }
     ::fseek(file, 0, SEEK_END);
     auto size = ::ftell(file);
@@ -102,11 +102,11 @@ Task<> handleClient(IStreamClient client) {
     if (::fread(buffer.data(), 1, size, file) != size) {
         ::fclose(file);
         co_await sendResponse(client, 500, "<html>Internal Server Error!</html>");
-        co_return;
+        co_return Result<>();
     }
     ::fclose(file);
     co_await sendResponse(client, 200, buffer.data(), buffer.size());
-    co_return;
+    co_return Result<>();
 }
 
 int main() {
@@ -123,21 +123,21 @@ int main() {
         IStreamListener listener = std::move(tcpListener);
         if (auto ret = listener.bind("127.0.0.1:0"); !ret) {
             std::cout << ret.error().message() << std::endl;
-            co_return;
+            co_return Result<>();
         }
         std::cout << "Server bound to " << listener.localEndpoint()->toString() << std::endl;
         while (true) {
             auto ret = co_await listener.accept();
             if (!ret) {
                 std::cout << ret.error().message() << std::endl;
-                co_return;
+                co_return Result<>();
             }
             auto &[client, addr] = *ret;
             std::cout << "New client from " << addr.toString() << std::endl;
 
             // Handle this
-            loop.spawn(handleClient, std::move(client));
+            // loop.spawn(handleClient, std::move(client));
         }
-        co_return;
+        co_return Result<>();
     }());
 }

@@ -113,6 +113,11 @@ public:
         }, mTasks);
     }
     auto await_resume() -> Variant {
+        // Clear all task's prev awatting, avoid it resume the Caller
+        std::apply([](auto ...tasks) {
+            (tasks->setPrevAwaiting(nullptr), ...);
+        }, mTasks);
+        // Check
         if (mCaller.isCanceled()) {
             return Variant(std::in_place_index_t<0>{}, Unexpected(Error::Canceled));
         }

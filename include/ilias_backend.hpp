@@ -15,20 +15,20 @@ ILIAS_NS_BEGIN
 // --- Concepts
 template <typename T>
 concept StreamClient = requires(T t) {
-    t.connect(IPEndpoint{ }, int64_t{ });
-    t.send(nullptr, size_t{ }, int64_t{ });
-    t.recv(nullptr, size_t{ }, int64_t{ });
+    t.connect(IPEndpoint{ });
+    t.send(nullptr, size_t{ });
+    t.recv(nullptr, size_t{ });
 };
 template <typename T>
 concept StreamListener = requires(T t) {
     t.bind(IPEndpoint{ }, int { });
-    t.accept(int64_t{ });
+    t.accept();
 };
 template <typename T>
 concept DatagramClient = requires(T t) {
     t.bind(IPEndpoint{ });
-    t.sendto(nullptr, size_t{ }, IPEndpoint{ }, int64_t{ });
-    t.recvfrom(nullptr, size_t{ }, int64_t{ });
+    t.sendto(nullptr, size_t{ }, IPEndpoint{ });
+    t.recvfrom(nullptr, size_t{ });
 };
 
 /**
@@ -46,9 +46,12 @@ public:
     virtual auto accept(SocketView fd) -> Task<std::pair<Socket, IPEndpoint> > = 0;
     virtual auto sendto(SocketView fd, const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> = 0;
     virtual auto recvfrom(SocketView fd, void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > = 0;
+
+    static auto instance() -> IoContext * {
+        return dynamic_cast<IoContext*>(EventLoop::instance());
+    }
 };
 
-#if 0
 /**
  * @brief Helper class to wrap a StreamClient as dynamic type
  * 
@@ -63,14 +66,14 @@ public:
     template <StreamClient T>
     IStreamClient(T &&value) : mPtr(new Impl<T>(std::move(value))) {}
 
-    auto connect(const IPEndpoint &endpoint, int64_t timeout = -1) -> IAwaitable<ConnectHandlerArgs> {
-        return mPtr->connect(endpoint, timeout);
+    auto connect(const IPEndpoint &endpoint) -> Task<void> {
+        return mPtr->connect(endpoint);
     }
-    auto send(const void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<SendHandlerArgs> {
-        return mPtr->send(buffer, n, timeout);
+    auto send(const void *buffer, size_t n) -> Task<size_t> {
+        return mPtr->send(buffer, n);
     }
-    auto recv(void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<RecvHandlerArgs> {
-        return mPtr->recv(buffer, n, timeout);
+    auto recv(void *buffer, size_t n) -> Task<size_t> {
+        return mPtr->recv(buffer, n);
     }
 
     template <StreamClient T>
@@ -104,9 +107,9 @@ public:
     }
 private:
     struct Base {
-        virtual auto connect(const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> = 0;
-        virtual auto send(const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> = 0;
-        virtual auto recv(void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs> = 0;
+        virtual auto connect(const IPEndpoint &endpoint) -> Task<void> = 0;
+        virtual auto send(const void *buffer, size_t n) -> Task<size_t> = 0;
+        virtual auto recv(void *buffer, size_t n) -> Task<size_t> = 0;
         virtual ~Base() = default;
     };
     template <StreamClient T>
@@ -114,14 +117,14 @@ private:
         Impl(T &&value) : value(std::move(value)) { }
         Impl(const Impl &) = delete;
         ~Impl() = default;
-        auto connect(const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> override {
-            return value.connect(endpoint, timeout);
+        auto connect(const IPEndpoint &endpoint) -> Task<void> override {
+            return value.connect(endpoint);
         }
-        auto send(const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> override {
-            return value.send(buffer, n, timeout);
+        auto send(const void *buffer, size_t n) -> Task<size_t> override {
+            return value.send(buffer, n);
         }
-        auto recv(void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs> override {
-            return value.recv(buffer, n, timeout);
+        auto recv(void *buffer, size_t n) -> Task<size_t> override {
+            return value.recv(buffer, n);
         }
         T value;
     };
@@ -145,11 +148,11 @@ public:
     template <StreamListener T>
     IStreamListener(T &&value) : mPtr(new Impl<T>(std::move(value))) { }
 
-    auto bind(const IPEndpoint &endpoint, int backlog = 0) const -> BindHandlerArgs {
+    auto bind(const IPEndpoint &endpoint, int backlog = 0) const -> Result<> {
         return mPtr->bind(endpoint, backlog);
     }
-    auto accept(int64_t timeout = -1) const -> Task<AcceptHandlerArgsT<IStreamClient> > {
-        return mPtr->accept(timeout);
+    auto accept() const -> Task<std::pair<IStreamClient, IPEndpoint> > {
+        return mPtr->accept();
     }
     auto localEndpoint() const -> Result<IPEndpoint> {
         return mPtr->localEndpoint();
@@ -186,8 +189,8 @@ public:
     }
 private:
     struct Base {
-        virtual auto bind(const IPEndpoint &endpoint, int backlog) -> BindHandlerArgs = 0;
-        virtual auto accept(int64_t timeout) -> Task<AcceptHandlerArgsT<IStreamClient> > = 0;
+        virtual auto bind(const IPEndpoint &endpoint, int backlog) -> Result<void> = 0;
+        virtual auto accept() -> Task<std::pair<IStreamClient, IPEndpoint> > = 0;
         virtual auto localEndpoint() -> Result<IPEndpoint> = 0;
         virtual ~Base() = default;
     };
@@ -196,11 +199,11 @@ private:
         Impl(T &&value) : value(std::move(value)) { }
         Impl(const Impl &) = delete;
         ~Impl() = default;
-        auto bind(const IPEndpoint &endpoint, int backlog) -> BindHandlerArgs override {
+        auto bind(const IPEndpoint &endpoint, int backlog) -> Result<void> override {
             return value.bind(endpoint, backlog);
         }
-        auto accept(int64_t timeout) -> Task<AcceptHandlerArgsT<IStreamClient> > override {
-            auto val = co_await value.accept(timeout);
+        auto accept() -> Task<std::pair<IStreamClient, IPEndpoint> > override {
+            auto val = co_await value.accept();
             if (!val) {
                 co_return Unexpected(val.error());
             }
@@ -232,13 +235,13 @@ public:
     template <DatagramClient T>
     IDatagramClient(T &&value) : mPtr(new Impl<T>(std::move(value))) { }
 
-    auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> IAwaitable<SendtoHandlerArgs> {
-        return mPtr->sendto(buffer, n, endpoint, timeout);
+    auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> {
+        return mPtr->sendto(buffer, n, endpoint);
     }
-    auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<RecvfromHandlerArgs> {
-        return mPtr->recvfrom(buffer, n, timeout);
+    auto recvfrom(void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > {
+        return mPtr->recvfrom(buffer, n);
     }
-    auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs {
+    auto bind(const IPEndpoint &endpoint) -> Result<void> {
         return mPtr->bind(endpoint);
     }
 
@@ -270,9 +273,9 @@ public:
     }
 private:
     struct Base {
-        virtual auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout = -1) -> IAwaitable<SendtoHandlerArgs> = 0;
-        virtual auto recvfrom(void *buffer, size_t n, int64_t timeout = -1) -> IAwaitable<RecvfromHandlerArgs> = 0;
-        virtual auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs= 0;
+        virtual auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> = 0;
+        virtual auto recvfrom(void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > = 0;
+        virtual auto bind(const IPEndpoint &endpoint) -> Result<void> = 0;
         virtual ~Base() = default;
     };
     template <DatagramClient T>
@@ -280,13 +283,13 @@ private:
         Impl(T &&value) : value(std::move(value)) { }
         Impl(const Impl &) = delete;
         ~Impl() = default;
-        auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs> override {
-            co_return co_await value.sendto(buffer, n, endpoint, timeout);
+        auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> override {
+            return value.sendto(buffer, n, endpoint);
         }
-        auto recvfrom(void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> override {
-            co_return co_await value.recvfrom(buffer, n, timeout);
+        auto recvfrom(void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > override {
+            return value.recvfrom(buffer, n);
         }
-        auto bind(const IPEndpoint &endpoint) -> BindHandlerArgs override {
+        auto bind(const IPEndpoint &endpoint) -> Result<void>  override {
             return value.bind(endpoint);
         }
         T value;
@@ -295,7 +298,6 @@ private:
     Base *mPtr = nullptr;
 };
 static_assert(DatagramClient<IDatagramClient>); //< Make sure IDatagramClient is a has DatagramClient concept
-#endif
 
 
 ILIAS_NS_END
