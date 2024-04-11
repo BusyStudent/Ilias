@@ -1,1049 +1,307 @@
-#if 0
 #pragma once
 
-#include "ilias_expected.hpp"
 #include "ilias_backend.hpp"
-#include "ilias_latch.hpp"
-#include "ilias.hpp"
-#include <thread>
-#include <chrono>
-#include <atomic>
-#include <mutex>
-#include <map>
-
-#if defined(__cpp_lib_coroutine)
-#include "ilias_co.hpp"
-#endif
-
-#if defined(__linux) 
+#include <sys/timerfd.h>
 #include <sys/epoll.h>
 #include <array>
-#endif
+#include <map>
 
 ILIAS_NS_BEGIN
 
-enum PollEvent : int {
-    Timeout = -1,
-    In  = POLLIN,
-    Out = POLLOUT,
-    Err = POLLERR,
-    Hup = POLLHUP,
-    All = In | Out,
-};
-
 /**
- * @brief A Interface to get notifyed
+ * @brief 
  * 
  */
-class IOWatcher {
+class PollWatcher {
 public:
-    virtual void onEvent(int event) = 0;
-protected:
-    IOWatcher() = default;
-    ~IOWatcher() = default;
-private:
-    socket_t mFd = ILIAS_INVALID_SOCKET;
-    int64_t  mPollfdIdx = -1; //< Location of it's pollfd
-    int      mPollEvents = 0; //< Info of it's request events
-    bool     mTimeoutCheck = false; //< Is this watcher has timeout check
-    std::multimap<std::chrono::steady_clock::time_point, IOWatcher*>::iterator mTimeout;
-friend class PollContext;
+    virtual auto onEvent(::uint32_t revent) -> void = 0;
 };
 
 /**
- * @brief A callback like watcher
+ * @brief EPoll Context for Polling
  * 
  */
-class PollOperation final : public IOWatcher {
-public:
-    PollOperation() = default;
-    ~PollOperation() = default;
-
-    void onEvent(int revents) override { mCallback(revents); }
-    void setCallback(Function<void(int revents)> &&callback) { mCallback = std::move(callback); }
-private:
-    Function<void(int revents)> mCallback;
-};
-
-/**
- * @brief A Context for add watcher 
- * 
- */
-class PollContext final : public IOContext {
+class PollContext final : public IoContext {
 public:
     PollContext();
-    PollContext(const PollContext&) = delete;
+    PollContext(const PollContext &) = delete;
     ~PollContext();
+
+    // EventLoop
+    auto run() -> void override;
+    auto quit() -> void override;
+    auto post(void (*)(void *), void *) -> void override;
+    auto delTimer(uintptr_t timer) -> bool override;
+    auto addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags) -> uintptr_t override;
+
+    // IoContext
+    auto addSocket(SocketView fd) -> Result<void> override;
+    auto removeSocket(SocketView fd) -> Result<void> override;
     
-    // Poll Watcher interface
-    bool addWatcher(SocketView socket, IOWatcher* watcher, int events, int64_t timeout = -1);
-    bool modifyWatcher(IOWatcher* watcher, int events, int64_t timeout = -1);
-    bool removeWatcher(IOWatcher* watcher);
-    IOWatcher *findWatcher(SocketView socket);
+    auto send(SocketView fd, const void *buffer, size_t n) -> Task<size_t> override;
+    auto recv(SocketView fd, void *buffer, size_t n) -> Task<size_t> override;
+    auto connect(SocketView fd, const IPEndpoint &endpoint) -> Task<void> override;
+    auto accept(SocketView fd) -> Task<std::pair<Socket, IPEndpoint> > override;
+    auto sendto(SocketView fd, const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> override;
+    auto recvfrom(SocketView fd, void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > override;
 
-    // Async Interface
-    bool asyncInitialize(SocketView socket) override;
-    bool asyncCleanup(SocketView socket) override;
-    bool asyncCancel(SocketView, void *operation) override;
-
-    void *asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvHandler &&cb) override;
-    void *asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout, SendHandler &&cb) override;
-    void *asyncAccept(SocketView socket, int64_t timeout, AcceptHandler &&cb) override;
-    void *asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout, ConnectHandler &&cb) override;
-
-    void *asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvfromHandler &&cb) override;
-    void *asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout, SendtoHandler &&cb) override;
-
-    // Poll
-    void *asyncPoll(SocketView socket, int revent, int64_t timeout, Function<void(int revents)> &&cb);
-
-// #if defined(__cpp_lib_coroutine)
-#if 0
-    auto asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs> override;
-    auto asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> override;
-    auto asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgs> override;
-    auto asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> override;
-
-    auto asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> override;
-    auto asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs> override;
-#endif
+    // 
+    auto poll(int fd, uint32_t event) -> Task<uint32_t>;
 private:
+    // for Impl post
+    struct PipeWatcher : PollWatcher {
+        auto onEvent(uint32_t) -> void override;
+        PollContext *self;
+    } mPipeWatcher;
+
+    // for Impl post
     struct Fn {
         void (*fn)(void *);
-        void *arg;    
+        void  *args;
     };
-    struct Watcher : IOWatcher {
-        void onEvent(int revents) override;
-        PollContext *self;
-    };
+    auto _show(::epoll_event event) -> void;
 
-    void _run();
-    void _notify(const ::pollfd &pfd);
-    void _stop();
-    void _dump();
-    void _invoke(Fn);
-    template <typename T>
-    void _invoke4(T &&callable);
-    void _notifyTimeout();
-    void _removeTimeout(IOWatcher *);
-    void _addTimeout(IOWatcher *, int64_t timeout);
-    int  _waitDuration();
-    
-    SockInitializer mInitalizer;
-
-    std::thread      mThread; //< Threads for network poll
-    std::atomic_bool mRunning {true}; //< Flag to stop the thread
-    std::mutex       mMutex;
-    std::map<socket_t, IOWatcher*> mWatchers;
-    std::multimap<std::chrono::steady_clock::time_point, IOWatcher *> mTimeoutQueue; //< For collect timeout
-
-#if defined(__linux)
     int mEpollfd = -1;
-#else
-    std::vector<::pollfd> mPollfds;
-#endif
-
-    Socket mEvent; //< Socket poll in workThread
-    Socket mControl; //< Socket for sending message
-    Watcher mEventWatcher;
+    int mPipeRecv = -1;
+    int mPipeSend = -1;
+    int mTimerfd = -1;
+    bool mQuit = false;
 };
 
-// --- PollContext Impl
 inline PollContext::PollContext() {
-    // Init socket
-#ifndef __linux
-    Socket server(AF_INET, SOCK_STREAM, 0);
-    server.bind(IPEndpoint(IPAddress4::loopback(), 0));
-    server.listen();
-    mControl = Socket(AF_INET, SOCK_STREAM, 0);
-    mControl.connect(server.localEndpoint().value());
-    mEvent = std::move(server.accept()->first);
-#else
-    int fds[2];
-    ::socketpair(AF_UNIX, SOCK_STREAM, 0, fds);
-    mEvent.reset(fds[0]);
-    mControl.reset(fds[1]);
+    int pipes[2];
+    ::pipe2(pipes, O_NONBLOCK);
+    mPipeRecv = pipes[0];
+    mPipeSend = pipes[1];
     mEpollfd = ::epoll_create1(0);
-#endif
-    mEvent.setBlocking(false);
 
-    // Add event socket
-    mEventWatcher.self = this;
-    addWatcher(mEvent, &mEventWatcher, PollEvent::In);
-
-    // Start Work Thread
-    mThread = std::thread(&PollContext::_run, this);
+    // Add the recv pipe to poll
+    mPipeWatcher.self = this;
+    ::epoll_event event;
+    event.events = EPOLLIN;
+    event.data.ptr = &mPipeWatcher;
+    if (::epoll_ctl(mEpollfd, EPOLL_CTL_ADD, mPipeRecv, &event) == -1) {
+        perror("epoll+ctl");
+    }
 }
 inline PollContext::~PollContext() {
-    _stop();
-    mThread.join();
-
-#ifdef __linux
     ::close(mEpollfd);
-#endif
+    ::close(mPipeRecv);
+    ::close(mPipeSend);
+    ::close(mTimerfd);
 }
-inline void PollContext::_run() {
-    // < Common Poll
-#ifndef __linux
-    std::vector<::pollfd> collected;
-    while (mRunning) {
-        auto n = ILIAS_POLL(mPollfds.data(), mPollfds.size(), _waitDuration());
+inline auto PollContext::run() -> void {
+    epoll_event events[128];
+    while (!mQuit) {
+        int n = ::epoll_wait(mEpollfd, events, 128, -1);
         if (n < 0) {
-            ::printf("[Ilias::PollContext] Poll Error %s\n", Error::fromErrno().message().c_str());
-        }
-        // Because first socket are event soocket, for the array from [end to begin]
-        for (auto iter = mPollfds.rbegin(); iter != mPollfds.rend(); iter++) {
-            if (n == 0) {
-                break;
-            }
-            if (iter->revents) {
-                n--;
-                collected.push_back(*iter);
-                iter->revents = 0;
-            }
-        }
-        // Dispatch
-        for (const auto &v : collected) {
-            _notify(v);
-        }
-        collected.clear();
-        //< Check timeouted
-        _notifyTimeout();
-    }
-#else
-    // Check EPoll Events as same as Poll
-    static_assert(EPOLLIN == POLLIN);
-    static_assert(EPOLLOUT == POLLOUT);
-    static_assert(EPOLLERR == POLLERR);
-    static_assert(EPOLLHUP == POLLHUP);
-
-    std::array<::epoll_event, 1024> events;
-    while (mRunning) {
-        auto n = ::epoll_wait(mEpollfd, events.data(), events.size(), _waitDuration());
-        if (n < 0) {
-            ::printf("[Ilias::PollContext] Epoll Error %s\n", Error::fromErrno().message().c_str());
+            return;
         }
         for (int i = 0; i < n; i++) {
-            auto watcher = static_cast<IOWatcher*>(events[i].data.ptr);
+            auto event = events[i];
+            auto watcher = static_cast<PollWatcher*>(event.data.ptr);
+            _show(event);
             if (!watcher) {
                 continue;
             }
-            _removeTimeout(watcher);
-            watcher->onEvent(events[i].events);
-        }
-        //< Check timeouted
-        _notifyTimeout();
-    }
-#endif
-
-}
-inline void PollContext::_notify(const ::pollfd &pfd) {
-    auto iter = mWatchers.find(pfd.fd);
-    if (iter == mWatchers.end()) {
-        return;
-    }
-    auto &watcher = iter->second;
-    _removeTimeout(watcher);
-    watcher->onEvent(pfd.revents);
-}
-inline void PollContext::_notifyTimeout() {
-    auto now = std::chrono::steady_clock::now();
-    for (auto iter = mTimeoutQueue.begin(); iter != mTimeoutQueue.end(); ) {
-        if (iter->first > now) {
-            break;
-        }
-        auto watcher = iter->second;
-        // Reset timeout flags
-        watcher->mTimeoutCheck = false;
-        watcher->mTimeout = mTimeoutQueue.end();
-        iter = mTimeoutQueue.erase(iter);
-
-        // Notify
-        watcher->onEvent(PollEvent::Timeout);
-    }
-}
-inline void PollContext::_removeTimeout(IOWatcher *watcher) {
-    if (!watcher->mTimeoutCheck) {
-        return;
-    }
-    mTimeoutQueue.erase(watcher->mTimeout);
-    watcher->mTimeoutCheck = false;
-    watcher->mTimeout = mTimeoutQueue.end();
-}
-inline void PollContext::_addTimeout(IOWatcher *watcher, int64_t timeout) {
-    if (timeout <= 0) {
-        return;
-    }
-    ILIAS_ASSERT(!watcher->mTimeoutCheck);
-    watcher->mTimeoutCheck = true;
-    watcher->mTimeout = mTimeoutQueue.emplace(
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout),
-        watcher
-    );
-}
-inline int PollContext::_waitDuration() {
-    if (mTimeoutQueue.empty()) {
-        return -1;
-    }
-    auto diff = mTimeoutQueue.begin()->first - std::chrono::steady_clock::now();
-    return std::chrono::duration_cast<std::chrono::milliseconds>(diff).count();
-}
-inline void PollContext::_dump() {
-#if !defined(NDEBUG)
-    ::printf("[Ilias::PollContext] Dump Watchers\n");
-    for (const auto &pair : mWatchers) {
-        auto watcher = pair.second;
-        if (watcher->mFd == mEvent.get()) {
-            continue;
-        }
-        std::string events;
-        if (watcher->mPollEvents & PollEvent::In) {
-            events += "In ";
-        }
-        if (watcher->mPollEvents & PollEvent::Out) {
-            events += "Out ";
-        }
-        ::printf(
-            "[Ilias::PollContext] IOWatcher %p Socket %lu Event %s\n",
-            watcher, 
-            uintptr_t(watcher->mFd), 
-            events.c_str()
-        );
-    }
-#endif
-}
-inline bool PollContext::addWatcher(SocketView socket, IOWatcher *watcher, int events, int64_t timeout) {
-    if (mThread.joinable()) {
-        if (mThread.get_id() != std::this_thread::get_id()) {
-            bool val = false;
-            _invoke4([=, this, &val]() {
-                val = addWatcher(socket, watcher, events);
-            });
-            return val;
+            watcher->onEvent(event.events);
         }
     }
-    ILIAS_ASSERT(!(events & PollEvent::Err));
-    ILIAS_ASSERT(!(events & PollEvent::Hup));
-
-#ifndef __linux
-    ::pollfd pfd;
-    pfd.events = events;
-    pfd.revents = 0;
-    pfd.fd = socket.get();
-
-    watcher->mFd = socket.get();
-    watcher->mPollEvents = events;
-    watcher->mPollfdIdx = mPollfds.size(); //< Store the location
-    mWatchers.emplace(socket.get(), watcher);
-    mPollfds.push_back(pfd);
-#else
-    ::epoll_event epevent {};
-    epevent.events = events;
-    epevent.data.ptr = watcher;
-
-    if (::epoll_ctl(mEpollfd, EPOLL_CTL_ADD, socket.get(), &epevent) != 0) {
-        // Error
-        return false;
-    }
-    watcher->mFd = socket.get();
-    watcher->mPollEvents = events;
-    mWatchers.emplace(socket.get(), watcher);
-#endif
-
-    _addTimeout(watcher, timeout);
-
-    _dump();
-    return true;
+    mQuit = false;
 }
-inline bool PollContext::modifyWatcher(IOWatcher *watcher, int events, int64_t timeout) {
-    if (mThread.get_id() != std::this_thread::get_id()) {
-        bool val = false;
-        _invoke4([=, this, &val]() {
-            val =  modifyWatcher(watcher, events);
-        });
-        return val;
-    }
-
-#ifndef __linux
-    if (watcher->mPollfdIdx <= 0) {
-        return false;
-    }
-
-    mPollfds[watcher->mPollfdIdx].events = events;
-    mPollfds[watcher->mPollfdIdx].revents = 0;
-#else
-    ::epoll_event epevent {};
-    epevent.events = events;
-    epevent.data.ptr = watcher;
-
-    if (::epoll_ctl(mEpollfd, EPOLL_CTL_MOD, watcher->mFd, &epevent) != 0) {
-        // Error
-        return false;
-    }
-#endif
-    // Ok, do Common
-    watcher->mPollEvents = events;
-    _removeTimeout(watcher);
-    _addTimeout(watcher, timeout);
-
-    _dump();
-    return true;
+inline auto PollContext::post(void (*fn)(void *), void *args) -> void {
+    Fn f {fn, args};
+    auto n = ::write(mPipeSend, &f, sizeof(f));
+    ILIAS_ASSERT(n == sizeof(f));
 }
-inline bool PollContext::removeWatcher(IOWatcher *watcher) {
-    if (mThread.get_id() != std::this_thread::get_id()) {
-        bool val = false;
-        _invoke4([=, this, &val]() {
-            val =  removeWatcher(watcher);
-        });
-        return val;
-    }
-
-#ifndef __linux
-    auto fd = watcher->mFd;
-    auto idx = watcher->mPollfdIdx;
-    auto iter = mWatchers.find(fd);
-    if (iter == mWatchers.end()) {
-        return false;
-    }
-    if (idx < 0) {
-        return false;
-    }
-    if (idx + 1 == mPollfds.size()) {
-        // Is end, just remove
-        mPollfds.pop_back();
-    }
-    else {
-        // Modify the prev end with current index
-        mWatchers[mPollfds.back().fd]->mPollfdIdx = idx;
-        // Swap with the end
-        std::swap(mPollfds[idx], mPollfds.back());
-        // Remove it
-        mPollfds.pop_back();
-    }
-    mWatchers.erase(iter);
-
-    watcher->mFd = ILIAS_INVALID_SOCKET;
-    watcher->mPollfdIdx = -1;
-    watcher->mPollEvents = 0;
-#else
-    if (::epoll_ctl(mEpollfd, EPOLL_CTL_DEL, watcher->mFd, nullptr) != 0) {
-        // Fail to remove
-        return false;
-    }
-    mWatchers.erase(watcher->mFd);
-    watcher->mFd = ILIAS_INVALID_SOCKET;
-    watcher->mPollEvents = 0;
-#endif
-    _removeTimeout(watcher);
-
-    _dump();
-    return true;
+inline auto PollContext::quit() -> void {
+    post([](void *self) {
+        static_cast<PollContext*>(self)->mQuit = true;
+    }, this);
 }
-inline IOWatcher *PollContext::findWatcher(SocketView socket) {
-    if (mThread.get_id() != std::this_thread::get_id()) {
-        IOWatcher *watcher = nullptr;
-        _invoke4([=, this, &watcher]() {
-            watcher = findWatcher(socket);
-        });
-        return watcher;
-    }
-    auto fd = socket.get();
-    auto iter = mWatchers.find(fd);
-    if (iter == mWatchers.end()) {
-        return nullptr;
-    }
-    return iter->second;
-}
-inline void PollContext::Watcher::onEvent(int events) {
-    if (!(events & PollEvent::In)) {
+inline auto PollContext::PipeWatcher::onEvent(::uint32_t revent) -> void {
+    if (!(revent & EPOLLIN)) {
         return;
     }
     Fn fn;
-    while (self->mEvent.recv(&fn, sizeof(Fn))) {
-        fn.fn(fn.arg);
+    while (::read(self->mPipeRecv, &fn, sizeof(fn)) == sizeof(fn)) {
+        fn.fn(fn.args);
     }
 }
-inline void PollContext::_stop() {
-    Fn fn;
-    fn.fn = [](void *arg) { static_cast<PollContext *>(arg)->mRunning = false; };
-    fn.arg = this;
-    _invoke(fn);
-}
-inline void PollContext::_invoke(Fn fn) {
-    struct Args {
-        Fn fn;
-        std::latch latch {1};
-    } args {fn};
-
-    Fn helperFn;
-    helperFn.fn = [](void *ptr) {
-        auto arg = static_cast<Args *>(ptr);
-        arg->fn.fn(arg->fn.arg);
-        arg->latch.count_down();
-    };
-    helperFn.arg = &args;
-    std::unique_lock<std::mutex> lock(mMutex);
-    mControl.send(&helperFn, sizeof(Fn));
-    lock.unlock();
-    args.latch.wait();
-}
-template <typename Callable>
-inline void PollContext::_invoke4(Callable &&callable) {
-    Fn fn;
-    fn.fn = [](void *callable) {
-        auto c = static_cast<Callable *>(callable);
-        (*c)();
-    };
-    fn.arg = &callable;
-    _invoke(fn);
+inline auto PollContext::_show(::epoll_event event) -> void {
+    fprintf(stderr, "[Ilias] EPoll Event ");
+    if (event.events & EPOLLIN) {
+        fprintf(stderr, "EPOLLIN ");
+    }
+    if (event.events & EPOLLOUT) {
+        fprintf(stderr, "EPOLLOUT ");
+    }
+    if (event.events & EPOLLERR) {
+        fprintf(stderr, "EPOLLERR ");
+    }
+    if (event.events & EPOLLHUP) {
+        fprintf(stderr, "EPOLLHUP ");
+    }
+    fprintf(stderr, "on watcher %p\n", event.data.ptr);
 }
 
-// TODO : Clean the code below
+// Timer
+inline auto PollContext::delTimer(uintptr_t timer) -> bool {
+    return false;
+}
+inline auto PollContext::addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags) -> uintptr_t {
+    return 0;
+}
 
-// Async Interface
-inline bool PollContext::asyncInitialize(SocketView socket) {
-    if (!socket.isValid()) {
-        return false;
-    }
-    if (!socket.setBlocking(false)) {
-        return false;
-    }
-    return true;
+// EPOLL socket here
+inline auto PollContext::addSocket(SocketView sock) -> Result<void> {
+    return sock.setBlocking(false);
 }
-inline bool PollContext::asyncCleanup(SocketView socket) {
-    if (!socket.isValid()) {
-        return false;
-    }
-    return asyncCancel(socket, nullptr); //< Cancel all operation
+inline auto PollContext::removeSocket(SocketView sock) -> Result<void> {
+    return Result<void>();
 }
-inline bool PollContext::asyncCancel(SocketView socket, void *op) {
-    PollOperation *operation = static_cast<PollOperation*>(op);
-    if (!operation) {
-        operation = static_cast<PollOperation*>(findWatcher(socket));
-    }
-    if (!operation) {
-        return false;
-    }
-    auto v = removeWatcher(operation);
-    delete operation;
-    return v;
-}
-inline void *PollContext::asyncPoll(SocketView socket, int revent, int64_t timeout, Function<void(int revents)> &&cb) {
-    auto operation = new PollOperation;
-    if (!operation) {
-        return 0;
-    }
-    operation->setCallback([this, operation, b = std::move(cb)](int revents) mutable {
-        // Remove it
-        removeWatcher(operation);
-        // Invoke User callback
-        b(revents);
-        delete operation;
-    });
-    addWatcher(socket, operation, revent, timeout);
-    return operation;
-}
-inline void *PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout, SendHandler &&callback) {
-    auto bytes = socket.send(buffer, n);
-    if (bytes) {
-        // Ok, call callback
-        callback(*bytes);
-        return nullptr;
-    }
-    if (bytes.error() != Error::WouldBlock && bytes.error() != Error::InProgress) {
-        // Error, call callback
-        callback(Unexpected(bytes.error()));
-        return nullptr;
-    }
 
-    // Ok, we need to wait for the socket to be writable
-    return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
-        if (revents == PollEvent::Timeout) {
-            cb(Unexpected(Error::TimedOut));
-            return;
+inline auto PollContext::send(SocketView fd, const void *buffer, size_t n) -> Task<size_t> {
+    while (true) {
+        auto ret = fd.send(buffer, n);
+        if (ret) {
+            co_return ret;
         }
-        if (revents & PollEvent::Out) {
-            // Ok, call callback
-            auto bytes = socket.send(buffer, n);
-            if (bytes) {
-                cb(*bytes);
-                return;
-            }
-            // Error, call callback
-            cb(Unexpected(Error::fromErrno()));
+        if (ret.error() != Error::WouldBlock) {
+            co_return ret;
         }
-        if (revents & PollEvent::Err) {
-            // Error, call callback
-            cb(Unexpected(Error::fromErrno()));
+        auto pollret = co_await poll(fd.get(), EPOLLOUT);
+        if (!pollret) {
+            co_return Unexpected(pollret.error());
         }
-    });
+    }
 }
-inline void *PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvHandler &&callback) {
-    auto bytes = socket.recv(buffer, n);
-    if (bytes) {
-        // Ok, call callback
-        callback(*bytes);
-        return nullptr;
+inline auto PollContext::recv(SocketView fd, void *buffer, size_t n) -> Task<size_t> {
+    while (true) {
+        auto ret = fd.recv(buffer, n);
+        if (ret) {
+            co_return ret;
+        }
+        if (ret.error() != Error::WouldBlock) {
+            co_return ret;
+        }
+        auto pollret = co_await poll(fd.get(), EPOLLIN);
+        if (!pollret) {
+            co_return Unexpected(pollret.error());
+        }
     }
-    if (bytes.error() != Error::WouldBlock && bytes.error() != Error::InProgress) {
-        // Error, call callback
-        callback(Unexpected(bytes.error()));
-        return nullptr;
-    }
-    // Ok, wait readable
-    return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
-        if (revents == PollEvent::Timeout) {
-            cb(Unexpected(Error::TimedOut));
-            return;
-        }
-        if (revents & PollEvent::In) {
-            auto bytes = socket.recv(buffer, n);
-            if (bytes) {
-                cb(*bytes);
-                return;
-            }
-            // Error, call callback
-            cb(Unexpected(Error::fromErrno()));
-        }
-        if (revents & PollEvent::Err) {
-            // Error, call callback
-            cb(Unexpected(Error::fromErrno()));
-        }
-    });
 }
-inline void *PollContext::asyncAccept(SocketView socket, int64_t timeout, AcceptHandler &&callback) {
-    auto result = socket.accept<Socket>();
-    if (result) {
-        // Got value
-        callback(std::move(result));
-        return nullptr;
-    }
-    if (result.error() != Error::WouldBlock && result.error() != Error::InProgress) {
-        // Error, call callback
-        callback(Unexpected(result.error()));
-        return nullptr;
-    }
-    return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket](int revents) mutable {
-        if (revents == PollEvent::Timeout) {
-            cb(Unexpected(Error::TimedOut));
-            return;
-        }
-        if (revents & PollEvent::In) {
-            auto pair = socket.accept<Socket>();
-            if (pair) {
-                // Got value
-                cb(std::move(pair));
-                return;
-            }
-        }
-        if (revents & PollEvent::Err) {
-            // Error, call callback
-            cb(Unexpected(Error::fromErrno()));
-        }
-    });
-}
-inline void *PollContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout, ConnectHandler &&callback) {
-    auto ret = socket.connect(endpoint);
+inline auto PollContext::connect(SocketView fd, const IPEndpoint &endpoint) -> Task<void> {
+    auto ret = fd.connect(endpoint);
     if (ret) {
-        // Ok, call callback
-        callback(Expected<void, Error>());
-        return nullptr;
+        co_return ret;
     }
-    if (ret.error() != Error::WouldBlock && ret.error() != Error::InProgress) {
-        callback(Unexpected(ret.error()));
-        return nullptr;
+    if (ret.error() != Error::InProgress) {
+        co_return ret;
     }
-    // Ok, we need to wait for the socket to be writable
-    return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, endpoint](int revents) mutable {
-        if (revents == PollEvent::Timeout) {
-            cb(Unexpected(Error::TimedOut));
-            return;
-        }
-        auto err = socket.error();
-        if (err->isOk() && (revents & PollEvent::Out)) {
-            // Ok
-            cb(Expected<void, Error>());
-            return;
-        }
-        // Error, call callback
-        cb(Unexpected(*err));
-    });
-}
-inline void *PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout, RecvfromHandler &&callback) {
-    IPEndpoint endpoint;
-    auto bytes = socket.recvfrom(buffer, n, 0, &endpoint);
-    if (bytes) {
-        // Ok, call callback
-        callback(std::make_pair(size_t(*bytes), endpoint));
-        return nullptr;
+    auto pollret = co_await poll(fd.get(), EPOLLOUT);
+    if (!pollret) {
+        co_return Unexpected(pollret.error());
     }
-    if (bytes.error() != Error::WouldBlock && bytes.error() != Error::InProgress) {
-        // Error, call callback
-        callback(Unexpected(bytes.error()));
-        return nullptr;
+    if (*pollret & EPOLLOUT) {
+        co_return Result<>();
     }
-    // Ok, we need to wait for the socket to be readable
-    return asyncPoll(socket, PollEvent::In, timeout, [cb = std::move(callback), socket, buffer, n](int revents) mutable {
-        if (revents == PollEvent::Timeout) {
-            cb(Unexpected(Error::TimedOut));
-            return;
-        }
-        if (revents & PollEvent::In) {
-            IPEndpoint endpoint;
-            auto bytes = socket.recvfrom(buffer, n, 0, &endpoint);
-            if (bytes) {
-                cb(std::make_pair(size_t(*bytes), endpoint));
-                return;
-            }
-        }
-        // Error, call callback
-        cb(Unexpected(Error::fromErrno()));
-    });
+    co_return Result<>();
 }
-inline void *PollContext::asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout, SendtoHandler &&callback) {
-    auto bytes = socket.sendto(buffer, n, 0, &endpoint);
-    if (bytes) {
-        // Ok, call callback
-        callback(*bytes);
-        return nullptr;
+inline auto PollContext::accept(SocketView fd) -> Task<std::pair<Socket, IPEndpoint> > {
+    while (true) {
+        auto ret = fd.accept<Socket>();
+        if (ret) {
+            co_return ret;
+        }
+        if (ret.error() != Error::WouldBlock) {
+            co_return ret;
+        }
+        auto pollret = co_await poll(fd.get(), EPOLLIN);
+        if (!pollret) {
+            co_return Unexpected(pollret.error());
+        }
     }
-    if (bytes.error() != Error::WouldBlock && bytes.error() != Error::InProgress) {
-        // Error, call callback
-        callback(Unexpected(bytes.error()));
-        return nullptr;
+}
+inline auto PollContext::sendto(SocketView fd, const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> {
+    while (true) {
+        auto ret = fd.sendto(buffer, n, 0, endpoint);
+        if (ret) {
+            co_return ret;
+        }
+        if (ret.error() != Error::WouldBlock) {
+            co_return ret;
+        }
+        auto pollret = co_await poll(fd.get(), EPOLLOUT);
+        if (!pollret) {
+            co_return Unexpected(pollret.error());
+        }
     }
-    
-    // Ok, we need to wait for the socket to be writable
-    return asyncPoll(socket, PollEvent::Out, timeout, [cb = std::move(callback), socket, buffer, n, ep = endpoint](int revents) mutable {
-        if (revents == PollEvent::Timeout) {
-            cb(Unexpected(Error::TimedOut));
-            return;
-        }
-        if (revents & PollEvent::Out) {
-            auto bytes = socket.sendto(buffer, n, 0, &ep);
-            if (bytes) {
-                cb(*bytes);
-                return;
-            }
-        }
-        // Error, call callback
-        cb(Unexpected(Error::fromErrno()));
-    });
 }
-
-// Coroutine version
-// #if defined(__cpp_lib_coroutine)
-#if 0
-inline auto PollContext::asyncRecv(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvHandlerArgs>{
-    struct Awaitable {
-        bool await_ready() {
-            ssize_t ret = sock.recv(buffer, n);
-            if (ret >= 0) {
-                result = RecvHandlerArgs(ret);
-                return true;
-            }
-            auto error = Error::fromErrno();
-            if (!error.isWouldBlock() && !error.isInProgress()) {
-                result = Unexpected(error);
-                return true;
-            }
-            return false;
-        }
-        void await_suspend(ResumeHandle &&h) {
-            self->asyncPoll(sock, PollEvent::In, timeout, [this, handle = std::move(h)](int revents) mutable {
-                _onEvent(revents);
-                handle.resume();
-            });
-        }
-        RecvHandlerArgs await_resume() {
-            return result;
-        }
-        void _onEvent(int revents) {
-            if (revents == PollEvent::Timeout) {
-                result = Unexpected(Error(ILIAS_ETIMEDOUT));
-                return;
-            }
-            if (revents & PollEvent::In) {
-                ssize_t ret = sock.recv(buffer, n);
-                if (ret >= 0) {
-                    result = ret;
-                    return;
-                }
-            }
-            if (revents & PollEvent::Err) {
-                auto error = Error::fromErrno();
-                result = Unexpected(error);
-            }
-        }
-
-        PollContext *self;
-        SocketView sock;
-        void *buffer;
-        size_t n;
-        int64_t timeout;
-        RecvHandlerArgs result;
-    };
-    return Awaitable {
-        this, socket, buffer, n, timeout
-    };
-}
-inline auto PollContext::asyncSend(SocketView socket, const void *buffer, size_t n, int64_t timeout) -> IAwaitable<SendHandlerArgs> {
-    struct Awaitable {
-        bool await_ready() {
-            ssize_t ret = sock.send(buffer, n);
-            if (ret >= 0) {
-                result = SendHandlerArgs(ret);
-                return true;
-            }
-            auto error = Error::fromErrno();
-            if (!error.isWouldBlock() && !error.isInProgress()) {
-                result = Unexpected(error);
-                return true;
-            }
-            return false;
-        }
-        void await_suspend(ResumeHandle &&h) {
-            self->asyncPoll(sock, PollEvent::Out, timeout, [this, handle = std::move(h)](int revents) mutable {
-                _onEvent(revents);
-                handle.resume();
-            });
-        }
-        SendHandlerArgs await_resume() {
-            return result;
-        }
-        void _onEvent(int revents) {
-            if (revents == PollEvent::Timeout) {
-                result = Unexpected(Error(ILIAS_ETIMEDOUT));
-                return;
-            }
-            if (revents & PollEvent::Out) {
-                ssize_t ret = sock.send(buffer, n);
-                if (ret >= 0) {
-                    result = ret;
-                    return;
-                }
-            }
-            if (revents & PollEvent::Err) {
-                auto error = Error::fromErrno();
-                result = Unexpected(error);
-            }
-        }
-
-        PollContext *self;
-        SocketView sock;
-        const void *buffer;
-        size_t n;
-        int64_t timeout;
-        SendHandlerArgs result;
-    };
-    return Awaitable {
-        this, socket, buffer, n, timeout
-    };
-}
-inline auto PollContext::asyncAccept(SocketView socket, int64_t timeout) -> IAwaitable<AcceptHandlerArgs> {
-    struct Awaitable {
-        bool await_ready() {
-            auto [client, addr] = sock.accept<Socket>();
-            if (!client.isValid()) {
-                auto err = Error::fromErrno();
-                if (!err.isWouldBlock() && !err.isInProgress()) {
-                    result = Unexpected(err);
-                    return true;
-                }
-                return false; //< No ready
-            }
-            result = AcceptHandlerArgs(std::pair<Socket, IPEndpoint>{std::move(client), std::move(addr)});
-            return true;
-        }
-        void await_suspend(ResumeHandle &&h) {
-            self->asyncPoll(sock, PollEvent::In, timeout, [this, handle = std::move(h)](int revents) mutable {
-                _onEvent(revents);
-                handle.resume();
-            });
-        }
-        void _onEvent(int revents) {
-            if (revents == PollEvent::Timeout) {
-                result = Unexpected(Error(ILIAS_ETIMEDOUT));
-                return;
-            }
-            if (revents & PollEvent::In) {
-                auto [client, addr] = sock.accept<Socket>();
-                if (client.isValid()) {
-                    result = AcceptHandlerArgs(std::pair<Socket, IPEndpoint>{std::move(client), std::move(addr)});
-                    return;
-                }
-            }
-            result = Unexpected(Error::fromErrno());
-        }
-        AcceptHandlerArgs await_resume() {
-            return std::move(result);
-        }
-
-        PollContext *self;
-        SocketView sock;
-        int64_t timeout;
-
-        AcceptHandlerArgs result {Unexpected(Error())};
-    };
-    return Awaitable {
-        this, socket, timeout
-    };
-}
-inline auto PollContext::asyncConnect(SocketView socket, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<ConnectHandlerArgs> {
-    struct Awaitable {
-        bool await_ready() {
-            bool ret = sock.connect(endpoint);
-            if (ret) {
-                result = ConnectHandlerArgs();
-                return true;
-            }
-            auto err = Error::fromErrno();
-            if (!err.isWouldBlock() && !err.isInProgress()) {
-                result = Unexpected(err);
-                return true;
-            }
-            return false;
-        }
-        void await_suspend(ResumeHandle &&h) {
-            self->asyncPoll(sock, PollEvent::Out, timeout, [this, handle = std::move(h)](int revents) mutable {
-                _onEvent(revents);
-                handle.resume();
-            });
-        }
-        ConnectHandlerArgs await_resume() {
-            return result;
-        }
-        void _onEvent(int revents) {
-            if (revents == PollEvent::Timeout) {
-                result = Unexpected(Error(ILIAS_ETIMEDOUT));
-                return;
-            }
-            if (revents & PollEvent::Out) {
-                result = ConnectHandlerArgs();
-                return;
-            }
-            result = Unexpected(sock.error());
-        }
-        PollContext *self;
-        SocketView sock;
+inline auto PollContext::recvfrom(SocketView fd, void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > {
+    while (true) {
         IPEndpoint endpoint;
-        int64_t timeout;
-
-        ConnectHandlerArgs result {Unexpected(Error())};
-    };
-    return Awaitable {
-        this, socket, endpoint, timeout
-    };
+        auto ret = fd.recvfrom(buffer, n, 0, &endpoint);
+        if (ret) {
+            co_return std::make_pair(*ret, endpoint);
+        }
+        if (ret.error() != Error::WouldBlock) {
+            co_return Unexpected(ret.error());
+        }
+        auto pollret = co_await poll(fd.get(), EPOLLIN);
+        if (!pollret) {
+            co_return Unexpected(pollret.error());
+        }
+    }
 }
-inline auto PollContext::asyncRecvfrom(SocketView socket, void *buffer, size_t n, int64_t timeout) -> IAwaitable<RecvfromHandlerArgs> {
-    struct Awaitable {
-        bool await_ready() {
-            IPEndpoint endpoint;
-            ssize_t ret = sock.recvfrom(buffer, n, 0, &endpoint);
-            if (ret >= 0) {
-                result = RecvfromHandlerArgs(std::pair(ret, endpoint));
-                return true;
-            }
-            auto error = Error::fromErrno();
-            if (!error.isWouldBlock() && !error.isInProgress()) {
-                result = Unexpected(error);
-                return true;
-            }
-            return false;
-        }
-        void await_suspend(ResumeHandle &&h) {
-            self->asyncPoll(sock, PollEvent::In, timeout, [this, handle = std::move(h)](int revents) mutable {
-                _onEvent(revents);
-                handle.resume();
-            });
-        }
-        RecvfromHandlerArgs await_resume() {
-            return result;
-        }
-        void _onEvent(int revents) {
-            if (revents == PollEvent::Timeout) {
-                result = Unexpected(Error(ILIAS_ETIMEDOUT));
-                return;
-            }
-            if (revents & PollEvent::In) {
-                IPEndpoint endpoint;
-                ssize_t ret = sock.recvfrom(buffer, n, 0, &endpoint);
-                if (ret >= 0) {
-                    result = RecvfromHandlerArgs(std::pair(ret, endpoint));
-                    return;
-                }
-            }
-            result = Unexpected(Error::fromErrno());
-        }
-        PollContext *self;
-        SocketView sock;
-        void *buffer;
-        size_t n;
-        int64_t timeout;
 
-        RecvfromHandlerArgs result;
+inline auto PollContext::poll(int fd, uint32_t events) -> Task<uint32_t> {
+    struct PollAwaiter : PollWatcher {
+        auto await_ready() -> bool { 
+            event.data.ptr = this;
+            if (::epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event) == -1) {
+                perror("poll error");
+                epollError = true;
+                return true;
+            }
+            epollAdded = true;
+            return false; //< Wating Epoll
+        }
+        auto await_suspend(std::coroutine_handle<> h) -> void {
+            callerHandle = h;
+        }
+        auto await_resume() -> Result<uint32_t> {
+            if (epollAdded) {
+                ::epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, &event);
+            }
+            if (epollError) {
+                return Unexpected(Error::fromErrno());
+            }
+            if (!notified) {
+                return Unexpected(Error::Canceled); //< Use cancel
+            }
+            return revents;
+        }
+        auto onEvent(uint32_t r) -> void override {
+            revents = r;
+            notified = true;
+            callerHandle.resume();
+        }
+        int fd = 0;
+        int epollfd = 0;
+        bool epollError = false; //< Does we got any error from add the fd
+        bool epollAdded = false; //< Does the fd still in epoll ?
+        bool notified = false; //< Does we has been notifyed ?
+        uint32_t revents = 0; //< Received events
+        std::coroutine_handle <> callerHandle;
+        ::epoll_event event; //< Requested event
     };
-    return Awaitable {
-        this, socket, buffer, n, timeout
-    };
+
+    PollAwaiter awaiter;
+    awaiter.fd = fd;
+    awaiter.epollfd = mEpollfd;
+    awaiter.event.events = events;
+    co_return co_await awaiter;
 }
-inline auto PollContext::asyncSendto(SocketView socket, const void *buffer, size_t n, const IPEndpoint &endpoint, int64_t timeout) -> IAwaitable<SendtoHandlerArgs> {
-    struct Awaitable {
-        bool await_ready() {
-            ssize_t ret = sock.sendto(buffer, n, 0, &endpoint);
-            if (ret >= 0) {
-                result = ret;
-                return true;
-            }
-            auto error = Error::fromErrno();
-            if (!error.isWouldBlock() && !error.isInProgress()) {
-                result = Unexpected(error);
-                return true;
-            }
-            return false;
-        }
-        void await_suspend(ResumeHandle &&h) {
-            self->asyncPoll(sock, PollEvent::Out, timeout, [this, handle = std::move(h)](int revents) mutable {
-                _onEvent(revents);
-                handle.resume();
-            });
-        }
-        SendtoHandlerArgs await_resume() {
-            return result;
-        }
-        void _onEvent(int revents) {
-            if (revents == PollEvent::Timeout) {
-                result = Unexpected<Error>(ILIAS_ETIMEDOUT);
-                return;
-            }
-            if (revents & PollEvent::Out) {
-                auto bytes = sock.sendto(buffer, n, 0, &endpoint);
-                if (bytes >= 0) {
-                    result = bytes;
-                    return;
-                }
-            }
-            result = Unexpected(Error::fromErrno());
-        }
-
-        PollContext *self;
-        SocketView sock;
-        const void *buffer;
-        size_t n;
-        IPEndpoint endpoint;
-        int64_t timeout;
-
-        SendtoHandlerArgs result;
-    };
-    return Awaitable {
-        this, socket, buffer, n, endpoint, timeout
-    };
-}
-#endif
-
-#if !defined(_WIN32)
-using NativeIOContext = PollContext;
-#endif
 
 ILIAS_NS_END
-#endif

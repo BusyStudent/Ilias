@@ -506,8 +506,6 @@ class Result final : public Expected<T, Error> {
 public:
     using Expected<T, Error>::Expected;
     using Expected<T, Error>::operator=;
-
-    constexpr Result(Error code) : Expected<T, Error>(Unexpected(code)) { }
 };
 
 ILIAS_NS_END

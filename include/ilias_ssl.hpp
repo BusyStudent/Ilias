@@ -333,7 +333,7 @@ protected:
         auto current = tmpbuffer.get();
         while (dataLeft > 0) {
             // FIXME: if , it will lost data, we should add peek and discard method in ringbuffer
-            auto ret = co_await mBio->mFd.send(current, dataLeft, );
+            auto ret = co_await mBio->mFd.send(current, dataLeft);
             if (!ret) {
                 co_return Unexpected(ret.error()); //< Send Error
             }
@@ -353,7 +353,7 @@ protected:
 
         size_t ringLeft = mBio->mReadRing.capacity() - mBio->mReadRing.size();
         auto tmpbuffer = std::make_unique<uint8_t[]>(ringLeft);
-        auto ret = co_await mBio->mFd.recv(tmpbuffer.get(), ringLeft, );
+        auto ret = co_await mBio->mFd.recv(tmpbuffer.get(), ringLeft);
         if (!ret) {
             co_return Unexpected(ret.error()); //< Read Error
         }
@@ -368,7 +368,7 @@ protected:
                 co_return Result<>();
             }
             int errcode = SSL_get_error(mSsl, sslAccept);
-            if (auto ret = co_await this->_handleError(errcode, ); !ret) {
+            if (auto ret = co_await this->_handleError(errcode); !ret) {
                 co_return Unexpected(ret.error());
             }
         }
@@ -408,7 +408,7 @@ public:
 
 #if defined(__cpp_impl_coroutine)
     auto connect(const IPEndpoint &endpoint = -1) -> Task<void> {
-        auto ret = co_await this->mBio->mFd.connect(endpoint, );
+        auto ret = co_await this->mBio->mFd.connect(endpoint);
         if (!ret) {
             co_return ret;
         }
@@ -418,7 +418,7 @@ public:
                 co_return Result<>();
             }
             int errcode = SSL_get_error(this->mSsl, sslCon);
-            if (auto ret = co_await this->_handleError(errcode, ); !ret) {
+            if (auto ret = co_await this->_handleError(errcode); !ret) {
                 co_return Unexpected(ret.error());
             }
         }
@@ -432,7 +432,7 @@ public:
             }
             int errcode = 0;
             errcode = SSL_get_error(this->mSsl, readret);
-            if (auto ret = co_await this->_handleError(errcode, ); !ret) {
+            if (auto ret = co_await this->_handleError(errcode); !ret) {
                 co_return Unexpected(ret.error());
             }
         }
@@ -446,7 +446,7 @@ public:
             }
             int errcode = 0;
             errcode = SSL_get_error(this->mSsl, writret);
-            if (auto ret = co_await this->_handleError(errcode, ); !ret) {
+            if (auto ret = co_await this->_handleError(errcode); !ret) {
                 co_return Unexpected(ret.error());
             }
         }

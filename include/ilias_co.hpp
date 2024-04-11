@@ -150,6 +150,31 @@ public:
 private:
     std::coroutine_handle<> mHandle;
 };
+/**
+ * @brief Helper to construct the type by our self
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class Uninitialized {
+public:
+    Uninitialized() = default;
+    Uninitialized(const Uninitialized &) = default;
+    Uninitialized(Uninitialized &&) = default;
+    ~Uninitialized() { if (mInited) data()->~T();  }
+
+    template <typename ...Args>
+    auto construct(Args &&...args) -> void { 
+        new(&mValue) T(std::forward<Args>(args)...);
+        mInited = true;
+    }
+    auto data() -> T * { return reinterpret_cast<T *>(mValue); }
+    auto operator *() -> T & { return *reinterpret_cast<T *>(mValue); }
+    auto operator ->() -> T * { return reinterpret_cast<T *>(mValue); }
+private:
+    uint8_t mValue[sizeof(T)];
+    bool    mInited = false;
+};
 
 inline EventLoop::EventLoop() {
     ILIAS_ASSERT_MSG(instance() == nullptr, "EventLoop instance already exists");

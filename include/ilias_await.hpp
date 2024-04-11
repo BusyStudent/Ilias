@@ -71,13 +71,8 @@ public:
     WhenAnyAwaiter(TaskPromise<T> &caller, const Tuple &tasks) :
         mCaller(caller), mTasks{tasks} { }
     WhenAnyAwaiter(const WhenAnyAwaiter &) = delete;
-    WhenAnyAwaiter& operator=(const WhenAnyAwaiter &) = delete;
     WhenAnyAwaiter(WhenAnyAwaiter &&) = default; 
-    ~WhenAnyAwaiter() {
-        if (mHasValue) {
-            mValue.~Variant();
-        }
-    }
+    ~WhenAnyAwaiter() = default;
 
     auto await_ready() const -> bool {
         if (mCaller.isCanceled()) {
@@ -123,7 +118,7 @@ public:
         }
         ILIAS_ASSERT(mCaller.resumeCaller());
         _makeResult(std::make_index_sequence<sizeof ...(Args)>());
-        return std::move(mValue);
+        return std::move(*mValue);
     }
 private:
     template <size_t I>
@@ -136,7 +131,7 @@ private:
             return;
         }
         mHasValue = true;
-        new(&mValue) Variant(std::in_place_index_t<I>{}, task->value());
+        mValue.construct(std::in_place_index_t<I>{}, task->value());
     }
     template <size_t ...N>
     auto _makeResult(std::index_sequence<N...>) -> void {
@@ -147,10 +142,7 @@ private:
     Tuple mTasks;
 
     // Result value
-    union {
-        Variant mValue;
-        int pad = 0;
-    };
+    Uninitialized<Variant> mValue;
     bool mHasValue = false;
 };
 
