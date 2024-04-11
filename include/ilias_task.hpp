@@ -205,9 +205,6 @@ public:
     }
     ~TaskPromise() {
         ILIAS_CTRACE("[Ilias] Task<{}> destroyed {}", typeid(T).name(), mName);
-        if (mHasValue) {
-            mValue.~Result<T>();
-        }
     }
     /**
      * @brief Transform user defined type
@@ -246,14 +243,12 @@ public:
         if (mException) {
             std::rethrow_exception(mException);
         }
-        ILIAS_ASSERT(mHasValue);
-        mHasValue = false;
-        return std::move(mValue);
+        ILIAS_ASSERT(mValue.hasValue());
+        return std::move(*mValue);
     }
     template <typename U>
     auto return_value(U &&value) -> void {
-        mHasValue = true;
-        new (&mValue) Result<T>(std::forward<U>(value));
+        mValue.construct(std::forward<U>(value));
     }
     /**
      * @brief Get the promise handle type
@@ -264,11 +259,7 @@ public:
         return handle_type::from_address(mHandle.address());
     }
 private:
-    union {
-        Result<T> mValue;
-        int pad = 0;
-    };
-    bool mHasValue = false;
+    Uninitialized<Result<T> > mValue;
 };
 
 template <typename T>

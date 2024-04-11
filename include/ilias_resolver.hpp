@@ -239,16 +239,16 @@ class Resolver {
 public:
     using Query = DnsQuery;
 
-    Resolver(IOContext &);
+    Resolver(IoContext &);
     Resolver(const Resolver &) = delete;
     ~Resolver();
 
 #if defined(__cpp_lib_coroutine)
-    auto resolve(const char *hostname) -> IAwaitable<std::vector<IPAddress> >;
+    auto resolve(const char *hostname) -> Task<std::vector<IPAddress> >;
 #endif
 
 private:
-    IOContext &mCtxt;
+    IoContext &mCtxt;
     UdpClient  mClient4;
     UdpClient  mClient6;
     IPEndpoint mServer4;
@@ -581,7 +581,7 @@ inline auto DnsResponse::addresses() const -> std::vector<IPAddress> {
 }
 
 // --- Resolver
-inline Resolver::Resolver(IOContext &ctxt) : mCtxt(ctxt) {
+inline Resolver::Resolver(IoContext &ctxt) : mCtxt(ctxt) {
     mServer4 = "8.8.8.8";
     // Detect Default dns server
 }

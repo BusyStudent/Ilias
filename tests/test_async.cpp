@@ -1,5 +1,4 @@
 #include "../include/ilias_async.hpp"
-#include "../include/ilias_loop.hpp"
 #include <iostream>
 
 using namespace ILIAS_NAMESPACE;

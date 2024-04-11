@@ -168,6 +168,7 @@ public:
         new(&mValue) T(std::forward<Args>(args)...);
         mInited = true;
     }
+    auto hasValue() const noexcept -> bool { return mInited; }
     auto data() -> T * { return reinterpret_cast<T *>(mValue); }
     auto operator *() -> T & { return *reinterpret_cast<T *>(mValue); }
     auto operator ->() -> T * { return reinterpret_cast<T *>(mValue); }

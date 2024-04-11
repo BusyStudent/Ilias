@@ -407,7 +407,7 @@ public:
     }
 
 #if defined(__cpp_impl_coroutine)
-    auto connect(const IPEndpoint &endpoint = -1) -> Task<void> {
+    auto connect(const IPEndpoint &endpoint) -> Task<void> {
         auto ret = co_await this->mBio->mFd.connect(endpoint);
         if (!ret) {
             co_return ret;

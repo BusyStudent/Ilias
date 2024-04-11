@@ -54,6 +54,12 @@ private:
         PollContext *self;
     } mPipeWatcher;
 
+    // for Impl timer
+    struct TimerWatcher : PollWatcher {
+        auto onEvent(uint32_t) -> void override;
+        PollContext *self;
+    } mTimerWatcher;
+
     // for Impl post
     struct Fn {
         void (*fn)(void *);
@@ -76,12 +82,21 @@ inline PollContext::PollContext() {
     mEpollfd = ::epoll_create1(0);
 
     // Add the recv pipe to poll
-    mPipeWatcher.self = this;
     ::epoll_event event;
     event.events = EPOLLIN;
     event.data.ptr = &mPipeWatcher;
+    mPipeWatcher.self = this;
     if (::epoll_ctl(mEpollfd, EPOLL_CTL_ADD, mPipeRecv, &event) == -1) {
-        perror("epoll+ctl");
+        ::perror("epoll+ctl");
+    }
+
+    // Setup timerfd
+    mTimerfd = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+    event.events = EPOLLIN | EPOLLOUT | EPOLLHUP;
+    event.data.ptr = &mTimerWatcher;
+    mTimerWatcher.self = this;
+    if (::epoll_ctl(mEpollfd, EPOLL_CTL_ADD, mTimerfd, &event) == -1) {
+        ::perror("epoll+ctl");
     }
 }
 inline PollContext::~PollContext() {
@@ -126,6 +141,12 @@ inline auto PollContext::PipeWatcher::onEvent(::uint32_t revent) -> void {
     Fn fn;
     while (::read(self->mPipeRecv, &fn, sizeof(fn)) == sizeof(fn)) {
         fn.fn(fn.args);
+    }
+}
+inline auto PollContext::TimerWatcher::onEvent(::uint32_t revent) -> void {
+    int64_t timestamp = 0;
+    while (::read(self->mTimerfd, &timestamp, sizeof(timestamp)) == sizeof(timestamp)) {
+        // ETC...
     }
 }
 inline auto PollContext::_show(::epoll_event event) -> void {
