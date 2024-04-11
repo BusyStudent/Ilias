@@ -11,9 +11,14 @@ using namespace std::chrono_literals;
 Task<int> another() {
     co_return 42;
 }
+Task<int> taskAA() {
+    ::printf("go\n");
+    co_return 11;
+}
 
 Task<int> task() {
     // co_await 
+    ilias_go taskAA();
     auto result = co_await WhenAny(Sleep(20ms), Sleep(1s));
     co_return 0;
 }
@@ -21,5 +26,6 @@ Task<int> task() {
 
 int main() {
     MiniEventLoop loop;
-    return loop.runTask(task()).value_or(-1);
+    auto ret = ilias_wait task();
+    return ret.value_or(-1);
 }

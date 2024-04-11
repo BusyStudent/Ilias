@@ -110,7 +110,6 @@ Task<> handleClient(IStreamClient client) {
 }
 
 int main() {
-    MiniEventLoop loop;
 #ifdef _WIN32
     IOCPContext ctxt;
 #else
@@ -118,7 +117,7 @@ int main() {
 #endif
 
 
-    loop.runTask([&]() -> Task<> {
+    ctxt.runTask([&]() -> Task<> {
         TcpListener tcpListener(ctxt, AF_INET);
         IStreamListener listener = std::move(tcpListener);
         if (auto ret = listener.bind("127.0.0.1:0"); !ret) {
@@ -137,6 +136,7 @@ int main() {
 
             // Handle this
             // loop.spawn(handleClient, std::move(client));
+            ctxt.postTask(handleClient(std::move(client)));
         }
         co_return Result<>();
     }());

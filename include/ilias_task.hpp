@@ -48,6 +48,11 @@ public:
         mHandle.destroy();
     }
 
+    auto leak() -> handle_type {
+        auto h = mHandle;
+        mHandle = nullptr;
+        return h;
+    }
     auto handle() const -> handle_type {
         return mHandle;
     }
@@ -57,10 +62,19 @@ public:
     auto name() const -> const char * {
         return mHandle.promise().name();   
     }
+    /**
+     * @brief Cancel the task
+     * 
+     */
     auto cancel() const -> void {
         ILIAS_CTRACE("[Ilias] Task<{}> Canceling {}", typeid(T).name(), name());
         return promise().cancel();
     }
+    /**
+     * @brief Get the task's event loop
+     * 
+     * @return EventLoop* 
+     */
     auto eventLoop() const -> EventLoop * {
         return promise().eventLoop();
     }
@@ -71,7 +85,7 @@ public:
      */
     auto value() const -> result_type {
         if (!mHandle.done()) {
-            promise().setQuitEventLoop();
+            promise().setQuitOnDone();
             eventLoop()->resumeHandle(mHandle);
             eventLoop()->run();
         }
@@ -95,8 +109,11 @@ public:
         return {};
     }
     auto final_suspend() noexcept -> SwitchCoroutine {
-        if (mQuitEventLoop) [[unlikely]] {
+        if (mQuitOnDone) [[unlikely]] {
             mEventLoop->quit();
+        }
+        if (mDestroyOnDone) [[unlikely]] {
+            mEventLoop->destroyHandle(mHandle);
         }
         if (mPrevAwaiting) {
             mPrevAwaiting->setResumeCaller(this);
@@ -129,8 +146,11 @@ public:
     auto resumeCaller() const -> PromiseBase * {
         return mResumeCaller;
     }
-    auto setQuitEventLoop() noexcept -> void {
-        mQuitEventLoop = true;
+    auto setQuitOnDone() noexcept -> void {
+        mQuitOnDone = true;
+    }
+    auto setDestroyOnDone() noexcept -> void {
+        mDestroyOnDone = true;
     }
     /**
      * @brief Set the Resume Caller object
@@ -153,7 +173,8 @@ public:
     }
 protected:
     bool mCanceled = false;
-    bool mQuitEventLoop = false;
+    bool mQuitOnDone = false;
+    bool mDestroyOnDone = false;
     const char *mName = nullptr;
     EventLoop *mEventLoop = EventLoop::instance();
     PromiseBase *mPrevAwaiting = nullptr;
@@ -250,17 +271,28 @@ private:
     bool mHasValue = false;
 };
 
-inline auto EventLoop::resumeHandle(std::coroutine_handle<> handle) noexcept -> void {
-    // handle.promise()
-    post([](void *addr) {
-        auto h = std::coroutine_handle<>::from_address(addr);
-        h.resume();
-    }, handle.address());
-}
 template <typename T>
 inline auto EventLoop::runTask(const Task<T> &task) {
     task.promise().setEventLoop(this);
     return task.value();
+}
+template <typename T>
+inline auto EventLoop::postTask(Task<T> &&task) {
+    task.promise().setEventLoop(this);
+    task.promise().setDestroyOnDone();
+    resumeHandle(task.leak());
+    return;
+}
+
+// Helper operators
+template <typename T>
+inline auto operator <<(EventLoop *eventLoop, Task<T> &&task) {
+    eventLoop->postTask(std::move(task));
+    return eventLoop;
+}
+template <typename T>
+inline auto operator >>(EventLoop *eventLoop, const Task<T> &task) {
+    return eventLoop->runTask(task);
 }
 
 ILIAS_NS_END

@@ -27,6 +27,11 @@
 #include <format>
 #endif
 
+// Useful macros
+#define ilias_go   ILIAS_NAMESPACE::EventLoop::instance() <<
+#define ilias_wait ILIAS_NAMESPACE::EventLoop::instance() >>
+#define ilias_select co_await ILIAS_NAMESPACE::Select
+
 ILIAS_NS_BEGIN
 
 template <typename T>
@@ -88,11 +93,26 @@ public:
     template <typename T>
     auto runTask(const Task<T> &task);
     /**
+     * @brief let the task run in the event loop, it takes the ownship
+     * 
+     * @tparam T 
+     * @param task 
+     * @return auto 
+     */
+    template <typename T>
+    auto postTask(Task<T> &&task);
+    /**
      * @brief Resume a coroutine handle in event loop, it doesnot take the ownship
      * 
      * @param handle 
      */
     void resumeHandle(std::coroutine_handle<> handle) noexcept;
+    /**
+     * @brief Post a coroutine handle to event loop, it will destory the given handle
+     * 
+     * @param handle 
+     */
+    void destroyHandle(std::coroutine_handle<> handle) noexcept;
     /**
      * @brief Resume a task by task promise pointer
      * 
@@ -107,7 +127,8 @@ private:
         EventLoop *loop = nullptr;
     };
     static Tls &_tls() noexcept;
-    static void _resumeCoroutine(void *handlePtr);
+    static void _resumeHandle(void *handlePtr) noexcept;
+    static void _destroyHandle(void *handlePtr) noexcept;
 protected:
     EventLoop();
     EventLoop(const EventLoop &) = delete;
@@ -150,6 +171,20 @@ inline EventLoop *EventLoop::setInstance(EventLoop *loop) noexcept {
     auto prev = tls.loop;
     tls.loop = loop;
     return prev;
+}
+inline void EventLoop::resumeHandle(std::coroutine_handle<> handle) noexcept {
+    post(_resumeHandle, handle.address());
+}
+inline void EventLoop::destroyHandle(std::coroutine_handle<> handle) noexcept {
+    post(_destroyHandle, handle.address());
+}
+inline void EventLoop::_resumeHandle(void *handle) noexcept {
+    auto h = std::coroutine_handle<>::from_address(handle);
+    h.resume();
+}
+inline void EventLoop::_destroyHandle(void *handle) noexcept {
+    auto h = std::coroutine_handle<>::from_address(handle);
+    h.destroy();
 }
 
 ILIAS_NS_END

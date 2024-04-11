@@ -132,6 +132,7 @@ public:
             mOk = false;
             return false; //< Resume
         }
+        mOverlappedStarted = true;
         return true; //< Suspend, waiting for IO
     }
     auto await_resume() -> RetT {
@@ -280,7 +281,7 @@ struct AcceptAwaiter : public IOCPAwaiter<AcceptAwaiter, Result<std::pair<Socket
             &local, &localLen,
             &remote, &remoteLen
         );
-        ::setsockopt(sock, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
+        ::setsockopt(sock, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, nullptr, 0);
 
         return std::make_pair(Socket(newSocket), IPEndpoint::fromRaw(remote, remoteLen));
     }

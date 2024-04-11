@@ -4,10 +4,6 @@
 #include "ilias.hpp"
 #include "ilias_backend.hpp"
 
-#if defined(__cpp_impl_coroutine)
-#include "ilias_co.hpp"
-#endif
-
 #include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
@@ -309,15 +305,15 @@ public:
     }
 protected:
 #if defined(__cpp_impl_coroutine)
-    auto _handleError(int errcode, int64_t timeout) -> Task<Expected<void, Error> > {
+    auto _handleError(int errcode) -> Task<void> {
         if (errcode == SSL_ERROR_WANT_READ) {
-            auto ret = co_await _waitReadable(timeout);
+            auto ret = co_await _waitReadable();
             if (!ret) {
                 co_return Unexpected(ret.error());
             }
         }
         else if (errcode == SSL_ERROR_WANT_WRITE) {
-            auto ret = co_await _flushWrite(timeout);
+            auto ret = co_await _flushWrite();
             if (!ret) {
                 co_return Unexpected(ret.error());
             }
@@ -326,9 +322,9 @@ protected:
             // Error
             co_return Unexpected(Error::SSL);
         }
-        co_return Expected<void, Error>();
+        co_return Result<>();
     }
-    auto _flushWrite(int64_t timeout) -> Task<Expected<void, Error> > {
+    auto _flushWrite() -> Task<void> {
         // Flush the data
         size_t dataLeft = mBio->mWriteRing.size();
         auto tmpbuffer = std::make_unique<uint8_t[]>(dataLeft);
@@ -336,20 +332,20 @@ protected:
 
         auto current = tmpbuffer.get();
         while (dataLeft > 0) {
-            // FIXME: if timeout, it will lost data, we should add peek and discard method in ringbuffer
-            auto ret = co_await mBio->mFd.send(current, dataLeft, timeout);
+            // FIXME: if , it will lost data, we should add peek and discard method in ringbuffer
+            auto ret = co_await mBio->mFd.send(current, dataLeft, );
             if (!ret) {
                 co_return Unexpected(ret.error()); //< Send Error
             }
             dataLeft -= *ret;
             current += *ret;
         }
-        co_return Expected<void, Error>();
+        co_return Result<>();
     }
-    auto _waitReadable(int64_t timeout) -> Task<Expected<void, Error> > {
+    auto _waitReadable() -> Task<void> {
         if (!mBio->mWriteRing.empty()) {
             // Require flush
-            auto ret = co_await _flushWrite(timeout);
+            auto ret = co_await _flushWrite();
             if (!ret) {
                 co_return ret;
             }
@@ -357,22 +353,22 @@ protected:
 
         size_t ringLeft = mBio->mReadRing.capacity() - mBio->mReadRing.size();
         auto tmpbuffer = std::make_unique<uint8_t[]>(ringLeft);
-        auto ret = co_await mBio->mFd.recv(tmpbuffer.get(), ringLeft, timeout);
+        auto ret = co_await mBio->mFd.recv(tmpbuffer.get(), ringLeft, );
         if (!ret) {
             co_return Unexpected(ret.error()); //< Read Error
         }
         auto written = mBio->mReadRing.push(tmpbuffer.get(), *ret);
         ILIAS_ASSERT(written == *ret);
-        co_return Expected<void, Error>();
+        co_return Result<>();
     }
-    auto _accept(int64_t timeout) -> Task<Expected<void, Error> > {
+    auto _accept() -> Task<void> {
         while (true) {
             int sslAccept = SSL_accept(mSsl);
             if (sslAccept == 1) {
-                co_return Expected<void, Error>();
+                co_return Result<>();
             }
             int errcode = SSL_get_error(mSsl, sslAccept);
-            if (auto ret = co_await this->_handleError(errcode, timeout); !ret) {
+            if (auto ret = co_await this->_handleError(errcode, ); !ret) {
                 co_return Unexpected(ret.error());
             }
         }
@@ -406,28 +402,28 @@ public:
      * 
      * @return IPEndpoint 
      */
-    auto remoteEndpoint() const -> IPEndpoint {
+    auto remoteEndpoint() const -> Result<IPEndpoint> {
         return this->mBio->mFd.remoteEndpoint();
     }
 
 #if defined(__cpp_impl_coroutine)
-    auto connect(const IPEndpoint &endpoint, int64_t timeout = -1) -> Task<ConnectHandlerArgs> {
-        auto ret = co_await this->mBio->mFd.connect(endpoint, timeout);
+    auto connect(const IPEndpoint &endpoint = -1) -> Task<void> {
+        auto ret = co_await this->mBio->mFd.connect(endpoint, );
         if (!ret) {
             co_return ret;
         }
         while (true) {
             int sslCon = SSL_connect(this->mSsl);
             if (sslCon == 1) {
-                co_return ConnectHandlerArgs();
+                co_return Result<>();
             }
             int errcode = SSL_get_error(this->mSsl, sslCon);
-            if (auto ret = co_await this->_handleError(errcode, timeout); !ret) {
+            if (auto ret = co_await this->_handleError(errcode, ); !ret) {
                 co_return Unexpected(ret.error());
             }
         }
     }
-    auto recv(void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvHandlerArgs> {
+    auto recv(void *buffer, size_t n = -1) -> Task<size_t> {
         while (true) {
             size_t readed = 0;
             int readret = SSL_read_ex(this->mSsl, buffer, n, &readed);
@@ -436,12 +432,12 @@ public:
             }
             int errcode = 0;
             errcode = SSL_get_error(this->mSsl, readret);
-            if (auto ret = co_await this->_handleError(errcode, timeout); !ret) {
+            if (auto ret = co_await this->_handleError(errcode, ); !ret) {
                 co_return Unexpected(ret.error());
             }
         }
     }
-    auto send(const void *buffer, size_t n, int64_t timeout = -1) -> Task<RecvHandlerArgs> {
+    auto send(const void *buffer, size_t n = -1) -> Task<size_t> {
         while (true) {
             size_t written = 0;
             int writret = SSL_write_ex(this->mSsl, buffer, n, &written);
@@ -450,7 +446,7 @@ public:
             }
             int errcode = 0;
             errcode = SSL_get_error(this->mSsl, writret);
-            if (auto ret = co_await this->_handleError(errcode, timeout); !ret) {
+            if (auto ret = co_await this->_handleError(errcode, ); !ret) {
                 co_return Unexpected(ret.error());
             }
         }
@@ -476,15 +472,15 @@ public:
     }
 
 #if defined(__cpp_impl_coroutine)
-    auto accept(int64_t timeout = -1) -> Task<AcceptHandlerArgsT<Client> > {
+    auto accept() -> Task<std::pair<Client, IPEndpoint> > {
         // TODO 
-        auto val = co_await this->mBio->mFd.accept(timeout);
+        auto val = co_await this->mBio->mFd.accept();
         if (!val) {
             co_return Unexpected(val.error());            
         }
         auto &[rawClient, addr] = *val;
         Client client(this->mCtxt, std::move(rawClient));
-        if (auto ret = co_await client._accept(timeout); !ret) {
+        if (auto ret = co_await client._accept(); !ret) {
             co_return Unexpected(ret.error());
         }
         co_return std::pair{std::move(client), addr};

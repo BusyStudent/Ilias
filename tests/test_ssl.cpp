@@ -5,8 +5,8 @@
 
 using namespace ILIAS_NAMESPACE;
 
-// #ifdef _WIN32
-#if 0
+#ifdef _WIN32
+// #if 0
     #include "../include/ilias_iocp.hpp"
     #include "../include/ilias_iocp.cpp"
 #else
@@ -14,17 +14,15 @@ using namespace ILIAS_NAMESPACE;
 #endif
 
 int main() {
-    NativeEventLoop loop;
-
-// #ifdef _WIN32
-#if 0
+#ifdef _WIN32
+// #if 0
     IOCPContext ctxt;
 #else
     PollContext ctxt;
 #endif
     SslContext sslCtxt;
 
-    loop.runTask([&]() -> Task<> {
+    ctxt.runTask([&]() -> Task<> {
         TcpClient tcpClient = TcpClient(ctxt, AF_INET);
         SslClient<> sslClient(sslCtxt, std::move(tcpClient));
         IStreamClient client = std::move(sslClient);
@@ -32,12 +30,12 @@ int main() {
         IPEndpoint endpoint(IPAddress4::fromHostname("www.baidu.com"), 443);
         if (auto result = co_await client.connect(endpoint); !result) {
             std::cout << result.error().message() << std::endl;
-            co_return;
+            co_return Result<>();
         }
         std::string request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
         if (auto result = co_await client.send(request.data(), request.size()); !result) {
             std::cout << result.error().message() << std::endl;
-            co_return;
+            co_return Result<>();
         }
         do {
             char buffer[1024];
@@ -51,6 +49,6 @@ int main() {
             std::cout.write(buffer, *readed);
         }
         while (true);
-        co_return;
+        co_return Result<>();
     }());
 }
