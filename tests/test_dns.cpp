@@ -3,8 +3,7 @@
 #include "../include/ilias_co.hpp"
 #include <iostream>
 
-// #ifdef _WIN32
-#if 0
+#ifdef _WIN32
     #include "../include/ilias_iocp.hpp"
     #include "../include/ilias_iocp.cpp"
 #else
@@ -14,8 +13,7 @@
 using namespace ILIAS_NAMESPACE;
 
 int main() {
-// #ifdef _WIN32
-#if 0
+#ifdef _WIN32
     IOCPContext ctxt;
 #else
     PollContext ctxt;

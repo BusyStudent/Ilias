@@ -52,7 +52,8 @@ public:
     auto sendto(SocketView fd, const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> override;
     auto recvfrom(SocketView fd, void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > override;
 private:
-    auto _calcWaiting() const -> DWORD { return INFINITE; }
+    auto _calcWaiting() const -> DWORD;
+    auto _runTimers() -> void;
     auto _loadFunctions() -> void;
     
     SockInitializer mInitalizer;
@@ -60,7 +61,16 @@ private:
     bool mQuit = false;
 
     // Timers
-    std::multimap<uint64_t, std::pair<void*, void*> > mTimers;
+    struct Timer {
+        uintptr_t id; //< TimerId
+        int64_t ms;  //< Interval in milliseconds
+        int flags;    //< Timer flags
+        void (*fn)(void *);
+        void *arg;
+    };
+    std::map<uintptr_t, std::multimap<uint64_t, Timer>::iterator> mTimers;
+    std::multimap<uint64_t, Timer> mTimerQueue;
+    uint64_t mTimerIdBase = 0; //< A self-increasing timer id base
 };
 
 using PlatformIoContext = IOCPContext;

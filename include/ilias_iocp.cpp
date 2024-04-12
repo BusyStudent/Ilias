@@ -32,6 +32,7 @@ auto IOCPContext::run() -> void {
     ULONG_PTR compeleteKey;
     LPOVERLAPPED overlapped = nullptr;
     while (!mQuit) {
+        _runTimers();
         auto ret = ::GetQueuedCompletionStatus(
             mIocpFd, 
             &bytesTrans, 
@@ -41,8 +42,8 @@ auto IOCPContext::run() -> void {
         );
         if (!ret) {
             auto err = ::GetLastError();
-            if (err == ERROR_OPERATION_ABORTED) {
-                // Skip aborted operation
+            if (err == ERROR_OPERATION_ABORTED || err == WAIT_TIMEOUT) {
+                // Skip aborted operation or timeouted
                 continue;
             }
         }
@@ -76,10 +77,60 @@ auto IOCPContext::quit() -> void {
 
 // Timer TODO
 auto IOCPContext::delTimer(uintptr_t timer) -> bool {
-    return false;
+    auto iter = mTimers.find(timer);
+    if (iter == mTimers.end()) {
+        return false;
+    }
+    mTimerQueue.erase(iter->second);
+    mTimers.erase(iter);
+    return true;
 }
 auto IOCPContext::addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags) -> uintptr_t {
-    return 0;
+    uintptr_t id = mTimerIdBase + 1;
+    while (mTimers.find(id) != mTimers.end()) {
+        id ++;
+    }
+    mTimerIdBase = id;
+    uint64_t expireTime = ::GetTickCount64() + ms;
+
+    auto iter = mTimerQueue.insert(std::pair(expireTime, Timer{id, ms, flags, fn, arg}));
+    mTimers.insert(std::pair(id, iter));
+    return id;
+}
+inline
+auto IOCPContext::_runTimers() -> void {
+    if (mTimerQueue.empty()) {
+        return;
+    }
+    auto now = ::GetTickCount64();
+    for (auto iter = mTimerQueue.begin(); iter != mTimerQueue.end();) {
+        auto [expireTime, timer] = *iter;
+        if (expireTime > now) {
+            break;
+        }
+        // Invoke
+        post(timer.fn, timer.arg);
+
+        // Cleanup if
+        if (timer.flags & TimerFlags::TimerSingleShot) {
+            mTimers.erase(timer.id); // Remove the timer
+        }
+        else {
+            auto newExpireTime = ::GetTickCount64() + timer.ms;
+            auto newIter = mTimerQueue.insert(iter, std::make_pair(newExpireTime, timer));
+            mTimers[timer.id] = newIter;
+        }
+        iter = mTimerQueue.erase(iter); // Move next
+    }
+}
+inline
+auto IOCPContext::_calcWaiting() const -> DWORD {
+    if (mTimerQueue.empty()) {
+        return INFINITE;
+    }
+    auto time = mTimerQueue.begin()->first - ::GetTickCount64();
+    ::printf("[Ilias] IOCP Waiting: %lld\n", time);
+    return time;
 }
 
 // Add / Remove
@@ -345,7 +396,7 @@ struct RecvfromAwaiter : public IOCPAwaiter<RecvfromAwaiter, Result<std::pair<si
     ::WSABUF buf;
     ::DWORD flags = 0;
     ::sockaddr_storage addr;
-    ::socklen_t len = 0;
+    ::socklen_t len = sizeof(addr);
 };
 
 auto IOCPContext::recvfrom(SocketView sock, void *buf, size_t len) -> Task<std::pair<size_t, IPEndpoint> > {

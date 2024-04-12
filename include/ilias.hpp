@@ -53,8 +53,9 @@ public:
         Unknown,                     //< Unknown Error
 
         // --- Coroutine
-        Canceled,                     //< Task is Canceled
+        Canceled,                    //< Task is Canceled
         Pending,                     //< Task is pending
+        ChannelBroken,               //< Channel is broken
 
         // --- Socket
         AccessDenied,                //< Access is denied

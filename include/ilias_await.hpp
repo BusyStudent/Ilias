@@ -57,6 +57,89 @@ private:
 };
 
 /**
+ * @brief When all tasks done
+ * 
+ * @tparam T 
+ * @tparam Args 
+ */
+template <typename T, typename ...Args>
+class WhenAllAwaiter {
+public:
+    using InTuple = std::tuple<TaskPromise<Args>* ...>;
+    using OutTuple = std::tuple<Result<Args> ...>;
+
+    WhenAllAwaiter(TaskPromise<T> &caller, const InTuple &tasks) : mCaller(caller), mTasks(tasks) { }
+    WhenAllAwaiter(const WhenAllAwaiter &) = delete;
+    WhenAllAwaiter(WhenAllAwaiter &&) = default;
+
+    auto await_ready() -> bool {
+        if (mCaller.isCanceled()) {
+            return true;
+        }
+        auto resume = [&, this](auto task) {
+            task->handle().resume();
+            if (task->handle().done()) {
+                mWaitCount --;
+            }
+        };
+        // Dispatch all to resume
+        std::apply([&, this](auto ...tasks) {
+            (resume(tasks), ...);
+        }, mTasks);
+        return mWaitCount == 0;
+    }
+    // Return to Event Loop
+    auto await_suspend(std::coroutine_handle<TaskPromise<T> > h) -> std::coroutine_handle<> {
+        // Let the wating task resume the helper task
+        auto setAwaiting = [this](auto task) {
+            if (!task->handle().done()) {
+                task->setPrevAwaiting(&mHelperTask.promise());
+            }
+        };
+        std::apply([&](auto ...tasks) {
+            (setAwaiting(tasks), ...);
+        }, mTasks);
+        // Let the helper task resume us
+        mHelperTask.promise().setPrevAwaiting(&mCaller);
+
+        // Switch to the helper task
+        return mHelperTask.handle();
+    }
+    auto await_resume() const -> OutTuple {
+        if (mCaller.isCanceled()) {
+            return _makeCanceledResult(std::make_index_sequence<sizeof ...(Args)>());
+        }
+        return _makeResult(std::make_index_sequence<sizeof ...(Args)>());
+    }
+private:
+    template <size_t ...N>
+    auto _makeResult(std::index_sequence<N...>) const -> OutTuple {
+        return OutTuple {
+            (std::get<N>(mTasks)->value())...
+        };
+    }
+    template <size_t ...N>
+    auto _makeCanceledResult(std::index_sequence<N...>) const -> OutTuple {
+        return OutTuple {
+            (std::get<N>(mTasks), Unexpected(Error::Canceled))...
+        };
+    }
+    // Make a helper task, let awating task resume it and let it resume us
+    auto _helperTask() -> Task<void> {
+        while (mWaitCount && !mCaller.isCanceled()) {
+            co_await std::suspend_always();
+            mWaitCount --;
+        }
+        co_return Result<>();
+    }
+
+    TaskPromise<T> &mCaller;
+    InTuple mTasks;
+    size_t mWaitCount = sizeof ...(Args);
+    Task<void> mHelperTask {_helperTask()};
+};
+
+/**
  * @brief Select a one ready task from it 
  * 
  * @tparam T 
@@ -147,86 +230,71 @@ private:
 };
 
 /**
- * @brief When all tasks done
+ * @brief Awaiter used for ilias_select
  * 
  * @tparam T 
  * @tparam Args 
  */
 template <typename T, typename ...Args>
-class WhenAllAwaiter {
+class SelectAwaiter {
 public:
-    using InTuple = std::tuple<TaskPromise<Args>* ...>;
-    using OutTuple = std::tuple<Result<Args> ...>;
-
-    WhenAllAwaiter(TaskPromise<T> &caller, const InTuple &tasks) : mCaller(caller), mTasks(tasks) { }
-    WhenAllAwaiter(const WhenAllAwaiter &) = delete;
-    WhenAllAwaiter(WhenAllAwaiter &&) = default;
+    SelectAwaiter(TaskPromise<T> &caller, std::tuple<Args...> &s) : mCaller(caller), mExpressions(s) { }
+    SelectAwaiter(const SelectAwaiter &) = delete;
+    SelectAwaiter(SelectAwaiter &&) = default;
 
     auto await_ready() -> bool {
         if (mCaller.isCanceled()) {
             return true;
         }
-        auto resume = [&, this](auto task) {
-            task->handle().resume();
-            if (task->handle().done()) {
-                mWaitCount --;
+        bool got = false; //< Does we got any value by resume it?
+        auto resume = [&](auto handle) {
+            if (got) {
+                return;
+            }
+            handle.resume();
+            if (handle.done()) {
+                mCaller.setResumeCaller(&handle.promise());
+                got = true;
             }
         };
         // Dispatch all to resume
-        std::apply([&, this](auto ...tasks) {
-            (resume(tasks), ...);
-        }, mTasks);
-        return mWaitCount == 0;
+        std::apply([&](auto &&...expression) {
+            (resume(expression.task.handle()), ...);
+        }, mExpressions);
+        return got;
     }
-    // Return to Event Loop
-    auto await_suspend(std::coroutine_handle<TaskPromise<T> > h) -> std::coroutine_handle<> {
-        // Let the wating task resume the helper task
-        auto setAwaiting = [this](auto task) {
-            if (!task->handle().done()) {
-                task->setPrevAwaiting(&mHelperTask.promise());
+    // Return to EventLoop
+    auto await_suspend(std::coroutine_handle<TaskPromise<T> > h) -> void {
+        auto setAwaiting = [this](auto handle) {
+            if (!handle.done()) {
+                handle.promise().setPrevAwaiting(&mCaller);
             }
         };
-        std::apply([&](auto ...tasks) {
-            (setAwaiting(tasks), ...);
-        }, mTasks);
-        // Let the helper task resume us
-        mHelperTask.promise().setPrevAwaiting(&mCaller);
-
-        // Switch to the helper task
-        return mHelperTask.handle();
+        // Dispatch all to set Awating
+        std::apply([&](auto &&...expression) {
+            (setAwaiting(expression.task.handle()), ...);
+        }, mExpressions);
     }
-    auto await_resume() const -> OutTuple {
-        if (mCaller.isCanceled()) {
-            return _makeCanceledResult(std::make_index_sequence<sizeof ...(Args)>());
-        }
-        return _makeResult(std::make_index_sequence<sizeof ...(Args)>());
+    auto await_resume() -> void {
+        // Dispatch the result it
+        auto applyResult = [this](auto &&expression) {
+            auto &[task, callable] = expression;
+            task.promise().setPrevAwaiting(nullptr);
+            if (mCaller.isCanceled()) {
+                return;
+            }
+            if (mCaller.resumeCaller() == &task.promise()) {
+                callable(task.promise().value());
+            }
+        };
+        // Dispatch all to apply result
+        std::apply([&](auto &&...expression) {
+            (applyResult(expression), ...);
+        }, mExpressions);
     }
 private:
-    template <size_t ...N>
-    auto _makeResult(std::index_sequence<N...>) const -> OutTuple {
-        return OutTuple {
-            (std::get<N>(mTasks)->value())...
-        };
-    }
-    template <size_t ...N>
-    auto _makeCanceledResult(std::index_sequence<N...>) const -> OutTuple {
-        return OutTuple {
-            (std::get<N>(mTasks), Unexpected(Error::Canceled))...
-        };
-    }
-    // Make a helper task, let awating task resume it and let it resume us
-    auto _helperTask() -> Task<void> {
-        while (mWaitCount && !mCaller.isCanceled()) {
-            co_await std::suspend_always();
-            mWaitCount --;
-        }
-        co_return Result<>();
-    }
-
     TaskPromise<T> &mCaller;
-    InTuple mTasks;
-    size_t mWaitCount = sizeof ...(Args);
-    Task<void> mHelperTask {_helperTask()};
+    std::tuple<Args...> &mExpressions;
 };
 
 /**
@@ -237,13 +305,13 @@ private:
 template <typename T>
 class SleepAwaiter {
 public:
-    SleepAwaiter(TaskPromise<T> &caller, chrono::steady_clock::time_point t) : mCaller(caller), mTime(t) { }
+    SleepAwaiter(TaskPromise<T> &caller, int64_t ms) : mCaller(caller), mMs(ms) { }
     SleepAwaiter(const SleepAwaiter &) = delete;
     SleepAwaiter& operator=(const SleepAwaiter &) = delete;
     SleepAwaiter(SleepAwaiter &&) = default;
 
     auto await_ready() const -> bool {
-        if (mTime <= chrono::steady_clock::now()) {
+        if (mMs <= 0) {
             return true;
         }
         return mCaller.isCanceled();
@@ -251,11 +319,8 @@ public:
     // Return to EventLoop
     auto await_suspend(std::coroutine_handle<TaskPromise<T> > h) -> bool {
         ILIAS_ASSERT(mCaller.handle() == h);
-        auto ms = chrono::duration_cast<chrono::milliseconds>(
-            mTime - chrono::steady_clock::now()
-        );
         // Create a timer
-        mTimer = mCaller.eventLoop()->addTimer(ms.count(), &SleepAwaiter::_onTimer, this, EventLoop::TimerSingleShot);
+        mTimer = mCaller.eventLoop()->addTimer(mMs, &SleepAwaiter::_onTimer, this, EventLoop::TimerSingleShot);
         return mTimer != 0; //< On 0, addTimer failed
     }
     auto await_resume() const -> Result<void> {
@@ -276,7 +341,7 @@ private:
 
     uintptr_t mTimer = 0;
     TaskPromise<T> &mCaller;
-    chrono::steady_clock::time_point mTime; //< Target sleep time
+    int64_t mMs = 0; //< Target sleep time
 };
 
 /**
@@ -297,11 +362,11 @@ private:
 };
 
 /**
- * @brief Place holder for wait until the time
+ * @brief Place holder for wait for the time
  * 
  */
 struct _SleepTags {
-    chrono::steady_clock::time_point time;
+    int64_t time;
 };
 struct _PromiseTags {
 
@@ -320,6 +385,29 @@ struct _WhenAllTags {
     T tuple;
 };
 
+/**
+ * @brief A Bind Expression than hold task's callback ownship
+ * 
+ * @tparam T 
+ * @tparam Callable 
+ */
+template <typename T, typename Callable>
+struct _BindExpression {
+    Task<T> task;
+    Callable callable;
+};
+
+/**
+ * @brief A struct than hold the bind expression
+ * 
+ * @tparam Args 
+ */
+template <typename ...Args>
+struct _SelectTags : public std::tuple<Args...> {
+    using std::tuple<Args...>::tuple;
+};
+template <typename ...Args>
+_SelectTags(Args &&...) -> _SelectTags<Args...>;
 
 template <typename U>
 class AwaitTransform<Task<U> > {
@@ -366,14 +454,23 @@ public:
     }
 };
 
+template <typename ...Expressions>
+class AwaitTransform<_SelectTags<Expressions...> > {
+public:
+    template <typename T>
+    static auto transform(TaskPromise<T> *caller, _SelectTags<Expressions...> &&tag) {
+        return SelectAwaiter(*caller, tag);
+    }
+};
+
 /**
- * @brief Sleep until the specified time
+ * @brief Sleep a specified time
  * 
- * @param t 
+ * @param ms 
  * @return Task<> 
  */
-inline auto SleepUntil(chrono::steady_clock::time_point t) -> Task<> {
-    co_return co_await _SleepTags{t};
+inline auto SleepFor(int64_t ms) -> Task<> {
+    co_return co_await _SleepTags{ms};
 }
 /**
  * @brief Sleep a specified time
@@ -382,7 +479,20 @@ inline auto SleepUntil(chrono::steady_clock::time_point t) -> Task<> {
  * @return Task<> 
  */
 inline auto Sleep(chrono::milliseconds ms) -> Task<> {
-    return SleepUntil(chrono::steady_clock::now() + ms);
+    return SleepFor(ms.count());
+}
+/**
+ * @brief Sleep until the specified time
+ * 
+ * @param t 
+ * @return Task<> 
+ */
+inline auto SleepUntil(chrono::steady_clock::time_point t) -> Task<> {
+    return SleepFor(
+        chrono::duration_cast<chrono::milliseconds>(
+            t - chrono::steady_clock::now()
+        ).count()
+    );
 }
 /**
  * @brief Wait any task was ready
@@ -413,6 +523,31 @@ inline auto WhenAll(Args &&...tasks) {
  */
 inline auto GetPromise() -> _PromiseTags {
     return _PromiseTags {};
+}
+
+/**
+ * @brief Bind a task's result to a callable
+ * 
+ * @tparam T 
+ * @tparam Any 
+ * @param task 
+ * @param any 
+ * @return auto 
+ */
+template <typename T, typename Any>
+inline auto operator >>(Task<T> &&task, Any &&any) {
+    return _BindExpression {std::move(task), std::move(any) };
+}
+/**
+ * @brief Bind a task's result to null (drop the result)
+ * 
+ * @tparam T 
+ * @param task 
+ * @return auto 
+ */
+template <typename T>
+inline auto operator >>(Task<T> &&task, std::nullptr_t) {
+    return _BindExpression {std::move(task), [](Result<T>) { } };
 }
 
 ILIAS_NS_END
