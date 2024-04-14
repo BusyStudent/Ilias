@@ -56,6 +56,8 @@ public:
         Canceled,                    //< Task is Canceled
         Pending,                     //< Task is pending
         ChannelBroken,               //< Channel is broken
+        ChannelEmpty,                //< Channel is empty
+        ChannelFull,                 //< Channel is full
 
         // --- Socket
         AccessDenied,                //< Access is denied

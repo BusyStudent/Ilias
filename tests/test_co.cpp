@@ -1,4 +1,4 @@
-#define ILIAS_COROUTINE_TRACE
+// #define ILIAS_COROUTINE_TRACE
 #include "../include/ilias_task.hpp"
 #include "../include/ilias_await.hpp"
 #include "../include/ilias_channel.hpp"
@@ -17,8 +17,12 @@ Task<int> taskAA() {
     co_return 11;
 }
 
+Task<int> v() {
+    co_return 123;
+}
+
 Task<int> task() {
-    // co_await 
+    co_await v();
     ilias_go taskAA();
     auto result = co_await WhenAny(Sleep(20ms), Sleep(1s));
 
@@ -34,10 +38,55 @@ Task<int> task() {
     co_return 0;
 }
 
+Task<void> printUtilNone(Receiver<int> r) {
+    while (auto num = co_await r.recv()) {
+        ::printf("%d\n", num.value());
+    }
+    r.close();
+    co_return Result<void>();
+}
+Task<void> printUtilN(Receiver<int> r, int n) {
+    while (auto num = co_await r.recv()) {
+        ::printf("%d\n", num.value());
+        n -= 1;
+        if (n == 0) {
+            break;
+        }
+    }
+    r.close();
+    co_return Result<void>();
+}
+Task<void> sendForN(Sender<int> s, int n) {
+    for (int i = 0; i < n; ++i) {
+        if (auto v = co_await s.send(i); !v) {
+            ::printf("sendForN: send failed =>%s\n", v.error().message().c_str());
+            break;
+        }
+    }
+    s.close();
+    co_return Result<void>();
+}
+
+Task<void> testChannel() {
+    ::printf("testChannel1\n");
+    auto [tx, rx] = Channel<int>::make();
+
+    co_await WhenAll(sendForN(std::move(tx), 10), printUtilNone(std::move(rx)));
+    co_return Result<void>();
+}
+Task<void> testChannel2() {
+    ::printf("testChannel2\n");
+    auto [tx, rx] = Channel<int>::make();
+    
+    co_await WhenAll(sendForN(std::move(tx), 100), printUtilN(std::move(rx), 3));
+    co_return Result<void>();
+}
 
 int main() {
     MiniEventLoop loop;
-    ilias_wait Sleep(1s);
+    // ilias_wait Sleep(1s);
     auto ret = ilias_wait task();
+    ilias_wait testChannel();
+    ilias_wait testChannel2();
     return ret.value_or(-1);
 }

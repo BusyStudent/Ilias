@@ -44,7 +44,7 @@ public:
             typeid(T).name(), static_cast<void*>(&mCaller), 
             mCaller.isCanceled(), static_cast<void*>(mCaller.resumeCaller())
         );
-        if (mCaller.isCanceled()) {
+        if (mCaller.isCanceled() && !mTask.handle().done()) {
             //< Avoid mTask is still no done, when it was cancel, it will resume the caller
             mTask.setPrevAwaiting(nullptr);
             return Unexpected(Error::Canceled);
@@ -76,8 +76,10 @@ public:
         if (mCaller.isCanceled()) {
             return true;
         }
-        auto resume = [&, this](auto task) {
+        auto resume = [this](auto task) {
             task->handle().resume();
+        };
+        auto check = [this](auto task) {
             if (task->handle().done()) {
                 mWaitCount --;
             }
@@ -85,6 +87,9 @@ public:
         // Dispatch all to resume
         std::apply([&, this](auto ...tasks) {
             (resume(tasks), ...);
+        }, mTasks);
+        std::apply([&, this](auto ...tasks) {
+            (check(tasks), ...);
         }, mTasks);
         return mWaitCount == 0;
     }
