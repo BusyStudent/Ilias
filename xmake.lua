@@ -5,6 +5,12 @@ if is_plat("linux") then
     add_links("pthread")
 end
 
+option("enable_qt")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Enable Qt Depend")
+option_end()
+
 set_languages("c++latest")
 
 target("test_httpserver")
@@ -63,3 +69,12 @@ target("test_ring")
     add_packages("openssl")
     add_packages("gtest")
 target_end()
+
+if has_config("enable_qt") then 
+    target("test_qt")
+        add_rules("qt.widgetapp")
+        add_files("tests/test_qt.cpp")
+        add_files("tests/test_qt.ui")
+        add_frameworks("QtCore", "QtWidgets", "QtGui")
+    target_end()
+end

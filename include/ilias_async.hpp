@@ -4,13 +4,6 @@
 #include "ilias_expected.hpp"
 #include "ilias_backend.hpp"
 
-// --- Import Native backend
-#if defined(_WIN32)
-#include "ilias_iocp.hpp"
-#else
-#include "ilias_poll.hpp"
-#endif
-
 ILIAS_NS_BEGIN
 
 /**

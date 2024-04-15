@@ -58,7 +58,7 @@ public:
      * @param hostname The hostname want to query
      * @param type The record type you want to get (default in A)
      */
-    DnsQuery(const char *hostname, uint16_t type = A);
+    DnsQuery(std::string_view name, uint16_t type = A);
     DnsQuery(const DnsQuery &) = default;
     ~DnsQuery();
 
@@ -68,14 +68,14 @@ public:
      * @return true 
      * @return false 
      */
-    bool fillBuffer(uint16_t transId, void *buffer, size_t n) const;
-    bool fillBuffer(uint16_t transId, std::vector<uint8_t> &buffer) const;
+    auto fillBuffer(uint16_t transId, void *buffer, size_t n) const -> bool;
+    auto fillBuffer(uint16_t transId, std::vector<uint8_t> &buffer) const -> bool;
     /**
      * @brief Get the size of buffer needed to fill the query request data
      * 
      * @return size_t
      */
-    size_t fillBufferSize() const noexcept;
+    auto fillBufferSize() const -> size_t;
 private:
     std::string mHostname;     //< Human readable name, www.google.com
     std::string mEncodedName;  //< Encoded name, 3www6google3com0
@@ -104,56 +104,56 @@ public:
      * 
      * @return std::string 
      */
-    std::string name() const;
+    auto name() const -> std::string;
     /**
      * @brief Get the type of the answer
      * 
      * @return uint16_t 
      */
-    uint16_t type() const noexcept;
+    auto type() const -> uint16_t;
     /**
      * @brief Get the class of the answer
      * 
      * @return uint16_t 
      */
-    uint16_t class_() const noexcept;
+    auto class_() const -> uint16_t;
     /**
      * @brief Get the TTL of the answer (in second)
      * 
      * @return uint32_t 
      */
-    uint32_t ttl() const noexcept;
+    auto ttl() const -> uint32_t;
     /**
      * @brief Get the data len
      * 
      * @return size_t 
      */
-    size_t dataLength() const noexcept;
+    auto dataLength() const -> size_t;
     /**
      * @brief Get the data
      * 
      * @return const void* 
      */
-    const void *data() const noexcept;
+    auto data() const -> const void *;
     /**
      * @brief Try Get the cname (type must be CNAME)
      * 
      * @return std::string 
      */
-    std::string cname() const;
+    auto cname() const -> std::string;
     /**
      * @brief Try Get the address (type must be A or AAAA)
      * 
      * @return IPAddress 
      */
-    IPAddress address() const;
+    auto address() const -> IPAddress;
     /**
      * @brief Check if the answer is expired
      * 
      * @return true 
      * @return false 
      */
-    bool isExpired() const noexcept;
+    auto isExpired() const -> bool;
 private:
     std::string mName;
     uint16_t mType = 0;
@@ -180,25 +180,25 @@ public:
      * @return true 
      * @return false 
      */
-    bool isOk() const noexcept;
+    auto isOk() const -> bool;
     /**
      * @brief Get the trans Id
      * 
      * @return uint16_t 
      */
-    uint16_t transId() const noexcept;
+    auto transId() const -> uint16_t;
     /**
      * @brief Get the answer count
      * 
      * @return uint16_t 
      */
-    uint16_t answerCount() const noexcept;
+    auto answerCount() const -> uint16_t;
     /**
      * @brief Get the cname
      * 
      * @return std::string 
      */
-    std::string cname() const;
+    auto cname() const -> std::string;
     /**
      * @brief Get the response's all A or AAAA records
      * 
@@ -220,12 +220,12 @@ public:
      */
     static auto parse(const void *buffer, size_t n) -> Expected<DnsResponse, size_t>;
 private:
-    bool _parse(const uint8_t *buffer, size_t size, size_t *stopPosition);
-    bool _skipQuestion(const uint8_t *buffer, size_t size, const uint8_t **cur);
-    bool _skipName(const uint8_t *buffer, size_t size, const uint8_t **name);
-    bool _unpackName(const uint8_t *buffer, size_t size, const uint8_t **name, std::string &output);
-    bool _parseAnswer(const uint8_t *buffer, size_t size, const uint8_t **answer, DnsAnswer &output);
-    bool _parseName(const uint8_t *buffer, size_t size, const uint8_t **name, std::string &output);
+    auto _parse(const uint8_t *buffer, size_t size, size_t *stopPosition) -> bool;
+    auto _skipQuestion(const uint8_t *buffer, size_t size, const uint8_t **cur) -> bool;
+    auto _skipName(const uint8_t *buffer, size_t size, const uint8_t **name) -> bool;
+    auto _unpackName(const uint8_t *buffer, size_t size, const uint8_t **name, std::string &output) -> bool;
+    auto _parseAnswer(const uint8_t *buffer, size_t size, const uint8_t **answer, DnsAnswer &output) -> bool;
+    auto _parseName(const uint8_t *buffer, size_t size, const uint8_t **name, std::string &output) -> bool;
 
     DnsHeader mHeader { };
     std::vector<DnsAnswer> mAnswers;
@@ -258,7 +258,7 @@ private:
 };
 
 // --- DnsQuery Impl
-inline DnsQuery::DnsQuery(const char *name, uint16_t type) : mHostname(name), mType(type) {
+inline DnsQuery::DnsQuery(std::string_view name, uint16_t type) : mHostname(name), mType(type) {
     // Split string by . and encode to 3www6google3com0 like string
     size_t prev = 0;
     size_t pos = mHostname.find('.');
@@ -275,7 +275,7 @@ inline DnsQuery::DnsQuery(const char *name, uint16_t type) : mHostname(name), mT
 }
 inline DnsQuery::~DnsQuery() { }
 
-inline bool DnsQuery::fillBuffer(uint16_t transId, void *buffer, size_t n) const {
+inline auto DnsQuery::fillBuffer(uint16_t transId, void *buffer, size_t n) const -> bool {
     if (mEncodedName.empty()) {
         return false;
     }
@@ -312,48 +312,48 @@ inline bool DnsQuery::fillBuffer(uint16_t transId, void *buffer, size_t n) const
     ::memcpy(now + sizeof(type_), &class_, sizeof(class_));
     return true;
 }
-inline bool DnsQuery::fillBuffer(uint16_t transId, std::vector<uint8_t> &buffer) const {
+inline auto DnsQuery::fillBuffer(uint16_t transId, std::vector<uint8_t> &buffer) const -> bool {
     buffer.resize(fillBufferSize());
     return fillBuffer(transId, buffer.data(), buffer.size());
 }
-inline size_t DnsQuery::fillBufferSize() const noexcept {
+inline auto DnsQuery::fillBufferSize() const -> size_t {
     // DnsHeader + 1 * Question(Hostname + Request Type + Request Class)
     return sizeof(DnsHeader) + (mEncodedName.size() + 1 + sizeof(uint16_t) * 2);
 }
 
 // --- DnsAnswer Impl
-inline std::string DnsAnswer::name() const {
+inline auto DnsAnswer::name() const -> std::string {
     return mName;
 }
-inline uint16_t DnsAnswer::type() const noexcept {
+inline auto DnsAnswer::type() const -> uint16_t {
     return mType;
 }
-inline uint16_t DnsAnswer::class_() const noexcept {
+inline auto DnsAnswer::class_() const -> uint16_t {
     return mClass;
 }
-inline uint32_t DnsAnswer::ttl() const noexcept {
+inline auto DnsAnswer::ttl() const -> uint32_t {
     return mTTL;
 }
-inline size_t DnsAnswer::dataLength() const noexcept {
+inline auto DnsAnswer::dataLength() const -> size_t {
     return mData.size();
 }
-inline const void *DnsAnswer::data() const noexcept {
+inline auto DnsAnswer::data() const -> const void * {
     return mData.data();
 }
 
-inline std::string DnsAnswer::cname() const {
+inline auto DnsAnswer::cname() const -> std::string {
     if (mType != DnsAnswer::CNAME) {
         return std::string();
     }
     return mData;
 }
-inline IPAddress DnsAnswer::address() const {
+inline auto DnsAnswer::address() const -> IPAddress {
     if (mType != DnsAnswer::A && mType != DnsAnswer::AAAA) {
         return IPAddress();
     }
     return IPAddress::fromRaw(mData.data(), mData.size());
 }
-inline bool DnsAnswer::isExpired() const noexcept {
+inline auto DnsAnswer::isExpired() const -> bool {
     return std::chrono::steady_clock::now() > mExpireTime;
 }
 
@@ -369,7 +369,7 @@ inline auto DnsResponse::parse(const void *buffer, size_t n) -> Expected<DnsResp
     }
     return res;
 }
-inline bool DnsResponse::_parse(const uint8_t *buffer, size_t n, size_t *stopPosition) {
+inline auto DnsResponse::_parse(const uint8_t *buffer, size_t n, size_t *stopPosition) -> bool {
     const uint8_t *cur = buffer;
 
     // Copy headers
@@ -392,7 +392,7 @@ inline bool DnsResponse::_parse(const uint8_t *buffer, size_t n, size_t *stopPos
     }
     return true;
 }
-inline bool DnsResponse::_skipQuestion(const uint8_t *buffer, size_t n, const uint8_t **cur) {
+inline auto DnsResponse::_skipQuestion(const uint8_t *buffer, size_t n, const uint8_t **cur) -> bool {
     if (!_skipName(buffer, n, cur)) {
         return false;
     }
@@ -403,7 +403,7 @@ inline bool DnsResponse::_skipQuestion(const uint8_t *buffer, size_t n, const ui
     *cur += sizeof(uint16_t) * 2;
     return true;
 }
-inline bool DnsResponse::_skipName(const uint8_t *buffer, size_t size, const uint8_t **cur) {
+inline auto DnsResponse::_skipName(const uint8_t *buffer, size_t size, const uint8_t **cur) -> bool {
     const uint8_t *ptr = *cur;
     bool jumped = false;
     size_t step = 1;
@@ -435,7 +435,7 @@ inline bool DnsResponse::_skipName(const uint8_t *buffer, size_t size, const uin
     *cur += step;
     return true;
 }
-inline bool DnsResponse::_parseAnswer(const uint8_t *buffer, size_t size, const uint8_t **answer, DnsAnswer &output) {
+inline auto DnsResponse::_parseAnswer(const uint8_t *buffer, size_t size, const uint8_t **answer, DnsAnswer &output) -> bool {
     // Answer is name + type(uint16) + class(uint16) + ttl(uint32) + rdlength(uint16) + rdata
     std::string name;
     const uint8_t *now = *answer;
@@ -489,7 +489,7 @@ inline bool DnsResponse::_parseAnswer(const uint8_t *buffer, size_t size, const 
     }
     return true;
 }
-inline bool DnsResponse::_unpackName(const uint8_t *buffer, size_t size, const uint8_t **name, std::string &output) {
+inline auto DnsResponse::_unpackName(const uint8_t *buffer, size_t size, const uint8_t **name, std::string &output) -> bool {
     const uint8_t *ptr = *name;
     while (*ptr != 0) {
         uint8_t n = *ptr;
@@ -534,7 +534,7 @@ inline bool DnsResponse::_unpackName(const uint8_t *buffer, size_t size, const u
     }
     return _skipName(buffer, size, name);
 }
-inline bool DnsResponse::_parseName(const uint8_t *buffer, size_t size, const uint8_t **name, std::string &output) {
+inline auto DnsResponse::_parseName(const uint8_t *buffer, size_t size, const uint8_t **name, std::string &output) -> bool{
     std::string encodedName;
     if (!_unpackName(buffer, size, name, encodedName)) {
         return false;
@@ -557,13 +557,13 @@ inline bool DnsResponse::_parseName(const uint8_t *buffer, size_t size, const ui
     }
     return true;
 }
-inline bool DnsResponse::isOk() const noexcept {
+inline auto DnsResponse::isOk() const -> bool {
     return mHeader.rcode == 0;
 }
-inline uint16_t DnsResponse::transId() const noexcept {
+inline auto DnsResponse::transId() const -> uint16_t {
     return ::ntohs(mHeader.id);
 }
-inline uint16_t DnsResponse::answerCount() const noexcept {
+inline auto DnsResponse::answerCount() const -> uint16_t {
     return ::ntohs(mHeader.answerCount);
 }
 inline auto DnsResponse::answers() const -> const std::vector<DnsAnswer> & {
@@ -584,6 +584,10 @@ inline auto DnsResponse::addresses() const -> std::vector<IPAddress> {
 inline Resolver::Resolver(IoContext &ctxt) : mCtxt(ctxt) {
     mServer4 = "8.8.8.8";
     // Detect Default dns server
+#if defined(_WIN32)
+
+#endif
+
 }
 inline Resolver::~Resolver() {
 
