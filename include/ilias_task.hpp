@@ -37,16 +37,8 @@ public:
     explicit Task(handle_type h) : mHandle(h) { }
     Task(const Task &t) = delete;
     Task(Task &&t) : mHandle(t.mHandle) { t.mHandle = nullptr; }
-    ~Task() {
-        if (!mHandle) {
-            return;
-        }
-        if (!mHandle.done()) {
-            // Cancel
-            cancel();
-        }
-        mHandle.destroy();
-    }
+    Task() { }
+    ~Task() { clear(); }
 
     auto leak() -> handle_type {
         auto h = mHandle;
@@ -90,6 +82,43 @@ public:
             eventLoop()->run();
         }
         return promise().value();
+    }
+    /**
+     * @brief Clear the task
+     * 
+     */
+    auto clear() -> void {
+        if (!mHandle) {
+            return;
+        }
+        if (!mHandle.done()) {
+            // Cancel
+            cancel();
+        }
+        mHandle.destroy();
+        mHandle = nullptr;
+    }
+    /**
+     * @brief Assign a moved task
+     * 
+     * @param other 
+     * @return Task& 
+     */
+    auto operator =(Task &&other) -> Task & {
+        clear();
+        mHandle = other.mHandle;
+        other.mHandle = nullptr;
+        return *this;
+    }
+    auto operator =(const Task &) -> Task & = delete;
+    /**
+     * @brief Check the task is empty or not
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept {
+        return bool(mHandle);
     }
 private:
     handle_type mHandle;

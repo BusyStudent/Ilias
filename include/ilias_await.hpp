@@ -76,7 +76,7 @@ public:
         if (mCaller.isCanceled()) {
             return true;
         }
-        auto resume = [this](auto task) {
+        auto resume = [](auto task) {
             task->handle().resume();
         };
         auto check = [this](auto task) {
@@ -85,10 +85,10 @@ public:
             }
         };
         // Dispatch all to resume
-        std::apply([&, this](auto ...tasks) {
+        std::apply([&](auto ...tasks) {
             (resume(tasks), ...);
         }, mTasks);
-        std::apply([&, this](auto ...tasks) {
+        std::apply([&](auto ...tasks) {
             (check(tasks), ...);
         }, mTasks);
         return mWaitCount == 0;
@@ -96,6 +96,7 @@ public:
     // Return to Event Loop
     auto await_suspend(std::coroutine_handle<TaskPromise<T> > h) -> std::coroutine_handle<> {
         // Let the wating task resume the helper task
+        mHelperTask = _helperTask();
         auto setAwaiting = [this](auto task) {
             if (!task->handle().done()) {
                 task->setPrevAwaiting(&mHelperTask.promise());
@@ -111,6 +112,10 @@ public:
         return mHelperTask.handle();
     }
     auto await_resume() const -> OutTuple {
+        if (mHelperTask) {
+            mHelperTask.promise().setPrevAwaiting(nullptr);
+            mHelperTask.cancel();
+        }
         if (mCaller.isCanceled()) {
             return _makeCanceledResult(std::make_index_sequence<sizeof ...(Args)>());
         }
@@ -126,7 +131,10 @@ private:
     template <size_t ...N>
     auto _makeCanceledResult(std::index_sequence<N...>) const -> OutTuple {
         return OutTuple {
-            (std::get<N>(mTasks), Unexpected(Error::Canceled))...
+            (   std::get<N>(mTasks)->setPrevAwaiting(nullptr),
+                std::get<N>(mTasks)->cancel(),
+                Unexpected(Error::Canceled)
+            )...
         };
     }
     // Make a helper task, let awating task resume it and let it resume us
@@ -141,7 +149,7 @@ private:
     TaskPromise<T> &mCaller;
     InTuple mTasks;
     size_t mWaitCount = sizeof ...(Args);
-    Task<void> mHelperTask {_helperTask()};
+    Task<void> mHelperTask;
 };
 
 /**

@@ -224,8 +224,9 @@ inline auto PollContext::connect(SocketView fd, const IPEndpoint &endpoint) -> T
     if (!pollret) {
         co_return Unexpected(pollret.error());
     }
-    if (*pollret & EPOLLOUT) {
-        co_return Unexpected(fd.error().value());
+    auto err = fd.error().value();
+    if (!err.isOk()) {
+        co_return Unexpected(err);
     }
     co_return Result<>();
 }

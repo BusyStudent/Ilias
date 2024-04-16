@@ -248,6 +248,7 @@ inline auto Receiver<T>::recv() -> Task<T> {
         mChannel->_wakeupSender();
         co_return value;
     }
+    co_return Unexpected(Error::Canceled);
 }
 template <typename T>
 inline auto Receiver<T>::tryRecv() -> Result<T> {

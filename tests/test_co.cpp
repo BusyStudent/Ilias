@@ -81,6 +81,10 @@ Task<void> testChannel2() {
     co_await WhenAll(sendForN(std::move(tx), 100), printUtilN(std::move(rx), 3));
     co_return Result<void>();
 }
+Task<void> testWhenAll1() {
+    co_await WhenAll(Sleep(1s), Sleep(10ms));
+    co_return Result<void>();
+}
 
 int main() {
     MiniEventLoop loop;
@@ -88,5 +92,6 @@ int main() {
     auto ret = ilias_wait task();
     ilias_wait testChannel();
     ilias_wait testChannel2();
+    ilias_wait testWhenAll1();
     return ret.value_or(-1);
 }

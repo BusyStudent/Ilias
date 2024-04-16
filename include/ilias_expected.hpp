@@ -381,13 +381,12 @@ public:
     using value_type = T;
     using error_type = E;
 private:
-    ErrorT mError;
-
     enum {
         ValueType,
         ErrorType,
     } mType;
 
+    ErrorT mError;
 public:
     Expected()
         : mType(ValueType)
