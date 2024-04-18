@@ -23,9 +23,8 @@ public:
     }
     auto isValid() const -> bool;
     auto localEndpoint() const -> Result<IPEndpoint>;
-    auto close() -> Expected<void, Error>;
+    auto close() -> Result<>;
     auto context() const -> IoContext *;
-    auto cancel() const -> bool;
     
     explicit operator SocketView() const noexcept;
 protected:
@@ -99,7 +98,7 @@ public:
      * @param backlog 
      * @return Expected<void, Error> 
      */
-    auto bind(const IPEndpoint &endpoint, int backlog = 0) -> Result<void>;
+    auto bind(const IPEndpoint &endpoint, int backlog = 0) -> Result<>;
 
 #if defined(__cpp_lib_coroutine)
     /**
@@ -123,7 +122,14 @@ public:
      * @param endpoint 
      * @return Expected<void, Error> 
      */
-    auto bind(const IPEndpoint &endpoint) -> Result<void>;
+    auto bind(const IPEndpoint &endpoint) -> Result<>;
+    /**
+     * @brief Set the Broadcast flags
+     * 
+     * @param broadcast 
+     * @return Result<> 
+     */
+    auto setBroadcast(bool broadcast) -> Result<>;
 
 #if defined(__cpp_lib_coroutine)
     auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t>;
@@ -148,14 +154,14 @@ inline AsyncSocket::~AsyncSocket() {
 inline auto AsyncSocket::context() const -> IoContext * {
     return mContext;
 }
-inline auto AsyncSocket::close() -> Expected<void, Error> {
+inline auto AsyncSocket::close() -> Result<> {
     if (mContext && mFd.isValid()) {
         mContext->removeSocket(mFd);
         if (!mFd.close()) {
             return Unexpected(Error::fromErrno());
         }
     }
-    return Expected<void, Error>();
+    return Result<>();
 }
 inline auto AsyncSocket::localEndpoint() const -> Result<IPEndpoint> {
     return mFd.localEndpoint();
@@ -207,24 +213,22 @@ inline TcpListener::TcpListener(IoContext &ctxt, Socket &&socket):
 
 }
 
-inline auto TcpListener::bind(const IPEndpoint &endpoint, int backlog) -> Result<void> {
+inline auto TcpListener::bind(const IPEndpoint &endpoint, int backlog) -> Result<> {
     if (auto ret = mFd.bind(endpoint); !ret) {
         return Unexpected(ret.error());
     }
     if (auto ret = mFd.listen(backlog); !ret) {
         return Unexpected(ret.error());
     }
-    return Result<void>();
+    return Result<>();
 }
 #if defined(__cpp_lib_coroutine)
 inline auto TcpListener::accept() -> Task<std::pair<TcpClient, IPEndpoint> > {
-    return [](IoContext *ctxt, SocketView fd) -> Task<std::pair<TcpClient, IPEndpoint> > {
-        auto ret = co_await ctxt->accept(fd);
-        if (!ret) {
-            co_return Unexpected(ret.error());
-        }
-        co_return std::pair{TcpClient(*ctxt, std::move(ret->first)), ret->second};
-    }(mContext, mFd);
+    auto ret = co_await mContext->accept(mFd);
+    if (!ret) {
+        co_return Unexpected(ret.error());
+    }
+    co_return std::pair{TcpClient(*mContext, std::move(ret->first)), ret->second};
 }
 #endif
 
@@ -243,7 +247,10 @@ inline UdpClient::UdpClient(IoContext &ctxt, Socket &&socket):
 inline auto UdpClient::bind(const IPEndpoint &endpoint) -> Result<> {
     return mFd.bind(endpoint);
 }
-
+inline auto UdpClient::setBroadcast(bool v) -> Result<> {
+    int intFlags = v ? 1 : 0;
+    return mFd.setOption(SOL_SOCKET, SO_BROADCAST, &intFlags, sizeof(intFlags));
+}
 
 #if defined(__cpp_lib_coroutine)
 inline auto UdpClient::sendto(const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> {

@@ -17,6 +17,9 @@ int main() {
 #ifdef _WIN32
 // #if 0
     IOCPContext ctxt;
+    ::SetConsoleCP(65001);
+    ::SetConsoleOutputCP(65001);
+    std::setlocale(LC_ALL, ".utf-8");
 #else
     PollContext ctxt;
 #endif
