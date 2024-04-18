@@ -80,6 +80,12 @@ target("test_ring")
     add_packages("gtest")
 target_end()
 
+target("test_client")
+    set_kind("binary")
+    add_files("tests/test_client.cpp")
+    add_tests("client")
+target_end()
+
 if has_config("enable_qt") then 
     target("test_qt")
         add_rules("qt.widgetapp")
