@@ -95,6 +95,7 @@ public:
 
         // --- SSL
         SSL,                         //< SSL 
+        SSLUnknown,                  //< Unkown error from ssl layer
 
         // --- User
         User,                        //< User defined error beginning

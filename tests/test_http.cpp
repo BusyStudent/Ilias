@@ -75,6 +75,11 @@ TEST(RequestTest, Test1) {
         auto text = ilias_wait ret->text();
         std::cout << text.value_or("READ FAILED") << std::endl;
     }
+    auto ret2 = ilias_wait session.get(request);
+    if (ret2) {
+        auto text = ilias_wait ret2->text();
+        std::cout << text.value_or("READ FAILED") << std::endl;
+    }
 }
 
 int main(int argc, char **argv) {

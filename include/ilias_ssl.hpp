@@ -1,4 +1,4 @@
-#if __has_include(<openssl/ssl.h>)
+#if __has_include(<openssl/ssl.h>) && !defined(ILIAS_NO_SSL)
 #pragma once
 
 #include "ilias.hpp"
@@ -318,9 +318,12 @@ protected:
                 co_return Unexpected(ret.error());
             }
         }
+        else if (errcode == SSL_ERROR_SSL) {
+            co_return Unexpected(Error::SSL);
+        }
         else {
             // Error
-            co_return Unexpected(Error::SSL);
+            co_return Unexpected(Error::SSLUnknown);
         }
         co_return Result<>();
     }
@@ -432,6 +435,9 @@ public:
             }
             int errcode = 0;
             errcode = SSL_get_error(this->mSsl, readret);
+            if (errcode == SSL_ERROR_ZERO_RETURN) {
+                co_return 0;
+            }
             if (auto ret = co_await this->_handleError(errcode); !ret) {
                 co_return Unexpected(ret.error());
             }
@@ -446,6 +452,9 @@ public:
             }
             int errcode = 0;
             errcode = SSL_get_error(this->mSsl, writret);
+            if (errcode == SSL_ERROR_ZERO_RETURN) {
+                co_return 0;
+            }
             if (auto ret = co_await this->_handleError(errcode); !ret) {
                 co_return Unexpected(ret.error());
             }
@@ -491,5 +500,5 @@ public:
 ILIAS_NS_END
 
 #else
-#define ILIAS_NO_SSL_SUPPORT
+#define ILIAS_NO_SSL
 #endif

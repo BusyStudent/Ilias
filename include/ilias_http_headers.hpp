@@ -29,7 +29,9 @@ public:
         Accept,
         ContentType,
         ContentLength,
+        ContentEncoding,
         Connection,
+        TransferEncoding
     };
 
     HttpHeaders() = default;
@@ -142,7 +144,9 @@ inline auto HttpHeaders::stringOf(WellKnownHeader header) -> std::string_view {
         case Accept: return "Accept"sv;
         case ContentType: return "Content-Type"sv;
         case ContentLength: return "Content-Length"sv;
+        case ContentEncoding: return "Content-Encoding"sv;
         case Connection: return "Connection"sv;
+        case TransferEncoding: return "Transfer-Encoding"sv;
         default: return ""sv;
     }
 }

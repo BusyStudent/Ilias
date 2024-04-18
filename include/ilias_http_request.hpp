@@ -18,7 +18,7 @@ public:
         GET,
         PUT,
         POST,
-        DELETE
+        // DELETE
     };
 
     HttpRequest();

@@ -92,5 +92,6 @@ if has_config("enable_qt") then
         add_files("tests/test_qt.cpp")
         add_files("tests/test_qt.ui")
         add_frameworks("QtCore", "QtWidgets", "QtGui")
+        add_packages("openssl")
     target_end()
 end
