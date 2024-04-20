@@ -31,15 +31,18 @@ public:
     auto setHeader(WellKnownHeader header, std::string_view value) -> void;
     auto setOperation(Operation operation) -> void;
     auto setUrl(const Url &url) -> void;
+    auto setMaximumRedirects(int maximumRedirects) -> void;
     auto header(std::string_view key) const -> std::string_view;
     auto header(WellKnownHeader header) const -> std::string_view;
     auto headers() const -> const HttpHeaders &;
     auto url() const -> const Url &;
     auto operation() const -> Operation;
+    auto maximumRedirects() const -> int;
 private:
     HttpHeaders mHeaders;
     Operation mOperation { };
     Url mUrl;
+    int mMaximumRedirects = 10;
 };
 
 inline HttpRequest::HttpRequest() = default;
@@ -56,14 +59,17 @@ inline auto HttpRequest::setHeader(WellKnownHeader header, std::string_view valu
 inline auto HttpRequest::setOperation(Operation operation) -> void {
     mOperation = operation;
 }
+inline auto HttpRequest::setUrl(const Url &url) -> void {
+    mUrl = url;
+}
+inline auto HttpRequest::setMaximumRedirects(int maximumRedirects) -> void {
+    mMaximumRedirects = maximumRedirects;
+}
 inline auto HttpRequest::header(std::string_view key) const -> std::string_view {
     return mHeaders.value(key);
 }
 inline auto HttpRequest::header(WellKnownHeader header) const -> std::string_view {
     return mHeaders.value(header);
-}
-inline auto HttpRequest::setUrl(const Url &url) -> void {
-    mUrl = url;
 }
 inline auto HttpRequest::url() const -> const Url & {
     return mUrl;
@@ -73,6 +79,9 @@ inline auto HttpRequest::headers() const -> const HttpHeaders & {
 }
 inline auto HttpRequest::operation() const -> Operation {
     return mOperation;
+}
+inline auto HttpRequest::maximumRedirects() const -> int {
+    return mMaximumRedirects;
 }
 
 ILIAS_NS_END

@@ -34,6 +34,7 @@ public:
         HttpRequest request(url.toString().toUtf8().constData());
         auto reply = co_await mSession.get(request);
         if (!reply) {
+            ui.statusbar->showMessage(QString::fromUtf8(reply.error().message()));
             co_return Result<>();
         }
         for (const auto &item : reply->headers()) {
@@ -42,12 +43,14 @@ public:
         ui.textBrowser->setPlainText(
             QString::fromUtf8((co_await reply->text()).value_or("BAD TEXT"))
         );
+        ui.statusbar->showMessage(QString::fromUtf8(reply->status()));
         co_return Result<>();
     }
     auto doGet() -> Task<> {
         ui.listWidget->clear();
         ui.textBrowser->clear();
         ui.pushButton->setEnabled(false);
+        ui.statusbar->clearMessage();
         co_await doGetTask();
         ui.pushButton->setEnabled(true);
         co_return Result<>();
@@ -64,7 +67,7 @@ private:
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     QIoContext ctxt(&app);
-
+    
     App a(&ctxt);
     a.show();
     return app.exec();

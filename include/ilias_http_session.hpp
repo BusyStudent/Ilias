@@ -5,6 +5,8 @@
 #include "ilias_async.hpp"
 #include "ilias_url.hpp"
 #include "ilias_ssl.hpp"
+#include <chrono>
+#include <array>
 #include <list>
 
 ILIAS_NS_BEGIN
@@ -24,8 +26,9 @@ public:
 
     auto text() -> Task<std::string>;
     auto statusCode() const -> int;
-    auto message() const -> std::string_view;
+    auto status() const -> std::string_view;
     auto headers() const -> const HttpHeaders &;
+    auto transferDuration() const -> std::chrono::milliseconds;
     auto operator =(const HttpReply &) -> HttpReply & = delete;
     auto operator =(HttpReply &&) -> HttpReply &;
 private:
@@ -34,9 +37,10 @@ private:
     Url mUrl;
     int mStatusCode = 0;
     std::string mContent;
-    std::string mMessage;
+    std::string mStatus;
     HttpHeaders mRequestHeaders;
     HttpHeaders mResponseHeaders;
+    std::chrono::milliseconds mTransferDuration;
 friend class HttpSession;
 };
 
@@ -55,7 +59,7 @@ public:
 
     auto get(const HttpRequest &request) -> Task<HttpReply>;
     auto post(const HttpRequest &request) -> Task<HttpReply>;
-    auto sendRequest(Operation op, const HttpRequest &request, std::span<uint8_t> extraData = {}) -> Task<HttpReply>;
+    auto sendRequest(Operation op, HttpRequest request, std::span<uint8_t> extraData = {}) -> Task<HttpReply>;
 private:
     /**
      * @brief Connection used tp keep alive
@@ -63,12 +67,14 @@ private:
      */
     struct Connection {
         IStreamClient client;
-        std::string hostname;
+        IPEndpoint endpoint;
         std::string recvbuffer; //< Used for recvbuffer
-        uint16_t port;
+        std::chrono::steady_clock::time_point lastUsedTime;
+        bool cached = false;
     };
     static constexpr auto BufferIncreaseSize = int64_t(4096);
 
+    auto _sendRequest(Operation op, const HttpRequest &request, std::span<uint8_t> extraData = {}) -> Task<HttpReply>;
     auto _readReply(Operation op, const HttpRequest &request, Connection connection) -> Task<HttpReply>;
     auto _readContent(Connection &connection, HttpReply &outReply) -> Task<void>;
     auto _readHeaders(Connection &connection, HttpReply &outReply) -> Task<void>;
@@ -96,7 +102,30 @@ inline HttpSession::~HttpSession() {
 inline auto HttpSession::get(const HttpRequest &request) -> Task<HttpReply> {
     return sendRequest(Operation::GET, request);
 }
-inline auto HttpSession::sendRequest(Operation op, const HttpRequest &request, std::span<uint8_t> extraData) -> Task<HttpReply> {
+inline auto HttpSession::sendRequest(Operation op, HttpRequest request, std::span<uint8_t> extraData) -> Task<HttpReply> {
+    int n = 0;
+    while (true) {
+        auto reply = co_await _sendRequest(op, request, extraData);
+        if (!reply) {
+            co_return reply;
+        }
+        // Check redirect
+        constexpr std::array redirectCodes = {
+            301, 302, 303, 307, 308
+        };
+        if (std::find(redirectCodes.begin(), redirectCodes.end(), reply->statusCode())  != redirectCodes.end()) {
+            auto newLocation = reply->headers().value(HttpHeaders::Location);
+            if (!newLocation.empty() && n < request.maximumRedirects()) {
+                ::printf("Redirecting to %s by(%d, %s)\n", newLocation.data(), reply->statusCode(), reply->status().data());
+                request.setUrl(newLocation);
+                n += 1;
+                continue;
+            }
+        }
+        co_return reply;
+    } 
+}
+inline auto HttpSession::_sendRequest(Operation op, const HttpRequest &request, std::span<uint8_t> extraData) -> Task<HttpReply> {
     const auto &url = request.url();
     const auto host = url.host();
     const auto port = url.port();
@@ -107,13 +136,21 @@ inline auto HttpSession::sendRequest(Operation op, const HttpRequest &request, s
     if (port <= 0 || host.empty() || (scheme != "https" && scheme != "http")) {
         co_return Unexpected(Error::InvalidArgument);
     }
+    std::string requestString(path);
+    if (auto query = url.query(); !query.empty()) {
+        requestString += "?";
+        requestString += query;
+    }
 
     // Try peek from cache
+while (true) {
+    auto now = std::chrono::steady_clock::now();
     auto con = co_await _connect(url);
     if (!con) {
         co_return Unexpected(con.error());
     }
     auto &client = con->client;
+    bool fromCache = con->cached;
 
     // TODO:
     std::string buffer;
@@ -125,12 +162,14 @@ inline auto HttpSession::sendRequest(Operation op, const HttpRequest &request, s
         // case Operation::DELETE: operation = "DELETE"; break
         default: co_return Unexpected(Error::Unknown); break;
     }
-    _sprintf(buffer, "%s %s HTTP/1.1\r\n", operation, std::string(path).c_str());
+    _sprintf(buffer, "%s %s HTTP/1.1\r\n", operation, requestString.c_str());
     for (const auto &[key, value] : request.headers()) {
         _sprintf(buffer, "%s: %s\r\n", key.c_str(), value.c_str());
     }
     // Add host
     _sprintf(buffer, "Host: %s:%d\r\n", std::string(host).c_str(), int(port));
+    // TODO: Add zlib or another things
+    _sprintf(buffer, "Accept-Encoding: identity\r\n");
     // Add padding extraData
     if (!extraData.empty()) {
         buffer.append(reinterpret_cast<const char*>(extraData.data()), extraData.size());
@@ -149,7 +188,15 @@ inline auto HttpSession::sendRequest(Operation op, const HttpRequest &request, s
         cur += ret.value();
         bytesLeft -= ret.value();
     }
-    co_return co_await _readReply(op, request, std::move(*con));
+    auto reply = co_await _readReply(op, request, std::move(*con));
+    if (!reply && fromCache) {
+        ::printf("ERROR from read reply in cache => %s, try again\n", reply.error().message().c_str());
+        continue; //< Try again
+    }
+    reply->mTransferDuration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - now);
+    co_return reply;
+}
+
 }
 inline auto HttpSession::_readReply(Operation op, const HttpRequest &request, Connection connection) -> Task<HttpReply> {
     HttpReply reply;
@@ -178,6 +225,9 @@ inline auto HttpSession::_readHeaders(Connection &con, HttpReply &reply) -> Task
         if (!n) {
             co_return Unexpected(n.error());
         }
+        if (*n == 0) {
+            co_return Unexpected(Error::ConnectionReset);
+        }
         buffer.resize(curSize + n.value());
     }
     // Got headers string
@@ -197,7 +247,7 @@ inline auto HttpSession::_readHeaders(Connection &con, HttpReply &reply) -> Task
         co_return Unexpected(Error::Unknown);
     }
     auto codeString = firstLine.substr(firstSpace + 1, secondSpace - firstSpace - 1);
-    auto messageString = firstLine.substr(secondSpace + 1);
+    auto statusString = firstLine.substr(secondSpace + 1);
     std::from_chars(codeString.data(), codeString.data() + codeString.size(), statusCode);
 
     // Second split header strings
@@ -207,7 +257,7 @@ inline auto HttpSession::_readHeaders(Connection &con, HttpReply &reply) -> Task
         co_return Unexpected(Error::Unknown);
     }
 
-    reply.mMessage = messageString;
+    reply.mStatus = statusString;
     reply.mStatusCode = statusCode;
     reply.mResponseHeaders = std::move(header);
 
@@ -236,7 +286,7 @@ inline auto HttpSession::_readContent(Connection &con, HttpReply &reply) -> Task
             }
             if (ret.value() == 0) {
                 // Peer closed
-                co_return Unexpected(Error::Unknown);
+                co_return Unexpected(Error::ConnectionReset);
             }
             buffer.resize(curSize + ret.value());
             len -= ret.value();
@@ -305,21 +355,24 @@ inline auto HttpSession::_readContent(Connection &con, HttpReply &reply) -> Task
     co_return Result<>();
 }
 inline auto HttpSession::_connect(const Url &url) -> Task<Connection> {
-    auto host = url.host();
-    auto port = url.port();
-    for (auto &item : mConnections) {
-        if (item.hostname == host && item.port == port) {
-            // Cache hint
-            co_return std::move(item);
-        }
-    }
     auto addr = IPAddress::fromHostname(std::string(url.host()).c_str());
     auto endpoint = IPEndpoint(addr, url.port());
+    for (auto iter = mConnections.begin(); iter != mConnections.end(); ++iter) {
+        if (iter->endpoint == endpoint) {
+            // Cache hint
+            ::fprintf(
+                stderr, "Using cached connection on %s\n", 
+                endpoint.toString().c_str()
+            );
+            auto con = std::move(*iter);
+            mConnections.erase(iter);
+            co_return con;
+        }
+    }
 
     // Prepare client
     Connection con;
-    con.hostname = host;
-    con.port = port;
+    con.endpoint = endpoint;
     if (url.scheme() == "http") {
         TcpClient tcpClient(mIoContext, addr.family());
         con.client = std::move(tcpClient);
@@ -337,6 +390,7 @@ inline auto HttpSession::_connect(const Url &url) -> Task<Connection> {
     if (auto ret = co_await con.client.connect(endpoint); !ret) {
         co_return Unexpected(ret.error());
     }
+    con.lastUsedTime = std::chrono::steady_clock::now();
     co_return con;
 }
 inline auto HttpSession::_cache(Connection con) -> void {
@@ -344,6 +398,8 @@ inline auto HttpSession::_cache(Connection con) -> void {
     if (mConnections.size() >= 20) {
         mConnections.pop_front();
     }
+    con.cached = true;
+    con.lastUsedTime = std::chrono::steady_clock::now();
     mConnections.emplace_back(std::move(con));
 }
 inline auto HttpSession::_sprintf(std::string &buf, const char *fmt, ...) -> void {
@@ -377,11 +433,14 @@ inline auto HttpReply::text() -> Task<std::string> {
 inline auto HttpReply::statusCode() const -> int {
     return mStatusCode;
 }
-inline auto HttpReply::message() const -> std::string_view {
-    return mMessage;
+inline auto HttpReply::status() const -> std::string_view {
+    return mStatus;
 }
 inline auto HttpReply::headers() const -> const HttpHeaders & {
     return mResponseHeaders;
+}
+inline auto HttpReply::transferDuration() const -> std::chrono::milliseconds {
+    return mTransferDuration;
 }
 inline auto HttpReply::operator =(HttpReply &&) -> HttpReply & = default;
 

@@ -27,11 +27,13 @@ public:
         UserAgent,
         Referer,
         Accept,
+        SetCookie,
         ContentType,
         ContentLength,
         ContentEncoding,
         Connection,
-        TransferEncoding
+        TransferEncoding,
+        Location,
     };
 
     HttpHeaders() = default;
@@ -119,7 +121,7 @@ public:
      */
     static auto parse(std::string_view data) -> HttpHeaders;
 private:
-    std::map<std::string, std::string, _Compare> mValues;
+    std::multimap<std::string, std::string, _Compare> mValues;
 };
 
 inline auto HttpHeaders::contains(std::string_view key) const -> bool {
@@ -133,9 +135,7 @@ inline auto HttpHeaders::value(std::string_view key) const -> std::string_view {
     return iter->second;
 }
 inline auto HttpHeaders::append(std::string_view key, std::string_view value) -> void {
-    mValues.insert(std::make_pair(
-        std::string(key), std::string(value)
-    ));
+    mValues.emplace(key, value);
 }
 inline auto HttpHeaders::stringOf(WellKnownHeader header) -> std::string_view {
     using namespace std::literals;
@@ -147,6 +147,9 @@ inline auto HttpHeaders::stringOf(WellKnownHeader header) -> std::string_view {
         case ContentEncoding: return "Content-Encoding"sv;
         case Connection: return "Connection"sv;
         case TransferEncoding: return "Transfer-Encoding"sv;
+        case SetCookie: return "Set-Cookie"sv;
+        case Referer: return "Referer"sv;
+        case Location: return "Location"sv;
         default: return ""sv;
     }
 }
@@ -185,6 +188,13 @@ inline auto HttpHeaders::parse(std::string_view text) -> HttpHeaders {
         // Forward
         text = text.substr(pos + 2);
         pos = text.find("\r\n");
+    }
+    // Check last if has last item
+    size_t pos2 = text.find(": ");
+    if (pos2 != text.npos) {
+        auto key = text.substr(0, pos2);
+        auto value = text.substr(pos2 + 2);
+        headers.append(key, value);
     }
     return headers;
 }

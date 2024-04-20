@@ -93,6 +93,10 @@ public:
         TooManyOpenFiles,            //< Too many open files
         WouldBlock,                  //< Socket is non-blocking, operation would block
 
+        // --- DNS
+        HostNotFound,                //< Host not found
+        NoDataRecord,                //< No data record of requested type
+
         // --- SSL
         SSL,                         //< SSL 
         SSLUnknown,                  //< Unkown error from ssl layer

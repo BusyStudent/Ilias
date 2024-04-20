@@ -63,6 +63,7 @@ public:
     Sender(Channel<T> &channel);
     Sender(const Sender &);
     Sender(Sender &&);
+    Sender();
     ~Sender();
 
     /**
@@ -84,6 +85,26 @@ public:
      * 
      */
     auto close() -> void;
+    /**
+     * @brief Assign a moved sender
+     * 
+     * @return Sender& 
+     */
+    auto operator =(Sender &&) -> Sender &;
+    /**
+     * @brief Copy a sender
+     * 
+     * @return Sender& 
+     */
+    auto operator =(const Sender &) -> Sender &;
+    auto operator =(std::nullptr_t) -> Sender &;
+    /**
+     * @brief Check this sender is closed
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept;
 private:
     Channel<T> *mChannel = nullptr;
 };
@@ -99,6 +120,7 @@ public:
     Receiver(Channel<T> &channel);
     Receiver(const Receiver &) = delete;
     Receiver(Receiver &&);
+    Receiver();
     ~Receiver();
 
     /**
@@ -118,6 +140,21 @@ public:
      * 
      */
     auto close() -> void;
+    /**
+     * @brief Assigned a moved receiver
+     * 
+     * @return Receiver& 
+     */
+    auto operator =(Receiver &&) -> Receiver &;
+    auto operator =(std::nullptr_t) -> Receiver &;
+    auto operator =(const Receiver &) -> Receiver & = delete;
+    /**
+     * @brief Check this Receiver is closed
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept;
 private:
     Channel<T>* mChannel = nullptr;
 };
@@ -143,6 +180,9 @@ template <typename T>
 inline Sender<T>::~Sender() {
     close();
 }
+template <typename T>
+inline Sender<T>::Sender() = default;
+
 template <typename T>
 inline auto Sender<T>::close() -> void {
     if (!mChannel) {
@@ -199,6 +239,37 @@ inline auto Sender<T>::trySend(Result<T> value) -> Result<void> {
     return Result<void>();
 }
 
+template <typename T>
+inline auto Sender<T>::operator =(Sender &&sender) -> Sender & {
+    if (this != &sender) {
+        close();
+        mChannel = sender.mChannel;
+        sender.mChannel = nullptr;
+    }
+    return *this;
+}
+template <typename T>
+inline auto Sender<T>::operator =(const Sender &sender) -> Sender & {
+    if (this != &sender) {
+        close();
+        mChannel = sender.mChannel;
+        if (mChannel) {
+            mChannel->mSenderCount += 1;
+            mChannel->mRefcount += 1;
+        }
+    }
+    return *this;
+}
+template <typename T>
+inline auto Sender<T>::operator =(std::nullptr_t) -> Sender & {
+    close();
+    return *this;
+}
+template <typename T>
+inline Sender<T>::operator bool() const noexcept {
+    return mChannel != nullptr;
+}
+
 // --- Receiver Impl
 template <typename T>
 inline Receiver<T>::Receiver(Channel<T> &channel) : mChannel(&channel) {
@@ -212,6 +283,8 @@ template <typename T>
 inline Receiver<T>::~Receiver() {
     close();
 }
+template <typename T>
+inline Receiver<T>::Receiver() = default;
 
 template <typename T>
 inline auto Receiver<T>::close() -> void {
@@ -265,6 +338,24 @@ inline auto Receiver<T>::tryRecv() -> Result<T> {
     mChannel->mQueue.pop();
     mChannel->_wakeupSender();
     return value;
+}
+template <typename T>
+inline auto Receiver<T>::operator =(Receiver &&r) -> Receiver & {
+    if (this != &r) {
+        close();
+        mChannel = r.mChannel;
+        r.mChannel = nullptr;
+    }
+    return *this;
+}
+template <typename T>
+inline auto Receiver<T>::operator =(std::nullptr_t) -> Receiver & {
+    close();
+    return *this;
+}
+template <typename T>
+inline Receiver<T>::operator bool() const noexcept {
+    return mChannel != nullptr;
 }
 
 template <typename T>

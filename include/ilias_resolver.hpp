@@ -2,6 +2,7 @@
 
 #include "ilias.hpp"
 #include "ilias_async.hpp"
+#include "ilias_channel.hpp"
 #include "ilias_expected.hpp"
 
 #include <chrono>
@@ -102,9 +103,9 @@ public:
     /**
      * @brief Get the name of the answer
      * 
-     * @return std::string 
+     * @return std::string_view 
      */
-    auto name() const -> std::string;
+    auto name() const -> std::string_view;
     /**
      * @brief Get the type of the answer
      * 
@@ -138,9 +139,9 @@ public:
     /**
      * @brief Try Get the cname (type must be CNAME)
      * 
-     * @return std::string 
+     * @return std::string_view 
      */
-    auto cname() const -> std::string;
+    auto cname() const -> std::string_view;
     /**
      * @brief Try Get the address (type must be A or AAAA)
      * 
@@ -243,18 +244,19 @@ public:
     Resolver(const Resolver &) = delete;
     ~Resolver();
 
-#if defined(__cpp_lib_coroutine)
-    auto resolve(const char *hostname) -> Task<std::vector<IPAddress> >;
-#endif
-
+    auto resolve(std::string_view hostname) -> Task<std::vector<IPAddress> >;
 private:
+    auto _findCache(std::string_view hostname) -> Result<std::vector<IPAddress> >;
+    auto _run(Receiver<DnsQuery> recv) -> Task<void>;
+
     IoContext &mCtxt;
-    UdpClient  mClient4;
-    UdpClient  mClient6;
-    IPEndpoint mServer4;
-    IPEndpoint mServer6;
+    UdpClient  mClient;
+    IPEndpoint mServer;
     int64_t    mTimeout = 5000;
-    std::multimap<std::string, DnsAnswer> mCache;
+    std::multimap<std::string, DnsAnswer, std::less<> > mAnswers;
+
+    // For worker
+    Sender<DnsQuery> mSender;
 };
 
 // --- DnsQuery Impl
@@ -322,7 +324,7 @@ inline auto DnsQuery::fillBufferSize() const -> size_t {
 }
 
 // --- DnsAnswer Impl
-inline auto DnsAnswer::name() const -> std::string {
+inline auto DnsAnswer::name() const -> std::string_view {
     return mName;
 }
 inline auto DnsAnswer::type() const -> uint16_t {
@@ -341,9 +343,9 @@ inline auto DnsAnswer::data() const -> const void * {
     return mData.data();
 }
 
-inline auto DnsAnswer::cname() const -> std::string {
+inline auto DnsAnswer::cname() const -> std::string_view {
     if (mType != DnsAnswer::CNAME) {
-        return std::string();
+        return std::string_view();
     }
     return mData;
 }
@@ -582,15 +584,68 @@ inline auto DnsResponse::addresses() const -> std::vector<IPAddress> {
 
 // --- Resolver
 inline Resolver::Resolver(IoContext &ctxt) : mCtxt(ctxt) {
-    mServer4 = "8.8.8.8";
+    mServer = "8.8.8.8";
     // Detect Default dns server
 #if defined(_WIN32)
 
 #endif
 
+    // Execute the tasks
+    // auto [sender, receiver] = Channel<DnsQuery>::make();
+
+    // mSender = sender;
+    // mCtxt.postTask(_run(std::move(receiver)));
 }
 inline Resolver::~Resolver() {
 
 }
+#if 0
+inline auto Resolver::resolve(std::string_view host) -> Task<std::vector<IPAddress> > {
+    if (auto var = _findCache(host); var) {
+        co_return std::move(var.value());
+    }
+    co_return Unexpected(Error::NoDataRecord);
+}
+inline auto Resolver::_findCache(std::string_view what) -> Result<std::vector<IPAddress> > {
+    while (true) {
+        auto it = mAnswers.find(what);
+        if (it == mAnswers.end()) {
+            return Unexpected(Error::NoDataRecord);
+        }
+        auto &[_, answer] = *it;
+        if (answer.isExpired()) {
+            // Try find another answer
+            mAnswers.erase(it);
+            continue;
+        }
+        if (answer.type() == DnsAnswer::CNAME) {
+            what = answer.cname();
+            continue;
+        }
+        // Got
+        auto n = mAnswers.count(what);
+        std::vector<IPAddress> addrs;
+        while (n > 0) {
+            addrs.push_back(it->second.address());
+            n--;
+            it++;
+        }
+        return addrs;
+    }
+}
+inline auto Resolver::_run(Receiver<DnsQuery> recv) -> Task<void> {
+    std::map<uint16_t, Sender<DnsResponse> > clients;
+    uint16_t currentId = 0;
+    uint8_t buffer[1024];
+    while (auto value = co_await recv.recv()) {
+        std::vector<uint8_t> sendBuffer;
+        value->fillBuffer(currentId, sendBuffer);
+        if (auto err = co_await mClient.sendto(sendBuffer.data(), sendBuffer.size(), mServer); !err) {
+            
+        }
+    }
+    co_return Result<void>();
+}
+#endif
 
 ILIAS_NS_END
