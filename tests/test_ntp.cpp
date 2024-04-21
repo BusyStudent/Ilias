@@ -63,13 +63,12 @@ Ilias::Task<uint64_t> getData(Ilias::PollContext &ctxt) {
         co_return ret.error();
     }
     char buf[1024];
-    Ilias::Result<std::pair<size_t, Ilias::IPEndpoint>> recv = co_await client.recvfrom(buf, sizeof(buf));
-    // if (recv.index() == 1) {
-    //     std::cout << "time out" << std::endl;
-    //     co_return Error(Error::TimedOut);
-    // }
-    // auto recvdata = std::get<0>(recv);
-    auto recvdata = std::move(recv);
+    auto recv = co_await Ilias::WhenAny(client.recvfrom(buf, sizeof(buf)), Sleep(5000ms));
+    if (recv.index() == 1) {
+        std::cout << "time out" << std::endl;
+        co_return Error(Error::TimedOut);
+    }
+    auto recvdata = std::get<0>(recv);
     if (!recvdata || recvdata.value().first != sizeof(ntp_pkt)) {
         std::cout << "error data" << std::endl;
         co_return Error(Error::Unknown);
@@ -77,6 +76,14 @@ Ilias::Task<uint64_t> getData(Ilias::PollContext &ctxt) {
     uint64_t *timestamp = (uint64_t*)&buf[40];
     time_t linux_time = ntohl(*timestamp) - 2208988800UL;
     co_return linux_time;
+}
+
+Ilias::Task<void> sleepTest() {
+    // out put current timestamp ms
+    std::cout << "current time: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << std::endl;
+    co_await Ilias::WhenAny(Sleep(1000ms), Sleep(2000ms), Sleep(1500ms), Sleep(500ms));
+    std::cout << "end time: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << std::endl;
+    co_return Result<void>();
 }
 
 int main(int argc, char **argv) {
@@ -87,5 +94,6 @@ int main(int argc, char **argv) {
     } else {
         std::cout << "error: " << t.error().message() << std::endl;
     }
+    ilias_wait sleepTest();
     return 0;
 }

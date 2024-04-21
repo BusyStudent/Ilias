@@ -66,12 +66,24 @@ private:
         void  *args;
     };
     auto _show(::epoll_event event) -> void;
+    auto _runTimers() -> void;
 
     int mEpollfd = -1;
     int mPipeRecv = -1;
     int mPipeSend = -1;
     int mTimerfd = -1;
     bool mQuit = false;
+    struct Timer {
+        uintptr_t id; //< TimerId
+        int64_t ms;  //< Interval in milliseconds
+        int flags;    //< Timer flags
+        void (*fn)(void *);
+        void *arg;
+    };
+    struct itimerspec mTimerSpec;
+    std::map<uintptr_t, std::multimap<uint64_t, Timer>::iterator> mTimers;
+    std::multimap<uint64_t, Timer> mTimerQueue;
+    uint64_t mTimerIdBase = 0; //< A self-increasing timer id base
 };
 
 inline PollContext::PollContext() {
@@ -144,9 +156,45 @@ inline auto PollContext::PipeWatcher::onEvent(::uint32_t revent) -> void {
     }
 }
 inline auto PollContext::TimerWatcher::onEvent(::uint32_t revent) -> void {
-    int64_t timestamp = 0;
-    while (::read(self->mTimerfd, &timestamp, sizeof(timestamp)) == sizeof(timestamp)) {
-        // ETC...
+    uint64_t eventCount = 0;
+    while (::read(self->mTimerfd, &eventCount, sizeof(eventCount)) == sizeof(eventCount)) {
+        if (self->mTimerQueue.empty()) {
+            self->mTimerSpec.it_value.tv_sec = 0;
+            self->mTimerSpec.it_value.tv_nsec = 0;
+            self->mTimerSpec.it_interval.tv_sec = 0;
+            self->mTimerSpec.it_interval.tv_nsec = 0;
+            timerfd_settime(self->mTimerfd, TFD_TIMER_CANCEL_ON_SET, &self->mTimerSpec, nullptr);
+            return;
+        }
+        struct timespec currentTime;
+        auto ret = clock_gettime(CLOCK_MONOTONIC, &currentTime);
+        ILIAS_ASSERT(ret == 0);
+        long now = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
+        for (auto iter = self->mTimerQueue.begin(); iter != self->mTimerQueue.end();) {
+            auto [expireTime, timer] = *iter;
+            if (expireTime > now) {
+                break;
+            }
+            // Invoke
+            self->post(timer.fn, timer.arg);
+
+            // Cleanup if
+            if (timer.flags & TimerFlags::TimerSingleShot) {
+                self->mTimers.erase(timer.id); // Remove the timer
+            }
+            else {
+                auto newExpireTime = now + timer.ms;
+                auto newIter = self->mTimerQueue.insert(iter, std::make_pair(newExpireTime, timer));
+                self->mTimers[timer.id] = newIter;
+            }
+            iter = self->mTimerQueue.erase(iter); // Move next
+        }
+        auto nextExpireTime = self->mTimerQueue.begin()->first;
+        self->mTimerSpec.it_value.tv_sec = nextExpireTime / 1000;
+        self->mTimerSpec.it_value.tv_nsec = (nextExpireTime % 1000) * 1000000;
+        self->mTimerSpec.it_interval.tv_sec = 0;
+        self->mTimerSpec.it_interval.tv_nsec = 0;
+        timerfd_settime(self->mTimerfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &self->mTimerSpec, nullptr);
     }
 }
 inline auto PollContext::_show(::epoll_event event) -> void {
@@ -168,10 +216,37 @@ inline auto PollContext::_show(::epoll_event event) -> void {
 
 // Timer
 inline auto PollContext::delTimer(uintptr_t timer) -> bool {
-    return false;
+    auto iter = mTimers.find(timer);
+    if (iter == mTimers.end()) {
+        return false;
+    }
+    mTimerQueue.erase(iter->second);
+    mTimers.erase(iter);
+    return true;
 }
+
 inline auto PollContext::addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags) -> uintptr_t {
-    return 0;
+    uintptr_t id = mTimerIdBase + 1;
+    while (mTimers.find(id) != mTimers.end()) {
+        id ++;
+    }
+    mTimerIdBase = id;
+    struct timespec currentTime;
+    auto ret = clock_gettime(CLOCK_MONOTONIC, &currentTime);
+    ILIAS_ASSERT(ret == 0);
+    long milliseconds = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
+    uint64_t expireTime = milliseconds + ms;
+    if (mTimerQueue.size() == 0 || expireTime < mTimerQueue.begin()->first) {
+        mTimerSpec.it_value.tv_sec = expireTime / 1000;
+        mTimerSpec.it_value.tv_nsec = (expireTime % 1000) * 1000000;
+        mTimerSpec.it_interval.tv_sec = 0;
+        mTimerSpec.it_interval.tv_nsec = 0;
+        auto ret = timerfd_settime(mTimerfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &mTimerSpec, nullptr);
+        ILIAS_ASSERT(ret == 0);
+    }
+    auto iter = mTimerQueue.insert(std::pair(expireTime, Timer{id, ms, flags, fn, arg}));
+    mTimers.insert(std::pair(id, iter));
+    return id;
 }
 
 // EPOLL socket here
