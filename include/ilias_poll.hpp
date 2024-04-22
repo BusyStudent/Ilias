@@ -80,7 +80,7 @@ private:
         void (*fn)(void *);
         void *arg;
     };
-    struct itimerspec mTimerSpec;
+    ::itimerspec mTimerSpec { };
     std::map<uintptr_t, std::multimap<uint64_t, Timer>::iterator> mTimers;
     std::multimap<uint64_t, Timer> mTimerQueue;
     uint64_t mTimerIdBase = 0; //< A self-increasing timer id base
@@ -163,11 +163,11 @@ inline auto PollContext::TimerWatcher::onEvent(::uint32_t revent) -> void {
             self->mTimerSpec.it_value.tv_nsec = 0;
             self->mTimerSpec.it_interval.tv_sec = 0;
             self->mTimerSpec.it_interval.tv_nsec = 0;
-            timerfd_settime(self->mTimerfd, TFD_TIMER_CANCEL_ON_SET, &self->mTimerSpec, nullptr);
+            ::timerfd_settime(self->mTimerfd, TFD_TIMER_CANCEL_ON_SET, &self->mTimerSpec, nullptr);
             return;
         }
-        struct timespec currentTime;
-        auto ret = clock_gettime(CLOCK_MONOTONIC, &currentTime);
+        ::timespec currentTime;
+        auto ret = ::clock_gettime(CLOCK_MONOTONIC, &currentTime);
         ILIAS_ASSERT(ret == 0);
         long now = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
         for (auto iter = self->mTimerQueue.begin(); iter != self->mTimerQueue.end();) {
@@ -194,24 +194,34 @@ inline auto PollContext::TimerWatcher::onEvent(::uint32_t revent) -> void {
         self->mTimerSpec.it_value.tv_nsec = (nextExpireTime % 1000) * 1000000;
         self->mTimerSpec.it_interval.tv_sec = 0;
         self->mTimerSpec.it_interval.tv_nsec = 0;
-        timerfd_settime(self->mTimerfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &self->mTimerSpec, nullptr);
+        ::timerfd_settime(self->mTimerfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &self->mTimerSpec, nullptr);
     }
 }
 inline auto PollContext::_show(::epoll_event event) -> void {
-    fprintf(stderr, "[Ilias] EPoll Event ");
+#if !defined(NDEBUG)
+    ::fprintf(stderr, "[Ilias] EPoll Event ");
     if (event.events & EPOLLIN) {
-        fprintf(stderr, "EPOLLIN ");
+        ::fprintf(stderr, "EPOLLIN ");
     }
     if (event.events & EPOLLOUT) {
-        fprintf(stderr, "EPOLLOUT ");
+        ::fprintf(stderr, "EPOLLOUT ");
     }
     if (event.events & EPOLLERR) {
-        fprintf(stderr, "EPOLLERR ");
+        ::fprintf(stderr, "EPOLLERR ");
     }
     if (event.events & EPOLLHUP) {
-        fprintf(stderr, "EPOLLHUP ");
+        ::fprintf(stderr, "EPOLLHUP ");
     }
-    fprintf(stderr, "on watcher %p\n", event.data.ptr);
+    if (event.data.ptr == &mPipeWatcher) {
+        ::fprintf(stderr, "on pipe watcher\n");
+        return;
+    }
+    if (event.data.ptr == &mTimerWatcher) {
+        ::fprintf(stderr, "on timer watcher\n");
+        return;
+    }
+    ::fprintf(stderr, "on watcher %p\n", event.data.ptr);
+#endif
 }
 
 // Timer
@@ -231,8 +241,8 @@ inline auto PollContext::addTimer(int64_t ms, void (*fn)(void *), void *arg, int
         id ++;
     }
     mTimerIdBase = id;
-    struct timespec currentTime;
-    auto ret = clock_gettime(CLOCK_MONOTONIC, &currentTime);
+    ::timespec currentTime;
+    auto ret = ::clock_gettime(CLOCK_MONOTONIC, &currentTime);
     ILIAS_ASSERT(ret == 0);
     long milliseconds = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
     uint64_t expireTime = milliseconds + ms;
@@ -241,7 +251,7 @@ inline auto PollContext::addTimer(int64_t ms, void (*fn)(void *), void *arg, int
         mTimerSpec.it_value.tv_nsec = (expireTime % 1000) * 1000000;
         mTimerSpec.it_interval.tv_sec = 0;
         mTimerSpec.it_interval.tv_nsec = 0;
-        auto ret = timerfd_settime(mTimerfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &mTimerSpec, nullptr);
+        auto ret = ::timerfd_settime(mTimerfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &mTimerSpec, nullptr);
         ILIAS_ASSERT(ret == 0);
     }
     auto iter = mTimerQueue.insert(std::pair(expireTime, Timer{id, ms, flags, fn, arg}));
@@ -357,7 +367,7 @@ inline auto PollContext::poll(int fd, uint32_t events) -> Task<uint32_t> {
         auto await_ready() -> bool { 
             event.data.ptr = this;
             if (::epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event) == -1) {
-                perror("poll error");
+                ::perror("poll error");
                 epollError = true;
                 return true;
             }

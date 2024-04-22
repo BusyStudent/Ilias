@@ -2,6 +2,7 @@
 
 #include "ilias_http_headers.hpp"
 #include "ilias_url.hpp"
+#include <chrono>
 
 ILIAS_NS_BEGIN
 
@@ -18,6 +19,7 @@ public:
         GET,
         PUT,
         POST,
+        HEAD
         // DELETE
     };
 
@@ -38,11 +40,13 @@ public:
     auto url() const -> const Url &;
     auto operation() const -> Operation;
     auto maximumRedirects() const -> int;
+    auto transferTimeout() const -> std::chrono::milliseconds;
 private:
     HttpHeaders mHeaders;
     Operation mOperation { };
     Url mUrl;
     int mMaximumRedirects = 10;
+    std::chrono::milliseconds mTransferTimeout = std::chrono::seconds(5);
 };
 
 inline HttpRequest::HttpRequest() = default;
@@ -82,6 +86,9 @@ inline auto HttpRequest::operation() const -> Operation {
 }
 inline auto HttpRequest::maximumRedirects() const -> int {
     return mMaximumRedirects;
+}
+inline auto HttpRequest::transferTimeout() const -> std::chrono::milliseconds {
+    return mTransferTimeout;
 }
 
 ILIAS_NS_END

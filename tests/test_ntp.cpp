@@ -1,11 +1,18 @@
 #include <iostream>
 
 #include "../include/ilias.hpp"
-#include "../include/ilias_poll.hpp"
 #include "../include/ilias_inet.hpp"
 #include "../include/ilias_async.hpp"
 #include "../include/ilias_task.hpp"
 #include "../include/ilias_resolver.hpp"
+
+
+#ifdef _WIN32
+    #include "../include/ilias_iocp.hpp"
+    #include "../include/ilias_iocp.cpp"
+#else
+    #include "../include/ilias_poll.hpp"
+#endif
 
 using namespace ILIAS_NAMESPACE;
 using namespace std::chrono_literals;
@@ -87,7 +94,12 @@ Ilias::Task<void> sleepTest() {
 }
 
 int main(int argc, char **argv) {
+
+#if defined(_WIN32)
+    Ilias::IOCPContext ctxt;
+#else
     Ilias::PollContext ctxt;
+#endif
     auto t = ilias_wait getData(ctxt);
     if (t) {
         std::cout << "time: " << t.value() << std::endl;

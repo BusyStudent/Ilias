@@ -24,8 +24,9 @@ public:
     HttpReply(const HttpReply &) = delete;
     HttpReply(HttpReply &&);
     ~HttpReply();
-
+    
     auto text() -> Task<std::string>;
+    auto content() -> Task<std::vector<uint8_t> >;
     auto statusCode() const -> int;
     auto status() const -> std::string_view;
     auto headers() const -> const HttpHeaders &;
@@ -59,6 +60,7 @@ public:
     ~HttpSession();
 
     auto get(const HttpRequest &request) -> Task<HttpReply>;
+    auto head(const HttpRequest &request) -> Task<HttpReply>;
     auto post(const HttpRequest &request, std::span<uint8_t> data = {}) -> Task<HttpReply>;
     auto sendRequest(Operation op, HttpRequest request, std::span<uint8_t> extraData = {}) -> Task<HttpReply>;
 private:
@@ -102,13 +104,25 @@ inline HttpSession::~HttpSession() {
 inline auto HttpSession::get(const HttpRequest &request) -> Task<HttpReply> {
     return sendRequest(Operation::GET, request);
 }
+inline auto HttpSession::head(const HttpRequest &request) -> Task<HttpReply> {
+    return sendRequest(Operation::HEAD, request);
+}
 inline auto HttpSession::post(const HttpRequest &request, std::span<uint8_t> data) -> Task<HttpReply> {
     return sendRequest(Operation::POST, request, data);
 }
 inline auto HttpSession::sendRequest(Operation op, HttpRequest request, std::span<uint8_t> extraData) -> Task<HttpReply> {
     int n = 0;
     while (true) {
+#if 1
+        // In here we add timeout check for avoid waiting to long
+        auto result = co_await WhenAny(_sendRequest(op, request, extraData), Sleep(request.transferTimeout()));
+        if (result.index() == 1) {
+            co_return Unexpected(Error::TimedOut);
+        }
+        auto reply = std::move(std::get<0>(result));
+#else
         auto reply = co_await _sendRequest(op, request, extraData);
+#endif
         if (!reply) {
             co_return reply;
         }
@@ -162,8 +176,9 @@ while (true) {
         case Operation::GET: operation = "GET"; break;
         case Operation::POST: operation = "POST"; break;
         case Operation::PUT: operation = "PUT"; break;
+        case Operation::HEAD: operation = "HEAD"; break;
         // case Operation::DELETE: operation = "DELETE"; break
-        default: co_return Unexpected(Error::Unknown); break;
+        default: co_return Unexpected(Error::HttpBadRequest); break;
     }
     _sprintf(buffer, "%s %s HTTP/1.1\r\n", operation, requestString.c_str());
     for (const auto &[key, value] : request.headers()) {
@@ -190,7 +205,7 @@ while (true) {
         co_return Unexpected(sended.error());
     }
     if (sended.value() != buffer.size()) {
-        co_return Unexpected(Error::Unknown);
+        co_return Unexpected(Error::HttpBadReply);
     }
     auto reply = co_await _readReply(op, request, std::move(*con));
     if (!reply && fromCache) {
@@ -223,7 +238,7 @@ inline auto HttpSession::_readReply(Operation op, const HttpRequest &request, Co
         // Decompress gzip
         auto result = Gzip::decompress(reply.mContent);
         if (result.empty()) {
-            co_return Unexpected(Error::Unknown);
+            co_return Unexpected(Error::HttpBadReply);
         }
         reply.mContent = std::move(result);
     }
@@ -231,7 +246,7 @@ inline auto HttpSession::_readReply(Operation op, const HttpRequest &request, Co
         // Decompress deflate
         auto result = Deflate::decompress(reply.mContent);
         if (result.empty()) {
-            co_return Unexpected(Error::Unknown);
+            co_return Unexpected(Error::HttpBadReply);
         }
         reply.mContent = std::move(result);
     }
@@ -250,17 +265,19 @@ inline auto HttpSession::_readHeaders(Connection &con, HttpReply &reply) -> Task
     // Begin with HTTP/1.1 xxx OK
     auto line = co_await client.getline("\r\n");
     if (!line || line->empty()) {
-        co_return Unexpected(line.error_or(Error::Unknown));
+        co_return Unexpected(line.error_or(Error::HttpBadReply));
     }
     // Parse first line
     std::string_view firstLine(*line);
     auto firstSpace = firstLine.find(' ');
     auto secondSpace = firstLine.find(' ', firstSpace + 1);
     if (firstSpace == std::string_view::npos || secondSpace == std::string_view::npos) {
-        co_return Unexpected(Error::Unknown);
+        co_return Unexpected(Error::HttpBadReply);
     }
     auto codeString = firstLine.substr(firstSpace + 1, secondSpace - firstSpace - 1);
-    std::from_chars(codeString.data(), codeString.data() + codeString.size(), reply.mStatusCode);
+    if (std::from_chars(codeString.data(), codeString.data() + codeString.size(), reply.mStatusCode).ec != std::errc()) {
+        co_return Unexpected(Error::HttpBadReply);
+    }
     reply.mStatus = firstLine.substr(secondSpace + 1);
 
     // Read all headers
@@ -275,7 +292,7 @@ inline auto HttpSession::_readHeaders(Connection &con, HttpReply &reply) -> Task
         // Split into key and value by : 
         auto delim = line->find(": ");
         if (delim == line->npos) {
-            co_return Unexpected(Error::Unknown);
+            co_return Unexpected(Error::HttpBadReply);
         }
         auto header = line->substr(0, delim);
         auto value = line->substr(delim + 2);
@@ -292,7 +309,7 @@ inline auto HttpSession::_readContent(Connection &con, HttpReply &reply) -> Task
     if (!contentLength.empty()) {
         int64_t len = 0;
         if (std::from_chars(contentLength.data(), contentLength.data() + contentLength.size(), len).ec != std::errc()) {
-            co_return Unexpected(Error::Unknown);
+            co_return Unexpected(Error::HttpBadReply);
         }
         std::string buffer;
         buffer.resize(len);
@@ -301,7 +318,7 @@ inline auto HttpSession::_readContent(Connection &con, HttpReply &reply) -> Task
             co_return Unexpected(ret.error());
         }
         if (ret.value() != len) {
-            co_return Unexpected(Error::Unknown);
+            co_return Unexpected(Error::HttpBadReply);
         }
         // Exchange to reply.content
         std::swap(reply.mContent, buffer);
@@ -314,18 +331,18 @@ inline auto HttpSession::_readContent(Connection &con, HttpReply &reply) -> Task
             // First, get a line
             auto lenString = co_await client.getline("\r\n");
             if (!lenString || lenString->empty()) {
-                co_return Unexpected(lenString.error_or(Error::Unknown));
+                co_return Unexpected(lenString.error_or(Error::HttpBadReply));
             }
             // Parse it
             if (std::from_chars(lenString->data(), lenString->data() + lenString->size(), len, 16).ec != std::errc()) {
-                co_return Unexpected(Error::Unknown);
+                co_return Unexpected(Error::HttpBadReply);
             }
             // Second, get a chunk
             size_t current = buffer.size();
             buffer.resize(current + len + 2);
             auto ret = co_await client.recvAll(buffer.data() + current, len + 2);
             if (!ret || ret.value() != len + 2) {
-                co_return Unexpected(ret.error_or(Error::Unknown));
+                co_return Unexpected(ret.error_or(Error::HttpBadReply));
             }
             auto ptr = buffer.c_str();
             // Drop \r\n
@@ -390,7 +407,7 @@ inline auto HttpSession::_connect(const Url &url) -> Task<Connection> {
     }
 #endif
     else {
-        co_return Unexpected(Error::Unknown);
+        co_return Unexpected(Error::HttpBadRequest);
     }
     if (auto ret = co_await con.client.connect(endpoint); !ret) {
         co_return Unexpected(ret.error());
@@ -434,6 +451,10 @@ inline HttpReply::~HttpReply() = default;
 
 inline auto HttpReply::text() -> Task<std::string> {
     co_return mContent;
+}
+inline auto HttpReply::content() -> Task<std::vector<uint8_t> > {
+    std::vector<uint8_t> vec(mContent.begin(), mContent.end());
+    co_return vec;
 }
 inline auto HttpReply::statusCode() const -> int {
     return mStatusCode;

@@ -101,6 +101,10 @@ public:
         SSL,                         //< SSL 
         SSLUnknown,                  //< Unkown error from ssl layer
 
+        // --- Http
+        HttpBadReply,                //< A reply with bad format or another things
+        HttpBadRequest,               //< The given request some field is not valid
+
         // --- User
         User,                        //< User defined error beginning
     };

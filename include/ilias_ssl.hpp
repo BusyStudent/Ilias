@@ -185,14 +185,12 @@ private:
 };
 
 /**
- * @brief Wrapp T into BIO
+ * @brief The mem bio based on ring buffer
  * 
- * @tparam T 
  */
-template <typename T>
 class SslBio {
 public:
-    SslBio(T &&f) : mFd(std::move(f)) {
+    SslBio() {
         static Method method = _register();
         mBio = BIO_new(method.method);
         BIO_set_data(mBio, this);
@@ -203,7 +201,7 @@ public:
     ~SslBio() {
 
     }
-private:
+
     struct Method {
         Method(BIO_METHOD *method) : method(method) { }
         Method(const Method &) = delete;
@@ -214,18 +212,18 @@ private:
     };
     static BIO_METHOD *_register() {
         BIO_METHOD *method = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_SOURCE_SINK, "IliasSslBio");
-        BIO_meth_set_write(method, [](BIO *b, const char *data, int len) {
-            return static_cast<SslBio*>(BIO_get_data(b))->_write(data, len);
+        BIO_meth_set_write_ex(method, [](BIO *b, const char *data, size_t len, size_t *ret) {
+            return static_cast<SslBio*>(BIO_get_data(b))->_write(data, len, ret);
         });
-        BIO_meth_set_read(method, [](BIO *b, char *data, int len) {
-            return static_cast<SslBio*>(BIO_get_data(b))->_read(data, len);
+        BIO_meth_set_read_ex(method, [](BIO *b, char *data, size_t len, size_t *ret) {
+            return static_cast<SslBio*>(BIO_get_data(b))->_read(data, len, ret);
         });
         BIO_meth_set_ctrl(method, [](BIO *b, int cmd, long num, void *ptr) {
             return static_cast<SslBio*>(BIO_get_data(b))->_ctrl(cmd, num, ptr);
         });
         return method;
     }
-    int _write(const char *data, int len) {
+    int _write(const char *data, size_t len, size_t *ret) {
         if (!data) {
             return 0;
         }
@@ -234,9 +232,10 @@ private:
             BIO_set_retry_write(mBio);
             return 0;
         }
-        return mWriteRing.push(data, len);
+        *ret = mWriteRing.push(data, len);
+        return 1;
     }
-    int _read(char *data, int len) {
+    int _read(char *data, size_t len, size_t *ret) {
         if (!data) {
             return 0;
         }
@@ -245,7 +244,8 @@ private:
             BIO_set_retry_read(mBio);
             return 0;
         }
-        return mReadRing.pop(data, len);
+        *ret = mReadRing.pop(data, len);
+        return 1;
     }
     long _ctrl(int cmd, long num, void *ptr) {
         switch (cmd) {
@@ -254,17 +254,21 @@ private:
         return 0; 
     }
 
-    T    mFd;
     BIO *mBio = nullptr;
     SslRing<1024 * 8> mReadRing;
     SslRing<1024 * 8> mWriteRing;
     bool              mFlush = false;
-template <typename U>
-friend class SslSocket;
-template <StreamClient V>
-friend class SslClient;
-template <StreamListener W>
-friend class SslListener;
+};
+/**
+ * @brief Wrapp T into BIO
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class SslWrap : public SslBio {
+public:
+    SslWrap(T &&f) : mFd(std::move(f)) { }
+    T mFd;
 };
 
 /**
@@ -277,7 +281,7 @@ class SslSocket {
 public:
     SslSocket() = default;
     SslSocket(SSL_CTX *ctxt, T &&f) {
-        mBio = new SslBio<T>(std::move(f));
+        mBio = new SslWrap<T>(std::move(f));
         mSsl = SSL_new(ctxt);
         mCtxt = ctxt;
         SSL_set_bio(mSsl, mBio->mBio, mBio->mBio);
@@ -379,7 +383,7 @@ protected:
 #endif
 
     SSL *mSsl = nullptr;
-    SslBio<T> *mBio = nullptr;
+    SslWrap<T> *mBio = nullptr;
     SSL_CTX *mCtxt = nullptr;
 };
 
