@@ -1,6 +1,7 @@
 #include <QMainWindow>
 #include <QApplication>
 #include <QUrl>
+#include <QFile>
 #include "../include/ilias_qt.hpp"
 #include "../include/ilias_async.hpp"
 #include "../include/ilias_http.hpp"
@@ -43,7 +44,15 @@ public:
         ui.textBrowser->setPlainText(
             QString::fromUtf8((co_await reply->text()).value_or("BAD TEXT"))
         );
-        ui.statusbar->showMessage(QString::fromUtf8(reply->status()));
+        ui.statusbar->showMessage(QString::number(reply->statusCode()) + " " + QString::fromUtf8(reply->status()));
+        
+#if 0
+        QFile f("text_gzip");
+        f.open(QIODevice::WriteOnly);
+        auto data = co_await reply->text();
+        f.write(data->c_str(), data->size());
+        f.close();
+#endif
         co_return Result<>();
     }
     auto doGet() -> Task<> {

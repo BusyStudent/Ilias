@@ -204,6 +204,8 @@ public:
     ErrorT &error() { return mError; }
     const ErrorT &error() const { return mError; }
 
+    ErrorT error_or(ErrorT error) const { return mType ? error : mError; }
+
     ~Expected() { destory(); }
 
 private:
@@ -360,6 +362,8 @@ public:
     ErrorT error() { return mError; }
     const ErrorT &error() const { return mError; }
 
+    ErrorT error_or(ErrorT error) const { return mType ? error : mError; }
+
     ~Expected() { destory(); }
 
 private:
@@ -489,6 +493,8 @@ public:
 
     ErrorT &error() { return mError; }
     const ErrorT &error() const { return mError; }
+
+    ErrorT error_or(ErrorT error) const { return mType ? error : mError; }
 
     ~Expected() = default;
 };

@@ -23,19 +23,28 @@ int main() {
 
     ctxt.runTask([&]() -> Task<> {
         TcpClient client(ctxt, AF_INET);
+        ByteStream stream(std::move(client));
         IPEndpoint endpoint(IPAddress4::fromHostname("www.baidu.com"), 80);
-        if (auto result = co_await client.connect(endpoint); !result) {
+        if (auto result = co_await stream.connect(endpoint); !result) {
             std::cout << result.error().message() << std::endl;
             co_return Result<>();
         }
         std::string request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
-        if (auto result = co_await client.send(request.data(), request.size()); !result) {
+        if (auto result = co_await stream.sendAll(request.data(), request.size()); !result) {
             std::cout << result.error().message() << std::endl;
             co_return Result<>();
         }
+        // Try get headers here
+        while (auto line = co_await stream.getline("\r\n")) {
+            std::cout << "lines: " << *line << std::endl;
+            if (*line == "") {
+                break;
+            }
+        }
+
         do {
             char buffer[1024];
-            auto readed = co_await client.recv(buffer, sizeof(buffer));
+            auto readed = co_await stream.recv(buffer, sizeof(buffer));
             if (!readed) {
                 break;
             }

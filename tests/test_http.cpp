@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "../include/ilias_http.hpp"
+#include <fstream>
 
 #ifdef _WIN32
     #include "../include/ilias_iocp.hpp"
@@ -75,7 +76,7 @@ TEST(RequestTest, Test1) {
         auto text = ilias_wait ret->text();
         std::cout << text.value_or("READ FAILED") << std::endl;
     }
-    auto ret2 = ilias_wait session.get(request);
+    auto ret2 = ilias_wait session.get("https://www.bilibili.com");
     if (ret2) {
         auto text = ilias_wait ret2->text();
         std::cout << text.value_or("READ FAILED") << std::endl;

@@ -2,6 +2,7 @@
 
 #include "ilias_http_headers.hpp"
 #include "ilias_http_request.hpp"
+#include "ilias_http_zlib.hpp"
 #include "ilias_async.hpp"
 #include "ilias_url.hpp"
 #include "ilias_ssl.hpp"
@@ -58,7 +59,7 @@ public:
     ~HttpSession();
 
     auto get(const HttpRequest &request) -> Task<HttpReply>;
-    auto post(const HttpRequest &request) -> Task<HttpReply>;
+    auto post(const HttpRequest &request, std::span<uint8_t> data = {}) -> Task<HttpReply>;
     auto sendRequest(Operation op, HttpRequest request, std::span<uint8_t> extraData = {}) -> Task<HttpReply>;
 private:
     /**
@@ -66,9 +67,8 @@ private:
      * 
      */
     struct Connection {
-        IStreamClient client;
+        ByteStream<> client;
         IPEndpoint endpoint;
-        std::string recvbuffer; //< Used for recvbuffer
         std::chrono::steady_clock::time_point lastUsedTime;
         bool cached = false;
     };
@@ -101,6 +101,9 @@ inline HttpSession::~HttpSession() {
 
 inline auto HttpSession::get(const HttpRequest &request) -> Task<HttpReply> {
     return sendRequest(Operation::GET, request);
+}
+inline auto HttpSession::post(const HttpRequest &request, std::span<uint8_t> data) -> Task<HttpReply> {
+    return sendRequest(Operation::POST, request, data);
 }
 inline auto HttpSession::sendRequest(Operation op, HttpRequest request, std::span<uint8_t> extraData) -> Task<HttpReply> {
     int n = 0;
@@ -168,8 +171,12 @@ while (true) {
     }
     // Add host
     _sprintf(buffer, "Host: %s:%d\r\n", std::string(host).c_str(), int(port));
-    // TODO: Add zlib or another things
+
+#if !defined(ILIAS_NO_ZLIB)
+    _sprintf(buffer, "Accept-Encoding: gzip, deflate\r\n");
+#else
     _sprintf(buffer, "Accept-Encoding: identity\r\n");
+#endif
     // Add padding extraData
     if (!extraData.empty()) {
         buffer.append(reinterpret_cast<const char*>(extraData.data()), extraData.size());
@@ -178,22 +185,21 @@ while (true) {
     buffer.append("\r\n");
 
     // Send this reuqets
-    size_t bytesLeft = buffer.size();
-    size_t cur = 0;
-    while (bytesLeft > 0) {
-        auto ret = co_await client.send(buffer.c_str() + cur, bytesLeft);
-        if (!ret) {
-            co_return Unexpected(ret.error());
-        }
-        cur += ret.value();
-        bytesLeft -= ret.value();
+    auto sended = co_await client.sendAll(buffer.data(), buffer.size());
+    if (!sended) {
+        co_return Unexpected(sended.error());
+    }
+    if (sended.value() != buffer.size()) {
+        co_return Unexpected(Error::Unknown);
     }
     auto reply = co_await _readReply(op, request, std::move(*con));
     if (!reply && fromCache) {
         ::printf("ERROR from read reply in cache => %s, try again\n", reply.error().message().c_str());
         continue; //< Try again
     }
-    reply->mTransferDuration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - now);
+    if (reply) {
+        reply->mTransferDuration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - now);
+    }
     co_return reply;
 }
 
@@ -210,64 +216,76 @@ inline auto HttpSession::_readReply(Operation op, const HttpRequest &request, Co
     if (auto err = co_await _readContent(connection, reply); !err) {
         co_return Unexpected(err.error());
     }
+
+#if !defined(ILIAS_NO_ZLIB)
+    auto encoding = reply.mResponseHeaders.value(HttpHeaders::ContentEncoding);
+    if (encoding == "gzip") {
+        // Decompress gzip
+        auto result = Gzip::decompress(reply.mContent);
+        if (result.empty()) {
+            co_return Unexpected(Error::Unknown);
+        }
+        reply.mContent = std::move(result);
+    }
+    else if (encoding == "deflate") {
+        // Decompress deflate
+        auto result = Deflate::decompress(reply.mContent);
+        if (result.empty()) {
+            co_return Unexpected(Error::Unknown);
+        }
+        reply.mContent = std::move(result);
+    }
+#endif
+
     if (reply.mResponseHeaders.value(HttpHeaders::Connection) == "keep-alive") {
         _cache(std::move(connection));
     }
     co_return reply;
 }
 inline auto HttpSession::_readHeaders(Connection &con, HttpReply &reply) -> Task<void> {
-    auto &buffer = con.recvbuffer;
     auto &client = con.client;
-    while (!buffer.contains("\r\n")) {
-        size_t curSize = buffer.size();
-        buffer.resize(curSize + BufferIncreaseSize);
-        auto n = co_await client.recv(buffer.data() + curSize, BufferIncreaseSize);
-        if (!n) {
-            co_return Unexpected(n.error());
-        }
-        if (*n == 0) {
-            co_return Unexpected(Error::ConnectionReset);
-        }
-        buffer.resize(curSize + n.value());
-    }
+
     // Got headers string
     // Parse the headers
     // Begin with HTTP/1.1 xxx OK
-    std::string_view sv(buffer);
-
-    // First split first line of \r\n
-    auto firstLineEnd = sv.find("\r\n");
-    auto firstLine = sv.substr(0, firstLineEnd);
-
+    auto line = co_await client.getline("\r\n");
+    if (!line || line->empty()) {
+        co_return Unexpected(line.error_or(Error::Unknown));
+    }
     // Parse first line
-    int statusCode = 0;
+    std::string_view firstLine(*line);
     auto firstSpace = firstLine.find(' ');
     auto secondSpace = firstLine.find(' ', firstSpace + 1);
     if (firstSpace == std::string_view::npos || secondSpace == std::string_view::npos) {
         co_return Unexpected(Error::Unknown);
     }
     auto codeString = firstLine.substr(firstSpace + 1, secondSpace - firstSpace - 1);
-    auto statusString = firstLine.substr(secondSpace + 1);
-    std::from_chars(codeString.data(), codeString.data() + codeString.size(), statusCode);
+    std::from_chars(codeString.data(), codeString.data() + codeString.size(), reply.mStatusCode);
+    reply.mStatus = firstLine.substr(secondSpace + 1);
 
-    // Second split header strings
-    auto headersString = sv.substr(firstLineEnd + 2, sv.find("\r\n\r\n") - firstLineEnd - 2);
-    auto header = HttpHeaders::parse(headersString);
-    if (header.empty()) {
-        co_return Unexpected(Error::Unknown);
+    // Read all headers
+    do {
+        line = co_await client.getline("\r\n");
+        if (!line) {
+            co_return Unexpected(line.error());
+        }
+        if (line->empty()) {
+            break;
+        }
+        // Split into key and value by : 
+        auto delim = line->find(": ");
+        if (delim == line->npos) {
+            co_return Unexpected(Error::Unknown);
+        }
+        auto header = line->substr(0, delim);
+        auto value = line->substr(delim + 2);
+        reply.mResponseHeaders.append(header, value);
     }
-
-    reply.mStatus = statusString;
-    reply.mStatusCode = statusCode;
-    reply.mResponseHeaders = std::move(header);
-
-    // Drop a little bits
-    buffer.erase(0, firstLineEnd + 2 + headersString.size() + 4);
+    while (true);
     co_return Result<>();
 }
 inline auto HttpSession::_readContent(Connection &con, HttpReply &reply) -> Task<void> {
     // Select Mode
-    auto &buffer = con.recvbuffer;
     auto &client = con.client;
     auto contentLength = reply.mResponseHeaders.value(HttpHeaders::ContentLength);
     auto transferEncoding = reply.mResponseHeaders.value(HttpHeaders::TransferEncoding);
@@ -276,67 +294,54 @@ inline auto HttpSession::_readContent(Connection &con, HttpReply &reply) -> Task
         if (std::from_chars(contentLength.data(), contentLength.data() + contentLength.size(), len).ec != std::errc()) {
             co_return Unexpected(Error::Unknown);
         }
-        len -= buffer.size(); //< Still has a a lot of bytes in byffer
-        while (len > 0) {
-            size_t curSize = buffer.size();
-            buffer.resize(curSize + BufferIncreaseSize);
-            auto ret = co_await client.recv(buffer.data() + curSize, (std::min<int64_t>)(BufferIncreaseSize, len));
-            if (!ret) {
-                co_return Unexpected(ret.error());
-            }
-            if (ret.value() == 0) {
-                // Peer closed
-                co_return Unexpected(Error::ConnectionReset);
-            }
-            buffer.resize(curSize + ret.value());
-            len -= ret.value();
+        std::string buffer;
+        buffer.resize(len);
+        auto ret = co_await client.recvAll(buffer.data(), len);
+        if (!ret) {
+            co_return Unexpected(ret.error());
+        }
+        if (ret.value() != len) {
+            co_return Unexpected(Error::Unknown);
         }
         // Exchange to reply.content
         std::swap(reply.mContent, buffer);
     }
     else if (transferEncoding == "chunked") {
         // Chunked
+        std::string buffer;
+        int64_t len = 0;
         while (true) {
-            // Custome readed bytes
-            int64_t len = -1;
-            std::string_view bufferView = buffer;
-            while (!bufferView.empty() && bufferView.contains("\r\n")) {
-                auto numRange = bufferView.substr(0, bufferView.find("\r\n"));
-                auto errc = std::from_chars(numRange.data(), numRange.data() + numRange.size(), len, 16);
-                if (errc.ec != std::errc()) {
-                    co_return Unexpected(Error::Unknown);
-                }
-                if (bufferView.size() < numRange.size() + 2 + len + 2) {
-                    // num\r\ndata\r\n
-                    break;
-                }
-                bufferView = bufferView.substr(numRange.size() + 2);
-                // Copy data
-                reply.mContent.append(bufferView.data(), len);
-                bufferView = bufferView.substr(len + 2);
+            // First, get a line
+            auto lenString = co_await client.getline("\r\n");
+            if (!lenString || lenString->empty()) {
+                co_return Unexpected(lenString.error_or(Error::Unknown));
             }
-            if (!bufferView.empty() && bufferView.data() != buffer.data()) {
-                buffer.erase(0, bufferView.data() - buffer.data());
-            }
-            if (len == 0) {
-                buffer.clear();
-                co_return Result<>();
-            }
-            // No encough bytes
-            size_t curSize = buffer.size();
-            buffer.resize(curSize + BufferIncreaseSize);
-            auto ret = co_await client.recv(buffer.data() + curSize, BufferIncreaseSize);
-            if (!ret) {
-                co_return Unexpected(ret.error());
-            }
-            if (ret.value() == 0) {
-                // Peer closed
+            // Parse it
+            if (std::from_chars(lenString->data(), lenString->data() + lenString->size(), len, 16).ec != std::errc()) {
                 co_return Unexpected(Error::Unknown);
             }
-            buffer.resize(curSize + ret.value());
+            // Second, get a chunk
+            size_t current = buffer.size();
+            buffer.resize(current + len + 2);
+            auto ret = co_await client.recvAll(buffer.data() + current, len + 2);
+            if (!ret || ret.value() != len + 2) {
+                co_return Unexpected(ret.error_or(Error::Unknown));
+            }
+            auto ptr = buffer.c_str();
+            // Drop \r\n
+            ILIAS_ASSERT(buffer.back() == '\n');
+            buffer.pop_back();
+            ILIAS_ASSERT(buffer.back() == '\r');
+            buffer.pop_back();
+            ::printf("chunk size %ld\n", len);
+            if (len == 0) {
+                break;
+            }
         }
+        std::swap(reply.mContent, buffer);
     }
     else {
+        std::string buffer;
         while (true) {
             size_t curSize = buffer.size();
             buffer.resize(curSize + BufferIncreaseSize);
