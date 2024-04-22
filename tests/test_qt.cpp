@@ -17,6 +17,7 @@ class App : public QMainWindow {
 public:
     App(QIoContext *ctxt) : mCtxt(ctxt) {
         ui.setupUi(this);
+        ui.imageLabel->setVisible(false);
         connect(ui.pushButton, &QPushButton::clicked, this, &App::onButtonClicked);
     }
     auto doGetTask() -> Task<> {
@@ -41,9 +42,27 @@ public:
         for (const auto &item : reply->headers()) {
             ui.listWidget->addItem(QString::fromUtf8(item.first + ": " + item.second));
         }
-        ui.textBrowser->setPlainText(
-            QString::fromUtf8((co_await reply->text()).value_or("BAD TEXT"))
-        );
+        if (reply->headers().value(HttpHeaders::ContentType) == "image/png" || 
+            reply->headers().value(HttpHeaders::ContentType) == "image/jpeg" || 
+            reply->headers().value(HttpHeaders::ContentType) == "image/gif" ||
+            reply->headers().value(HttpHeaders::ContentType) == "image/svg+xml" ||
+            reply->headers().value(HttpHeaders::ContentType) == "image/webp" )
+        {
+            auto data = co_await reply->content();
+            auto image = QImage::fromData(data.value());
+            if (image.isNull()) {
+                ui.statusbar->showMessage("BAD IMAGE");
+                co_return Result<>();
+            }
+            ui.textBrowser->setVisible(false);
+            ui.imageLabel->setVisible(true);
+            ui.imageLabel->setPixmap(QPixmap::fromImage(image));
+        }
+        else {
+            ui.textBrowser->setPlainText(
+                QString::fromUtf8((co_await reply->text()).value_or("BAD TEXT"))
+            );
+        }
         ui.statusbar->showMessage(QString::number(reply->statusCode()) + " " + QString::fromUtf8(reply->status()));
         
 #if 0
@@ -56,6 +75,8 @@ public:
         co_return Result<>();
     }
     auto doGet() -> Task<> {
+        ui.imageLabel->setVisible(false);
+        ui.textBrowser->setVisible(true);
         ui.listWidget->clear();
         ui.textBrowser->clear();
         ui.pushButton->setEnabled(false);

@@ -4,6 +4,9 @@
 #include "ilias_expected.hpp"
 #include "ilias_backend.hpp"
 
+#undef min
+#undef max
+
 ILIAS_NS_BEGIN
 
 /**
@@ -462,6 +465,7 @@ inline auto ByteStream<T, Char>::recv(void *buffer, size_t n) -> Task<size_t> {
         auto [ptr, len] = _readWindow();
         if (len > 0) {
             // Read data from the buffer
+            len = std::min(len, n);
             ::memcpy(buffer, ptr, len);
             mPosition += len;
             co_return len;

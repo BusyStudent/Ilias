@@ -81,7 +81,7 @@ inline auto decompress(std::string_view input) -> std::string {
 namespace Deflate {
 
 inline auto decompress(std::string_view input) -> std::string {
-    return Zlib::decompress(input, -MAX_WBITS);
+    return Zlib::decompress(input, MAX_WBITS);
 }
 
 }

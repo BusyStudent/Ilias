@@ -17,7 +17,7 @@
 using namespace ILIAS_NAMESPACE;
 using namespace std::chrono_literals;
 
-Ilias::Task<std::vector<IPAddress>> getAddr(Ilias::PollContext &ctxt, const char *hostname) {
+Ilias::Task<std::vector<IPAddress>> getAddr(Ilias::IoContext &ctxt, const char *hostname) {
     Ilias::DnsQuery query(hostname, Ilias::DnsQuery::A);
         std::vector<uint8_t> data;
         query.fillBuffer(0, data);
@@ -51,7 +51,7 @@ Ilias::Task<std::vector<IPAddress>> getAddr(Ilias::PollContext &ctxt, const char
         co_return response->addresses();
 }
 
-Ilias::Task<uint64_t> getData(Ilias::PollContext &ctxt) {
+Ilias::Task<uint64_t> getData(Ilias::IoContext &ctxt) {
     const char *ntp_server = "ntp.aliyun.com";
     auto ntp_server_ip = co_await getAddr(ctxt, ntp_server);
     if (!ntp_server_ip || ntp_server_ip->size() == 0) {

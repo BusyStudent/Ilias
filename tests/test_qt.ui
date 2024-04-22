@@ -60,6 +60,13 @@
     <item>
      <widget class="QTextBrowser" name="textBrowser"/>
     </item>
+    <item>
+     <widget class="QLabel" name="imageLabel">
+      <property name="text">
+       <string/>
+      </property>
+     </widget>
+    </item>
    </layout>
   </widget>
   <widget class="QMenuBar" name="menubar">
