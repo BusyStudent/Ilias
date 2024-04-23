@@ -1,23 +1,20 @@
 #include <iostream>
 
 #include "../include/ilias.hpp"
+#ifdef _WIN32
+#include "../include/ilias_iocp.hpp"
+#else
+#include "../include/ilias_poll.hpp"
+#endif
 #include "../include/ilias_inet.hpp"
 #include "../include/ilias_async.hpp"
 #include "../include/ilias_task.hpp"
 #include "../include/ilias_resolver.hpp"
 
-
-#ifdef _WIN32
-    #include "../include/ilias_iocp.hpp"
-    #include "../include/ilias_iocp.cpp"
-#else
-    #include "../include/ilias_poll.hpp"
-#endif
-
 using namespace ILIAS_NAMESPACE;
 using namespace std::chrono_literals;
 
-Ilias::Task<uint64_t> getData(Ilias::IoContext &ctxt) {
+Ilias::Task<uint64_t> getData(Ilias::IoContext *ctxt) {
     const char *ntp_server = "ntp.aliyun.com";
     Resolver resolver(ctxt);
     auto ntp_server_ip = co_await resolver.resolve(ntp_server);
@@ -26,7 +23,7 @@ Ilias::Task<uint64_t> getData(Ilias::IoContext &ctxt) {
         co_return Unexpected(Error::Unknown);
     }
 
-    Ilias::UdpClient client(ctxt, AF_INET);
+    Ilias::UdpClient client(*ctxt, AF_INET);
     char ntp_pkt[48];
     memset(ntp_pkt, 0, sizeof(ntp_pkt));
     ntp_pkt[0] = 0x1B;
@@ -61,13 +58,12 @@ Ilias::Task<void> sleepTest() {
 }
 
 int main(int argc, char **argv) {
-
-#if defined(_WIN32)
+#ifdef _WIN32
     Ilias::IOCPContext ctxt;
 #else
     Ilias::PollContext ctxt;
 #endif
-    auto t = ilias_wait getData(ctxt);
+    auto t = ilias_wait getData(&ctxt);
     if (t) {
         std::cout << "time: " << t.value() << std::endl;
     } else {
