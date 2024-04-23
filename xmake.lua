@@ -108,6 +108,7 @@ target_end()
 target("test_ntp")
     set_kind("binary")
     add_files("tests/test_ntp.cpp")
+    add_files("include/ilias_iocp.cpp")
     add_tests("ntp")
 target_end()
 
