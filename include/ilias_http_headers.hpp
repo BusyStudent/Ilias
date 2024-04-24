@@ -2,12 +2,12 @@
 
 #include "ilias.hpp"
 #include <memory>
-#include <span>
+#include <vector>
 #include <map>
 
 ILIAS_NS_BEGIN
 
-struct _Compare {
+struct _CaseCompare {
     using is_transparent = void;
 
     auto operator ()(std::string_view a, std::string_view b) const -> bool {
@@ -55,6 +55,14 @@ public:
      * @return std::string_view 
      */
     auto value(std::string_view key) const -> std::string_view;
+
+    /**
+     * @brief Get all values of this key
+     * 
+     * @param key
+     * @return std::vector<std::string_view> 
+     */
+    auto values(std::string_view key) const -> std::vector<std::string_view>;
     /**
      * @brief Append a new header item
      * 
@@ -77,6 +85,13 @@ public:
      * @return std::string_view 
      */
     auto value(WellKnownHeader header) const -> std::string_view;
+    /**
+     * @brief Get all values of this key
+     * 
+     * @param headers 
+     * @return std::vector<std::string_view> 
+     */
+    auto values(WellKnownHeader headers) const -> std::vector<std::string_view>;
     /**
      * @brief Append a new header item
      * 
@@ -121,7 +136,7 @@ public:
      */
     static auto parse(std::string_view data) -> HttpHeaders;
 private:
-    std::multimap<std::string, std::string, _Compare> mValues;
+    std::multimap<std::string, std::string, _CaseCompare> mValues;
 };
 
 inline auto HttpHeaders::contains(std::string_view key) const -> bool {
@@ -133,6 +148,14 @@ inline auto HttpHeaders::value(std::string_view key) const -> std::string_view {
         return std::string_view();
     }
     return iter->second;
+}
+inline auto HttpHeaders::values(std::string_view key) const -> std::vector<std::string_view> {
+    std::vector<std::string_view> ret;
+    auto [begin, end] = mValues.equal_range(key);
+    for (auto i = begin; i != end; ++i) {
+        ret.emplace_back(i->second);
+    }
+    return ret;
 }
 inline auto HttpHeaders::append(std::string_view key, std::string_view value) -> void {
     mValues.emplace(key, value);
@@ -159,6 +182,9 @@ inline auto HttpHeaders::contains(WellKnownHeader header) const -> bool {
 }
 inline auto HttpHeaders::value(WellKnownHeader header) const -> std::string_view {
     return value(stringOf(header));
+}
+inline auto HttpHeaders::values(WellKnownHeader header) const -> std::vector<std::string_view> {
+    return values(stringOf(header));
 }
 inline auto HttpHeaders::append(WellKnownHeader header, std::string_view value) -> void {
     return append(stringOf(header), value);

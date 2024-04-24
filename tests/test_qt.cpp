@@ -16,6 +16,7 @@ using namespace ILIAS_NAMESPACE;
 class App : public QMainWindow {
 public:
     App(QIoContext *ctxt) : mCtxt(ctxt) {
+        mSession.setCookieJar(&mJar);
         ui.setupUi(this);
         ui.imageLabel->setVisible(false);
         connect(ui.pushButton, &QPushButton::clicked, this, &App::onButtonClicked);
@@ -83,13 +84,27 @@ public:
         ui.statusbar->clearMessage();
         co_await doGetTask();
         ui.pushButton->setEnabled(true);
+        updateCookies();
         co_return Result<>();
     }
     auto onButtonClicked() -> void {
         ilias_go doGet();
     }
+    auto updateCookies() -> void {
+        auto cookies = mJar.allCookies();
+        auto wi = ui.treeWidget;
+        wi->clear();
+        for (const auto &cookie : cookies) {
+            auto item = new QTreeWidgetItem(wi);
+            item->setText(0, QString::fromUtf8(cookie.domain()));
+            item->setText(1, QString::fromUtf8(cookie.name()));
+            item->setText(2, QString::fromUtf8(cookie.value()));
+            item->setText(3, QString::fromUtf8(cookie.path()));
+        }
+    }
 private:
     QIoContext *mCtxt;
+    HttpCookieJar mJar;
     HttpSession mSession;
     Ui::MainWindow ui;
 };

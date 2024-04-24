@@ -67,8 +67,10 @@ TEST(UrlTest, ValidUrl) {
 }
 
 TEST(RequestTest, Test1) {
+    HttpCookieJar jar;
     HttpSession session;
     HttpRequest request("https://www.baidu.com");
+    session.setCookieJar(&jar);
 
     auto ret = ilias_wait session.get(request);
     // auto ret = ilias_wait session.get("https://www.bilibili.com");

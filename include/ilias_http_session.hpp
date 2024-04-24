@@ -2,6 +2,7 @@
 
 #include "ilias_http_headers.hpp"
 #include "ilias_http_request.hpp"
+#include "ilias_http_cookie.hpp"
 #include "ilias_http_zlib.hpp"
 #include "ilias_async.hpp"
 #include "ilias_url.hpp"
@@ -63,6 +64,7 @@ public:
     auto head(const HttpRequest &request) -> Task<HttpReply>;
     auto post(const HttpRequest &request, std::span<uint8_t> data = {}) -> Task<HttpReply>;
     auto sendRequest(Operation op, HttpRequest request, std::span<uint8_t> extraData = {}) -> Task<HttpReply>;
+    auto setCookieJar(HttpCookieJar *jar) -> void;
 private:
     /**
      * @brief Connection used tp keep alive
@@ -92,6 +94,7 @@ private:
 
     // TODO: Improve the cache algorithm
     std::list<Connection> mConnections;
+    HttpCookieJar *mCookieJar = nullptr;
 friend class HttpReply;
 };
 
@@ -142,6 +145,9 @@ inline auto HttpSession::sendRequest(Operation op, HttpRequest request, std::spa
         co_return reply;
     } 
 }
+inline auto HttpSession::setCookieJar(HttpCookieJar *cookieJar) -> void {
+    mCookieJar = cookieJar;
+}
 inline auto HttpSession::_sendRequest(Operation op, const HttpRequest &request, std::span<uint8_t> extraData) -> Task<HttpReply> {
     const auto &url = request.url();
     const auto host = url.host();
@@ -186,12 +192,27 @@ while (true) {
     }
     // Add host
     _sprintf(buffer, "Host: %s:%d\r\n", std::string(host).c_str(), int(port));
-
+    // Add encoding
 #if !defined(ILIAS_NO_ZLIB)
     _sprintf(buffer, "Accept-Encoding: gzip, deflate\r\n");
 #else
     _sprintf(buffer, "Accept-Encoding: identity\r\n");
 #endif
+    // Add cookies to headers
+    if (mCookieJar) {
+        auto cookies = mCookieJar->cookiesForUrl(url);
+        if (!cookies.empty()) {
+            _sprintf(buffer, "Cookie: ");
+            for (const auto &cookie : mCookieJar->cookiesForUrl(url)) {
+                ::printf("Adding cookie %s=%s\n", cookie.name().c_str(), cookie.value().c_str());
+                _sprintf(buffer, "%s=%s; ", cookie.name().c_str(), cookie.value().c_str());
+            }
+            // Remove last '; '
+            buffer.pop_back();
+            buffer.pop_back();
+            _sprintf(buffer, "\r\n");
+        }
+    }
     // Add padding extraData
     if (!extraData.empty()) {
         buffer.append(reinterpret_cast<const char*>(extraData.data()), extraData.size());
@@ -205,7 +226,7 @@ while (true) {
         co_return Unexpected(sended.error());
     }
     if (sended.value() != buffer.size()) {
-        co_return Unexpected(Error::HttpBadReply);
+        co_return Unexpected(Error::ConnectionAborted);
     }
     auto reply = co_await _readReply(op, request, std::move(*con));
     if (!reply && fromCache) {
@@ -251,6 +272,18 @@ inline auto HttpSession::_readReply(Operation op, const HttpRequest &request, Co
         reply.mContent = std::move(result);
     }
 #endif
+    // Update cookiejars
+    if (mCookieJar) {
+        auto cookies = reply.mResponseHeaders.values(HttpHeaders::SetCookie);
+        for (const auto &str : cookies) {
+            for (auto &cookie : HttpCookie::parse(str)) {
+                if (cookie.domain().empty()) {
+                    cookie.setDomain(request.url().host());
+                }
+                mCookieJar->insertCookie(std::move(cookie));
+            }
+        }
+    }
 
     if (reply.mResponseHeaders.value(HttpHeaders::Connection) == "keep-alive") {
         _cache(std::move(connection));
@@ -350,7 +383,7 @@ inline auto HttpSession::_readContent(Connection &con, HttpReply &reply) -> Task
             buffer.pop_back();
             ILIAS_ASSERT(buffer.back() == '\r');
             buffer.pop_back();
-            ::printf("chunk size %ld\n", len);
+            ::printf("chunk size %lld\n", len);
             if (len == 0) {
                 break;
             }

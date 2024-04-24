@@ -17,7 +17,7 @@ public:
     SslContext() {
         SSL_library_init();
 
-        mCtxt = SSL_CTX_new(SSLv23_method());
+        mCtxt = SSL_CTX_new(TLS_method());
         SSL_CTX_set_mode(mCtxt, SSL_MODE_AUTO_RETRY);
     }
     SslContext(const SslContext &) = delete;
