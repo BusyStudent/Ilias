@@ -16,7 +16,7 @@ using namespace std::chrono_literals;
 
 Ilias::Task<uint64_t> getData(Ilias::IoContext *ctxt) {
     const char *ntp_server = "ntp.aliyun.com";
-    Resolver resolver(ctxt);
+    Resolver resolver(*ctxt);
     auto ntp_server_ip = co_await resolver.resolve(ntp_server);
     if (!ntp_server_ip || ntp_server_ip->size() == 0) {
         std::cout << "Failed to get address of " << ntp_server << std::endl;
