@@ -151,6 +151,24 @@ private:
     std::coroutine_handle<> mHandle;
 };
 /**
+ * @brief Helper class for suspend current coroutine and get the coroutine handle
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class SuspendCoroutine {
+public:
+    SuspendCoroutine(T &&cb) noexcept : mCallback(cb) { }
+    ~SuspendCoroutine() = default;
+
+    auto await_ready() const noexcept -> bool { return false; }
+    template <typename U>
+    auto await_suspend(std::coroutine_handle<U> handle) noexcept -> void { mCallback(handle); }
+    auto await_resume() const noexcept -> void { }
+private:
+    T mCallback;
+};
+/**
  * @brief Helper to construct the type by our self
  * 
  * @tparam T 

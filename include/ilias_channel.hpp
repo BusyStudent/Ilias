@@ -39,7 +39,7 @@ private:
      */
     auto _wakeupReceiver() -> void;
 
-    std::queue<handle_type> mSenderWaiters; //< The sender handle
+    std::deque<handle_type> mSenderWaiters; //< The sender handle
     handle_type mReceiverWaiter; //< The recv handle
     std::queue<Result<T> > mQueue;
     size_t mCapicity = 0; //< The capicity of the channel
@@ -203,10 +203,10 @@ inline auto Sender<T>::send(Result<T> value) -> Task<void> {
     auto self = co_await GetPromise();
     while (mChannel->mQueue.size() == mChannel->mCapicity) {
         if (!mChannel || mChannel->mReceiverClosed) {
-            co_return Unexpected(Error::ChannelBroken);
+            break;
         }
         // Push self to waiting queue and wakeup the receiver in event loop
-        mChannel->mSenderWaiters.emplace(self->handle());
+        mChannel->mSenderWaiters.emplace_back(self->handle());
         // Must in Event Loop !!!, avoid it resume us when we are not suspend
         if (mChannel->mReceiverWaiter) {
             self->eventLoop()->resumeHandle(mChannel->mReceiverWaiter);
@@ -215,6 +215,12 @@ inline auto Sender<T>::send(Result<T> value) -> Task<void> {
         co_await std::suspend_always();
     }
     if (!mChannel || mChannel->mReceiverClosed) {
+        // Remove self is we are in the wating list
+        auto it = std::find(mChannel->mSenderWaiters.begin(), mChannel->mSenderWaiters.end(), self->handle());
+        if (it != mChannel->mSenderWaiters.end()) {
+            mChannel->mSenderWaiters.erase(it);
+        }
+        // If the channel is closed, we will return error
         co_return Unexpected(Error::ChannelBroken);
     }
     mChannel->mQueue.emplace(std::move(value));
@@ -321,6 +327,9 @@ inline auto Receiver<T>::recv() -> Task<T> {
         mChannel->_wakeupSender();
         co_return value;
     }
+    if (mChannel->mReceiverWaiter == self->handle()) {
+        mChannel->mReceiverWaiter = nullptr;
+    }
     co_return Unexpected(Error::Canceled);
 }
 template <typename T>
@@ -376,7 +385,7 @@ template <typename T>
 inline auto Channel<T>::_wakeupSender() -> void {
     if (!mSenderWaiters.empty()) {
         auto h = mSenderWaiters.front();
-        mSenderWaiters.pop();
+        mSenderWaiters.pop_front();
         h.resume();
     }
 }

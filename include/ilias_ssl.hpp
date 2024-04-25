@@ -435,7 +435,7 @@ public:
      * @return false 
      */
     auto setAlpnProtos(const void *buf, size_t n) -> bool {
-        return SSL_set_alpn_protos(this->mSsl, static_cast<uint8_t*>(buf), n);
+        return SSL_set_alpn_protos(this->mSsl, static_cast<const uint8_t*>(buf), n);
     }
     /**
      * @brief Get remote Endpoint
