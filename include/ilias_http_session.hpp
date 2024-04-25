@@ -436,6 +436,7 @@ inline auto HttpSession::_connect(const Url &url) -> Task<Connection> {
     else if (url.scheme() == "https") {
         TcpClient tcpClient(mIoContext, addr.family());
         SslClient<TcpClient> sslClient(mSslContext, std::move(tcpClient));
+        sslClient.setHostname(url.host());
         con.client = std::move(sslClient);
     }
 #endif

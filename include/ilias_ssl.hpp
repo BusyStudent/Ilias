@@ -323,6 +323,12 @@ protected:
             }
         }
         else if (errcode == SSL_ERROR_SSL) {
+            // We should look for the error queue
+            auto err = ERR_peek_error();
+#if !defined(NDEBUG)
+            ERR_print_errors_fp(stderr);
+#endif
+            ERR_clear_error();
             co_return Unexpected(Error::SSL);
         }
         else {
@@ -403,6 +409,33 @@ public:
     }
     SslClient(SSL_CTX *ctxt, T &&f) : SslSocket<T>(ctxt, std::move(f)) {
         SSL_set_connect_state(this->mSsl);
+    }
+    /**
+     * @brief Set the Hostname object (for SNI)
+     * 
+     * @param hostname The 0 terminated string containing the hostname
+     * @return true 
+     * @return false 
+     */
+    auto setHostname(const char *hostname) -> bool {
+        return SSL_set_tlsext_host_name(this->mSsl, hostname);
+    }
+    auto setHostname(const std::string &hostname) -> bool {
+        return SSL_set_tlsext_host_name(this->mSsl, hostname.c_str());
+    }
+    auto setHostname(std::string_view hostname) -> bool {
+        return SSL_set_tlsext_host_name(this->mSsl, std::string(hostname).c_str());
+    }
+    /**
+     * @brief Set the ALPN Protos object (for ALPN)
+     * 
+     * @param buf 
+     * @param n 
+     * @return true 
+     * @return false 
+     */
+    auto setAlpnProtos(const void *buf, size_t n) -> bool {
+        return SSL_set_alpn_protos(this->mSsl, static_cast<uint8_t*>(buf), n);
     }
     /**
      * @brief Get remote Endpoint

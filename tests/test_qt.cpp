@@ -15,7 +15,7 @@ using namespace ILIAS_NAMESPACE;
 
 class App : public QMainWindow {
 public:
-    App(QIoContext *ctxt) : mCtxt(ctxt) {
+    App(QIoContext *ctxt) : mCtxt(ctxt), mSession(*ctxt) {
         mSession.setCookieJar(&mJar);
         ui.setupUi(this);
         ui.imageLabel->setVisible(false);
@@ -35,6 +35,7 @@ public:
         std::cout << url.host().toUtf8().constData() << std::endl;
 
         HttpRequest request(url.toString().toUtf8().constData());
+        request.setHeader(HttpHeaders::UserAgent, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.150 Safari/537.36");
         auto reply = co_await mSession.get(request);
         if (!reply) {
             ui.statusbar->showMessage(QString::fromUtf8(reply.error().message()));
