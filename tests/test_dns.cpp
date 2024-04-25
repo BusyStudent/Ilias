@@ -20,34 +20,14 @@ int main() {
 #endif
 
     ctxt.runTask([&]() -> Task<> {
-        DnsQuery query("www.baidu.com", DnsQuery::A);
-        std::vector<uint8_t> data;
-        query.fillBuffer(0, data);
-
-        UdpClient client(ctxt, AF_INET);
-        if (auto ret = client.bind(IPEndpoint(IPAddress4::any(), 0)); !ret) {
-            std::cout << ret.error().message() << std::endl;
-            co_return Result<>();
-        }
-        std::cout << client.localEndpoint()->toString() << std::endl;
-        auto ret = co_await client.sendto(data.data(), data.size(), IPEndpoint("114.114.114.114", 53));
-        if (!ret) {
-            std::cout << ret.error().message() << std::endl;
-            co_return Result<>();
-        }
-
-        uint8_t recvdata[1024];
-        auto nret = co_await client.recvfrom(recvdata, sizeof(recvdata));
-        if (!nret) {
-            std::cout << ret.error().message() << std::endl;
-            co_return Result<>();
-        }
-        auto response = DnsResponse::parse(recvdata, nret->first);
+        std::string host = "www.baidu.com";
+        Resolver resolver(ctxt);
+        auto response = co_await resolver.resolve(host);
         if (!response) {
-            std::cout << "Parse error " << "Stop at" << response.error() << std::endl;
+            std::cout << "DNS query failed: " << response.error().message() << std::endl;
             co_return Result<>();
         }
-        for (auto &addr : response->addresses()) {
+        for (auto &addr : response.value()) {
             std::cout << addr.toString() << std::endl;
         }
         co_return Result<>();

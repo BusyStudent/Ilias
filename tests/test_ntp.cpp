@@ -17,43 +17,10 @@
 using namespace ILIAS_NAMESPACE;
 using namespace std::chrono_literals;
 
-Ilias::Task<std::vector<IPAddress>> getAddr(Ilias::IoContext &ctxt, const char *hostname) {
-    Ilias::DnsQuery query(hostname, Ilias::DnsQuery::A);
-        std::vector<uint8_t> data;
-        query.fillBuffer(0, data);
-
-        Ilias::UdpClient client(ctxt, AF_INET);
-        if (auto ret = client.bind(IPEndpoint(IPAddress4::any(), 0)); !ret) {
-            std::cout << ret.error().message() << std::endl;
-            co_return ret.error();
-        }
-        std::cout << client.localEndpoint()->toString() << std::endl;
-        auto ret = co_await client.sendto(data.data(), data.size(), IPEndpoint("114.114.114.114", 53));
-        if (!ret) {
-            std::cout << ret.error().message() << std::endl;
-            co_return ret.error();
-        }
-
-        uint8_t recvdata[1024];
-        auto nret = co_await client.recvfrom(recvdata, sizeof(recvdata));
-        if (!nret) {
-            std::cout << ret.error().message() << std::endl;
-            co_return ret.error();
-        }
-        auto response = DnsResponse::parse(recvdata, nret->first);
-        if (!response) {
-            std::cout << "Parse error " << "Stop at" << response.error() << std::endl;
-            co_return ret.error();
-        }
-        for (auto &addr : response->addresses()) {
-            std::cout << addr.toString() << std::endl;
-        }
-        co_return response->addresses();
-}
-
 Ilias::Task<uint64_t> getData(Ilias::IoContext &ctxt) {
     const char *ntp_server = "ntp.aliyun.com";
-    auto ntp_server_ip = co_await getAddr(ctxt, ntp_server);
+    Resolver resolver(ctxt);
+    auto ntp_server_ip = co_await resolver.resolve(ntp_server);
     if (!ntp_server_ip || ntp_server_ip->size() == 0) {
         std::cout << "Failed to get address of " << ntp_server << std::endl;
         co_return Error(Error::Unknown);

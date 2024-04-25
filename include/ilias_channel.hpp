@@ -367,8 +367,9 @@ inline auto Channel<T>::make(size_t size) -> std::pair<Sender<T>, Receiver<T> > 
 template <typename T>
 inline auto Channel<T>::_wakeupReceiver() -> void {
     if (mReceiverWaiter) {
-        mReceiverWaiter.resume();
+        auto handle = mReceiverWaiter;
         mReceiverWaiter = nullptr;
+        handle.resume();
     }
 }
 template <typename T>

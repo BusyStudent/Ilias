@@ -8,6 +8,7 @@
 #include <chrono>
 #include <vector>
 #include <map>
+#include <memory>
 
 ILIAS_NS_BEGIN
 
@@ -15,6 +16,7 @@ class DnsNameParser;
 class DnsResponse;
 class DnsHeader;
 class DnsQuery;
+class DnsLookup;
 
 /**
  * @brief A struct for common dns query / response header
@@ -231,7 +233,54 @@ private:
     DnsHeader mHeader { };
     std::vector<DnsAnswer> mAnswers;
 };
+/**
+ * @brief a dns lookup for listen response from server
+ * 
+ */
+class DnsLookup {
+public:
+    using Type = DnsQuery::Type;
+public:
+    DnsLookup(IoContext &ctxt);
+    ~DnsLookup();
+    /**
+     * @brief manager dns server
+     * 
+     * @param dnsServer 
+     */
+    auto addDnsServer(const IPAddress &dnsServer) -> void;
+    auto addDnsServer(const IPAddress &dnsServer, uint16_t port) -> void;
+    auto addDnsServer(const IPEndpoint &dnsServer) -> void;
+    auto clearDnsServers() -> void;
 
+    /**
+     * @brief query hostname
+     * 
+     * This method queries the DNS server for the domain name,and listen the result.
+     * 
+     * @param hostname 
+     * @param type 
+     * @return Task<std::vector<DnsAnswer>> 
+     */
+    auto query(const std::string &hostname, Type type = Type::A) -> Task<std::vector<DnsAnswer>>;
+
+private:
+    auto _query(const std::string &hostname, Type type, const IPEndpoint &dnsServer) -> Task<std::vector<DnsAnswer>>;
+    auto _look() -> Task<void>;
+    static auto _handRecv(std::shared_ptr<UdpClient> client,Sender<DnsResponse> sender) -> Task<void>; 
+private:
+    IoContext &mIoContext;
+    std::vector<IPEndpoint> mDnsServers = {
+            IPEndpoint("114.114.114.114", 53)
+        };
+    
+    std::map<uint16_t, DnsResponse> mDnsCache;
+    std::shared_ptr<UdpClient> mDnsClientV4;
+    std::shared_ptr<UdpClient> mDnsClientV6;
+    Sender<DnsResponse> mDnsSenderChannel;
+    Receiver<DnsResponse> mDnsReceiverChannel;
+    uint16_t mTransId = 0;
+};
 /**
  * @brief A Resolver for manage query and response
  * 
@@ -250,13 +299,9 @@ private:
     auto _run(Receiver<DnsQuery> recv) -> Task<void>;
 
     IoContext &mCtxt;
-    UdpClient  mClient;
-    IPEndpoint mServer;
     int64_t    mTimeout = 5000;
     std::multimap<std::string, DnsAnswer, std::less<> > mAnswers;
-
-    // For worker
-    Sender<DnsQuery> mSender;
+    DnsLookup mDnsLookup;
 };
 
 // --- DnsQuery Impl
@@ -582,57 +627,185 @@ inline auto DnsResponse::addresses() const -> std::vector<IPAddress> {
     return addrs;
 }
 
+
+inline DnsLookup::DnsLookup(IoContext &ctxt) : 
+    mIoContext(ctxt)
+    , mDnsClientV4(new UdpClient(ctxt, AF_INET))
+    , mDnsClientV6(new UdpClient(ctxt, AF_INET6))
+{ 
+    mDnsClientV4->bind(IPEndpoint(IPAddress4::any(), 0));
+    mDnsClientV6->bind(IPEndpoint(IPAddress6::any(), 0));
+    auto [sx, rx] = Channel<DnsResponse>::make();
+    mDnsSenderChannel = sx;
+    mDnsReceiverChannel = std::move(rx);
+    _look();
+}
+inline DnsLookup::~DnsLookup() {
+    mDnsClientV4->close();
+    mDnsClientV6->close();
+    mDnsReceiverChannel.close();
+    mDnsSenderChannel.close();
+}
+inline auto DnsLookup::addDnsServer(const IPAddress &dnsServer) -> void {
+    mDnsServers.push_back(IPEndpoint(dnsServer, 53));
+}
+inline auto DnsLookup::addDnsServer(const IPAddress &dnsServer, uint16_t port) -> void {
+    mDnsServers.push_back(IPEndpoint(dnsServer, port));
+}
+inline auto DnsLookup::addDnsServer(const IPEndpoint &dnsServer) -> void {
+    mDnsServers.push_back(dnsServer);
+}
+inline auto DnsLookup::clearDnsServers() -> void {
+    mDnsServers.clear();
+}
+
+inline auto DnsLookup::query(const std::string &hostname, Type type) -> Task<std::vector<DnsAnswer>> {
+    Error ret(Error::Unknown);
+    for (auto &dnsServer : mDnsServers) {
+        std::chrono::seconds st(3); // 1s
+        auto waitResult = co_await WhenAny(_query(hostname, type, dnsServer), Sleep(st));
+        if (waitResult.index() == 0) {
+            auto queueResult = std::get<0>(waitResult);
+            if (queueResult) {
+                co_return queueResult.value();
+            } 
+            else if (queueResult.error() == Error::Canceled) {
+                ret = queueResult.error();
+            } 
+            else {
+                ret = queueResult.error();
+            }
+        } 
+        else {
+            ret = Error::TimedOut;
+        }
+    }
+    co_return ret;
+}
+
+inline auto DnsLookup::_query(
+    const std::string &hostname, 
+    Type type, 
+    const IPEndpoint &dnsServer) -> Task<std::vector<DnsAnswer>>
+{
+    DnsQuery query(hostname, type);
+    std::vector<uint8_t> data;
+    uint16_t transId = ++mTransId;
+    query.fillBuffer(transId, data);
+
+    UdpClient* client;
+    if (dnsServer.family() == AF_INET) {
+        client = mDnsClientV4.get();
+    } 
+    else if (dnsServer.family() == AF_INET6) {
+        client = mDnsClientV6.get();
+    } 
+    else {
+        co_return Unexpected<Error>(Error::AddressFamilyNotSupported);
+    }
+
+    if (mDnsCache.contains(transId)) {
+        mDnsCache.erase(transId);
+    }
+
+    auto dnsRequest = co_await client->sendto(data.data(), data.size(), dnsServer);
+    if (!dnsRequest) {
+        co_return Unexpected<Error>(Error::Unknown);
+    }
+
+    if (mDnsCache.contains(transId)) {
+        auto response = mDnsCache[transId];
+        mDnsCache.erase(transId);
+        co_return response.answers();
+    }
+
+    while (true) {
+        auto response = co_await mDnsReceiverChannel.recv();
+        if (response.value().transId() == transId) {
+            co_return response.value().answers();
+        } 
+        else if (!response && response.error() == Error::Canceled) {
+            co_return Unexpected<Error>(Error::Canceled);
+        }
+    }
+    co_return Unexpected<Error>(Error::Unknown);
+}
+
+inline auto DnsLookup::_handRecv(std::shared_ptr<UdpClient> client,Sender<DnsResponse> sender) -> Task<void> {
+    uint8_t recvdata[1024];
+    while (true) {
+        auto ret = co_await client->recvfrom(recvdata, sizeof(recvdata));
+        if (!ret) {
+            co_return ret.error();
+        }
+        auto response = DnsResponse::parse(recvdata, ret->first);
+        if (!response) {
+            continue;
+        }
+        auto recv = co_await sender.send(response.value());
+        if (!recv && (recv.error() == Error::Canceled || recv.error() == Error::ChannelBroken)) {
+            co_return recv.error();
+        }
+    }
+    co_return Result<void>();
+}
+
+
+inline auto DnsLookup::_look() -> Task<void> {
+    ilias_go _handRecv(mDnsClientV4, mDnsSenderChannel);
+    ilias_go _handRecv(mDnsClientV6, mDnsSenderChannel);
+    co_return Result<void>();
+}
+
 // --- Resolver
-inline Resolver::Resolver(IoContext &ctxt) : mCtxt(ctxt) {
-    mServer = "8.8.8.8";
-    // Detect Default dns server
-#if defined(_WIN32)
+inline Resolver::Resolver(IoContext &ctxt) : mCtxt(ctxt), mDnsLookup(ctxt) { }
+inline Resolver::~Resolver() { }
 
-#endif
-
-    // Execute the tasks
-    // auto [sender, receiver] = Channel<DnsQuery>::make();
-
-    // mSender = sender;
-    // mCtxt.postTask(_run(std::move(receiver)));
-}
-inline Resolver::~Resolver() {
-
-}
-#if 0
 inline auto Resolver::resolve(std::string_view host) -> Task<std::vector<IPAddress> > {
+    if (auto var = _findCache(host); var) {
+        co_return std::move(var.value());
+    }
+    if (auto ret = co_await mDnsLookup.query(std::string(host), DnsLookup::Type::A); ret) {
+        for (auto &ans : ret.value()) {
+            mAnswers.insert(std::make_pair(host, ans));
+        }
+    }
+    if (auto ret = co_await mDnsLookup.query(std::string(host), DnsLookup::Type::AAAA); ret) {
+        for (auto &ans : ret.value()) {
+            mAnswers.insert(std::make_pair(host, ans));
+        }
+    }
+    if (auto ret = co_await mDnsLookup.query(std::string(host), DnsLookup::Type::CNAME); ret) {
+        for (auto &ans : ret.value()) {
+            mAnswers.insert(std::make_pair(host, ans));
+        }
+    }
     if (auto var = _findCache(host); var) {
         co_return std::move(var.value());
     }
     co_return Unexpected(Error::NoDataRecord);
 }
 inline auto Resolver::_findCache(std::string_view what) -> Result<std::vector<IPAddress> > {
-    while (true) {
-        auto it = mAnswers.find(what);
-        if (it == mAnswers.end()) {
-            return Unexpected(Error::NoDataRecord);
-        }
-        auto &[_, answer] = *it;
-        if (answer.isExpired()) {
-            // Try find another answer
-            mAnswers.erase(it);
-            continue;
-        }
-        if (answer.type() == DnsAnswer::CNAME) {
-            what = answer.cname();
-            continue;
-        }
-        // Got
-        auto n = mAnswers.count(what);
-        std::vector<IPAddress> addrs;
-        while (n > 0) {
-            addrs.push_back(it->second.address());
-            n--;
-            it++;
-        }
-        return addrs;
+    auto range = mAnswers.equal_range(what);
+    if (range.first == range.second) {
+        return Unexpected(Error::NoDataRecord);
     }
+    std::vector<IPAddress> addrs;
+
+    for (auto it = range.first; it != range.second;) {
+        if (it->second.isExpired()) {
+            it = mAnswers.erase(it);
+        } 
+        else {
+            if (it->second.address().isValid()) {
+                addrs.push_back(it->second.address());
+            }
+            ++it;
+        }
+    }
+    return addrs;
 }
+#if 0
 inline auto Resolver::_run(Receiver<DnsQuery> recv) -> Task<void> {
     std::map<uint16_t, Sender<DnsResponse> > clients;
     uint16_t currentId = 0;
