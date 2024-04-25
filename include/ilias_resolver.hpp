@@ -732,10 +732,11 @@ while (true) {
         }
         ILIAS_ASSERT(item->server.isValid());
         // Try send this data
+        auto n = item->query.fillBufferSize();
         if (!item->query.fillBuffer(currentId, wbuffer, sizeof(wbuffer))) {
             continue;
         }
-        if (!co_await client.sendto(wbuffer, sizeof(wbuffer), item->server)) {
+        if (!co_await client.sendto(wbuffer, n, item->server)) {
             continue;
         }
         // Put it to the waiting map
