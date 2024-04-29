@@ -129,6 +129,23 @@
         </item>
        </layout>
       </widget>
+      <widget class="QWidget" name="tab_3">
+       <attribute name="title">
+        <string>DnsQuery</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_4">
+        <item>
+         <widget class="QLineEdit" name="hostnameEdit">
+          <property name="text">
+           <string>www.baidu.com</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QListWidget" name="endpointsWidget"/>
+        </item>
+       </layout>
+      </widget>
      </widget>
     </item>
    </layout>

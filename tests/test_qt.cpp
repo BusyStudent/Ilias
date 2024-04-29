@@ -4,6 +4,7 @@
 #include <QFile>
 #include "../include/ilias_qt.hpp"
 #include "../include/ilias_async.hpp"
+#include "../include/ilias_resolver.hpp"
 #include "../include/ilias_http.hpp"
 #include "ui_test_qt.h"
 #include <iostream>
@@ -15,11 +16,12 @@ using namespace ILIAS_NAMESPACE;
 
 class App : public QMainWindow {
 public:
-    App(QIoContext *ctxt) : mCtxt(ctxt), mSession(*ctxt) {
+    App(QIoContext *ctxt) : mCtxt(ctxt), mSession(*ctxt), mResolver(*ctxt) {
         mSession.setCookieJar(&mJar);
         ui.setupUi(this);
         ui.imageLabel->setVisible(false);
         connect(ui.pushButton, &QPushButton::clicked, this, &App::onButtonClicked);
+        connect(ui.hostnameEdit, &QLineEdit::returnPressed, this, &App::onQueryHost);
     }
     auto doGetTask() -> Task<> {
         auto editText = ui.lineEdit->text();
@@ -88,8 +90,23 @@ public:
         updateCookies();
         co_return Result<>();
     }
+    auto doQueryHost() -> Task<> {
+        ui.endpointsWidget->clear();
+        auto v = co_await mResolver.resolve(ui.hostnameEdit->text().toUtf8().constData());
+        if (!v) {
+            ui.statusbar->showMessage(QString::fromUtf8(v.error().message()));
+            co_return Result<>();
+        }
+        for (const auto &i : *v) {
+            ui.endpointsWidget->addItem(QString::fromUtf8(i.toString()));
+        }
+        co_return Result<>();
+    }
     auto onButtonClicked() -> void {
         ilias_go doGet();
+    }
+    auto onQueryHost() -> void {
+        ilias_go doQueryHost();
     }
     auto updateCookies() -> void {
         auto cookies = mJar.allCookies();
@@ -103,10 +120,12 @@ public:
             item->setText(3, QString::fromUtf8(cookie.path()));
         }
     }
+
 private:
     QIoContext *mCtxt;
     HttpCookieJar mJar;
     HttpSession mSession;
+    Resolver mResolver;
     Ui::MainWindow ui;
 };
 

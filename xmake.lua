@@ -1,4 +1,4 @@
-add_rules("mode.debug", "mode.release")
+add_rules("mode.debug", "mode.release", "mode.releasedbg")
 
 if is_plat("linux") then 
     add_cxxflags("-fcoroutines")
@@ -10,6 +10,16 @@ option("enable_qt")
     set_showmenu(true)
     set_description("Enable Qt Depend")
 option_end()
+
+option("asan_check")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Enable asan check")
+option_end()
+
+if has_config("asan_check") then 
+    set_policy("build.sanitizer.address", true)
+end
 
 set_languages("c++latest")
 
