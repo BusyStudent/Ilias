@@ -95,22 +95,9 @@ public:
             // Cancel
             cancel();
         }
+        ILIAS_CO_REMOVE(mHandle);
         mHandle.destroy();
         mHandle = nullptr;
-    }
-    /**
-     * @brief Post the task to the event queue and call the callback on it done
-     * 
-     * @tparam Callable 
-     * @param cb The callable you want to execute 
-     */
-    template <typename Callable>
-    auto then(Callable &&cb) -> void {
-        auto newTask = [](auto cb, auto cur) -> Task<> {
-            cb(co_await cur);
-            co_return Result<>();
-        };
-        ilias_go newTask(std::forward<Callable>(cb), std::move(*this));
     }
     /**
      * @brief Assign a moved task
@@ -275,6 +262,7 @@ public:
     auto get_return_object() -> Task<T> {
         auto handle = handle_type::from_promise(*this);
         mHandle = handle;
+        ILIAS_CO_ADD(mHandle); //< Add to the alive coroutine set
         return Task<T>(handle);
     }
     /**

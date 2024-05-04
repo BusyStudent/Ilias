@@ -28,8 +28,11 @@ public:
         if (mCaller.isCanceled()) {
             return true;
         }
-        mTask.handle().resume();
-        return mTask.handle().done();
+        auto handle = mTask.handle();
+        if (!handle.done()) {
+            handle.resume();
+        }
+        return handle.done();
     }
     // Return to EventLoop
     auto await_suspend(std::coroutine_handle<TaskPromise<T> > h) const -> void {
@@ -348,6 +351,7 @@ public:
 private:
     static void _onTimer(void *ptr) {
         auto self = static_cast<SleepAwaiter *>(ptr);
+        ILIAS_CHECK_EXISTS(self->mCaller.handle());
         self->mTimer = 0;
         self->mCaller.handle().resume();
     }

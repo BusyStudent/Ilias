@@ -23,7 +23,7 @@ Ilias::Task<uint64_t> getData(Ilias::IoContext &ctxt) {
     auto ntp_server_ip = co_await resolver.resolve(ntp_server);
     if (!ntp_server_ip || ntp_server_ip->size() == 0) {
         std::cout << "Failed to get address of " << ntp_server << std::endl;
-        co_return Error(Error::Unknown);
+        co_return Unexpected(Error::Unknown);
     }
 
     Ilias::UdpClient client(ctxt, AF_INET);
@@ -34,18 +34,18 @@ Ilias::Task<uint64_t> getData(Ilias::IoContext &ctxt) {
     auto ret = co_await client.sendto(ntp_pkt, sizeof(ntp_pkt), endpoint);
     if (!ret) {
         std::cout << "Failed to send NTP packet to " << ntp_server << std::endl;
-        co_return ret.error();
+        co_return Unexpected(ret.error());
     }
     char buf[1024];
     auto recv = co_await Ilias::WhenAny(client.recvfrom(buf, sizeof(buf)), Sleep(5000ms));
     if (recv.index() == 1) {
         std::cout << "time out" << std::endl;
-        co_return Error(Error::TimedOut);
+        co_return Unexpected(Error::TimedOut);
     }
     auto recvdata = std::get<0>(recv);
     if (!recvdata || recvdata.value().first != sizeof(ntp_pkt)) {
         std::cout << "error data" << std::endl;
-        co_return Error(Error::Unknown);
+        co_return Unexpected(Error::Unknown);
     }
     uint64_t *timestamp = (uint64_t*)&buf[40];
     time_t linux_time = ntohl(*timestamp) - 2208988800UL;

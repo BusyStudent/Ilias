@@ -1,8 +1,15 @@
 #ifdef _WIN32
 #include "ilias_iocp.hpp"
-#include "ilias_latch.hpp"
+#include <algorithm>
 #include <memory>
-#include <thread>
+
+#if 1
+// #if 0
+    #define IOCP_LOG(...) ::fprintf(stderr, __VA_ARGS__)
+#else
+    #define IOCP_LOG(...) do {} while(0)
+#endif
+
 
 ILIAS_NS_BEGIN
 
@@ -11,6 +18,15 @@ struct WSAExtFunctions {
     LPFN_ACCEPTEX AcceptEx = nullptr;
     LPFN_CONNECTEX ConnectEx = nullptr;
     LPFN_TRANSMITFILE TransmitFile = nullptr;
+};
+class IOCPOverlapped : public ::OVERLAPPED {
+public:
+    IOCPOverlapped() {
+        ::memset(static_cast<OVERLAPPED*>(this), 0, sizeof(OVERLAPPED));
+    }
+
+    // Called on Dispatched
+    void (*onCompelete)(IOCPOverlapped *self, BOOL ok, DWORD byteTrans) = nullptr;
 };
 static WSAExtFunctions Fns;
 static std::once_flag FnsOnceFlag;
@@ -27,37 +43,41 @@ IOCPContext::~IOCPContext() {
     ::CloseHandle(mIocpFd);
 }
 
-auto IOCPContext::run() -> void {
+inline
+auto IOCPContext::_runIo(DWORD timeout) -> void {
     DWORD bytesTrans = 0;
     ULONG_PTR compeleteKey;
     LPOVERLAPPED overlapped = nullptr;
+    auto ret = ::GetQueuedCompletionStatus(
+        mIocpFd, 
+        &bytesTrans, 
+        &compeleteKey, 
+        &overlapped,
+        timeout
+    );
+    if (!ret) {
+        auto err = ::GetLastError();
+        if (err == WAIT_TIMEOUT) {
+            // Skip timeouted
+            return;
+        }
+    }
+    // Is a normal callback, overlapped is a args
+    if (compeleteKey) {
+        ILIAS_ASSERT(bytesTrans == 0x114514);
+        auto cb = reinterpret_cast<void(*)(void*)>(compeleteKey);
+        cb(overlapped);
+        return;
+    }
+    if (overlapped) {
+        auto lap = static_cast<IOCPOverlapped*>(overlapped);
+        lap->onCompelete(lap, ret, bytesTrans);            
+    }
+}
+auto IOCPContext::run() -> void {
     while (!mQuit) {
         _runTimers();
-        auto ret = ::GetQueuedCompletionStatus(
-            mIocpFd, 
-            &bytesTrans, 
-            &compeleteKey, 
-            &overlapped,
-            _calcWaiting()
-        );
-        if (!ret) {
-            auto err = ::GetLastError();
-            if (err == ERROR_OPERATION_ABORTED || err == WAIT_TIMEOUT) {
-                // Skip aborted operation or timeouted
-                continue;
-            }
-        }
-        // Is a normal callback, overlapped is a args
-        if (compeleteKey) {
-            ILIAS_ASSERT(bytesTrans == 0x114514);
-            auto cb = reinterpret_cast<void(*)(void*)>(compeleteKey);
-            cb(overlapped);
-            continue;
-        }
-        if (overlapped) {
-            auto lap = static_cast<IOCPOverlapped*>(overlapped);
-            lap->onCompelete(lap, ret, bytesTrans);            
-        }
+        _runIo(_calcWaiting());
     }
     mQuit = false;
 }
@@ -128,9 +148,9 @@ auto IOCPContext::_calcWaiting() const -> DWORD {
     if (mTimerQueue.empty()) {
         return INFINITE;
     }
-    auto time = mTimerQueue.begin()->first - ::GetTickCount64();
-    ::printf("[Ilias] IOCP Waiting: %lld\n", time);
-    return time;
+    int64_t time = mTimerQueue.begin()->first - ::GetTickCount64();
+    IOCP_LOG("[Ilias] IOCP Waiting: %lld\n", time);
+    return std::clamp<int64_t>(time, 0, INFINITE - 1);
 }
 
 // Add / Remove
@@ -157,6 +177,7 @@ public:
         onCompelete = [](IOCPOverlapped *data, BOOL ok, DWORD byteTrans) {
             auto self = static_cast<IOCPAwaiter*>(data);
             self->mOk = ok;
+            self->mGot = true; //< Got value
             self->bytesTransfered = byteTrans;
             if (self->mCallerHandle) {
                 self->mCallerHandle.resume();
@@ -192,20 +213,41 @@ public:
         }
         if (mCaller->isCanceled() && mOverlappedStarted) {
             // Io is started
-            // TODO: How to handle it
-            ::CancelIoEx(HANDLE(sock), this);
+            _doCancel();
             return Unexpected(Error::Canceled);
         }
         // Get result
         return static_cast<T*>(this)->onCompelete(mOk, bytesTransfered);
     }
+    auto isCanceled() -> bool {
+        return mCaller->isCanceled();
+    }
 
     ::SOCKET sock;
     ::DWORD bytesTransfered = 0;
+    IOCPContext *ctxt = nullptr;
 private:
+    auto _doCancel() {
+        IOCP_LOG("[Ilias] IOCP doCancel to (%p, %p)\n", HANDLE(sock), this);
+        mCallerHandle = nullptr; //< Make it to nullptr, avoid we got resumed on the next event loop
+        if (!::CancelIoEx(HANDLE(sock), this)) {
+            auto err = ::GetLastError();
+            IOCP_LOG("[Ilias] IOCP failed to CancelIoEx(%p, %p) => %d\n", HANDLE(sock), this, int(err));
+        }
+        // Collect the cancel result
+        IOCP_LOG("[Ilias] Enter EventLoop to get cancel result\n");
+        while (!mGot) {
+            ctxt->_runIo(INFINITE);
+        }
+        IOCP_LOG("[Ilias] Got result\n");
+        // Call it
+        static_cast<T*>(this)->onCompelete(mOk, bytesTransfered);
+    }
+
     PromiseBase *mCaller = nullptr;
     std::coroutine_handle<> mCallerHandle;
     bool mOk = false;
+    bool mGot = false;
     bool mOverlappedStarted = false;
 };
 
@@ -226,6 +268,7 @@ struct RecvAwaiter : public IOCPAwaiter<RecvAwaiter, Result<size_t> > {
 
 auto IOCPContext::recv(SocketView sock, void *buf, size_t len) -> Task<size_t> {
     RecvAwaiter awaiter;
+    awaiter.ctxt = this;
     awaiter.sock = sock.get();
     awaiter.buf.buf = (CHAR*) buf;
     awaiter.buf.len = len;
@@ -249,6 +292,7 @@ struct SendAwaiter : public IOCPAwaiter<SendAwaiter, Result<size_t> > {
 
 auto IOCPContext::send(SocketView sock, const void *buf, size_t len) -> Task<size_t> {
     SendAwaiter awaiter;
+    awaiter.ctxt = this;
     awaiter.sock = sock.get();
     awaiter.buf.buf = (CHAR*) buf;
     awaiter.buf.len = len;
@@ -288,6 +332,7 @@ struct ConnectAwaiter : public IOCPAwaiter<ConnectAwaiter, Result<void> > {
 
 auto IOCPContext::connect(SocketView sock, const IPEndpoint &addr) -> Task<void> {
     ConnectAwaiter awaiter;
+    awaiter.ctxt = this;
     awaiter.sock = sock.get();
     awaiter.endpoint = addr;
     co_return co_await awaiter;
@@ -342,6 +387,7 @@ struct AcceptAwaiter : public IOCPAwaiter<AcceptAwaiter, Result<std::pair<Socket
 
 auto IOCPContext::accept(SocketView sock) -> Task<std::pair<Socket, IPEndpoint> > {
     AcceptAwaiter awaiter;
+    awaiter.ctxt = this;
     awaiter.sock = sock.get();
     co_return co_await awaiter;
 }
@@ -370,6 +416,7 @@ struct SendtoAwaiter : public IOCPAwaiter<SendtoAwaiter, Result<size_t> > {
 
 auto IOCPContext::sendto(SocketView sock, const void *buf, size_t len, const IPEndpoint &addr) -> Task<size_t> {
     SendtoAwaiter awaiter;
+    awaiter.ctxt = this;
     awaiter.sock = sock.get();
     awaiter.buf.buf = (CHAR*) buf;
     awaiter.buf.len = len;
@@ -401,6 +448,7 @@ struct RecvfromAwaiter : public IOCPAwaiter<RecvfromAwaiter, Result<std::pair<si
 
 auto IOCPContext::recvfrom(SocketView sock, void *buf, size_t len) -> Task<std::pair<size_t, IPEndpoint> > {
     RecvfromAwaiter awaiter;
+    awaiter.ctxt = this;
     awaiter.sock = sock.get();
     awaiter.buf.buf = (CHAR*) buf;
     awaiter.buf.len = len;

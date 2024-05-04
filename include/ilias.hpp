@@ -42,7 +42,7 @@ template <typename T>
 class AwaitTransform;
 
 /**
- * @brief Error wrapping socket error codes
+ * @brief Error wrapping generic error codes
  * 
  */
 class Error {
@@ -122,6 +122,12 @@ public:
      */
     bool isOk() const;
     /**
+     * @brief Get the value of the error
+     * 
+     * @return uint32_t 
+     */
+    uint32_t value() const;
+    /**
      * @brief Get the message of the error
      * 
      * @return std::string 
@@ -153,10 +159,6 @@ public:
      * @return Error 
      */
     static Error fromHErrno(uint32_t err);
-
-    operator Code() const noexcept {
-        return mErr;
-    }
 private:
     template <Code>
     static consteval auto _errMessage();
@@ -198,8 +200,19 @@ inline std::string Error::message() const {
     }
     return std::string(table[size_t(mErr)]);
 }
+inline uint32_t Error::value() const {
+    return mErr;
+}
 inline bool Error::isOk() const {
     return mErr == Ok;
+}
+
+// --- Compare
+inline bool operator ==(Error err1, Error err2) noexcept {
+    return err1.value() == err2.value();
+}
+inline bool operator !=(Error err1, Error err2) noexcept {
+    return err1.value() != err2.value();
 }
 
 ILIAS_NS_END

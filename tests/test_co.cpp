@@ -1,4 +1,5 @@
 // #define ILIAS_COROUTINE_TRACE
+#define ILIAS_COROUTINE_LIFETIME_CHECK
 #include "../include/ilias_task.hpp"
 #include "../include/ilias_await.hpp"
 #include "../include/ilias_channel.hpp"

@@ -5,24 +5,14 @@
 #include "ilias_expected.hpp"
 #include "ilias_backend.hpp"
 
-#include <Windows.h>
 #include <WinSock2.h>
+#include <Windows.h>
 #include <MSWSock.h>
 #include <map>
 
 #pragma comment(lib, "mswsock.lib")
 
 ILIAS_NS_BEGIN
-
-class IOCPOverlapped : public ::OVERLAPPED {
-public:
-    IOCPOverlapped() {
-        ::memset(static_cast<OVERLAPPED*>(this), 0, sizeof(OVERLAPPED));
-    }
-
-    // Called on Dispatched
-    void (*onCompelete)(IOCPOverlapped *self, BOOL ok, DWORD byteTrans) = nullptr;
-};
 
 /**
  * @brief A Context for Windows IOCP
@@ -55,6 +45,7 @@ private:
     auto _calcWaiting() const -> DWORD;
     auto _runTimers() -> void;
     auto _loadFunctions() -> void;
+    auto _runIo(DWORD timeout) -> void;
     
     SockInitializer mInitalizer;
     HANDLE mIocpFd = INVALID_HANDLE_VALUE; //< iocp fd
@@ -71,6 +62,8 @@ private:
     std::map<uintptr_t, std::multimap<uint64_t, Timer>::iterator> mTimers;
     std::multimap<uint64_t, Timer> mTimerQueue;
     uint64_t mTimerIdBase = 0; //< A self-increasing timer id base
+template <typename T, typename RetT>
+friend class IOCPAwaiter;
 };
 
 using PlatformIoContext = IOCPContext;

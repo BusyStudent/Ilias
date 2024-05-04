@@ -321,6 +321,8 @@ inline auto Channel<T>::_closeSender() -> void {
     if (mReceiverHandle && _isBroken()) {
         auto h = mReceiverHandle;
         mReceiverHandle = nullptr;
+        
+        ILIAS_CHECK_EXISTS(h);
         h.resume();
     }
     mRefcount -= 1;
@@ -335,6 +337,8 @@ inline auto Channel<T>::_closeReceiver() -> void {
     while (!mSenderHandles.empty()) {
         auto h = mSenderHandles.front();
         mSenderHandles.pop_front();
+
+        ILIAS_CHECK_EXISTS(h);
         h.resume();
     }
     mRefcount -= 1;
@@ -427,6 +431,8 @@ inline auto Channel<T>::_trySend(Result<T> &&v) -> Result<void> {
     if (mReceiverHandle) {
         auto h = mReceiverHandle;
         mReceiverHandle = nullptr;
+
+        ILIAS_CHECK_EXISTS(h);
         h.resume();
     }
 }
@@ -490,6 +496,8 @@ inline auto Channel<T>::_tryRecv() -> Result<T> {
     if (!mSenderHandles.empty()) {
         auto h = mSenderHandles.front();
         mSenderHandles.pop_front();
+
+        ILIAS_CHECK_EXISTS(h);
         h.resume();
     }
     return value;

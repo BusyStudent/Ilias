@@ -27,6 +27,24 @@
 #include <format>
 #endif
 
+// For the life-time track
+#if !defined(ILIAS_COROUTINE_LIFETIME_CHECK)
+#define ILIAS_CO_EXISTS(h) true
+#define ILIAS_CO_ADD(h) 
+#define ILIAS_CO_REMOVE(h) 
+#else
+#define ILIAS_CO_EXISTS(h) (_ilias_coset.contains(h))
+#define ILIAS_CO_ADD(h) ILIAS_CHECK_NEXISTS(h); _ilias_coset.insert(h)
+#define ILIAS_CO_REMOVE(h) ILIAS_CHECK_EXISTS(h); _ilias_coset.erase(h)
+#include <set>
+inline std::set<std::coroutine_handle<> > _ilias_coset;
+#endif
+
+// For user easy macro
+#define ILIAS_CHECK_EXISTS(h) ILIAS_ASSERT(ILIAS_CO_EXISTS(h))
+#define ILIAS_CHECK_NEXISTS(h) ILIAS_ASSERT(!ILIAS_CO_EXISTS(h))
+#define ILIAS_CO_RESUME(h) if (h) { ILIAS_CHECK_EXISTS(h); h.resume(); }
+
 // Useful macros
 #define ilias_go   ILIAS_NAMESPACE::EventLoop::instance() <<
 #define ilias_wait ILIAS_NAMESPACE::EventLoop::instance() >>
@@ -217,17 +235,22 @@ inline EventLoop *EventLoop::setInstance(EventLoop *loop) noexcept {
     return prev;
 }
 inline void EventLoop::resumeHandle(std::coroutine_handle<> handle) noexcept {
+    ILIAS_CHECK_EXISTS(handle);
     post(_resumeHandle, handle.address());
 }
 inline void EventLoop::destroyHandle(std::coroutine_handle<> handle) noexcept {
+    ILIAS_CHECK_EXISTS(handle);
     post(_destroyHandle, handle.address());
 }
 inline void EventLoop::_resumeHandle(void *handle) noexcept {
     auto h = std::coroutine_handle<>::from_address(handle);
+    ILIAS_CHECK_EXISTS(h);
     h.resume();
 }
 inline void EventLoop::_destroyHandle(void *handle) noexcept {
     auto h = std::coroutine_handle<>::from_address(handle);
+    ILIAS_CHECK_EXISTS(h);
+    ILIAS_CO_REMOVE(h);
     h.destroy();
 }
 
