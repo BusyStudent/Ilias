@@ -423,8 +423,13 @@ template <typename ...Args>
 struct _SelectTags : public std::tuple<Args...> {
     using std::tuple<Args...>::tuple;
 };
+
 template <typename ...Args>
 _SelectTags(Args &&...) -> _SelectTags<Args...>;
+template <typename T>
+_WhenAnyTags(T) -> _WhenAnyTags<T>;
+template <typename T>
+_WhenAllTags(T) -> _WhenAllTags<T>;
 
 template <typename U>
 class AwaitTransform<Task<U> > {

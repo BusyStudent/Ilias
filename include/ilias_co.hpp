@@ -41,8 +41,8 @@ inline std::set<std::coroutine_handle<> > _ilias_coset;
 #endif
 
 // For user easy macro
-#define ILIAS_CHECK_EXISTS(h) ILIAS_ASSERT(ILIAS_CO_EXISTS(h))
-#define ILIAS_CHECK_NEXISTS(h) ILIAS_ASSERT(!ILIAS_CO_EXISTS(h))
+#define ILIAS_CHECK_EXISTS(h) ILIAS_CHECK(ILIAS_CO_EXISTS(h))
+#define ILIAS_CHECK_NEXISTS(h) ILIAS_CHECK(!ILIAS_CO_EXISTS(h))
 #define ILIAS_CO_RESUME(h) if (h) { ILIAS_CHECK_EXISTS(h); h.resume(); }
 
 // Useful macros
@@ -131,13 +131,7 @@ public:
      * @param handle 
      */
     void destroyHandle(std::coroutine_handle<> handle) noexcept;
-    /**
-     * @brief Resume a task by task promise pointer
-     * 
-     * @param task 
-     */
-    void resumeCoroutine(PromiseBase *task) noexcept;
-
+    
     static EventLoop *instance() noexcept;
     static EventLoop *setInstance(EventLoop *loop) noexcept;
 private:

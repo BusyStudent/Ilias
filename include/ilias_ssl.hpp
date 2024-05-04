@@ -12,6 +12,10 @@
 
 ILIAS_NS_BEGIN
 
+/**
+ * @brief Ssl Context
+ * 
+ */
 class SslContext {
 public:
     SslContext() {
@@ -463,7 +467,7 @@ public:
             }
         }
     }
-    auto recv(void *buffer, size_t n = -1) -> Task<size_t> {
+    auto recv(void *buffer, size_t n) -> Task<size_t> {
         while (true) {
             size_t readed = 0;
             int readret = SSL_read_ex(this->mSsl, buffer, n, &readed);
@@ -480,7 +484,7 @@ public:
             }
         }
     }
-    auto send(const void *buffer, size_t n = -1) -> Task<size_t> {
+    auto send(const void *buffer, size_t n) -> Task<size_t> {
         while (true) {
             size_t written = 0;
             int writret = SSL_write_ex(this->mSsl, buffer, n, &written);

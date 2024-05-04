@@ -9,3 +9,4 @@ a.out
 *.exe
 *.so
 *.dll
+/vsxmake*

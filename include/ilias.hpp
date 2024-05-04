@@ -13,6 +13,10 @@
     #include <cassert>
 #endif
 
+#ifndef ILIAS_CHECK
+    #define ILIAS_CHECK(x) if (!(x)) { ILIAS_ASSERT(x); ::abort(); }
+#endif
+
 #ifndef ILIAS_MALLOC 
     #define ILIAS_REALLOC(x, y) ::realloc(x, y)
     #define ILIAS_MALLOC(x) ::malloc(x)
