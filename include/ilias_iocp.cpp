@@ -435,7 +435,7 @@ struct RecvfromAwaiter : public IOCPAwaiter<RecvfromAwaiter, Result<std::pair<si
     }
     auto onCompelete(bool ok, DWORD byteTrans) -> Result<std::pair<size_t, IPEndpoint> > {
         if (ok) {
-            return std::make_pair(byteTrans, IPEndpoint::fromRaw(&addr, len));
+            return std::make_pair(size_t(byteTrans), IPEndpoint::fromRaw(&addr, len));
         }
         return Unexpected(Error::fromErrno());
     }

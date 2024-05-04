@@ -66,6 +66,4 @@ template <typename T, typename RetT>
 friend class IOCPAwaiter;
 };
 
-using PlatformIoContext = IOCPContext;
-
 ILIAS_NS_END
