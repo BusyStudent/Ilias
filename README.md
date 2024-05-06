@@ -32,7 +32,7 @@ int main() {
     //< If target std is not greater than 23, we will use bultin impl instead
 
     auto task = [&]() -> Task<> {
-        auto reply = co_await ctxt.get("https://www.google.com");
+        auto reply = co_await session.get("https://www.google.com");
         if (!reply) {
             co_return Unexpected(reply.error());
         }

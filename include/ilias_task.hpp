@@ -3,6 +3,7 @@
 #include <concepts>
 #include <coroutine>
 #include <exception>
+#include <functional> //< for std::invoke
 #include "ilias.hpp"
 #include "ilias_co.hpp"
 #include "ilias_expected.hpp"
