@@ -46,9 +46,10 @@ inline std::set<std::coroutine_handle<> > _ilias_coset;
 #define ILIAS_CO_RESUME(h) if (h) { ILIAS_CHECK_EXISTS(h); h.resume(); }
 
 // Useful macros
-#define ilias_go   ILIAS_NAMESPACE::EventLoop::instance() <<
-#define ilias_wait ILIAS_NAMESPACE::EventLoop::instance() >>
-#define ilias_select co_await ILIAS_NAMESPACE::_SelectTags
+#define ilias_go   ::ILIAS_NAMESPACE::EventLoop::instance() <<
+#define ilias_wait ::ILIAS_NAMESPACE::EventLoop::instance() >>
+#define ilias_spawn ::ILIAS_NAMESPACE::EventLoop::instance() <<
+#define ilias_select co_await ::ILIAS_NAMESPACE::_SelectTags
 
 ILIAS_NS_BEGIN
 
@@ -119,6 +120,17 @@ public:
      */
     template <typename T>
     auto postTask(Task<T> &&task);
+    /**
+     * @brief Create a task by callable and args, post it to the event loop (support captured lambda)
+     * 
+     * @tparam Callable 
+     * @tparam Args 
+     * @param callable 
+     * @param args 
+     * @return auto 
+     */
+    template <typename Callable, typename ...Args>
+    auto spawn(Callable &&callable, Args &&...args);
     /**
      * @brief Resume a coroutine handle in event loop, it doesnot take the ownship
      * 

@@ -305,16 +305,36 @@ inline auto EventLoop::postTask(Task<T> &&task) {
     resumeHandle(task.leak());
     return;
 }
+template <typename Callable, typename ...Args>
+inline auto EventLoop::spawn(Callable &&callable, Args &&...args) {
+    static_assert(IsTask<std::invoke_result_t<Callable, Args...> >, "Invoke result must be a task");
+    if constexpr(!std::is_class_v<Callable> || std::is_empty_v<Callable>) {
+        return postTask(std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...));
+    }
+    else { //< Make callable alive, for lambda with capturing values
+        return postTask([](auto callable, auto ...args) -> Task<void> {
+            co_await std::invoke(callable, args...);
+            co_return Result<>();
+        }(std::forward<Callable>(callable), std::forward<Args>(args)...));
+    }
+}
 
 // Helper operators
 template <typename T>
 inline auto operator <<(EventLoop *eventLoop, Task<T> &&task) {
-    eventLoop->postTask(std::move(task));
-    return eventLoop;
+    return eventLoop->postTask(std::move(task));
+}
+template <std::invocable Callable>
+inline auto operator <<(EventLoop *eventLoop, Callable &&callable) {
+    return eventLoop->spawn(std::forward<Callable>(callable));
 }
 template <typename T>
 inline auto operator >>(EventLoop *eventLoop, const Task<T> &task) {
     return eventLoop->runTask(task);
+}
+template <typename Callable, typename ...Args>
+inline auto co_spawn(Callable &&callable, Args &&...args) {
+    return EventLoop::instance()->spawn(std::forward<Callable>(callable), std::forward<Args>(args)...);
 }
 
 ILIAS_NS_END

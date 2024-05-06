@@ -244,11 +244,12 @@ inline auto QIoContext::poll(qintptr fd, QSocketNotifier::Type want) -> Task<QSo
         auto await_ready() -> bool {
             // Enable which we wanted
             switch (want) {
-                case QSocketNotifier::Read: notifier->read.setEnabled(true); break;
-                case QSocketNotifier::Write: notifier->write.setEnabled(true); break;
-                case QSocketNotifier::Exception: break;
+                case QSocketNotifier::Read: current = &notifier->read; break;
+                case QSocketNotifier::Write: current = &notifier->write; break;
+                case QSocketNotifier::Exception: current = &notifier->exception; break;
             }
-            notifier->exception.setEnabled(true); //< Always enable exception
+            ILIAS_ASSERT(current->isEnabled() == false);
+            current->setEnabled(true);
             return false;
         }
         auto await_suspend(std::coroutine_handle<> h) -> void {
@@ -257,9 +258,7 @@ inline auto QIoContext::poll(qintptr fd, QSocketNotifier::Type want) -> Task<QSo
             auto callback = [this](QSocketDescriptor fd, QSocketNotifier::Type type) {
                 onActived(fd, type);
             };
-            QObject::connect(&notifier->read, &QSocketNotifier::activated, callback);
-            QObject::connect(&notifier->write, &QSocketNotifier::activated, callback);
-            QObject::connect(&notifier->exception,&QSocketNotifier::activated, callback);
+            QObject::connect(current, &QSocketNotifier::activated, callback);
         }
         auto await_resume() -> Result<QSocketNotifier::Type> {
             cleanup(); //< Cleanup connections...
@@ -274,18 +273,15 @@ inline auto QIoContext::poll(qintptr fd, QSocketNotifier::Type want) -> Task<QSo
             handle.resume();
         }
         auto cleanup() -> void {
-            // Disable All
-            notifier->write.setEnabled(false);
-            notifier->read.setEnabled(false);
-            notifier->exception.setEnabled(false);
-            // Disconnect all
-            notifier->write.disconnect();
-            notifier->read.disconnect();
-            notifier->exception.disconnect();
+            // Disable we are using
+            current->setEnabled(false);
+            // Disconnect we are using
+            current->disconnect();
         }
 
         qintptr fd;
         Notifier *notifier;
+        QSocketNotifier *current; //< Current we are using
         QSocketNotifier::Type want;
         QSocketNotifier::Type got;
         std::coroutine_handle<> handle;

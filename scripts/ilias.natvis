@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+
+<!-- Socket -->
+<Type Name="Ilias::SocketView">
+    <DisplayString Condition="mFd != -1">{mFd}</DisplayString>
+    <DisplayString Condition="mFd == -1">invalid</DisplayString>
+</Type>
+	
+<Type Name="Ilias::IPEndpoint">
+	<DisplayString Condition="mAddr.ss_family == 0">empty</DisplayString>
+	<DisplayString Condition="mAddr.ss_family != 0">{mAddr}</DisplayString>
+</Type>
+
+<Type Name="Ilias::AsyncSocket">
+    <DisplayString>{mFd}</DisplayString>
+    <Expand>
+        <Item Name="[fd]">mFd</Item>
+        <Item Name="[ioContext]">mContext</Item>
+    </Expand>
+</Type>
+	
+<Type Name="Ilias::IStreamClient">
+	<DisplayString Condition="mPtr">{mPtr}</DisplayString>
+	<DisplayString Condition="!mPtr">empty</DisplayString>
+</Type>
+	
+<Type Name="Ilias::SslClient&lt;*&gt;">
+	<DisplayString Condition="mBio">{mBio->mFd}</DisplayString>
+    <DisplayString Condition="!mBio">empty</DisplayString>
+</Type>
+	
+<Type Name="Ilias::ByteStream&lt;*, *&gt;">
+	<DisplayString>{mFd}</DisplayString>
+    <Expand>
+		<Item Name="[fd]">mFd</Item>
+		<Item Name="[bufferLeft]">mBufferTail - mPosition</Item>
+		<ArrayItems>
+			<Size>mBufferTail - mPosition</Size>
+			<ValuePointer>mBuffer + mPosition</ValuePointer>
+		</ArrayItems>
+	</Expand>
+</Type>
+
+<!-- Http -->
+<Type Name="Ilias::HttpCookieJar">
+    <DisplayString>{mCookies}</DisplayString>
+</Type>
+
+<Type Name="Ilias::HttpCookie">
+    <DisplayString>{mName}:{mValue}</DisplayString>
+</Type>
+	
+<!-- Coroutine -->
+<Type Name="Ilias::Task&lt;*&gt;">
+    <DisplayString>{mHandle}</DisplayString>
+</Type>
+	
+<Type Name="Ilias::Uninitialized&lt;*&gt;">
+    <DisplayString Condition="!mInited">empty</DisplayString>
+    <DisplayString Condition="mInited">">non-empty</DisplayString>
+</Type>
+
+<Type Name="Ilias::PromiseBase" Inheritable="false">
+	<DisplayString>{mHandle}</DisplayString>
+	<Expand>
+		<Item Name="[canceled]">mCanceled</Item>
+		<Item Name="[eventLoop]">mEventLoop</Item>
+	</Expand>
+</Type>
+
+<Type Name="Ilias::TaskPromise&lt;*&gt;">
+	<DisplayString>{mHandle}</DisplayString>
+	<Expand>
+		<Item Name="[canceled]">mCanceled</Item>
+		<Item Name="[eventLoop]">mEventLoop</Item>
+        <Item Name="[returnValue]">mValue</Item>
+	</Expand>
+</Type>
+
+</AutoVisualizer>

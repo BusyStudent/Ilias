@@ -87,9 +87,21 @@ Task<void> testWhenAll1() {
     co_return Result<void>();
 }
 
+void testSpawn() {
+    ilias_spawn []() -> Task<>{
+        ::printf("spawn by ilias_spawn\n");
+        co_return Result<>();
+    };
+    ilias_spawn [value = 1]() -> Task<>{
+        ::printf("spawn by ilias_spawn, value = %d\n", value);
+        co_return Result<>();
+    };
+}
+
 int main() {
     MiniEventLoop loop;
     // ilias_wait Sleep(1s);
+    testSpawn();
     auto ret = ilias_wait task();
     ilias_wait testChannel();
     ilias_wait testChannel2();
