@@ -37,6 +37,7 @@ concept DatagramClient = requires(T t) {
  */
 class IoContext : public EventLoop {
 public:
+    // Socket
     virtual auto addSocket(SocketView fd) -> Result<void> = 0;
     virtual auto removeSocket(SocketView fd) -> Result<void> = 0;
     
@@ -46,6 +47,15 @@ public:
     virtual auto accept(SocketView fd) -> Task<std::pair<Socket, IPEndpoint> > = 0;
     virtual auto sendto(SocketView fd, const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> = 0;
     virtual auto recvfrom(SocketView fd, void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > = 0;
+
+    // File / Pipe
+#if !defined(ILIAS_NO_FILE)
+    virtual auto addFd(fd_t fd) -> Result<void> { return Unexpected(Error::OperationNotSupported); }
+    virtual auto removeFd(fd_t fd) -> Result<void> { return Unexpected(Error::OperationNotSupported); }
+
+    virtual auto write(fd_t fd, const void *buffer, size_t n) -> Task<size_t> { ::abort(); }
+    virtual auto read(fd_t fd, void *buffer, size_t n) -> Task<size_t> { ::abort(); }
+#endif
 
     static auto instance() -> IoContext * {
         return dynamic_cast<IoContext*>(EventLoop::instance());

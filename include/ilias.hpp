@@ -24,6 +24,15 @@
     #include <cstdlib>
 #endif
 
+#define ILIAS_DECLARE_ERROR(errc, category_)     \
+    template <>                                  \
+    class ::ILIAS_NAMESPACE::ErrorTraits<errc> { \
+    public:                                      \
+        static const category_ & category() {    \
+            return category_::instance();        \
+        }                                        \
+    }
+
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT((x) && (msg))
 #define ILIAS_NS_BEGIN namespace ILIAS_NAMESPACE {
 #define ILIAS_NS_END }
@@ -44,6 +53,38 @@ template <typename T = void>
 class Task;
 template <typename T>
 class AwaitTransform;
+template <typename T>
+class ErrorTraits;
+
+/**
+ * @brief Check is error code, can be put into Error class
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept ErrorCode = requires(T t) {
+    ErrorTraits<T>::category();
+};
+
+/**
+ * @brief A Class for user to explain the error code
+ * 
+ */
+class ErrorCategory {
+public:
+    /**
+     * @brief Get the message string of this value
+     * 
+     * @return std::string 
+     */
+    virtual auto message(uint32_t value) const -> std::string = 0;
+    /**
+     * @brief Get the name of the category
+     * 
+     * @return std::string_view 
+     */
+    virtual auto name() const -> std::string_view = 0;
+};
 
 /**
  * @brief Error wrapping generic error codes
@@ -113,10 +154,24 @@ public:
         User,                        //< User defined error beginning
     };
 
-    constexpr Error() = default;
-    constexpr Error(Code err) : mErr(err) { }
-    constexpr Error(const Error &) = default;
-    constexpr ~Error() = default;
+    /**
+     * @brief Construct a new Error object from registered error code enum
+     * 
+     * @tparam T 
+     * @param err 
+     */
+    template <ErrorCode T>
+    Error(T err);
+    /**
+     * @brief Construct a new Error object from a error code and category
+     * 
+     * @param err 
+     * @param c 
+     */
+    Error(uint32_t err, const ErrorCategory &c);
+    Error(const Error &);
+    Error();
+    ~Error();
 
     /**
      * @brief Does this Error is ok?
@@ -124,57 +179,84 @@ public:
      * @return true 
      * @return false 
      */
-    bool isOk() const;
+    auto isOk() const -> bool;
     /**
      * @brief Get the value of the error
      * 
      * @return uint32_t 
      */
-    uint32_t value() const;
+    auto value() const -> uint32_t;
     /**
      * @brief Get the message of the error
      * 
      * @return std::string 
      */
-    std::string message() const;
+    auto message() const -> std::string;
+    /**
+     * @brief Get the category of the error
+     * 
+     * @return const ErrorCategory &
+     */
+    auto category() const -> const ErrorCategory &;
+    /**
+     * @brief Assign a value
+     * 
+     * @return Error& 
+     */
+    auto operator =(const Error &) -> Error & = default;
     /**
      * @brief Get Error code from errno (WSAGetLastError)
      * 
-     * @return SockError 
+     * @return 
      */
-    static Error fromErrno();
+    static auto fromErrno() -> Error;
     /**
      * @brief Get Error code from h_errno (WSAGetLastError)
      * 
-     * @return SockError 
+     * @return 
      */
-    static Error fromHErrno();
+    static auto fromHErrno() -> Error;
     /**
      * @brief Convert Errono code to Error
      * 
      * @param err 
      * @return Error 
      */
-    static Error fromErrno(uint32_t err);
+    static auto fromErrno(uint32_t err) -> Error;
     /**
      * @brief Convert h_errno code to Error
      * 
      * @param err 
      * @return Error 
      */
-    static Error fromHErrno(uint32_t err);
+    static auto fromHErrno(uint32_t err) -> Error;
 private:
-    template <Code>
+    uint32_t mErr = Ok;
+    const ErrorCategory *mCategory = nullptr;
+};
+
+/**
+ * @brief Default category for translate bultin error code
+ * 
+ */
+class IliasCategory final : public ErrorCategory {
+public:
+    auto message(uint32_t err) const -> std::string override;
+    auto name() const -> std::string_view override;
+
+    static auto instance() -> const IliasCategory &;
+private:
+    template <Error::Code>
     static consteval auto _errMessage();
     template <size_t ...N>
     static consteval auto _errTable(std::index_sequence<N...>);
-
-    Code mErr = Ok;
 };
+
+ILIAS_DECLARE_ERROR(Error::Code, IliasCategory);
 
 // --- Error Impl
 template <Error::Code c>
-inline consteval auto Error::_errMessage() {
+inline consteval auto IliasCategory::_errMessage() {
 #ifdef _MSC_VER
     constexpr std::string_view name(__FUNCSIG__);
     constexpr size_t nsEnd = name.find_last_of("::");
@@ -191,32 +273,60 @@ inline consteval auto Error::_errMessage() {
 #endif
 }
 template <size_t ...N>
-inline consteval auto Error::_errTable(std::index_sequence<N...>) {
+inline consteval auto IliasCategory::_errTable(std::index_sequence<N...>) {
     constexpr std::array<std::string_view, sizeof ...(N)> table = {
-        _errMessage<Code(N)>()...
+        _errMessage<Error::Code(N)>()...
     };
     return table;
 }
-inline std::string Error::message() const {
-    constexpr auto table = _errTable(std::make_index_sequence<size_t(User)>());
-    if (size_t(mErr) > table.size()) {
+inline auto IliasCategory::instance() -> const IliasCategory & {
+    static IliasCategory c;
+    return c;
+}
+inline auto IliasCategory::message(uint32_t err) const -> std::string {
+    constexpr auto table = _errTable(std::make_index_sequence<size_t(Error::User)>());
+    if (err > table.size()) {
         return "Unknown error";
     }
-    return std::string(table[size_t(mErr)]);
+    return std::string(table[err]);
 }
-inline uint32_t Error::value() const {
+inline auto IliasCategory::name() const -> std::string_view {
+    return "ilias";
+}
+
+
+inline Error::Error(uint32_t err, const ErrorCategory &c) : mErr(err), mCategory(&c) { }
+template <ErrorCode T>
+inline Error::Error(T err) : mErr(uint32_t(err)), mCategory(&ErrorTraits<T>::category()) { }
+inline Error::Error() : mErr(Ok), mCategory(&IliasCategory::instance()) { }
+inline Error::Error(const Error &) = default;
+inline Error::~Error() = default;
+
+inline auto Error::message() const -> std::string {
+    return mCategory->message(mErr);
+}
+inline auto Error::category() const -> const ErrorCategory & {
+    return *mCategory;   
+}
+inline auto Error::value() const -> uint32_t {
     return mErr;
 }
-inline bool Error::isOk() const {
+inline auto Error::isOk() const -> bool {
     return mErr == Ok;
 }
 
 // --- Compare
+inline bool operator ==(const ErrorCategory &cat1, const ErrorCategory &cat2) noexcept {
+    return &cat1 == &cat2;
+}
+inline bool operator !=(const ErrorCategory &cat1, const ErrorCategory &cat2) noexcept {
+    return &cat1 != &cat2;
+}
 inline bool operator ==(Error err1, Error err2) noexcept {
-    return err1.value() == err2.value();
+    return err1.value() == err2.value() && err1.category() == err2.category();
 }
 inline bool operator !=(Error err1, Error err2) noexcept {
-    return err1.value() != err2.value();
+    return err1.value() != err2.value() || err1.category() != err2.category();
 }
 
 ILIAS_NS_END

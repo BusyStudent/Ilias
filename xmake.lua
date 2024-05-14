@@ -40,10 +40,12 @@ target("test_async")
     add_tests("async")
 target_end()
 
+add_requires("gtest")
 target("test_co")
     set_kind("binary")
     add_files("tests/test_co.cpp")
     add_tests("co")
+    add_packages("gtest")
 target_end()
 
 target("test_dns")

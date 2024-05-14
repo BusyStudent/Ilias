@@ -4,107 +4,119 @@
 #include "../include/ilias_await.hpp"
 #include "../include/ilias_channel.hpp"
 #include "../include/ilias_loop.hpp"
+#include <gtest/gtest.h>
 #include <iostream>
 #include <string>
 
 using namespace ILIAS_NAMESPACE;
 using namespace std::chrono_literals;
 
-Task<int> another() {
-    co_return 42;
+TEST(TaskTest, GetValue) {
+    auto num = ilias_wait []() -> Task<int> {
+        co_return co_await []() -> Task<int> {
+            co_return 1;
+        }();
+    }();
+    ASSERT_EQ(num.value(), 1);
 }
-Task<int> taskAA() {
-    ::printf("go\n");
-    co_return 11;
-}
-
-Task<int> v() {
-    co_return 123;
-}
-
-Task<int> task() {
-    co_await v();
-    ilias_go taskAA();
-    auto result = co_await WhenAny(Sleep(20ms), Sleep(1s));
-
-    ilias_select {
-        taskAA() >> [&](auto v) {
-            ::printf("Select >> taskAA() => %d\n", v.value());
-        },
-        Sleep(1s) >> [&](auto v) {
-            ::printf("Select >> Sleep(1s)\n");
-        },
-        Sleep(10s) >> nullptr
+TEST(TaskTest, Impl1) {
+    auto task = []() -> Task<> {
+        co_return Result<>();
     };
-    co_return 0;
+    auto v = task();
+    ASSERT_EQ(v.promise().isStarted(), false);
+    ilias_wait v;
+    ASSERT_EQ(v.promise().isStarted(), true);
+    ASSERT_EQ(v.handle().done(), true);
 }
 
-Task<void> printUtilNone(Receiver<int> r) {
-    while (auto num = co_await r.recv()) {
-        ::printf("%d\n", num.value());
-    }
-    r.close();
-    co_return Result<void>();
+TEST(WhenAllTest, Test1) {
+    auto task = []() -> Task<> {
+        co_await WhenAll(Sleep(1s), Sleep(10ms));
+        co_return Result<>();
+    };
+    auto now = std::chrono::steady_clock::now();
+    ilias_wait task();
+    auto diff =  std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - now);
+    ASSERT_LT(diff, 1100ms);
 }
-Task<void> printUtilN(Receiver<int> r, int n) {
-    while (auto num = co_await r.recv()) {
-        ::printf("%d\n", num.value());
-        n -= 1;
-        if (n == 0) {
-            break;
-        }
-    }
-    r.close();
-    co_return Result<void>();
-}
-Task<void> sendForN(Sender<int> s, int n) {
-    for (int i = 0; i < n; ++i) {
+
+// ---- Test for Channels
+// send n, return actually sended
+auto sendForN(Sender<int> s, int n) -> Task<int> {
+    int i = 0;
+    for (i = 0; i < n; ++i) {
         if (auto v = co_await s.send(i); !v) {
             ::printf("sendForN: send failed =>%s\n", v.error().message().c_str());
             break;
         }
     }
     s.close();
-    co_return Result<void>();
+    co_return i;
 }
 
-Task<void> testChannel() {
-    ::printf("testChannel1\n");
-    auto [tx, rx] = Channel<int>::make();
-
-    co_await WhenAll(sendForN(std::move(tx), 10), printUtilNone(std::move(rx)));
-    co_return Result<void>();
-}
-Task<void> testChannel2() {
-    ::printf("testChannel2\n");
-    auto [tx, rx] = Channel<int>::make();
-    
-    co_await WhenAll(sendForN(std::move(tx), 100), printUtilN(std::move(rx), 3));
-    co_return Result<void>();
-}
-Task<void> testWhenAll1() {
-    co_await WhenAll(Sleep(1s), Sleep(10ms));
-    co_return Result<void>();
+auto printUtilNone(Receiver<int> r) -> Task<int> {
+    int i = 0;
+    while (auto num = co_await r.recv()) {
+        // ::printf("%d\n", num.value());
+        i += 1;
+    }
+    r.close();
+    co_return i;
 }
 
-void testSpawn() {
-    ilias_spawn []() -> Task<>{
-        ::printf("spawn by ilias_spawn\n");
-        co_return Result<>();
+auto printUtilN(Receiver<int> r, int n) -> Task<int> {
+    int i = 0;
+    while (auto num = co_await r.recv()) {
+        // ::printf("%d\n", num.value());
+        n -= 1;
+        i += 1;
+        if (n == 0) {
+            break;
+        }
+    }
+    r.close();
+    co_return i;
+}
+
+TEST(ChannelTest, PrintUntilClosed) {
+    auto task = [](size_t capicity = 32, size_t n = 30) -> Task<std::pair<int, int> > {
+        auto [sx, rx] = Channel<int>::make(32);
+        auto [a, b] = co_await WhenAll(
+            sendForN(std::move(sx), n),
+            printUtilNone(std::move(rx))
+        );
+        co_return std::pair{a.value(), b.value()};
     };
-    ilias_spawn [value = 1]() -> Task<>{
-        ::printf("spawn by ilias_spawn, value = %d\n", value);
-        co_return Result<>();
-    };
+
+    {
+    auto [a, b] = (ilias_wait task()).value();
+    ASSERT_EQ(a, 30);
+    ASSERT_EQ(b, 30);
+    }
+
+    {
+    auto [a, b] = (ilias_wait task(1)).value();
+    ASSERT_EQ(a, 30);
+    ASSERT_EQ(b, 30);
+    }
+
+    {
+    auto [a, b] = (ilias_wait task(4)).value();
+    ASSERT_EQ(a, 30);
+    ASSERT_EQ(b, 30);
+    }
+
+    {
+    auto [a, b] = (ilias_wait task(4, 114514)).value();
+    ASSERT_EQ(a, 114514);
+    ASSERT_EQ(b, 114514);
+    }
 }
 
-int main() {
+int main(int argc, char **argv) {
     MiniEventLoop loop;
-    // ilias_wait Sleep(1s);
-    testSpawn();
-    auto ret = ilias_wait task();
-    ilias_wait testChannel();
-    ilias_wait testChannel2();
-    ilias_wait testWhenAll1();
-    return ret.value_or(-1);
+
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }

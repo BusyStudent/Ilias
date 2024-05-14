@@ -136,8 +136,14 @@ public:
     PromiseBase(const PromiseBase &) = delete; 
     ~PromiseBase() = default;
 
-    auto initial_suspend() noexcept -> std::suspend_always {        
-        return {};
+    auto initial_suspend() noexcept {
+        struct Awaiter {
+            auto await_ready() const noexcept -> bool { return false; }
+            auto await_suspend(std::coroutine_handle<>) const noexcept -> void { }
+            auto await_resume() { ILIAS_ASSERT(self); self->mStarted = true; }
+            PromiseBase *self;
+        };
+        return Awaiter {this};
     }
     auto final_suspend() noexcept -> SwitchCoroutine {
         if (mQuitOnDone) [[unlikely]] {
@@ -171,6 +177,9 @@ public:
     auto isCanceled() const -> bool {
         return mCanceled;
     }
+    auto isStarted() const -> bool {
+        return mStarted;
+    }
     auto name() const -> const char * {
         return mName;
     }
@@ -203,6 +212,7 @@ public:
         mEventLoop = eventLoop;
     }
 protected:
+    bool mStarted = false;
     bool mCanceled = false;
     bool mQuitOnDone = false;
     bool mDestroyOnDone = false;
