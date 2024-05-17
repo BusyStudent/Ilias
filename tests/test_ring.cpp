@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#define ILIAS_SSL_RING_DEBUG
+#define ILIAS_RING_DEBUG
 
 #include "../include/ilias_async.hpp"
 #include "../include/ilias_loop.hpp"
@@ -10,7 +10,7 @@ using namespace ILIAS_NAMESPACE;
 
 TEST(RingTest, Test1) {
     
-    SslRing<20> ring;
+    RingBuffer<20> ring;
     EXPECT_EQ(ring.push("123", 3), 3);
     EXPECT_EQ(ring.push("456", 3), 3);
     EXPECT_EQ(ring.push("789", 3), 3);

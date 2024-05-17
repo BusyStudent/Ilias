@@ -7,43 +7,34 @@
 ILIAS_NS_BEGIN
 
 /**
- * @brief A File Descriptor
- * 
- */
-class FileDescriptor {
-public:
-    FileDescriptor(IoContext &ctxt);
-    FileDescriptor(IoContext &ctxt, fd_t fd);
-    FileDescriptor(const FileDescriptor &) = delete;
-    FileDescriptor(FileDescriptor &&fp);
-    FileDescriptor();
-    ~FileDescriptor();
-
-    auto close() -> void;
-    auto setFd(fd_t fd) -> Result<void>;
-    auto read(void *buffer, size_t n) -> Task<size_t>;
-    auto write(const void *buffer, size_t n) -> Task<size_t>;
-
-    auto isValid() const -> bool;
-    auto get() const -> fd_t;
-    auto context() const -> IoContext *;
-protected:
-    IoContext *mCtxt = nullptr;
-    fd_t mFd = fd_t(-1);
-};
-
-/**
  * @brief A File 
  * 
  */
-class File : public FileDescriptor {
+class File {
 public:
-    using FileDescriptor::FileDescriptor;
+    File();
+    File(IoContext &ctxt);
+    File(const File &) = delete;
+    ~File();
 
+    auto read(void *buffer, size_t n) -> Task<size_t>;
+    auto write(const void *buffer, size_t n) -> Task<size_t>;
     auto seek(int64_t offset, int whence) -> Result<size_t>;
     auto tell() -> Result<size_t>;
     auto size() -> Result<size_t>;
-    auto open(std::string_view path, std::string_view mode) -> Result<void>;
+
+    /**
+     * @brief Open a utf8 path
+     * 
+     * @param path
+     * @param mode "wb rb" liked 
+     */
+    auto open(std::string_view path, std::string_view mode) -> Result<>;
+    auto close() -> void;
+    
+    auto isOpen() const -> bool;
+    auto get() const -> fd_t;
+    auto context() const -> IoContext *;
     /**
      * @brief Create a File handle from a FILE *, it doesnot take the ownship of the FILE
      * 
@@ -52,36 +43,34 @@ public:
      * @return Result<File> 
      */
     static auto fromFILE(IoContext &ctxt, FILE *fp) -> Result<File>;
+protected:
+    IoContext *mCtxt = nullptr;
+    fd_t mFd = fd_t(-1);
 };
 
-// --- FileDescriptor
-inline FileDescriptor::FileDescriptor(IoContext &ctxt, fd_t fd) : mCtxt(&ctxt), mFd(fd) {
-    if (!ctxt.addFd(fd)) {
-        fd = fd_t(-1);
-    }
-}
-inline FileDescriptor::~FileDescriptor() {
-    close();
-}
-inline auto FileDescriptor::close() -> void {
-    if (!isValid()) {
+// --- File
+inline File::File(IoContext &ctxt) : mCtxt(&ctxt) { }
+inline File::File() { }
+inline File::~File() { close(); }
+
+inline auto File::close() -> void {
+    if (!isOpen()) {
         return;
     }
     mCtxt->removeFd(mFd);
     mCtxt = nullptr;
     mFd = fd_t(-1);
 }
-inline auto FileDescriptor::isValid() const -> bool {
+inline auto File::isOpen() const -> bool {
     return mFd != fd_t(-1);
 }
-inline auto FileDescriptor::read(void *buffer, size_t n) -> Task<size_t> {
+inline auto File::read(void *buffer, size_t n) -> Task<size_t> {
     return mCtxt->read(mFd, buffer, n);
 }
-inline auto FileDescriptor::write(const void *buffer, size_t n) -> Task<size_t> {
+inline auto File::write(const void *buffer, size_t n) -> Task<size_t> {
     return mCtxt->write(mFd, buffer, n);
 }
 
-// --- File
 inline auto File::seek(int64_t offset, int whence) -> Result<size_t> {
     static_assert(FILE_CURRENT == SEEK_CUR);
     static_assert(FILE_BEGIN == SEEK_SET);
@@ -103,6 +92,13 @@ inline auto File::size() -> Result<size_t> {
 }
 inline auto File::tell() -> Result<size_t> {
     return seek(0, SEEK_CUR);
+}
+inline auto File::open(std::string_view path, std::string_view mode) -> Result<> {
+    if (isOpen()) {
+        close();
+    }
+    // ::CreateFileW();
+    return Unexpected(Error::Unknown);
 }
 
 ILIAS_NS_END

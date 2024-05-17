@@ -183,6 +183,9 @@ public:
     auto name() const -> const char * {
         return mName;
     }
+    auto handle() const -> std::coroutine_handle<> {
+        return mHandle;
+    }
     auto resumeCaller() const -> PromiseBase * {
         return mResumeCaller;
     }
@@ -304,6 +307,99 @@ private:
     Uninitialized<Result<T> > mValue;
 };
 
+/**
+ * @brief Handle used to observe the running task
+ * 
+ */
+class CancelHandle {
+public:
+    template <typename T>
+    explicit CancelHandle(std::coroutine_handle<T> handle) : mPtr(&handle.promise()) { }
+    CancelHandle(const CancelHandle &) = delete;
+    CancelHandle(CancelHandle &&other) : mPtr(other.mPtr) { other.mPtr = nullptr; }
+    CancelHandle(std::nullptr_t) { }
+    CancelHandle() = default;
+    ~CancelHandle() { clear(); }
+
+    auto clear() -> void;
+    auto cancel() -> void;
+    auto isDone() const -> bool;
+    auto isCanceled() const -> bool;
+    auto operator =(CancelHandle &&h) -> CancelHandle &;
+private:
+    auto _cohandle() const -> std::coroutine_handle<>;
+protected:
+    PromiseBase *mPtr = nullptr;
+};
+
+/**
+ * @brief Handle used to observe the running task but, it can blocking wait for it
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class JoinHandle : public CancelHandle {
+public:
+    explicit JoinHandle(std::coroutine_handle<TaskPromise<T> > handle) : CancelHandle(handle) { }
+    JoinHandle(const JoinHandle &) = delete;
+    JoinHandle(JoinHandle &&) = default;
+
+    auto join() const -> Result<T>;
+    auto operator =(JoinHandle &&other) -> JoinHandle & = default;
+private:
+    auto _cohandle() const -> std::coroutine_handle<TaskPromise<T> > {
+        return static_cast<TaskPromise<T> *>(mPtr)->handle();
+    }
+};
+
+// CancelHandle
+inline auto CancelHandle::clear() -> void {
+    auto h = _cohandle();
+    if (!h) {
+        return;
+    }
+    if (!h.done()) {
+        // Still not done, we detach it
+        mPtr->setDestroyOnDone();
+    }
+    else {
+        h.destroy(); //< Done, we destroy it
+    }
+    mPtr = nullptr;
+}
+inline auto CancelHandle::_cohandle() const -> std::coroutine_handle<> {
+    if (mPtr) {
+        return mPtr->handle();
+    }
+    return std::coroutine_handle<>();
+}
+inline auto CancelHandle::cancel() -> void {
+    if (mPtr) {
+        mPtr->cancel();
+    }
+}
+inline auto CancelHandle::isDone() const -> bool {
+    return _cohandle().done();
+}
+inline auto CancelHandle::isCanceled() const -> bool {
+    return mPtr->isCanceled();
+}
+inline auto CancelHandle::operator =(CancelHandle &&other) -> CancelHandle & {
+    if (this == &other) {
+        return *this;
+    }
+    clear();
+    mPtr = other.mPtr;
+    other.mPtr = nullptr;
+    return *this;
+}
+// template <typename T>
+// inline auto JoinHandle<T>::join() const -> Result<T> {
+//     ILIAS_ASSERT(mPtr);
+
+// }
+
+// Some EventLoop 
 template <typename T>
 inline auto EventLoop::runTask(const Task<T> &task) {
     task.promise().setEventLoop(this);
@@ -311,21 +407,21 @@ inline auto EventLoop::runTask(const Task<T> &task) {
 }
 template <typename T>
 inline auto EventLoop::postTask(Task<T> &&task) {
-    task.promise().setEventLoop(this);
-    task.promise().setDestroyOnDone();
-    resumeHandle(task.leak());
-    return;
+    auto handle = task.leak();
+    handle.promise().setEventLoop(this);
+    resumeHandle(handle);
+    return JoinHandle<T>(handle);
 }
 template <typename Callable, typename ...Args>
 inline auto EventLoop::spawn(Callable &&callable, Args &&...args) {
-    static_assert(IsTask<std::invoke_result_t<Callable, Args...> >, "Invoke result must be a task");
+    using TaskType = std::invoke_result_t<Callable, Args...>;
+    static_assert(IsTask<TaskType>, "Invoke result must be a task");
     if constexpr(!std::is_class_v<Callable> || std::is_empty_v<Callable>) {
         return postTask(std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...));
     }
     else { //< Make callable alive, for lambda with capturing values
-        return postTask([](auto callable, auto ...args) -> Task<void> {
-            co_await std::invoke(callable, args...);
-            co_return Result<>();
+        return postTask([](auto callable, auto ...args) -> Task<typename TaskType::value_type> {
+            co_return co_await std::invoke(callable, args...);
         }(std::forward<Callable>(callable), std::forward<Args>(args)...));
     }
 }

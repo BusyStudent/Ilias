@@ -117,6 +117,11 @@ TEST(ChannelTest, PrintUntilClosed) {
 int main(int argc, char **argv) {
     MiniEventLoop loop;
 
+    ilias_spawn [v = 11]() -> Task<int> {
+        std::cout << "task spawn " << v << std::endl;
+        co_return v;
+    };
+
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
