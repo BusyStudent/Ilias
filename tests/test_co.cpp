@@ -32,7 +32,10 @@ TEST(TaskTest, Impl1) {
 
 TEST(WhenAllTest, Test1) {
     auto task = []() -> Task<> {
-        co_await WhenAll(Sleep(1s), Sleep(10ms));
+        // auto [a0, b0] = co_await WhenAll(Sleep(1s), Sleep(10ms));
+        auto [a0, b0, c0] = co_await (Sleep(1s) && Sleep(10ms) && Sleep(10ms));
+        // auto [a1, b1] = co_await WhenAny(Sleep(1s), Sleep(10ms));
+        auto [a1, b1, c1] = co_await (Sleep(1s) || Sleep(10ms) || Sleep(1145s));
         co_return Result<>();
     };
     auto now = std::chrono::steady_clock::now();

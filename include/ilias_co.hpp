@@ -96,11 +96,11 @@ public:
         TimerSingleShot = 1 << 0, //< This timer is single shot (it will auto remove self)
     };
 
-    virtual void quit() = 0;
-    virtual void run() = 0;
-    virtual void post(void (*fn)(void *), void *arg = nullptr) = 0;
-    virtual bool delTimer(uintptr_t timer) = 0;
-    virtual uintptr_t addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags = 0) = 0;
+    virtual auto quit() -> void = 0;
+    virtual auto run() -> void = 0;
+    virtual auto post(void (*fn)(void *), void *arg = nullptr) -> void = 0;
+    virtual auto delTimer(uintptr_t timer) -> bool = 0;
+    virtual auto addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags = 0) -> uintptr_t = 0;
 
     /**
      * @brief Blocking execute a task
@@ -136,23 +136,23 @@ public:
      * 
      * @param handle 
      */
-    void resumeHandle(std::coroutine_handle<> handle) noexcept;
+    auto resumeHandle(std::coroutine_handle<> handle) noexcept -> void;
     /**
      * @brief Post a coroutine handle to event loop, it will destory the given handle
      * 
      * @param handle 
      */
-    void destroyHandle(std::coroutine_handle<> handle) noexcept;
+    auto destroyHandle(std::coroutine_handle<> handle) noexcept -> void;
     
-    static EventLoop *instance() noexcept;
-    static EventLoop *setInstance(EventLoop *loop) noexcept;
+    static auto instance() noexcept -> EventLoop *;
+    static auto setInstance(EventLoop *loop) noexcept -> EventLoop *;
 private:
     struct Tls {
         EventLoop *loop = nullptr;
     };
-    static Tls &_tls() noexcept;
-    static void _resumeHandle(void *handlePtr) noexcept;
-    static void _destroyHandle(void *handlePtr) noexcept;
+    static auto _tls() noexcept -> Tls &;
+    static auto _resumeHandle(void *handlePtr) noexcept -> void;
+    static auto _destroyHandle(void *handlePtr) noexcept -> void;
 protected:
     EventLoop();
     EventLoop(const EventLoop &) = delete;
@@ -206,7 +206,7 @@ public:
     ~Uninitialized() { if (mInited) data()->~T();  }
 
     template <typename ...Args>
-    auto construct(Args &&...args) -> void { 
+    auto construct(Args &&...args) noexcept(std::is_nothrow_constructible_v<T, Args...>) -> void { 
         new(&mValue) T(std::forward<Args>(args)...);
         mInited = true;
     }
@@ -227,33 +227,33 @@ inline EventLoop::~EventLoop() {
     ILIAS_ASSERT_MSG(instance() == this, "EventLoop instance already exists");
     setInstance(nullptr);
 }
-inline EventLoop::Tls &EventLoop::_tls() noexcept {
+inline auto EventLoop::_tls() noexcept -> Tls & {
     static thread_local Tls tls;
     return tls;
 }
-inline EventLoop *EventLoop::instance() noexcept {
+inline auto EventLoop::instance() noexcept -> EventLoop * {
     return _tls().loop;
 }
-inline EventLoop *EventLoop::setInstance(EventLoop *loop) noexcept {
+inline auto EventLoop::setInstance(EventLoop *loop) noexcept -> EventLoop * {
     auto &tls = _tls();
     auto prev = tls.loop;
     tls.loop = loop;
     return prev;
 }
-inline void EventLoop::resumeHandle(std::coroutine_handle<> handle) noexcept {
+inline auto EventLoop::resumeHandle(std::coroutine_handle<> handle) noexcept -> void {
     ILIAS_CHECK_EXISTS(handle);
     post(_resumeHandle, handle.address());
 }
-inline void EventLoop::destroyHandle(std::coroutine_handle<> handle) noexcept {
+inline auto EventLoop::destroyHandle(std::coroutine_handle<> handle) noexcept -> void {
     ILIAS_CHECK_EXISTS(handle);
     post(_destroyHandle, handle.address());
 }
-inline void EventLoop::_resumeHandle(void *handle) noexcept {
+inline auto EventLoop::_resumeHandle(void *handle) noexcept -> void {
     auto h = std::coroutine_handle<>::from_address(handle);
     ILIAS_CHECK_EXISTS(h);
     h.resume();
 }
-inline void EventLoop::_destroyHandle(void *handle) noexcept {
+inline auto EventLoop::_destroyHandle(void *handle) noexcept -> void {
     auto h = std::coroutine_handle<>::from_address(handle);
     ILIAS_CHECK_EXISTS(h);
     ILIAS_CO_REMOVE(h);

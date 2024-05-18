@@ -118,11 +118,14 @@ inline auto HttpSession::sendRequest(Operation op, HttpRequest request, std::spa
     while (true) {
 #if 1
         // In here we add timeout check for avoid waiting to long
-        auto result = co_await WhenAny(_sendRequest(op, request, extraData), Sleep(request.transferTimeout()));
-        if (result.index() == 1) {
+        auto [result, timeout] = co_await WhenAny(_sendRequest(op, request, extraData), Sleep(request.transferTimeout()));
+        if (timeout) {
             co_return Unexpected(Error::TimedOut);
         }
-        auto reply = std::move(std::get<0>(result));
+        if (!result) {
+            co_return Unexpected(Error::Canceled);
+        }
+        auto reply = std::move(*result);
 #else
         auto reply = co_await _sendRequest(op, request, extraData);
 #endif

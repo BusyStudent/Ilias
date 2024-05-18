@@ -1,14 +1,30 @@
 #pragma once
 
+#include "ilias_task.hpp"
+
 #include <coroutine>
-#include <variant>
+#include <optional>
 #include <chrono>
 #include <tuple>
-#include "ilias_task.hpp"
 
 ILIAS_NS_BEGIN
 
 namespace chrono = ::std::chrono;
+
+// --- Concepts
+template <typename T>
+struct PromiseTupleImpl : std::false_type { };
+
+template <typename... Ts>
+struct PromiseTupleImpl<std::tuple<TaskPromise<Ts> *...> > : std::true_type { };
+
+/**
+ * @brief Make sure the args is like std::tuple<TaskPromise<Ts> *...>
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept PromiseTuple = PromiseTupleImpl<std::remove_reference_t<T> >::value;
 
 /**
  * @brief Awaiter for Task to await another task
@@ -164,10 +180,10 @@ private:
 template <typename T, typename ...Args>
 class WhenAnyAwaiter {
 public:
-    using Tuple = std::tuple<TaskPromise<Args>* ...>;
-    using Variant = std::variant<Result<Args> ...>;
+    using InTuple = std::tuple<TaskPromise<Args>* ...>;
+    using OutTuple = std::tuple<std::optional<Result<Args> > ...>;
 
-    WhenAnyAwaiter(TaskPromise<T> &caller, const Tuple &tasks) :
+    WhenAnyAwaiter(TaskPromise<T> &caller, const InTuple &tasks) :
         mCaller(caller), mTasks{tasks} { }
     WhenAnyAwaiter(const WhenAnyAwaiter &) = delete;
     WhenAnyAwaiter(WhenAnyAwaiter &&) = default; 
@@ -206,43 +222,36 @@ public:
             (setAwaiting(tasks), ...);
         }, mTasks);
     }
-    auto await_resume() -> Variant {
+    auto await_resume() -> OutTuple {
         // Clear all task's prev awatting, avoid it resume the Caller
         std::apply([](auto ...tasks) {
             (tasks->setPrevAwaiting(nullptr), ...);
         }, mTasks);
-        // Check
+        // Check Canceled
         if (mCaller.isCanceled()) {
-            return Variant(std::in_place_index_t<0>{}, Unexpected(Error::Canceled));
+            mCaller.setResumeCaller(nullptr); //< Set none-resume it, it will generator all std::nullopt tuple
         }
-        ILIAS_ASSERT(mCaller.resumeCaller());
-        _makeResult(std::make_index_sequence<sizeof ...(Args)>());
-        return std::move(*mValue);
+        else {
+            ILIAS_ASSERT(mCaller.resumeCaller());
+        }
+        return _makeAllResult(std::make_index_sequence<sizeof ...(Args)>());
     }
 private:
     template <size_t I>
-    auto _makeResult() -> void {
-        if (mHasValue) {
-            return;
-        }
+    auto _makeResult() -> std::tuple_element_t<I, OutTuple> {
         auto task = std::get<I>(mTasks);
         if (mCaller.resumeCaller() != task) {
-            return;
+            return std::nullopt;
         }
-        mHasValue = true;
-        mValue.construct(std::in_place_index_t<I>{}, task->value());
+        return task->value();
     }
     template <size_t ...N>
-    auto _makeResult(std::index_sequence<N...>) -> void {
-        (_makeResult<N>(), ...);
+    auto _makeAllResult(std::index_sequence<N...>) -> OutTuple {
+        return OutTuple(_makeResult<N>()...);
     }
 
     TaskPromise<T> &mCaller;
-    Tuple mTasks;
-
-    // Result value
-    Uninitialized<Variant> mValue;
-    bool mHasValue = false;
+    InTuple mTasks;
 };
 
 /**
@@ -362,42 +371,24 @@ private:
 };
 
 /**
- * @brief Awaiter for Get current task's promise
- * 
- * @tparam T 
- */
-template <typename T>
-class PromiseAwaiter {
-public:
-    PromiseAwaiter(TaskPromise<T> &caller) : mCaller(caller) { }
-    
-    auto await_ready() const -> bool { return true; }
-    auto await_suspend(std::coroutine_handle<> h) const -> void { ILIAS_ASSERT(false); }
-    auto await_resume() const -> TaskPromise<T> * { return &mCaller; }
-private:
-    TaskPromise<T> &mCaller;
-};
-
-/**
  * @brief Place holder for wait for the time
  * 
  */
 struct _SleepTags {
     int64_t time;
 };
-struct _PromiseTags {
 
-};
 /**
  * @brief Place holder for transform to WhenAnyAwaiter
  * 
  * @tparam Args 
  */
-template <typename T>
+template <PromiseTuple T>
 struct _WhenAnyTags {
     T tuple;
 };
-template <typename T>
+
+template <PromiseTuple T>
 struct _WhenAllTags {
     T tuple;
 };
@@ -449,16 +440,7 @@ public:
     }
 };
 
-template <>
-class AwaitTransform<_PromiseTags> {
-public:
-    template <typename T>
-    static auto transform(TaskPromise<T> *caller, const _PromiseTags &tag) {
-        return PromiseAwaiter<T>(*caller);
-    }
-};
-
-template <typename Tuple>
+template <PromiseTuple Tuple>
 class AwaitTransform<_WhenAnyTags<Tuple> > {
 public:
     template <typename T>
@@ -467,7 +449,7 @@ public:
     }
 };
 
-template <typename Tuple>
+template <PromiseTuple Tuple>
 class AwaitTransform<_WhenAllTags<Tuple> > {
 public:
     template <typename T>
@@ -494,6 +476,7 @@ public:
 inline auto SleepFor(int64_t ms) -> Task<> {
     co_return co_await _SleepTags{ms};
 }
+
 /**
  * @brief Sleep a specified time
  * 
@@ -503,6 +486,7 @@ inline auto SleepFor(int64_t ms) -> Task<> {
 inline auto Sleep(chrono::milliseconds ms) -> Task<> {
     return SleepFor(ms.count());
 }
+
 /**
  * @brief Sleep until the specified time
  * 
@@ -516,6 +500,7 @@ inline auto SleepUntil(chrono::steady_clock::time_point t) -> Task<> {
         ).count()
     );
 }
+
 /**
  * @brief Wait any task was ready
  * 
@@ -527,6 +512,7 @@ template <IsTask ...Args>
 inline auto WhenAny(Args &&...tasks) {
     return _WhenAnyTags { std::tuple((&tasks.promise())...) };
 }
+
 /**
  * @brief Wait all task was ready
  * 
@@ -537,14 +523,6 @@ inline auto WhenAny(Args &&...tasks) {
 template <IsTask ...Args>
 inline auto WhenAll(Args &&...tasks) {
     return _WhenAllTags { std::tuple((&tasks.promise())...) };
-}
-/**
- * @brief Get the Current coroutine Promise object
- * 
- * @return _PromiseTags 
- */
-inline auto GetPromise() -> _PromiseTags {
-    return _PromiseTags {};
 }
 
 /**
@@ -560,6 +538,7 @@ template <typename T, typename Any>
 inline auto operator >>(Task<T> &&task, Any &&any) {
     return _BindExpression {std::move(task), std::move(any) };
 }
+
 /**
  * @brief Bind a task's result to null (drop the result)
  * 
@@ -570,6 +549,48 @@ inline auto operator >>(Task<T> &&task, Any &&any) {
 template <typename T>
 inline auto operator >>(Task<T> &&task, std::nullptr_t) {
     return _BindExpression {std::move(task), [](Result<T>) { } };
+}
+
+/**
+ * @brief When All a and b
+ * 
+ * @tparam T1 
+ * @tparam T2 
+ * @param t 
+ * @param t2 
+ * @return auto 
+ */
+template <IsTask T1, IsTask T2>
+inline auto operator &&(const T1 &a, const T2 &b) {
+    return _WhenAllTags { std::tuple{ &a.promise(), &b.promise() } };
+}
+
+template <PromiseTuple T, IsTask T1>
+inline auto operator &&(_WhenAllTags<T> a, const T1 &b) {
+    return _WhenAllTags {
+        std::tuple_cat(a.tuple, std::tuple{ &b.promise() })
+    };
+}
+
+/**
+ * @brief When Any a or b
+ * 
+ * @tparam T1 
+ * @tparam T2 
+ * @param t 
+ * @param t2 
+ * @return auto 
+ */
+template <IsTask T1, IsTask T2>
+inline auto operator ||(const T1 &t, const T2 &t2) {
+    return _WhenAnyTags { std::tuple{ &t.promise(), &t2.promise() } };
+}
+
+template <PromiseTuple T, IsTask T1>
+inline auto operator ||(_WhenAnyTags<T> a, const T1 &b) {
+    return _WhenAnyTags {
+        std::tuple_cat(a.tuple, std::tuple{ &b.promise() })
+    };
 }
 
 ILIAS_NS_END

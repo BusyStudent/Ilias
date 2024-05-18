@@ -37,12 +37,12 @@ Ilias::Task<uint64_t> getData(Ilias::IoContext &ctxt) {
         co_return Unexpected(ret.error());
     }
     char buf[1024];
-    auto recv = co_await Ilias::WhenAny(client.recvfrom(buf, sizeof(buf)), Sleep(5000ms));
-    if (recv.index() == 1) {
+    auto [recv, timeout] = co_await Ilias::WhenAny(client.recvfrom(buf, sizeof(buf)), Sleep(5000ms));
+    if (timeout) {
         std::cout << "time out" << std::endl;
         co_return Unexpected(Error::TimedOut);
     }
-    auto recvdata = std::get<0>(recv);
+    auto recvdata = *recv;
     if (!recvdata || recvdata.value().first != sizeof(ntp_pkt)) {
         std::cout << "error data" << std::endl;
         co_return Unexpected(Error::Unknown);

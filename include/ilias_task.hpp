@@ -192,6 +192,10 @@ public:
     auto setQuitOnDone() noexcept -> void {
         mQuitOnDone = true;
     }
+    /**
+     * @brief Let it destroy on the coroutine done
+     * 
+     */
     auto setDestroyOnDone() noexcept -> void {
         mDestroyOnDone = true;
     }
@@ -243,11 +247,11 @@ public:
      * @brief Construct a new Task Promise object
      * 
      */
-    TaskPromise(ILIAS_CAPTURE_CALLER(name)) {
+    TaskPromise(ILIAS_CAPTURE_CALLER(name)) noexcept {
         mName = name.function_name();
         ILIAS_CTRACE("[Ilias] Task<{}> created {}", typeid(T).name(), mName);
     }
-    ~TaskPromise() {
+    ~TaskPromise() noexcept {
         ILIAS_CTRACE("[Ilias] Task<{}> destroyed {}", typeid(T).name(), mName);
     }
     /**
@@ -269,10 +273,15 @@ public:
      * @return T 
      */
     template <Awaiter U>
-    auto await_transform(U &&t) noexcept {
+    auto await_transform(U &&t) const noexcept -> decltype(auto) {
         return std::forward<U>(t);
     }
 
+    /**
+     * @brief Get the return object object
+     * 
+     * @return Task<T> 
+     */
     auto get_return_object() -> Task<T> {
         auto handle = handle_type::from_promise(*this);
         mHandle = handle;
@@ -292,7 +301,7 @@ public:
         return std::move(*mValue);
     }
     template <typename U>
-    auto return_value(U &&value) -> void {
+    auto return_value(U &&value) noexcept(std::is_nothrow_constructible_v<T, U>) -> void {
         mValue.construct(std::forward<U>(value));
     }
     /**

@@ -634,12 +634,11 @@ inline auto Resolver::_send(const DnsQuery &query) -> Task<std::vector<DnsAnswer
             continue;
         }
         // Try get result
-        auto ret = co_await WhenAny(rx.recv(), Sleep(std::chrono::milliseconds(mTimeout)));
-        if (ret.index() == 1) {
-            // Timeout
+        auto [ret, timeout] = co_await WhenAny(rx.recv(), Sleep(std::chrono::milliseconds(mTimeout)));
+        if (timeout) {
             continue;
         }
-        auto &result = std::get<0>(ret);
+        auto &result = *ret;
         if (!result && result.error() == Error::Canceled) {
             co_return Unexpected(Error::Canceled);
         }
@@ -723,9 +722,9 @@ inline auto Resolver::_run(UdpClient client, Receiver<QueryItem> recv) -> Task<v
     uint8_t wbuffer[1024];
     std::map<uint16_t, QueryItem> items;
 while (true) {
-    auto val = co_await WhenAny(recv.recv(), client.recvfrom(rbuffer, sizeof(rbuffer)));
-    if (val.index() == 0) {
-        auto &item = std::get<0>(val);
+    auto [newRequest, newResponse] = co_await WhenAny(recv.recv(), client.recvfrom(rbuffer, sizeof(rbuffer)));
+    if (newRequest) {
+        auto &item = *newRequest;
         if (!item) {
             // May peer closed, we should quit
             co_return Result<>();
@@ -743,8 +742,8 @@ while (true) {
         items.emplace(currentId, std::move(item.value()));
         currentId += 1;
     }
-    if (val.index() == 1) {
-        auto &response = std::get<1>(val);
+    else if (newResponse) {
+        auto &response = *newResponse;
         if (!response) {
             continue;
         }
@@ -763,6 +762,9 @@ while (true) {
         }
         co_await item.sender.send(std::move(parsed.value()));
         items.erase(iter);
+    }
+    else {
+        co_return Result<>();
     }
 }
 }
