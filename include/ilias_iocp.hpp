@@ -41,6 +41,13 @@ public:
     auto accept(SocketView fd) -> Task<std::pair<Socket, IPEndpoint> > override;
     auto sendto(SocketView fd, const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> override;
     auto recvfrom(SocketView fd, void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > override;
+
+    // File EXT
+    auto addFd(fd_t fd) -> Result<void> override;
+    auto removeFd(fd_t fd) -> Result<void> override;
+
+    auto write(fd_t fd, const void *buffer, size_t n) -> Task<size_t> override;
+    auto read(fd_t fd, void *buffer, size_t n) -> Task<size_t> override;
 private:
     auto _calcWaiting() const -> DWORD;
     auto _runTimers() -> void;

@@ -200,7 +200,7 @@ public:
             mOk = true;
             return false; //< Resume
         }
-        if (::WSAGetLastError() != ERROR_IO_PENDING) {
+        if (::GetLastError() != ERROR_IO_PENDING) { //< In WindowNT GetLastError is equals to WSAGetLastError
             mOk = false;
             return false; //< Resume
         }
@@ -223,16 +223,19 @@ public:
         return mCaller->isCanceled();
     }
 
-    ::SOCKET sock;
+    union {
+        ::SOCKET sock;
+        ::HANDLE fd = INVALID_HANDLE_VALUE;
+    };
     ::DWORD bytesTransfered = 0;
     IOCPContext *ctxt = nullptr;
 private:
     auto _doCancel() {
-        IOCP_LOG("[Ilias] IOCP doCancel to (%p, %p)\n", HANDLE(sock), this);
+        IOCP_LOG("[Ilias] IOCP doCancel to (%p, %p)\n", fd, this);
         mCallerHandle = nullptr; //< Make it to nullptr, avoid we got resumed on the next event loop
-        if (!::CancelIoEx(HANDLE(sock), this)) {
+        if (!::CancelIoEx(fd, this)) {
             auto err = ::GetLastError();
-            IOCP_LOG("[Ilias] IOCP failed to CancelIoEx(%p, %p) => %d\n", HANDLE(sock), this, int(err));
+            IOCP_LOG("[Ilias] IOCP failed to CancelIoEx(%p, %p) => %d\n", fd, this, int(err));
         }
         // Collect the cancel result
         IOCP_LOG("[Ilias] Enter EventLoop to get cancel result\n");
@@ -454,6 +457,71 @@ auto IOCPContext::recvfrom(SocketView sock, void *buf, size_t len) -> Task<std::
     awaiter.buf.len = len;
     co_return co_await awaiter;
 }
+
+// File
+#if 1
+auto IOCPContext::addFd(fd_t fd) -> Result<void> {
+    auto ret = ::CreateIoCompletionPort(fd, mIocpFd, 0, 0);
+    if (!ret) {
+        return Unexpected(Error::fromErrno(::GetLastError()));
+    }
+    ::SetFileCompletionNotificationModes(
+        fd, 
+        FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE
+    );
+    return {};
+}
+auto IOCPContext::removeFd(fd_t fd) -> Result<void> {
+    return {};
+}
+
+struct WriteAwaiter : public IOCPAwaiter<WriteAwaiter, Result<size_t> > {
+    auto doIocp() -> bool {
+        return ::WriteFileEx(fd, buffer, size, this, nullptr);
+    }
+    auto onCompelete(bool ok, DWORD byteTrans) -> Result<size_t> {
+        if (ok) {
+            return byteTrans;
+        }
+        return Unexpected(Error::fromErrno(::GetLastError()));
+    }
+    ::LPCVOID buffer = nullptr;
+    ::DWORD size = 0;
+};
+
+auto IOCPContext::write(fd_t fd, const void *buf, size_t len) -> Task<size_t> {
+    WriteAwaiter awaiter;
+    awaiter.ctxt = this;
+    awaiter.fd = fd;
+    awaiter.buffer = buf;
+    awaiter.size = std::min<size_t>(len, std::numeric_limits<::DWORD>::max());
+    co_return co_await awaiter;
+}
+
+struct ReadAwaiter : public IOCPAwaiter<ReadAwaiter, Result<size_t> > {
+    auto doIocp() -> bool {
+        return ::ReadFileEx(fd, buffer, size, this, nullptr);
+    }
+    auto onCompelete(bool ok, DWORD byteTrans) -> Result<size_t> {
+        if (ok) {
+            return byteTrans;
+        }
+        return Unexpected(Error::fromErrno(::GetLastError()));
+    }
+    ::LPVOID buffer = nullptr;
+    ::DWORD size = 0;
+};
+
+auto IOCPContext::read(fd_t fd, void *buf, size_t len) -> Task<size_t> {
+    ReadAwaiter awaiter;
+    awaiter.ctxt = this;
+    awaiter.fd = fd;
+    awaiter.buffer = buf;
+    awaiter.size = std::min<size_t>(len, std::numeric_limits<::DWORD>::max());
+    co_return co_await awaiter;
+}
+
+#endif
 
 // Get WSA Ext functions
 inline auto IOCPContext::_loadFunctions() -> void {
