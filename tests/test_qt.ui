@@ -159,8 +159,20 @@
      <height>26</height>
     </rect>
    </property>
+   <widget class="QMenu" name="menuNetwork">
+    <property name="title">
+     <string>Network</string>
+    </property>
+    <addaction name="actionProxy"/>
+   </widget>
+   <addaction name="menuNetwork"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionProxy">
+   <property name="text">
+    <string>Proxy</string>
+   </property>
+  </action>
  </widget>
  <resources/>
  <connections>

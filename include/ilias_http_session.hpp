@@ -4,6 +4,7 @@
 #include "ilias_http_request.hpp"
 #include "ilias_http_cookie.hpp"
 #include "ilias_http_zlib.hpp"
+#include "ilias_socks5.hpp"
 #include "ilias_async.hpp"
 #include "ilias_url.hpp"
 #include "ilias_ssl.hpp"
@@ -65,6 +66,7 @@ public:
     auto post(const HttpRequest &request, std::span<uint8_t> data = {}) -> Task<HttpReply>;
     auto sendRequest(Operation op, HttpRequest request, std::span<uint8_t> extraData = {}) -> Task<HttpReply>;
     auto setCookieJar(HttpCookieJar *jar) -> void;
+    auto setProxy(const Url &proxy) -> void;
 private:
     /**
      * @brief Connection used tp keep alive
@@ -73,6 +75,8 @@ private:
     struct Connection {
         ByteStream<> client;
         IPEndpoint endpoint;
+        std::string host;
+        uint16_t port = 0;
         std::chrono::steady_clock::time_point lastUsedTime;
         bool cached = false;
     };
@@ -82,6 +86,7 @@ private:
     auto _readReply(Operation op, const HttpRequest &request, Connection connection) -> Task<HttpReply>;
     auto _readContent(Connection &connection, HttpReply &outReply) -> Task<void>;
     auto _readHeaders(Connection &connection, HttpReply &outReply) -> Task<void>;
+    auto _connectWithProxy(const Url &url) -> Task<Connection>;
     auto _connect(const Url &url) -> Task<Connection>;
     auto _cache(Connection connection) -> void;
     auto _sprintf(std::string &buf, const char *fmt, ...) -> void;
@@ -95,6 +100,7 @@ private:
     // TODO: Improve the cache algorithm
     std::list<Connection> mConnections;
     HttpCookieJar *mCookieJar = nullptr;
+    Url mProxy;
 friend class HttpReply;
 };
 
@@ -151,6 +157,11 @@ inline auto HttpSession::sendRequest(Operation op, HttpRequest request, std::spa
 inline auto HttpSession::setCookieJar(HttpCookieJar *cookieJar) -> void {
     mCookieJar = cookieJar;
 }
+inline auto HttpSession::setProxy(const Url &proxy) -> void {
+    mProxy = proxy;
+    // Drop all caches
+    mConnections.clear();
+}
 inline auto HttpSession::_sendRequest(Operation op, const HttpRequest &request, std::span<uint8_t> extraData) -> Task<HttpReply> {
     const auto &url = request.url();
     const auto host = url.host();
@@ -190,17 +201,22 @@ while (true) {
         default: co_return Unexpected(Error::HttpBadRequest); break;
     }
     _sprintf(buffer, "%s %s HTTP/1.1\r\n", operation, requestString.c_str());
-    for (const auto &[key, value] : request.headers()) {
-        _sprintf(buffer, "%s: %s\r\n", key.c_str(), value.c_str());
-    }
+    
     // Add host
-    _sprintf(buffer, "Host: %s:%d\r\n", std::string(host).c_str(), int(port));
+    _sprintf(buffer, "Host: %s\r\n", std::string(host).c_str());
     // Add encoding
 #if !defined(ILIAS_NO_ZLIB)
     _sprintf(buffer, "Accept-Encoding: gzip, deflate\r\n");
 #else
     _sprintf(buffer, "Accept-Encoding: identity\r\n");
 #endif
+
+    // Add userheaders
+    for (const auto &[key, value] : request.headers()) {
+        ::printf("Adding header %s: %s\n", key.c_str(), value.c_str());
+        _sprintf(buffer, "%s: %s\r\n", key.c_str(), value.c_str());
+    }
+    
     // Add cookies to headers
     if (mCookieJar) {
         auto cookies = mCookieJar->cookiesForUrl(url);
@@ -413,6 +429,10 @@ inline auto HttpSession::_readContent(Connection &con, HttpReply &reply) -> Task
     co_return Result<>();
 }
 inline auto HttpSession::_connect(const Url &url) -> Task<Connection> {
+    if (!mProxy.empty()) {
+        co_return co_await _connectWithProxy(url);
+    }
+
     auto addr = IPAddress::fromHostname(std::string(url.host()).c_str());
     auto endpoint = IPEndpoint(addr, url.port());
     for (auto iter = mConnections.begin(); iter != mConnections.end(); ++iter) {
@@ -428,29 +448,76 @@ inline auto HttpSession::_connect(const Url &url) -> Task<Connection> {
         }
     }
 
-    // Prepare client
-    Connection con;
-    con.endpoint = endpoint;
+    // Prepare client on no-proxy
+    IStreamClient client;
     if (url.scheme() == "http") {
         TcpClient tcpClient(mIoContext, addr.family());
-        con.client = std::move(tcpClient);
+        client = std::move(tcpClient);
     }
 #if !defined(ILIAS_NO_SSL)
     else if (url.scheme() == "https") {
         TcpClient tcpClient(mIoContext, addr.family());
         SslClient<TcpClient> sslClient(mSslContext, std::move(tcpClient));
         sslClient.setHostname(url.host());
-        con.client = std::move(sslClient);
+        client = std::move(sslClient);
     }
 #endif
     else {
         co_return Unexpected(Error::HttpBadRequest);
     }
-    if (auto ret = co_await con.client.connect(endpoint); !ret) {
+    if (auto ret = co_await client.connect(endpoint); !ret) {
         co_return Unexpected(ret.error());
     }
+    Connection con;
+    con.client = std::move(client);
+    con.endpoint = endpoint;
     con.lastUsedTime = std::chrono::steady_clock::now();
     co_return con;
+}
+inline auto HttpSession::_connectWithProxy(const Url &url) -> Task<Connection> {
+    auto host = url.host();
+    auto port = url.port();
+    // Check cache
+    for (auto iter = mConnections.begin(); iter != mConnections.end(); ++iter) {
+        if (iter->host == host && iter->port == port) {
+            // Cache hint
+            ::fprintf(
+                stderr, "Using cached connection on %s:%d, proxyed\n",
+                iter->host.c_str(), iter->port
+            );
+            auto con = std::move(*iter);
+            mConnections.erase(iter);
+            co_return con;
+        }
+    }
+
+    // Prepare client on proxy
+    IStreamClient client;
+    Socks5Client socks5(mIoContext, IPEndpoint(std::string(mProxy.host()).c_str(), mProxy.port()));
+    // Connect it by proxy
+    if (auto err = co_await socks5.connect(host, port); !err) {
+        co_return Unexpected(err.error());
+    }
+    if (url.scheme() == "http") {
+        client = std::move(socks5);
+    }
+#if !defined(ILIAS_NO_SSL)
+    else if (url.scheme() == "https") {
+        // Wrap it by SSL
+        SslClient<> sslClient(mSslContext, std::move(socks5));
+        sslClient.setHostname(url.host());
+        client = std::move(sslClient);
+    }
+#endif
+    else {
+        co_return Unexpected(Error::HttpBadRequest);
+    }
+    co_return Connection {
+        .client = std::move(client),
+        .host = std::string(host),
+        .port = port,
+        .lastUsedTime = std::chrono::steady_clock::now()
+    };
 }
 inline auto HttpSession::_cache(Connection con) -> void {
     // TODO :

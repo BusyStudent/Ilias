@@ -1,5 +1,6 @@
 #include <QMainWindow>
 #include <QApplication>
+#include <QInputDialog>
 #include <QUrl>
 #include <QFile>
 #include "../include/ilias_qt.hpp"
@@ -22,6 +23,7 @@ public:
         ui.imageLabel->setVisible(false);
         connect(ui.pushButton, &QPushButton::clicked, this, &App::onButtonClicked);
         connect(ui.hostnameEdit, &QLineEdit::returnPressed, this, &App::onQueryHost);
+        connect(ui.actionProxy, &QAction::triggered, this, &App::onProxy);
     }
     auto doGetTask() -> Task<> {
         auto editText = ui.lineEdit->text();
@@ -107,6 +109,12 @@ public:
     }
     auto onQueryHost() -> void {
         ilias_go doQueryHost();
+    }
+    auto onProxy() -> void {
+        auto text = QInputDialog::getText(this, "Proxy", "Proxy", QLineEdit::Normal, "socks5h://127.0.0.1:7890");
+        if (!text.isEmpty()) {
+            mSession.setProxy(Url(text.toUtf8().constData()));
+        }
     }
     auto updateCookies() -> void {
         auto cookies = mJar.allCookies();

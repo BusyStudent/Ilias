@@ -363,6 +363,7 @@ inline auto PollContext::recvfrom(SocketView fd, void *buffer, size_t n) -> Task
 }
 
 inline auto PollContext::poll(int fd, uint32_t events) -> Task<uint32_t> {
+    // TODO: Add read write support if it was called at the same time
     struct PollAwaiter : PollWatcher {
         auto await_ready() -> bool { 
             event.data.ptr = this;

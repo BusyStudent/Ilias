@@ -72,13 +72,17 @@ TEST(RequestTest, Test1) {
     HttpRequest request("https://www.baidu.com");
     session.setCookieJar(&jar);
 
-    auto ret = ilias_wait session.get(request);
-    // auto ret = ilias_wait session.get("https://www.bilibili.com");
-    if (ret) {
-        auto text = ilias_wait ret->text();
-        std::cout << text.value_or("READ FAILED") << std::endl;
-    }
-    auto ret2 = ilias_wait session.get("https://www.bilibili.com");
+    // auto ret = ilias_wait session.get(request);
+    // // auto ret = ilias_wait session.get("https://www.bilibili.com");
+    // if (ret) {
+    //     auto text = ilias_wait ret->text();
+    //     std::cout << text.value_or("READ FAILED") << std::endl;
+    // }
+    HttpRequest request2("https://www.bilibili.com");
+    request2.setHeader(HttpHeaders::UserAgent, "vscode-restclient");
+    request2.setHeader(HttpHeaders::Accept, "*/*");
+    request2.setHeader(HttpHeaders::Referer, "https://www.bilibili.com/");
+    auto ret2 = ilias_wait session.get(request2);
     if (ret2) {
         auto text = ilias_wait ret2->text();
         std::cout << text.value_or("READ FAILED") << std::endl;

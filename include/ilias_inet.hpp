@@ -444,6 +444,12 @@ template <typename T>
 inline const T &IPAddress::data() const {
     return *reinterpret_cast<const T *>(&mStorage);
 }
+inline const void *IPAddress::data() const {
+    return &mStorage;
+}
+inline void *IPAddress::data() {
+    return &mStorage;
+}
 
 inline bool IPAddress::compare(const IPAddress &other) const {
     if (family() != other.family()) {
