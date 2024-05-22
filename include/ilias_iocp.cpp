@@ -10,6 +10,8 @@
     #define IOCP_LOG(...) do {} while(0)
 #endif
 
+#undef min
+#undef max
 
 ILIAS_NS_BEGIN
 
@@ -74,12 +76,11 @@ auto IOCPContext::_runIo(DWORD timeout) -> void {
         lap->onCompelete(lap, ret, bytesTrans);            
     }
 }
-auto IOCPContext::run() -> void {
-    while (!mQuit) {
+auto IOCPContext::run(StopToken &token) -> void {
+    while (!token.isStopRequested()) {
         _runTimers();
         _runIo(_calcWaiting());
     }
-    mQuit = false;
 }
 auto IOCPContext::post(void (*fn)(void *), void *args) -> void {
     ::PostQueuedCompletionStatus(
@@ -88,11 +89,6 @@ auto IOCPContext::post(void (*fn)(void *), void *args) -> void {
         reinterpret_cast<ULONG_PTR>(fn), 
         reinterpret_cast<LPOVERLAPPED>(args)
     );
-}
-auto IOCPContext::quit() -> void {
-    post([](void *self) {
-        static_cast<IOCPContext*>(self)->mQuit = true;
-    }, this);
 }
 
 // Timer TODO

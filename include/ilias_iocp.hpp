@@ -25,8 +25,7 @@ public:
     ~IOCPContext();
 
     // EventLoop
-    auto run() -> void override;
-    auto quit() -> void override;
+    auto run(StopToken &token) -> void override;
     auto post(void (*)(void *), void *) -> void override;
     auto delTimer(uintptr_t timer) -> bool override;
     auto addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags) -> uintptr_t override;
@@ -56,7 +55,6 @@ private:
     
     SockInitializer mInitalizer;
     HANDLE mIocpFd = INVALID_HANDLE_VALUE; //< iocp fd
-    bool mQuit = false;
 
     // Timers
     struct Timer {

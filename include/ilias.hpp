@@ -148,7 +148,12 @@ public:
 
         // --- Http
         HttpBadReply,                //< A reply with bad format or another things
-        HttpBadRequest,               //< The given request some field is not valid
+        HttpBadRequest,              //< The given request some field is not valid
+
+        // --- Socks5
+        Socks5AuthenticationFailed,  //< Authentication failed
+        Socks5Unknown,               //< Unknown error
+
 
         // --- User
         User,                        //< User defined error beginning

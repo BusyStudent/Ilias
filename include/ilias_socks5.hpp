@@ -126,16 +126,16 @@ inline auto Socks5Client::connectProxy() -> Task<void> {
     // Method uint8_t
     n = co_await mClient.recv(buf, 2);
     if (!n || n.value() != 2) {
-        co_return Unexpected(n.error_or(Error::Unknown));
+        co_return Unexpected(n.error_or(Error::Socks5Unknown));
     }
 
     // Check it
     if (buf[0] != 0x05) {
-        co_return Unexpected(Error::Unknown);
+        co_return Unexpected(Error::Socks5Unknown);
     }
     // TODO : Support Auth
     if (buf[1] != 0x00) {
-        co_return Unexpected(Error::Unknown);
+        co_return Unexpected(Error::Socks5AuthenticationFailed);
     }
 
     // Done
@@ -180,18 +180,18 @@ inline auto Socks5Client::_connect(uint8_t type, const void *buf, size_t bufSize
     // Check it
     n = co_await mClient.recv(tmp.get(), 4);
     if (!n || n.value() != 4) {
-        co_return Unexpected(n.error_or(Error::Unknown));
+        co_return Unexpected(n.error_or(Error::Socks5Unknown));
     }
 
     // Check it
     if (tmp[0] != 0x05) {
-        co_return Unexpected(Error::Unknown);
+        co_return Unexpected(Error::Socks5Unknown);
     }
     if (tmp[1] != 0x00) {
-        co_return Unexpected(Error::Unknown);
+        co_return Unexpected(Error::Socks5Unknown);
     }
     if (tmp[2] != 0x00) {
-        co_return Unexpected(Error::Unknown);
+        co_return Unexpected(Error::Socks5Unknown);
     }
 
     // Discard address data and port left
@@ -205,11 +205,11 @@ inline auto Socks5Client::_connect(uint8_t type, const void *buf, size_t bufSize
             left = 16 + 2;
             break;
         default:
-            co_return Unexpected(Error::Unknown);
+            co_return Unexpected(Error::Socks5Unknown);
     }
     n = co_await mClient.recv(tmp.get(), left);
     if (!n || n.value() != left) {
-        co_return Unexpected(n.error_or(Error::Unknown));
+        co_return Unexpected(n.error_or(Error::Socks5Unknown));
     }
 
     // Done

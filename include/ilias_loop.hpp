@@ -31,8 +31,7 @@ public:
     MiniEventLoop(const MiniEventLoop &) = delete;
     ~MiniEventLoop();
 
-    void quit() override;
-    void run() override;
+    void run(StopToken &token) override;
     void post(void (*fn)(void *), void *arg) override;
     bool delTimer(uintptr_t timer) override;
     uintptr_t addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags) override;
@@ -46,7 +45,6 @@ private:
     std::deque<Fn> mQueue;
     std::condition_variable mCond;
     std::mutex              mMutex;
-    bool  mQuit = false;
 
     // Timer
     using time_point = std::chrono::steady_clock::time_point;
@@ -70,13 +68,8 @@ inline MiniEventLoop::~MiniEventLoop() {
 
 }
 
-inline void MiniEventLoop::quit() {
-    post([](void *self) {
-        static_cast<MiniEventLoop *>(self)->mQuit = true;
-    }, this);
-}
-inline void MiniEventLoop::run() {
-    while (!mQuit) {
+inline void MiniEventLoop::run(StopToken &token) {
+    while (!token.isStopRequested()) {
         std::unique_lock<std::mutex> lock(mMutex);
         if (mQueue.empty()) {
             if (!mTimers.empty()) {
@@ -89,7 +82,7 @@ inline void MiniEventLoop::run() {
                 mCond.wait(lock);
             }
         }
-        if (mQuit) {
+        if (token.isStopRequested()) {
             break;
         }
         _timerRun();
@@ -101,7 +94,6 @@ inline void MiniEventLoop::run() {
         lock.unlock();
         fn.fn(fn.arg);
     }
-    mQuit = false; //< Restore
 }
 inline void MiniEventLoop::post(void (*fn)(void *), void *arg) {
     std::unique_lock lock(mMutex);

@@ -19,8 +19,7 @@ public:
     ~QIoContext();
 
     // EventLoop
-    auto run() -> void override;
-    auto quit() -> void override;
+    auto run(StopToken &token) -> void override;
     auto post(void (*)(void *), void *) -> void override;
     auto delTimer(uintptr_t timer) -> bool override;
     auto addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags) -> uintptr_t override;
@@ -60,7 +59,6 @@ private:
     SockInitializer mInitializer;
     std::map<qintptr, Notifier *> mFds; //< Mapping fds
     std::map<uintptr_t, Timer> mTimers; //< Timers
-    std::vector<QEventLoop *> mEventLoops; //< EventLoops
 };
 
 inline QIoContext::QIoContext(QObject *parent) : QObject(parent) {
@@ -69,16 +67,12 @@ inline QIoContext::QIoContext(QObject *parent) : QObject(parent) {
 inline QIoContext::~QIoContext() {
     
 }
-inline auto QIoContext::run() -> void {
+inline auto QIoContext::run(StopToken &token) -> void {
     QEventLoop loop;
-    mEventLoops.push_back(&loop);
+    token.setCallback([](void *loop) {
+        static_cast<QEventLoop *>(loop)->quit();
+    }, &loop);
     loop.exec();
-    mEventLoops.pop_back();
-}
-inline auto QIoContext::quit() -> void {
-    if (!mEventLoops.empty()) {
-        mEventLoops.back()->quit();
-    }
 }
 inline auto QIoContext::post(void (*func)(void *) , void *data) -> void {
     QMetaObject::invokeMethod(this, [=]() {

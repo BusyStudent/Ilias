@@ -28,8 +28,7 @@ public:
     ~PollContext();
 
     // EventLoop
-    auto run() -> void override;
-    auto quit() -> void override;
+    auto run(StopToken &token) -> void override;
     auto post(void (*)(void *), void *) -> void override;
     auto delTimer(uintptr_t timer) -> bool override;
     auto addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags) -> uintptr_t override;
@@ -72,7 +71,6 @@ private:
     int mPipeRecv = -1;
     int mPipeSend = -1;
     int mTimerfd = -1;
-    bool mQuit = false;
     struct Timer {
         uintptr_t id; //< TimerId
         int64_t ms;  //< Interval in milliseconds
@@ -117,9 +115,9 @@ inline PollContext::~PollContext() {
     ::close(mPipeSend);
     ::close(mTimerfd);
 }
-inline auto PollContext::run() -> void {
+inline auto PollContext::run(StopToken &token) -> void {
     epoll_event events[128];
-    while (!mQuit) {
+    while (!token.isStopRequested()) {
         int n = ::epoll_wait(mEpollfd, events, 128, -1);
         if (n < 0) {
             return;
@@ -134,17 +132,11 @@ inline auto PollContext::run() -> void {
             watcher->onEvent(event.events);
         }
     }
-    mQuit = false;
 }
 inline auto PollContext::post(void (*fn)(void *), void *args) -> void {
     Fn f {fn, args};
     auto n = ::write(mPipeSend, &f, sizeof(f));
     ILIAS_ASSERT(n == sizeof(f));
-}
-inline auto PollContext::quit() -> void {
-    post([](void *self) {
-        static_cast<PollContext*>(self)->mQuit = true;
-    }, this);
 }
 inline auto PollContext::PipeWatcher::onEvent(::uint32_t revent) -> void {
     if (!(revent & EPOLLIN)) {

@@ -86,6 +86,25 @@ template <Awaiter T>
 using AwaiterResult = decltype(std::declval<T>().await_resume());
 
 /**
+ * @brief A Class for wrapping stop
+ * 
+ */
+class StopToken {
+public:
+    StopToken(const StopToken &) = delete;
+    StopToken() = default;
+    ~StopToken() = default;
+
+    auto stop() noexcept -> void;
+    auto isStopRequested() const noexcept -> bool;
+    auto setCallback(void (*fn)(void *), void *user) noexcept -> void;
+private:
+    bool mStop = false; //< Is stop requested ?
+    void *mUser = nullptr;
+    void (*mFunc)(void *user) = nullptr; //< Called on stop was called
+};
+
+/**
  * @brief Abstraction of event loop
  * 
  */
@@ -95,11 +114,38 @@ public:
         TimerDefault    = 0 << 0,
         TimerSingleShot = 1 << 0, //< This timer is single shot (it will auto remove self)
     };
-
-    virtual auto quit() -> void = 0;
-    virtual auto run() -> void = 0;
+    
+    /**
+     * @brief Enter the event loop (blocking), MT unsafe
+     * 
+     * @param token the stop token, user should use it to stop the current loop, this function will return after this
+     * 
+     */
+    virtual auto run(StopToken &token) -> void = 0;
+    /**
+     * @brief Post a callback to the event queue, MT safe
+     * 
+     * @param fn 
+     * @param arg 
+     */
     virtual auto post(void (*fn)(void *), void *arg = nullptr) -> void = 0;
+    /**
+     * @brief Del a existing timer, MT unsafe
+     * 
+     * @param timer 
+     * @return true 
+     * @return false 
+     */
     virtual auto delTimer(uintptr_t timer) -> bool = 0;
+    /**
+     * @brief Add a new timer, MT unsafe
+     * 
+     * @param ms 
+     * @param fn 
+     * @param arg 
+     * @param flags 
+     * @return uintptr_t 
+     */
     virtual auto addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags = 0) -> uintptr_t = 0;
 
     /**
@@ -258,6 +304,24 @@ inline auto EventLoop::_destroyHandle(void *handle) noexcept -> void {
     ILIAS_CHECK_EXISTS(h);
     ILIAS_CO_REMOVE(h);
     h.destroy();
+}
+
+inline auto StopToken::isStopRequested() const noexcept -> bool {
+    return mStop;
+}
+inline auto StopToken::setCallback(void (*func)(void *), void *user) noexcept -> void {
+    mFunc = func;
+    mUser = user;
+}
+inline auto StopToken::stop() noexcept -> void {
+    if (mStop) {
+        return;
+    }
+    mStop = true;
+    // Invoke func if
+    if (mFunc) {
+        mFunc(mUser);
+    }
 }
 
 ILIAS_NS_END

@@ -78,9 +78,10 @@ public:
      */
     auto value() const -> result_type {
         if (!mHandle.done()) {
-            promise().setQuitOnDone();
+            StopToken token;
+            promise().setStopOnDone(&token);
             eventLoop()->resumeHandle(mHandle);
-            eventLoop()->run();
+            eventLoop()->run(token);
         }
         return promise().value();
     }
@@ -146,8 +147,8 @@ public:
         return Awaiter {this};
     }
     auto final_suspend() noexcept -> SwitchCoroutine {
-        if (mQuitOnDone) [[unlikely]] {
-            mEventLoop->quit();
+        if (mStopOnDone) [[unlikely]] {
+            mStopOnDone->stop();
         }
         if (mDestroyOnDone) [[unlikely]] {
             mEventLoop->destroyHandle(mHandle);
@@ -189,8 +190,13 @@ public:
     auto resumeCaller() const -> PromiseBase * {
         return mResumeCaller;
     }
-    auto setQuitOnDone() noexcept -> void {
-        mQuitOnDone = true;
+    /**
+     * @brief Set the Stop On Done object, the token's stop() method will be called when the promise done
+     * 
+     * @param token The token pointer
+     */
+    auto setStopOnDone(StopToken *token) noexcept -> void {
+        mStopOnDone = token;
     }
     /**
      * @brief Let it destroy on the coroutine done
@@ -221,9 +227,9 @@ public:
 protected:
     bool mStarted = false;
     bool mCanceled = false;
-    bool mQuitOnDone = false;
     bool mDestroyOnDone = false;
     const char *mName = nullptr;
+    StopToken *mStopOnDone = nullptr; //< The token will be stop on this promise done
     EventLoop *mEventLoop = EventLoop::instance();
     PromiseBase *mPrevAwaiting = nullptr;
     PromiseBase *mResumeCaller = nullptr;
