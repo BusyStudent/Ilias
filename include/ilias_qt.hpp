@@ -5,6 +5,7 @@
 #include <QTimerEvent>
 #include <QEventLoop>
 #include <QObject>
+#include <optional>
 
 ILIAS_NS_BEGIN
 
@@ -288,5 +289,62 @@ inline auto QIoContext::poll(qintptr fd, QSocketNotifier::Type want) -> Task<QSo
     co_return co_await awaiter;
 }
 
+// Extensions
+
+template <typename ...Args>
+class QWaitSignal final {
+public:
+    using Tuple = std::conditional_t<
+        (sizeof ...(Args) == 0),
+        std::tuple<std::monostate>,
+        std::tuple<Args...>
+    >;
+    using ReturnArgs = std::conditional_t< //< Pack the return args
+        (sizeof ...(Args) == 1),
+        std::tuple_element_t<0, Tuple>,
+        Tuple
+    >;
+    
+    // If object is from an another thread, will it resume us at the object's thread?
+    QWaitSignal(auto *object, auto signal) {
+        auto onEmit = [this](Args ...args) {
+            mResult = ReturnArgs(args...);
+            mHandle.resume();
+        };
+        auto onDestroy = [this]() {
+            mHandle.resume();
+        };
+
+        // Connect to the user connections
+        mCon = QObject::connect(object, signal, onEmit);
+
+        // Check the user is try to waiting destroyed signal
+        if constexpr (std::is_same_v<decltype(signal), decltype(&QObject::destroyed)>) {
+            if (signal == &QObject::destroyed) return; 
+        }
+        // We should also resume at the object destroy
+        mDestroyCon = QObject::connect(object, &QObject::destroyed, onDestroy);
+    }
+    QWaitSignal(const QWaitSignal &) = delete;
+    QWaitSignal(QWaitSignal &&) = delete;
+    ~QWaitSignal() {
+        if (mCon) QObject::disconnect(mCon); 
+        if (mDestroyCon) QObject::disconnect(mDestroyCon);
+    }
+
+    auto await_ready() -> bool { return !mCon || mResult.has_value(); } //< If signal we not connected, we can not wait
+    auto await_suspend(std::coroutine_handle<> h) -> void { mHandle = h; }
+    auto await_resume() -> std::optional<ReturnArgs> { return std::move(mResult); }
+private:
+    QMetaObject::Connection mCon;
+    QMetaObject::Connection mDestroyCon; //< The connection wating for destroy signal
+    std::coroutine_handle<> mHandle;
+    std::optional<ReturnArgs> mResult; //< The result values
+};
+
+template <typename InClass, typename Ret, typename Class, typename... Args>
+QWaitSignal(InClass*, Ret (Class::*fn)(Args...)) -> QWaitSignal<Args...>;
+template <typename InClass, typename Ret, typename Class, typename... Args>
+QWaitSignal(InClass*, Ret (Class::*fn)(Args...) const) -> QWaitSignal<Args...>;
 
 ILIAS_NS_END

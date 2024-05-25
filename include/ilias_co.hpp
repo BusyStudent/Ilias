@@ -225,7 +225,7 @@ private:
  * 
  * @tparam T 
  */
-template <typename T>
+template <std::invocable T>
 class SuspendCoroutine {
 public:
     SuspendCoroutine(T &&cb) noexcept : mCallback(cb) { }
@@ -302,7 +302,6 @@ inline auto EventLoop::_resumeHandle(void *handle) noexcept -> void {
 inline auto EventLoop::_destroyHandle(void *handle) noexcept -> void {
     auto h = std::coroutine_handle<>::from_address(handle);
     ILIAS_CHECK_EXISTS(h);
-    ILIAS_CO_REMOVE(h);
     h.destroy();
 }
 

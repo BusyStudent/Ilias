@@ -97,7 +97,6 @@ public:
             // Cancel
             cancel();
         }
-        ILIAS_CO_REMOVE(mHandle);
         mHandle.destroy();
         mHandle = nullptr;
     }
@@ -123,6 +122,15 @@ public:
     explicit operator bool() const noexcept {
         return bool(mHandle);
     }
+    /**
+     * @brief Create task by the callable and args
+     * 
+     * @tparam Callable 
+     * @tparam Args 
+     * @return auto 
+     */
+    template <typename Callable, typename ...Args>
+    static auto fromCallable(Callable &&callable, Args &&...args);
 private:
     handle_type mHandle;
 };
@@ -243,7 +251,7 @@ protected:
  * @tparam T 
  */
 template <typename T>
-class TaskPromise : public PromiseBase {
+class TaskPromise final : public PromiseBase {
 public:
     using handle_type = std::coroutine_handle<TaskPromise<T> >;
     using value_type = Result<T>;
@@ -259,6 +267,7 @@ public:
     }
     ~TaskPromise() noexcept {
         ILIAS_CTRACE("[Ilias] Task<{}> destroyed {}", typeid(T).name(), mName);
+        ILIAS_CO_REMOVE(mHandle); //< Self is destroy, remove this
     }
     /**
      * @brief Transform user defined type
@@ -306,9 +315,25 @@ public:
         ILIAS_ASSERT(mValue.hasValue());
         return std::move(*mValue);
     }
+    /**
+     * @brief Return the value, the any args version
+     * 
+     * @tparam U 
+     * @param value 
+     */
     template <typename U>
-    auto return_value(U &&value) noexcept(std::is_nothrow_constructible_v<T, U>) -> void {
+    auto return_value(U &&value) noexcept(std::is_nothrow_constructible_v<Result<T>, U>) -> void {
         mValue.construct(std::forward<U>(value));
+    }
+    /**
+     * @brief Return the value, the moveable result<T> version
+     * 
+     * @tparam har 
+     * @param value 
+     */
+    template <char = 0>
+    auto return_value(Result<T> &&value) noexcept(std::is_nothrow_move_constructible_v<Result<T> >) -> void {
+        mValue.construct(std::move(value));
     }
     /**
      * @brief Get the promise handle type
@@ -341,6 +366,8 @@ public:
     auto isDone() const -> bool;
     auto isCanceled() const -> bool;
     auto operator =(CancelHandle &&h) -> CancelHandle &;
+    auto operator =(std::nullptr_t) -> CancelHandle &;
+    explicit operator bool() const noexcept { return mPtr; }
 private:
     auto _cohandle() const -> std::coroutine_handle<>;
 protected:
@@ -353,18 +380,24 @@ protected:
  * @tparam T 
  */
 template <typename T>
-class JoinHandle : public CancelHandle {
+class JoinHandle final : public CancelHandle {
 public:
-    explicit JoinHandle(std::coroutine_handle<TaskPromise<T> > handle) : CancelHandle(handle) { }
+    using handle_type = typename Task<T>::handle_type;
+
+    explicit JoinHandle(handle_type handle) : CancelHandle(handle) { }
+    JoinHandle(std::nullptr_t) : CancelHandle(nullptr) { }
     JoinHandle(const JoinHandle &) = delete;
     JoinHandle(JoinHandle &&) = default;
+    JoinHandle() = default;
 
-    auto join() const -> Result<T>;
+    /**
+     * @brief Blocking wait to get the result
+     * 
+     * @return Result<T> 
+     */
+    auto join() -> Result<T>;
+    auto joinable() const noexcept -> bool;
     auto operator =(JoinHandle &&other) -> JoinHandle & = default;
-private:
-    auto _cohandle() const -> std::coroutine_handle<TaskPromise<T> > {
-        return static_cast<TaskPromise<T> *>(mPtr)->handle();
-    }
 };
 
 // CancelHandle
@@ -378,7 +411,7 @@ inline auto CancelHandle::clear() -> void {
         mPtr->setDestroyOnDone();
     }
     else {
-        h.destroy(); //< Done, we destroy it
+        h.destroy(); //< Done, we destroy 
     }
     mPtr = nullptr;
 }
@@ -408,11 +441,48 @@ inline auto CancelHandle::operator =(CancelHandle &&other) -> CancelHandle & {
     other.mPtr = nullptr;
     return *this;
 }
-// template <typename T>
-// inline auto JoinHandle<T>::join() const -> Result<T> {
-//     ILIAS_ASSERT(mPtr);
+inline auto CancelHandle::operator =(std::nullptr_t) -> CancelHandle & {
+    clear();
+    return *this;
+}
 
-// }
+// JoinHandle
+template <typename T>
+inline auto JoinHandle<T>::join() -> Result<T> {
+    ILIAS_ASSERT(joinable());
+    auto h = static_cast<TaskPromise<T> *>(mPtr)->handle();
+    // If not done, we try to wait it done by enter the event loop
+    if (!h.done()) {
+        StopToken token;
+        h.promise().setStopOnDone(&token);
+        h.promise().eventLoop()->run(token);
+    }
+    // Get the value and drop the task
+    auto value = h.promise().value();
+    clear();
+    return value;
+}
+template <typename T>
+inline auto JoinHandle<T>::joinable() const noexcept -> bool {
+    return mPtr;
+}
+
+
+// Task
+template <typename T>
+template <typename Callable, typename ...Args>
+inline auto Task<T>::fromCallable(Callable &&callable, Args &&...args) {
+    using TaskType = std::invoke_result_t<Callable, Args...>;
+    static_assert(IsTask<TaskType>, "Invoke result must be a task");
+    if constexpr(!std::is_class_v<Callable> || std::is_empty_v<Callable>) {
+        return std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...);
+    }
+    else { //< Make callable alive, for lambda with capturing values
+        return [](auto callable, auto ...args) -> Task<typename TaskType::value_type> {
+            co_return co_await std::invoke(callable, args...);
+        }(std::forward<Callable>(callable), std::forward<Args>(args)...);
+    }
+}
 
 // Some EventLoop 
 template <typename T>
@@ -429,16 +499,7 @@ inline auto EventLoop::postTask(Task<T> &&task) {
 }
 template <typename Callable, typename ...Args>
 inline auto EventLoop::spawn(Callable &&callable, Args &&...args) {
-    using TaskType = std::invoke_result_t<Callable, Args...>;
-    static_assert(IsTask<TaskType>, "Invoke result must be a task");
-    if constexpr(!std::is_class_v<Callable> || std::is_empty_v<Callable>) {
-        return postTask(std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...));
-    }
-    else { //< Make callable alive, for lambda with capturing values
-        return postTask([](auto callable, auto ...args) -> Task<typename TaskType::value_type> {
-            co_return co_await std::invoke(callable, args...);
-        }(std::forward<Callable>(callable), std::forward<Args>(args)...));
-    }
+    return postTask(Task<>::fromCallable(std::forward<Callable>(callable), std::forward<Args>(args)...));
 }
 
 // Helper operators

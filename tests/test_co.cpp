@@ -21,7 +21,7 @@ TEST(TaskTest, GetValue) {
 }
 TEST(TaskTest, Impl1) {
     auto task = []() -> Task<> {
-        co_return Result<>();
+        co_return {};
     };
     auto v = task();
     ASSERT_EQ(v.promise().isStarted(), false);
@@ -30,6 +30,13 @@ TEST(TaskTest, Impl1) {
     ASSERT_EQ(v.handle().done(), true);
 }
 
+TEST(TaskTest, Go) {
+    auto handle = ilias_spawn [n = 114514]() -> Task<int> {
+        co_return n;
+    };
+    ASSERT_EQ(bool(handle), true);
+    ASSERT_EQ(handle.join().value(), 114514);
+}
 TEST(WhenAllTest, Test1) {
     auto task = []() -> Task<> {
         // auto [a0, b0] = co_await WhenAll(Sleep(1s), Sleep(10ms));
