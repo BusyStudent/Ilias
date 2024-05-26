@@ -86,7 +86,8 @@ private:
 
 inline PollContext::PollContext() {
     int pipes[2];
-    ::pipe2(pipes, O_NONBLOCK);
+    auto ret = ::pipe2(pipes, O_NONBLOCK);
+    (void) ret;
     mPipeRecv = pipes[0];
     mPipeSend = pipes[1];
     mEpollfd = ::epoll_create1(0);

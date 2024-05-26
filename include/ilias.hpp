@@ -24,13 +24,13 @@
     #include <cstdlib>
 #endif
 
-#define ILIAS_DECLARE_ERROR(errc, category_)     \
-    template <>                                  \
-    class ::ILIAS_NAMESPACE::ErrorTraits<errc> { \
-    public:                                      \
-        static const category_ & category() {    \
-            return category_::instance();        \
-        }                                        \
+#define ILIAS_DECLARE_ERROR(errc, category_)   \
+    template <>                                \
+    class ErrorTraits<errc> {                  \
+    public:                                    \
+        static const category_ & category() {  \
+            return category_::instance();      \
+        }                                      \
     }
 
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT((x) && (msg))
