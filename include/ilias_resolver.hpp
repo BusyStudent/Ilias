@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <vector>
+#include <cctype>
 #include <map>
 
 ILIAS_NS_BEGIN
@@ -265,7 +266,7 @@ private:
     int64_t    mTimeout = 5000;
     Sender<QueryItem> mSender4;
     Sender<QueryItem> mSender6;
-    std::vector<IPEndpoint> mServers { "8.8.8.8:53", "114.114.114.53" };
+    std::vector<IPEndpoint> mServers { "8.8.8.8:53", "114.114.114.114:53" };
     std::multimap<std::string, DnsAnswer, std::less<> > mAnswers;
 };
 
