@@ -7,9 +7,8 @@
 #include <schannel.h>
 #include <shlwapi.h>
 
-#if defined(_MSC_VER)
-    #pragma comment(lib, "secur32.lib")
-#endif
+#undef min
+#undef max
 
 #if 1
     #define SCHANNEL_LOG(fmt, ...) ::printf(fmt, __VA_ARGS__)
@@ -48,6 +47,13 @@ public:
         mTable->FreeCredentialsHandle(&mCredHandle);
         ::FreeLibrary(mDll);
     }
+
+    auto table() const noexcept {
+        return mTable;
+    }
+    auto credHandle() const noexcept {
+        return mCredHandle;
+    }
 private:
     ::HMODULE mDll = ::LoadLibraryA("secur32.dll");
     ::PSecurityFunctionTableW mTable = nullptr;
@@ -63,21 +69,42 @@ template <typename T>
 class SslSocket {
 public:
     SslSocket() = default;
-    SslSocket(SslContext &ctxt, T &&value) : mCtxt(&Ctxt), mFd(std::move(T)) { }
+    SslSocket(SslContext &ctxt, T &&value) : mCtxt(&ctxt), mFd(std::move(value)) { }
     SslSocket(const SslSocket &) = delete;
-    ~SslSocket();
+    SslSocket(SslSocket &&other) : mCtxt(other.mCtxt), 
+        mFd(std::move(other.mFd)), mHost(std::move(other.mHost)), 
+        mSsl(other.mSsl), mStreamSizes(other.mStreamSizes) 
+    {
+        other.mCtxt = nullptr;
+        other.mSsl = { };
+    }
+    ~SslSocket() {
+        close();
+    }
 
-    auto _handleshakeAsClient() -> Task<void> {
+    auto close() -> void {
+        if (!mCtxt) {
+            return;
+        }
+        mCtxt->table()->DeleteSecurityContext(&mSsl);
+        mFd = T();
+        mCtxt = nullptr;
+        mSsl = { };
+        mHost.clear();
+        mStreamSizes = { };
+    }
+    auto _handleshakeAsClient() -> Task<> {
+        auto table = mCtxt->table();
+        auto credHandle = mCtxt->credHandle();
         // Prepare memory
         std::unique_ptr<uint8_t []> imcomimg; //< The incoming buffer
         imcomimg = std::make_unique<uint8_t []>(1024 * 8);
         size_t received = 0;
         size_t imcomingSize = 1024 * 8;
 
+        // Prepare
+        ::CtxtHandle *ctxt = nullptr;
         for (;;) {
-            // Prepare
-            ::CtxtHandle *ctxt = nullptr;
-
             ::SecBuffer inbuffers[2] { };
             inbuffers[0].BufferType = SECBUFFER_TOKEN;
             inbuffers[0].pvBuffer = imcomimg.get();
@@ -92,15 +119,15 @@ public:
 
             DWORD flags = ISC_REQ_USE_SUPPLIED_CREDS | ISC_REQ_ALLOCATE_MEMORY | 
                         ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
-            auto host = mHost.empty() ? nullptr : mHost.c_str();
-            auto status = ::InitializeSecurityContextW(
-                mCtxt->mCredHandle,
+            auto host = mHost.empty() ? nullptr : mHost.data();
+            auto status = table->InitializeSecurityContextW(
+                &credHandle,
                 ctxt,
-                ctxt ? nullptr : host,
+                host,
                 flags,
                 0,
                 0,
-                context ? &indesc : nullptr,
+                ctxt ? &indesc : nullptr,
                 0,
                 &mSsl,
                 &outdesc,
@@ -110,56 +137,141 @@ public:
             ctxt = &mSsl;
 
             // Check buffer here
+            if (inbuffers[1].BufferType == SECBUFFER_EXTRA) {
+                SCHANNEL_LOG("SECBUFFER_EXTRA for %d\n", int(inbuffers[1].cbBuffer));
+                ::memmove(imcomimg.get(), imcomimg.get() + (received - inbuffers[1].cbBuffer), inbuffers[1].cbBuffer);
+                received = inbuffers[1].cbBuffer;
+            }
+            else {
+                // All processed
+                received = 0;
+            }
 
             if (status == SEC_E_OK) {
-                co_return {};
+                SCHANNEL_LOG("handshake done\n");
+                break;
             }
             else if (status == SEC_I_CONTINUE_NEEDED) {
                 // We need to send the output buffer to remote
+                auto freeBuffer = [table](uint8_t *mem) {
+                    table->FreeContextBuffer(mem);
+                };
                 auto buffer = (uint8_t*) outbuffers[0].pvBuffer;
                 auto size = outbuffers[0].cbBuffer;
+                // Make a guard
+                std::unique_ptr<uint8_t, decltype(freeBuffer)> guard(buffer, freeBuffer);
 
                 while (size != 0) {
                     auto n = co_await mFd.send(buffer, size);
                     if (!n) {
-                        ::FreeContextBuffer(buffer);
                         co_return Unexpected(n.error());
                     }
                     if (*n == 0) {
-                        ::FreeContextBuffer(buffer);
-                        co_return Unexpected(Error::ConnectionReset);
+                        co_return Unexpected(Error::ConnectionAborted);
                     }
                     size -= *n;
+                    buffer += *n;
                 }
-                ::FreeContextBuffer(buffer);
                 // Done
             }
             else if (status != SEC_E_INCOMPLETE_MESSAGE) {
+                SCHANNEL_LOG("Failed to handshake %d\n", int(status));
                 co_return Unexpected(Error::SSLUnknown);
             }
 
-            // Read new data here
-            auto n = co_await mFd.recv(imcomimg.get(), imcomingSize);
+            // Read new data here after this
+            auto n = co_await mFd.recv(imcomimg.get() + received, imcomingSize - received);
             if (!n) {
                 co_return Unexpected(n.error());
             }
-            if (n == 0) {
-                co_return Unexpected(Error::ConnectionReset);
+            if (*n == 0) {
+                co_return Unexpected(Error::ConnectionAborted);
             }
             received = *n;
         }
+        // Done
+        table->QueryContextAttributesW(ctxt, SECPKG_ATTR_STREAM_SIZES, &mStreamSizes);
+        co_return {};
+    }
+    auto _send(const void *_buffer, size_t n) -> Task<size_t> {
+        auto buffer = static_cast<const uint8_t*>(_buffer);
+        auto table = mCtxt->table();
+        auto sended = 0;
+        while (n > 0) {
+            auto many = std::min<size_t>(n, mStreamSizes.cbMaximumMessage);
+            auto tmpbuf = std::make_unique<uint8_t[]>(many + mStreamSizes.cbHeader + mStreamSizes.cbTrailer);
+
+            ::SecBuffer inbuffers[3] { };
+            inbuffers[0].BufferType = SECBUFFER_STREAM_HEADER;
+            inbuffers[0].pvBuffer = tmpbuf.get();
+            inbuffers[0].cbBuffer = mStreamSizes.cbHeader;
+            inbuffers[1].BufferType = SECBUFFER_DATA;
+            inbuffers[1].pvBuffer = tmpbuf.get() + mStreamSizes.cbHeader;
+            inbuffers[1].cbBuffer = many;
+            inbuffers[2].BufferType = SECBUFFER_STREAM_TRAILER;
+            inbuffers[2].pvBuffer = tmpbuf.get() + mStreamSizes.cbHeader + many;
+            inbuffers[2].cbBuffer = mStreamSizes.cbTrailer;
+
+            // Copy to the data tmpbuffer
+            // Because MSDN says EncryptMessage will encrypt the message in place
+            ::memcpy(inbuffers[1].pvBuffer, buffer, many);
+            
+            ::SecBufferDesc indesc { SECBUFFER_VERSION, ARRAYSIZE(inbuffers), inbuffers };
+            auto status = table->EncryptMessage(&mSsl, 0, &indesc, 0);
+            if (status != SEC_E_OK) {
+                co_return Unexpected(Error::SSLUnknown);
+            }
+
+            // Send all encrypted message to
+            auto wbuffer = tmpbuf.get();
+            auto total = inbuffers[0].cbBuffer + inbuffers[1].cbBuffer + inbuffers[2].cbBuffer;
+            while (total > 0) {
+                auto num = co_await mFd.send(wbuffer, total);
+                if (!num) {
+                    co_return Unexpected(num.error());
+                }
+                if (*num == 0) {
+                    co_return Unexpected(Error::ConnectionAborted);
+                }
+                total -= *num;
+                wbuffer += *num;
+            }
+
+            // Move our send buffer
+            sended += many;
+            n -= many;
+            buffer += many;
+        }
+        co_return sended;
+    }
+    auto _recv(void *buffer, size_t n) -> Task<size_t> {
+        co_return 0;
     }
 protected:
     SslContext *mCtxt = nullptr;
     T           mFd; //< The target we input and output
-    ::CtxtHandle mSsl { }; //< The current ssl handle from schannel
     std::wstring mHost; //< The host, used as a ext
+    ::CtxtHandle mSsl { }; //< The current ssl handle from schannel
+    ::SecPkgContext_StreamSizes mStreamSizes {};
 };
 
 template <StreamClient T = IStreamClient>
 class SslClient : public SslSocket<T> {
 public:
+    using SslSocket<T>::SslSocket;
 
+    auto connect(const IPEndpoint &endpoint) -> Task<> {
+        if (auto ret = co_await this->mFd.connect(endpoint); !ret) {
+            co_return Unexpected(ret.error());
+        }
+        co_return co_await this->_handleshakeAsClient();
+    }
+    auto send(const void *buffer, size_t n) -> Task<size_t> {
+        return this->_send(buffer, n);
+    }
+    auto recv(void *buffer, size_t n) -> Task<size_t> {
+        return this->_recv(buffer, n);
+    }
     auto setHostname(std::wstring_view hostname) -> void {
         this->mHost = hostname;
     }
@@ -167,15 +279,15 @@ public:
         auto len = ::MultiByteToWideChar(CP_UTF8, 0, hostname.data(), hostname.size(), nullptr, 0);
         this->mHost.resize(len);
         len = ::MultiByteToWideChar(CP_UTF8, 0, hostname.data(), hostname.size(), this->mHost.data(), len);
-        this->mHostname
     }
 };
+static_assert(StreamClient<SslClient<> >);
 
 // TODO:
 template <StreamClient T = IStreamListener>
 class SslListener : public SslSocket<T> {
 public:
-
+    SslListener() = delete; //< Not Impl
 private:
 
 };

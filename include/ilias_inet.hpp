@@ -294,6 +294,20 @@ public:
     static Result<Socket> create(int family, int type, int protocol);
 };
 
+/**
+ * @brief A Error category from (system os, like win32, linux, etc)
+ * 
+ */
+class SystemCategory final : public ErrorCategory {
+public:
+    auto name() const -> std::string_view override;
+    auto message(uint32_t code) const -> std::string override;
+    auto equivalent(uint32_t self, const Error &other) const -> bool override;
+
+    static auto instance() -> SystemCategory &;
+    static auto translate(error_t sysErr) -> Error::Code;
+};
+
 // --- IPAddress4 Impl
 inline IPAddress4::IPAddress4() { }
 inline IPAddress4::IPAddress4(::in_addr addr) : ::in_addr(addr) { }
@@ -907,7 +921,29 @@ inline SockInitializer::~SockInitializer() {
 }
 
 // --- Error mapping
-inline Error Error::fromErrno(uint32_t code) {
+inline auto SystemCategory::name() const -> std::string_view {
+    return "os";
+}
+inline auto SystemCategory::message(uint32_t code) const -> std::string {
+
+#ifdef _WIN32
+    wchar_t *args = nullptr;
+    ::FormatMessageW(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr, code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        reinterpret_cast<wchar_t*>(&args), 0, nullptr
+    );
+    auto len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, nullptr, 0, nullptr, nullptr);
+    std::string ret(len, 0);
+    ::WideCharToMultiByte(CP_UTF8, 0, args, -1, &ret[0], len, nullptr, nullptr);
+    ::LocalFree(args);
+    return ret;
+#else
+    return ::strerror(code);
+#endif
+
+} 
+inline auto SystemCategory::translate(error_t code) -> Error::Code {
 
 #ifdef _WIN32
     #define MAP(x) WSA##x
@@ -953,6 +989,32 @@ inline Error Error::fromErrno(uint32_t code) {
         default: return Error::Unknown;
     }
 #undef MAP
+
+}
+inline auto SystemCategory::equivalent(uint32_t value, const Error &other) const -> bool {
+    if (this == &other.category() && value == other.value()) {
+        //< Category is same, value is same
+        return true;
+    }
+    if (other.category() == IliasCategory::instance()) {
+        // Is bultin error code
+        return translate(value) == other.value();
+    }
+    return false;
+}
+inline auto SystemCategory::instance() -> SystemCategory & {
+    static SystemCategory c;
+    return c;
+}
+
+inline Error Error::fromErrno(uint32_t code) {
+
+#if 0
+    return SystemCategory::translate(code);
+#else
+    return Error(code, SystemCategory::instance());
+#endif
+
 }
 inline Error Error::fromHErrno(uint32_t code) {
     return Error::fromErrno(code);

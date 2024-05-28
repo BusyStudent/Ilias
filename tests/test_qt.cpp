@@ -42,7 +42,7 @@ public:
         request.setHeader(HttpHeaders::UserAgent, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.150 Safari/537.36");
         auto reply = co_await mSession.get(request);
         if (!reply) {
-            ui.statusbar->showMessage(QString::fromUtf8(reply.error().message()));
+            ui.statusbar->showMessage(QString::fromUtf8(reply.error().toString()));
             co_return Result<>();
         }
         for (const auto &item : reply->headers()) {
@@ -96,7 +96,7 @@ public:
         ui.endpointsWidget->clear();
         auto v = co_await mResolver.resolve(ui.hostnameEdit->text().toUtf8().constData());
         if (!v) {
-            ui.statusbar->showMessage(QString::fromUtf8(v.error().message()));
+            ui.statusbar->showMessage(QString::fromUtf8(v.error().toString()));
             co_return Result<>();
         }
         for (const auto &i : *v) {

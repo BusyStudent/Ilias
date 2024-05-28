@@ -26,12 +26,12 @@ int main() {
         ByteStream stream(std::move(client));
         IPEndpoint endpoint(IPAddress4::fromHostname("www.baidu.com"), 80);
         if (auto result = co_await stream.connect(endpoint); !result) {
-            std::cout << result.error().message() << std::endl;
+            std::cout << result.error().toString() << std::endl;
             co_return Result<>();
         }
         std::string request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
         if (auto result = co_await stream.sendAll(request.data(), request.size()); !result) {
-            std::cout << result.error().message() << std::endl;
+            std::cout << result.error().toString() << std::endl;
             co_return Result<>();
         }
         // Try get headers here

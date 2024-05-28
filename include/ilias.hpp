@@ -53,8 +53,12 @@ template <typename T = void>
 class Task;
 template <typename T>
 class AwaitTransform;
+
+// --- Error
 template <typename T>
 class ErrorTraits;
+class ErrorCategory;
+class Error;
 
 /**
  * @brief Check is error code, can be put into Error class
@@ -84,6 +88,15 @@ public:
      * @return std::string_view 
      */
     virtual auto name() const -> std::string_view = 0;
+    /**
+     * @brief Check another error code is equ
+     * 
+     * @param self Current error belong self category
+     * @param other Another Error wait to be compared
+     * @return true 
+     * @return false 
+     */
+    virtual auto equivalent(uint32_t self, const Error &other) const -> bool;
 };
 
 /**
@@ -204,6 +217,12 @@ public:
      */
     auto category() const -> const ErrorCategory &;
     /**
+     * @brief Get the error code value and message
+     * 
+     * @return std::string 
+     */
+    auto toString() const -> std::string;
+    /**
      * @brief Assign a value
      * 
      * @return Error& 
@@ -298,7 +317,9 @@ inline auto IliasCategory::message(uint32_t err) const -> std::string {
 inline auto IliasCategory::name() const -> std::string_view {
     return "ilias";
 }
-
+inline auto ErrorCategory::equivalent(uint32_t value, const Error &other) const -> bool {
+    return this == &other.category() && value == other.value();
+}
 
 inline Error::Error(uint32_t err, const ErrorCategory &c) : mErr(err), mCategory(&c) { }
 template <ErrorCode T>
@@ -319,6 +340,16 @@ inline auto Error::value() const -> uint32_t {
 inline auto Error::isOk() const -> bool {
     return mErr == Ok;
 }
+inline auto Error::toString() const -> std::string {
+    std::string ret;
+    ret += '[';
+    ret += mCategory->name();
+    ret += ':';
+    ret += std::to_string(mErr);
+    ret += "] ";
+    ret += message();
+    return ret;
+}
 
 // --- Compare
 inline bool operator ==(const ErrorCategory &cat1, const ErrorCategory &cat2) noexcept {
@@ -327,11 +358,12 @@ inline bool operator ==(const ErrorCategory &cat1, const ErrorCategory &cat2) no
 inline bool operator !=(const ErrorCategory &cat1, const ErrorCategory &cat2) noexcept {
     return &cat1 != &cat2;
 }
-inline bool operator ==(Error err1, Error err2) noexcept {
-    return err1.value() == err2.value() && err1.category() == err2.category();
+inline bool operator ==(const Error &left, const Error &right) noexcept {
+    // Only one category think that we are the same
+    return left.category().equivalent(left.value(), right) || right.category().equivalent(right.value(), left);
 }
-inline bool operator !=(Error err1, Error err2) noexcept {
-    return err1.value() != err2.value() || err1.category() != err2.category();
+inline bool operator !=(const Error &left, const Error &right) noexcept {
+    return (!left.category().equivalent(left.value(), right)) && (!right.category().equivalent(right.value(), left));
 }
 
 ILIAS_NS_END
