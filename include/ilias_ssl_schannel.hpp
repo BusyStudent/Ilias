@@ -1,11 +1,13 @@
 #pragma once
 
 #include "ilias.hpp"
+#include "ilias_ring.hpp"
 #include "ilias_backend.hpp"
 #define SECURITY_WIN32
 #include <security.h>
 #include <schannel.h>
 #include <shlwapi.h>
+#include <vector>
 
 #undef min
 #undef max
@@ -73,8 +75,19 @@ public:
     SslSocket(const SslSocket &) = delete;
     SslSocket(SslSocket &&other) : mCtxt(other.mCtxt), 
         mFd(std::move(other.mFd)), mHost(std::move(other.mHost)), 
-        mSsl(other.mSsl), mStreamSizes(other.mStreamSizes) 
+        mSsl(other.mSsl), mStreamSizes(other.mStreamSizes), mIncoming(std::move(other.mIncoming))
     {
+        mHandshaked = other.mHandshaked;
+        mIncomingUsed = other.mIncomingUsed;
+        mIncomingReceived = other.mIncomingReceived;
+        mDecrypted = other.mDecrypted;
+        mDecryptedAvailable = other.mDecryptedAvailable;
+
+        other.mIncomingUsed = 0;
+        other.mIncomingReceived = 0;
+        other.mDecryptedAvailable = 0;
+        other.mDecrypted = nullptr;
+        other.mHandshaked = false;
         other.mCtxt = nullptr;
         other.mSsl = { };
     }
@@ -92,22 +105,31 @@ public:
         mSsl = { };
         mHost.clear();
         mStreamSizes = { };
+        mIncoming.reset();
+        mIncomingUsed = 0;
+        mIncomingReceived = 0;
+        mDecrypted = nullptr;
+        mDecrypted = 0;
+        mHandshaked = false;
     }
-    auto _handleshakeAsClient() -> Task<> {
+protected:
+    auto _handshakeAsClient() -> Task<> {
+        if (mHandshaked) {
+            co_return {};
+        }
         auto table = mCtxt->table();
         auto credHandle = mCtxt->credHandle();
         // Prepare memory
-        std::unique_ptr<uint8_t []> imcomimg; //< The incoming buffer
-        imcomimg = std::make_unique<uint8_t []>(1024 * 8);
-        size_t received = 0;
-        size_t imcomingSize = 1024 * 8;
+        auto &received = mIncomingReceived;
+        mIncoming = std::make_unique<uint8_t []>(mIncomingCapicity); //< The incoming buffer
+        received = 0;
 
         // Prepare
         ::CtxtHandle *ctxt = nullptr;
         for (;;) {
             ::SecBuffer inbuffers[2] { };
             inbuffers[0].BufferType = SECBUFFER_TOKEN;
-            inbuffers[0].pvBuffer = imcomimg.get();
+            inbuffers[0].pvBuffer = mIncoming.get();
             inbuffers[0].cbBuffer = received;
             inbuffers[1].BufferType = SECBUFFER_EMPTY;
 
@@ -138,8 +160,8 @@ public:
 
             // Check buffer here
             if (inbuffers[1].BufferType == SECBUFFER_EXTRA) {
-                SCHANNEL_LOG("SECBUFFER_EXTRA for %d\n", int(inbuffers[1].cbBuffer));
-                ::memmove(imcomimg.get(), imcomimg.get() + (received - inbuffers[1].cbBuffer), inbuffers[1].cbBuffer);
+                SCHANNEL_LOG("[Schannel] SECBUFFER_EXTRA for %d\n", int(inbuffers[1].cbBuffer));
+                ::memmove(mIncoming.get(), mIncoming.get() + (received - inbuffers[1].cbBuffer), inbuffers[1].cbBuffer);
                 received = inbuffers[1].cbBuffer;
             }
             else {
@@ -148,7 +170,7 @@ public:
             }
 
             if (status == SEC_E_OK) {
-                SCHANNEL_LOG("handshake done\n");
+                SCHANNEL_LOG("[Schannel] handshake done\n");
                 break;
             }
             else if (status == SEC_I_CONTINUE_NEEDED) {
@@ -175,12 +197,16 @@ public:
                 // Done
             }
             else if (status != SEC_E_INCOMPLETE_MESSAGE) {
-                SCHANNEL_LOG("Failed to handshake %d\n", int(status));
+                SCHANNEL_LOG("[Schannel] Failed to handshake %d\n", int(status));
+                co_return Unexpected(Error::SSLUnknown);
+            }
+            // Try send too many data, but we can
+            if (received == mIncomingCapicity) {
                 co_return Unexpected(Error::SSLUnknown);
             }
 
             // Read new data here after this
-            auto n = co_await mFd.recv(imcomimg.get() + received, imcomingSize - received);
+            auto n = co_await mFd.recv(mIncoming.get() + received, mIncomingCapicity - received);
             if (!n) {
                 co_return Unexpected(n.error());
             }
@@ -189,11 +215,16 @@ public:
             }
             received = *n;
         }
-        // Done
         table->QueryContextAttributesW(ctxt, SECPKG_ATTR_STREAM_SIZES, &mStreamSizes);
+        mHandshaked = true;
         co_return {};
     }
     auto _send(const void *_buffer, size_t n) -> Task<size_t> {
+        if (!mHandshaked) {
+            if (auto ret = co_await _handshakeAsClient(); !ret) {
+                co_return Unexpected(ret.error());
+            }
+        }
         auto buffer = static_cast<const uint8_t*>(_buffer);
         auto table = mCtxt->table();
         auto sended = 0;
@@ -245,14 +276,122 @@ public:
         co_return sended;
     }
     auto _recv(void *buffer, size_t n) -> Task<size_t> {
-        co_return 0;
+        if (!mHandshaked) {
+            if (auto ret = co_await _handshakeAsClient(); !ret) {
+                co_return Unexpected(ret.error());
+            }
+        }
+        auto table = mCtxt->table();
+        while (true) {
+            if (mDecryptedAvailable) {
+                //< Calc how many bytes we can take from this buffer
+                n = std::min(mDecryptedAvailable, n);
+                ::memcpy(buffer, mDecrypted, n);
+
+                // Advance it
+                mDecryptedAvailable -= n;
+                mDecrypted += n;
+
+                if (mDecryptedAvailable == 0) {
+                    // All used
+                    ::memmove(mIncoming.get(), mIncoming.get() + mIncomingUsed, mIncomingReceived - mIncomingUsed);
+                    mIncomingReceived -= mIncomingUsed;
+                    mIncomingUsed = 0;
+                    mDecrypted = nullptr;
+                }
+                co_return n;
+            }
+            // We need recv data from T
+            if (mIncomingReceived) {
+                ::SecBuffer buffers[4] { };
+
+                buffers[0].BufferType = SECBUFFER_DATA;
+                buffers[0].pvBuffer = mIncoming.get();
+                buffers[0].cbBuffer = mIncomingReceived;
+                buffers[1].BufferType = SECBUFFER_EMPTY;
+                buffers[2].BufferType = SECBUFFER_EMPTY;
+                buffers[3].BufferType = SECBUFFER_EMPTY;
+
+                ::SecBufferDesc desc { SECBUFFER_VERSION, ARRAYSIZE(buffers), buffers };
+
+                auto status = table->DecryptMessage(&mSsl, &desc, 0, nullptr);
+                if (status == SEC_E_OK) {
+                    ILIAS_ASSERT(buffers[0].BufferType == SECBUFFER_STREAM_HEADER);
+                    ILIAS_ASSERT(buffers[1].BufferType == SECBUFFER_DATA);
+                    ILIAS_ASSERT(buffers[2].BufferType == SECBUFFER_STREAM_TRAILER);
+
+                    mDecrypted = (uint8_t*) buffers[1].pvBuffer;
+                    mDecryptedAvailable = buffers[1].cbBuffer;
+                    // All used or not
+                    mIncomingUsed = mIncomingReceived - (buffers[3].BufferType == SECBUFFER_EXTRA ? buffers[3].cbBuffer : 0);
+                    continue;
+                }
+                else if (status == SEC_I_CONTEXT_EXPIRED) {
+                    //< Peer closed
+                    co_return 0;
+                }
+                else if (status != SEC_E_INCOMPLETE_MESSAGE) {
+                    SCHANNEL_LOG("[Schannel] Failed to decrypt %d\n", int(status));
+                    co_return Unexpected(Error::SSLUnknown);
+                }
+            }
+
+            // Try read data
+            auto n = co_await mFd.recv(mIncoming.get() + mIncomingReceived, mIncomingCapicity - mIncomingReceived);
+            if (!n) {
+                co_return Unexpected(n.error());
+            }
+            if (*n == 0) { //< Connection Closed
+                co_return 0;
+            }
+            mIncomingReceived += *n;
+        }
+    }
+    auto _disconnect() -> Task<> {
+        // Send say goodbye 
+        close(); //< Close the T below us
+        co_return {};
+    }
+    auto operator =(SslSocket &&other) -> SslSocket & {
+        if (this == &other) {
+            return *this;
+        }
+        close();
+
+        mHandshaked = other.mHandshaked;
+        mCtxt = other.mCtxt;
+        mFd = std::move(other.mFd);
+        mHost = std::move(other.mHost);
+        mSsl = other.mSsl;
+        mStreamSizes = other.mStreamSizes;
+        mIncoming = std::move(other.mIncoming);
+        mIncomingUsed = other.mIncomingUsed;
+        mIncomingReceived = other.mIncomingReceived;
+        mDecrypted = other.mDecrypted;
+        mDecryptedAvailable = other.mDecryptedAvailable;
+
+        other.mIncomingUsed = 0;
+        other.mIncomingReceived = 0;
+        other.mDecryptedAvailable = 0;
+        other.mDecrypted = nullptr;
+        other.mHandshaked = false;
+        other.mCtxt = nullptr;
+        other.mSsl = { };
+        return *this;
     }
 protected:
+    bool mHandshaked = false;
     SslContext *mCtxt = nullptr;
     T           mFd; //< The target we input and output
     std::wstring mHost; //< The host, used as a ext
     ::CtxtHandle mSsl { }; //< The current ssl handle from schannel
-    ::SecPkgContext_StreamSizes mStreamSizes {};
+    ::SecPkgContext_StreamSizes mStreamSizes { };
+    std::unique_ptr<uint8_t []> mIncoming; //< The incoming buffer
+    size_t mIncomingUsed = 0; //< How many bytes used in the buffer
+    size_t mIncomingReceived = 0; //< How may bytes received in here
+    size_t mIncomingCapicity = 16384; //< The maxsize of the mIncoming
+    uint8_t *mDecrypted = nullptr;
+    size_t mDecryptedAvailable = 0; //< How many bytes useable in buffer 
 };
 
 template <StreamClient T = IStreamClient>
@@ -264,12 +403,18 @@ public:
         if (auto ret = co_await this->mFd.connect(endpoint); !ret) {
             co_return Unexpected(ret.error());
         }
-        co_return co_await this->_handleshakeAsClient();
+        co_return co_await this->_handshakeAsClient();
     }
     auto send(const void *buffer, size_t n) -> Task<size_t> {
         return this->_send(buffer, n);
     }
+    auto write(const void *buffer, size_t n) -> Task<size_t> {
+        return this->_send(buffer, n);
+    }
     auto recv(void *buffer, size_t n) -> Task<size_t> {
+        return this->_recv(buffer, n);
+    }
+    auto read(void *buffer, size_t n) -> Task<size_t> {
         return this->_recv(buffer, n);
     }
     auto setHostname(std::wstring_view hostname) -> void {

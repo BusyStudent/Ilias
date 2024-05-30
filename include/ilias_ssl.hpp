@@ -22,9 +22,12 @@
 
 
 // --- Import SSL
-#if !defined(ILIAS_NO_OPENSSL)
+#if   !defined(ILIAS_NO_OPENSSL)
     #define ILIAS_SSL_USE_OPENSSL
     #include "ilias_ssl_openssl.hpp"
+#elif !defined(ILIAS_NO_SCHANNEL)
+    #define ILIAS_SSL_USE_SCHANNEL
+    #include "ilias_ssl_schannel.hpp"
 #else
     //< We can not found any support ssl backend
     #define ILIAS_NO_SSL
