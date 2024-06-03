@@ -45,7 +45,7 @@ public:
     auto recvfrom(SocketView fd, void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > override;
 
     // 
-    auto poll(int fd, uint32_t event) -> Task<uint32_t>;
+    auto poll(SocketView fd, uint32_t event) -> Task<uint32_t> override;
 private:
     // for Impl post
     struct PipeWatcher : PollWatcher {
@@ -355,7 +355,7 @@ inline auto PollContext::recvfrom(SocketView fd, void *buffer, size_t n) -> Task
     }
 }
 
-inline auto PollContext::poll(int fd, uint32_t events) -> Task<uint32_t> {
+inline auto PollContext::poll(SocketView fd, uint32_t events) -> Task<uint32_t> {
     // TODO: Add read write support if it was called at the same time
     struct PollAwaiter : PollWatcher {
         auto await_ready() -> bool { 
@@ -399,7 +399,7 @@ inline auto PollContext::poll(int fd, uint32_t events) -> Task<uint32_t> {
     };
 
     PollAwaiter awaiter;
-    awaiter.fd = fd;
+    awaiter.fd = fd.get();
     awaiter.epollfd = mEpollfd;
     awaiter.event.events = events;
     co_return co_await awaiter;

@@ -21,15 +21,58 @@ public:
     AsyncSocket() = default;
     ~AsyncSocket();
 
+    /**
+     * @brief Get the os socket fd
+     * 
+     * @return socket_t 
+     */
     socket_t get() const noexcept {
         return mFd.get();
     }
+    /**
+     * @brief Check current socket is valid
+     * 
+     * @return true 
+     * @return false 
+     */
     auto isValid() const -> bool;
+    /**
+     * @brief Get the endpoint of the socket
+     * 
+     * @return Result<IPEndpoint> 
+     */
     auto localEndpoint() const -> Result<IPEndpoint>;
+    /**
+     * @brief Close current socket
+     * 
+     * @return Result<> 
+     */
     auto close() -> Result<>;
+    /**
+     * @brief Poll current socket use PollEvent::In or PollEvent::Out
+     * 
+     * @param event 
+     * @return Task<uint32_t> actually got events
+     */
+    auto poll(uint32_t event) -> Task<uint32_t>;
+    /**
+     * @brief Get the context of the socket
+     * 
+     * @return IoContext* 
+     */
     auto context() const -> IoContext *;
+    /**
+     * @brief Assign
+     * 
+     * @return AsyncSocket& 
+     */
     auto operator =(AsyncSocket &&) -> AsyncSocket &;
 
+    /**
+     * @brief Cast to socket view
+     * 
+     * @return SocketView 
+     */
     explicit operator SocketView() const noexcept;
 protected:
     IoContext *mContext = nullptr;
@@ -292,6 +335,9 @@ inline auto AsyncSocket::close() -> Result<> {
         }
     }
     return Result<>();
+}
+inline auto AsyncSocket::poll(uint32_t event) -> Task<uint32_t> {
+    return mContext->poll(mFd, event);
 }
 inline auto AsyncSocket::localEndpoint() const -> Result<IPEndpoint> {
     return mFd.localEndpoint();

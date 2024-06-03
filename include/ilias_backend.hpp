@@ -12,6 +12,14 @@
 
 ILIAS_NS_BEGIN
 
+// --- Enums
+enum PollEvent : uint32_t {
+    In  = POLLIN,
+    Out = POLLOUT,
+    Err = POLLERR,
+    Hup = POLLHUP,
+};
+
 // --- Concepts
 template <typename T>
 concept StreamClient = requires(T t) {
@@ -48,15 +56,10 @@ public:
     virtual auto sendto(SocketView fd, const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> = 0;
     virtual auto recvfrom(SocketView fd, void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > = 0;
 
-    // File / Pipe
-#if !defined(ILIAS_NO_FILE)
-    virtual auto addFd(fd_t fd) -> Result<void> { return Unexpected(Error::OperationNotSupported); }
-    virtual auto removeFd(fd_t fd) -> Result<void> { return Unexpected(Error::OperationNotSupported); }
+    // Poll socket fd    
+    virtual auto poll(SocketView fd, uint32_t events) -> Task<uint32_t> = 0;
 
-    virtual auto write(fd_t fd, const void *buffer, size_t n) -> Task<size_t> { ::abort(); }
-    virtual auto read(fd_t fd, void *buffer, size_t n) -> Task<size_t> { ::abort(); }
-#endif
-
+    // Instance
     static auto instance() -> IoContext * {
         return dynamic_cast<IoContext*>(EventLoop::instance());
     }

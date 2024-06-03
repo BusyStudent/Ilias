@@ -1,5 +1,6 @@
 #ifdef _WIN32
 #include "ilias_iocp.hpp"
+#include <winternl.h>
 #include <algorithm>
 #include <memory>
 
@@ -15,6 +16,7 @@
 
 ILIAS_NS_BEGIN
 
+// Basic defs
 struct WSAExtFunctions {
     LPFN_GETACCEPTEXSOCKADDRS GetAcceptExSocketAddress = nullptr;
     LPFN_ACCEPTEX AcceptEx = nullptr;
@@ -30,9 +32,33 @@ public:
     // Called on Dispatched
     void (*onCompelete)(IOCPOverlapped *self, BOOL ok, DWORD byteTrans) = nullptr;
 };
+
+// AFD Poll
+typedef struct _AFD_POLL_HANDLE_INFO {
+    HANDLE Handle;
+    ULONG Events;
+    NTSTATUS Status;
+} AFD_POLL_HANDLE_INFO, *PAFD_POLL_HANDLE_INFO;
+
+typedef struct _AFD_POLL_INFO {
+    LARGE_INTEGER Timeout;
+    ULONG NumberOfHandles;
+    ULONG Exclusive;
+    AFD_POLL_HANDLE_INFO Handles[1];
+} AFD_POLL_INFO, *PAFD_POLL_INFO;
+
+struct NtFunctions {
+    decltype(::NtCreateFile) *NtCreateFile = nullptr;
+    decltype(::NtDeviceIoControlFile) *NtDeviceIoControlFile = nullptr;
+    decltype(::RtlNtStatusToDosError) *RtlNtStatusToDosError = nullptr;
+};
+
+// Static data
 static WSAExtFunctions Fns;
+static NtFunctions NtFns;
 static std::once_flag FnsOnceFlag;
 
+#pragma region Loop
 IOCPContext::IOCPContext() {
     mIocpFd = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
     if (!mIocpFd) {
@@ -40,9 +66,13 @@ IOCPContext::IOCPContext() {
     }
     // Get extension functions
     std::call_once(FnsOnceFlag, &IOCPContext::_loadFunctions, this);
+
+    // Init Poll
+    _initPoll();
 }
 IOCPContext::~IOCPContext() {
     ::CloseHandle(mIocpFd);
+    ::CloseHandle(mAfdDevice);
 }
 
 inline
@@ -91,7 +121,8 @@ auto IOCPContext::post(void (*fn)(void *), void *args) -> void {
     );
 }
 
-// Timer TODO
+// Timer
+#pragma region Timer
 auto IOCPContext::delTimer(uintptr_t timer) -> bool {
     auto iter = mTimers.find(timer);
     if (iter == mTimers.end()) {
@@ -166,6 +197,7 @@ auto IOCPContext::removeSocket(SocketView sock) -> Result<void> {
 }
 
 // IOCP Recv / Send / Etc...
+#pragma region IOCP Network
 template <typename T, typename RetT>
 class IOCPAwaiter : public IOCPOverlapped {
 public:
@@ -454,73 +486,199 @@ auto IOCPContext::recvfrom(SocketView sock, void *buf, size_t len) -> Task<std::
     co_return co_await awaiter;
 }
 
-// File
-#if 1
-auto IOCPContext::addFd(fd_t fd) -> Result<void> {
-    auto ret = ::CreateIoCompletionPort(fd, mIocpFd, 0, 0);
-    if (!ret) {
-        return Unexpected(Error::fromErrno(::GetLastError()));
-    }
-    ::SetFileCompletionNotificationModes(
-        fd, 
-        FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE
+// Poll
+// By wepoll implementation, using DeviceIoControl
+#pragma region IOCP Poll
+#define AFD_POLL               9
+#define IOCTL_AFD_POLL 0x00012024
+
+auto IOCPContext::_initPoll() -> void {    
+    // Open the afd device for impl poll
+    wchar_t path [] = L"\\Device\\Afd\\Ilias";
+    ::HANDLE device = nullptr;
+    ::UNICODE_STRING deviceName {
+        sizeof(path) - sizeof(path[0]),
+        sizeof(path),
+        path
+    };
+    ::OBJECT_ATTRIBUTES objAttr {
+        sizeof(OBJECT_ATTRIBUTES),
+        nullptr,
+        &deviceName,
+        0,
+        nullptr
+    };
+    ::IO_STATUS_BLOCK statusBlock {};
+    auto status = NtFns.NtCreateFile(
+        &device,
+        SYNCHRONIZE,
+        &objAttr,
+        &statusBlock,
+        nullptr,
+        0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        FILE_OPEN,
+        0,
+        nullptr,
+        0
     );
-    return {};
-}
-auto IOCPContext::removeFd(fd_t fd) -> Result<void> {
-    return {};
+    if (status != 0) {
+        auto winerr = NtFns.RtlNtStatusToDosError(status);
+        ::SetLastError(winerr);
+        return;
+    }
+
+    // Make guard
+    std::unique_ptr<void, decltype(::CloseHandle) *> guard {
+        device,
+        ::CloseHandle
+    };
+
+    if (!::CreateIoCompletionPort(device, mIocpFd, 0, 0)) {
+        return;
+    }
+    if (!::SetFileCompletionNotificationModes(device, FILE_SKIP_SET_EVENT_ON_HANDLE)) {
+        return;
+    }
+
+    // Done
+    mAfdDevice = guard.release();
 }
 
-struct WriteAwaiter : public IOCPAwaiter<WriteAwaiter, Result<size_t> > {
-    auto doIocp() -> bool {
-        return ::WriteFileEx(fd, buffer, size, this, nullptr);
-    }
-    auto onCompelete(bool ok, DWORD byteTrans) -> Result<size_t> {
-        if (ok) {
-            return byteTrans;
+#define AFD_POLL_RECEIVE           0x0001
+#define AFD_POLL_RECEIVE_EXPEDITED 0x0002
+#define AFD_POLL_SEND              0x0004
+#define AFD_POLL_DISCONNECT        0x0008
+#define AFD_POLL_ABORT             0x0010
+#define AFD_POLL_LOCAL_CLOSE       0x0020
+#define AFD_POLL_ACCEPT            0x0080
+#define AFD_POLL_CONNECT_FAIL      0x0100
+
+struct PollAwaiter : public IOCPOverlapped {
+    PollAwaiter(SOCKET sock, HANDLE device, uint32_t events) : sock(sock), device(device) {
+        // Settings OVERLAPPED callback
+        IOCPOverlapped::onCompelete = onCompelete;
+        // Fill the info
+        info.Exclusive = TRUE;
+        info.NumberOfHandles = 1; //< Only one socket
+        info.Timeout.QuadPart = INT64_MAX;
+        info.Handles[0].Handle = HANDLE(sock);
+        info.Handles[0].Status = 0;
+        info.Handles[0].Events = AFD_POLL_LOCAL_CLOSE; //< When socket was ::closesocket(sock)
+
+        if (events & PollEvent::In) {
+            info.Handles[0].Events |= (AFD_POLL_RECEIVE | AFD_POLL_DISCONNECT | AFD_POLL_ACCEPT | AFD_POLL_ABORT);
         }
-        return Unexpected(Error::fromErrno(::GetLastError()));
+        if (events & PollEvent::Out) {
+            info.Handles[0].Events |= (AFD_POLL_SEND | AFD_POLL_CONNECT_FAIL);
+        }
+        if (events & PollEvent::Err) {
+            info.Handles[0].Events |= (AFD_POLL_ABORT | AFD_POLL_CONNECT_FAIL);
+        }
     }
-    ::LPCVOID buffer = nullptr;
-    ::DWORD size = 0;
+    auto await_ready() -> bool {
+        if (!submitPoll(sock, device, &info, &rinfo, this)) {
+            auto err = ::WSAGetLastError();
+            if (err != ERROR_IO_PENDING) {
+                IOCP_LOG("[IOCP] Poll failed %d\n", int(err));
+                return true;
+            }
+        }
+        IOCP_LOG("[IOCP] Poll Start %p\n", this);
+        started = true;
+        return false;
+    }
+    auto await_suspend(std::coroutine_handle<> h) -> void {
+        handle = h;
+    }
+    auto await_resume() -> Result<uint32_t> {
+        if (!completed && started) {
+            // Cancel the poll
+            // TODO:
+            IOCP_LOG("[IOCP] TODO: Poll Canceling ...\n");
+            ::CancelIoEx(device, this);
+        }
+        uint32_t revents = 0;
+        if (rinfo.Handles[0].Events & (AFD_POLL_RECEIVE | AFD_POLL_DISCONNECT | AFD_POLL_ACCEPT | AFD_POLL_ABORT)) {
+            revents |= PollEvent::In;
+        }
+        if (rinfo.Handles[0].Events & (AFD_POLL_SEND | AFD_POLL_CONNECT_FAIL)) {
+            revents |= PollEvent::Out;
+        }
+        if (rinfo.Handles[0].Events & (AFD_POLL_ABORT | AFD_POLL_CONNECT_FAIL)) {
+            revents |= PollEvent::Err;
+        }
+        IOCP_LOG("[IOCP] Poll Done %p\n", this);
+        return revents;
+    }
+
+    //< Submit a poll to device
+    static auto submitPoll(SOCKET sock, HANDLE device, AFD_POLL_INFO *in, AFD_POLL_INFO *out, OVERLAPPED *overlapped) -> BOOL {
+        IO_STATUS_BLOCK *ioStatusBlock = nullptr;
+        HANDLE event = nullptr;
+        void *apcContext = nullptr;
+        if (overlapped) {
+            ioStatusBlock = (IO_STATUS_BLOCK*) &overlapped->Internal;
+            event = overlapped->hEvent;
+            apcContext = overlapped;
+        }
+
+        ioStatusBlock->Status = STATUS_PENDING;
+        auto status = NtFns.NtDeviceIoControlFile(
+            device,
+            event,
+            nullptr,
+            apcContext,
+            ioStatusBlock,
+            IOCTL_AFD_POLL,
+            in,
+            sizeof(*in),
+            out,
+            sizeof(*out)
+        );
+        auto err = NtFns.RtlNtStatusToDosError(status);
+        ::WSASetLastError(err);
+        return err == ERROR_SUCCESS;
+    }
+    static auto onCompelete(IOCPOverlapped *_self, BOOL ok, DWORD byteTrans) -> void {
+        IOCP_LOG("[IOCP] Poll Awake %p\n", _self);
+        auto self = static_cast<PollAwaiter*>(_self);
+        self->completed = true;
+        if (self->handle) {
+            self->handle.resume();
+        }
+    }
+
+    SOCKET sock = INVALID_SOCKET;
+    HANDLE device = INVALID_HANDLE_VALUE;
+    bool started = false;
+    bool completed = false;
+    AFD_POLL_INFO info { };
+    AFD_POLL_INFO rinfo { };
+    std::coroutine_handle<> handle;
 };
 
-auto IOCPContext::write(fd_t fd, const void *buf, size_t len) -> Task<size_t> {
-    WriteAwaiter awaiter;
-    awaiter.ctxt = this;
-    awaiter.fd = fd;
-    awaiter.buffer = buf;
-    awaiter.size = std::min<size_t>(len, std::numeric_limits<::DWORD>::max());
+auto IOCPContext::poll(SocketView sock, uint32_t event) -> Task<uint32_t> {
+    if (!mAfdDevice) {
+        co_return Unexpected(Error::OperationNotSupported);
+    }
+    ::SOCKET baseSocket = INVALID_SOCKET;
+    ::DWORD bytesReturned = 0;
+
+    // Get current handle
+    if (WSAIoctl(sock.get(), SIO_BASE_HANDLE, nullptr, 0, &baseSocket, sizeof(baseSocket), &bytesReturned, nullptr, nullptr) != 0) {
+        co_return Unexpected(Error::fromErrno());
+    }
+
+    PollAwaiter awaiter {baseSocket, mAfdDevice, event};
+    
     co_return co_await awaiter;
 }
 
-struct ReadAwaiter : public IOCPAwaiter<ReadAwaiter, Result<size_t> > {
-    auto doIocp() -> bool {
-        return ::ReadFileEx(fd, buffer, size, this, nullptr);
-    }
-    auto onCompelete(bool ok, DWORD byteTrans) -> Result<size_t> {
-        if (ok) {
-            return byteTrans;
-        }
-        return Unexpected(Error::fromErrno(::GetLastError()));
-    }
-    ::LPVOID buffer = nullptr;
-    ::DWORD size = 0;
-};
-
-auto IOCPContext::read(fd_t fd, void *buf, size_t len) -> Task<size_t> {
-    ReadAwaiter awaiter;
-    awaiter.ctxt = this;
-    awaiter.fd = fd;
-    awaiter.buffer = buf;
-    awaiter.size = std::min<size_t>(len, std::numeric_limits<::DWORD>::max());
-    co_return co_await awaiter;
-}
-
-#endif
-
-// Get WSA Ext functions
+#pragma region Function loader
+// Load functions
 inline auto IOCPContext::_loadFunctions() -> void {
+    // Get WSA Ext functions
     ::GUID acceptExId = WSAID_ACCEPTEX;
     ::GUID connectExId = WSAID_CONNECTEX;
     ::GUID transFileId = WSAID_TRANSMITFILE;
@@ -556,6 +714,12 @@ inline auto IOCPContext::_loadFunctions() -> void {
         sizeof(Fns.GetAcceptExSocketAddress), &bytesNeeded, 
         nullptr, nullptr
     );
+
+    // Get Nt parts
+    auto mod = ::GetModuleHandleA("ntdll.dll");
+    NtFns.NtCreateFile = reinterpret_cast<decltype(NtFns.NtCreateFile)>(::GetProcAddress(mod, "NtCreateFile"));
+    NtFns.NtDeviceIoControlFile = reinterpret_cast<decltype(NtFns.NtDeviceIoControlFile)>(::GetProcAddress(mod, "NtDeviceIoControlFile"));
+    NtFns.RtlNtStatusToDosError = reinterpret_cast<decltype(NtFns.RtlNtStatusToDosError)>(::GetProcAddress(mod, "RtlNtStatusToDosError"));
 }
 
 ILIAS_NS_END

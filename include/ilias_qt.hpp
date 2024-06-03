@@ -37,16 +37,22 @@ public:
     auto recvfrom(SocketView fd, void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > override;
 
     // Poll
-    auto poll(qintptr fd, QSocketNotifier::Type want) -> Task<QSocketNotifier::Type>;
+    auto poll(SocketView fd, uint32_t events) -> Task<uint32_t> override;
 protected:
     auto timerEvent(QTimerEvent *event) -> void override;
 private:
     // Wrapping Qt 
-    struct Notifier {
-        Notifier(qintptr fd);
+    struct Notifier : QObject {
+        Notifier(QObject *parent, qintptr fd);
+        Notifier(const Notifier &) = delete;
+        ~Notifier();
+
         QSocketNotifier read;
         QSocketNotifier write;
         QSocketNotifier exception;
+        size_t numOfRead = 0; //< When 0 it will disable the read notifier
+        size_t numOfWrite = 0;
+        size_t numOfException = 0;
     };
     // Timers
     struct Timer {
@@ -115,7 +121,7 @@ inline auto QIoContext::addSocket(SocketView socket) -> Result<void> {
     if (auto ret = socket.setBlocking(false); !ret) {
         return ret;
     }
-    auto notifier = new Notifier(socket.get());
+    auto notifier = new Notifier(this, socket.get());
     mFds.insert(std::make_pair(socket.get(), notifier));
     return Result<void>();
 }
@@ -138,7 +144,7 @@ inline auto QIoContext::send(SocketView fd, const void *buffer, size_t n) -> Tas
         if (ret.error() != Error::WouldBlock) {
             co_return ret;
         }
-        auto pollret = co_await poll(fd.get(), QSocketNotifier::Write);
+        auto pollret = co_await poll(fd, PollEvent::Out);
         if (!pollret) {
             co_return Unexpected(pollret.error());
         }
@@ -153,7 +159,7 @@ inline auto QIoContext::recv(SocketView fd, void *buffer, size_t n) -> Task<size
         if (ret.error() != Error::WouldBlock) {
             co_return ret;
         }
-        auto pollret = co_await poll(fd.get(), QSocketNotifier::Read);
+        auto pollret = co_await poll(fd, PollEvent::In);
         if (!pollret) {
             co_return Unexpected(pollret.error());
         }
@@ -167,7 +173,7 @@ inline auto QIoContext::connect(SocketView fd, const IPEndpoint &endpoint) -> Ta
     if (ret.error() != Error::InProgress && ret.error() != Error::WouldBlock) {
         co_return ret;
     }
-    auto pollret = co_await poll(fd.get(), QSocketNotifier::Write);
+    auto pollret = co_await poll(fd, PollEvent::Out);
     if (!pollret) {
         co_return Unexpected(pollret.error());
     }
@@ -186,7 +192,7 @@ inline auto QIoContext::accept(SocketView fd) -> Task<std::pair<Socket, IPEndpoi
         if (ret.error() != Error::WouldBlock) {
             co_return ret;
         }
-        auto pollret = co_await poll(fd.get(), QSocketNotifier::Read);
+        auto pollret = co_await poll(fd, PollEvent::In);
         if (!pollret) {
             co_return Unexpected(pollret.error());
         }
@@ -201,7 +207,7 @@ inline auto QIoContext::sendto(SocketView fd, const void *buffer, size_t n, cons
         if (ret.error() != Error::WouldBlock) {
             co_return ret;
         }
-        auto pollret = co_await poll(fd.get(), QSocketNotifier::Write);
+        auto pollret = co_await poll(fd, PollEvent::Out);
         if (!pollret) {
             co_return Unexpected(pollret.error());
         }
@@ -217,7 +223,7 @@ inline auto QIoContext::recvfrom(SocketView fd, void *buffer, size_t n) -> Task<
         if (ret.error() != Error::WouldBlock) {
             co_return Unexpected(ret.error());
         }
-        auto pollret = co_await poll(fd.get(), QSocketNotifier::Read);
+        auto pollret = co_await poll(fd, PollEvent::In);
         if (!pollret) {
             co_return Unexpected(pollret.error());
         }
@@ -225,70 +231,92 @@ inline auto QIoContext::recvfrom(SocketView fd, void *buffer, size_t n) -> Task<
 }
 
 // Poll
-inline QIoContext::Notifier::Notifier(qintptr fd) : 
+inline QIoContext::Notifier::Notifier(QObject *parent, qintptr fd) :
+    QObject(parent),
     read(fd, QSocketNotifier::Read),
     write(fd, QSocketNotifier::Write),
     exception(fd, QSocketNotifier::Exception)
 {
+    setObjectName(QString("Ilias SockNotifier %1").arg(fd));
     read.setEnabled(false);
     write.setEnabled(false);
     exception.setEnabled(false);
 }
-inline auto QIoContext::poll(qintptr fd, QSocketNotifier::Type want) -> Task<QSocketNotifier::Type> {
-    struct PollAwaiter {
-        auto await_ready() -> bool {
-            // Enable which we wanted
-            switch (want) {
-                case QSocketNotifier::Read: current = &notifier->read; break;
-                case QSocketNotifier::Write: current = &notifier->write; break;
-                case QSocketNotifier::Exception: current = &notifier->exception; break;
-            }
-            ILIAS_ASSERT(current->isEnabled() == false);
-            current->setEnabled(true);
-            return false;
-        }
-        auto await_suspend(std::coroutine_handle<> h) -> void {
-            handle = h;
-            // Bind all signal here
-            auto callback = [this](QSocketDescriptor fd, QSocketNotifier::Type type) {
-                onActived(fd, type);
+inline QIoContext::Notifier::~Notifier() { }
+
+inline auto QIoContext::poll(SocketView fd, uint32_t events) -> Task<uint32_t> {
+    struct Awaiter {
+        Awaiter(qintptr fd, uint32_t events, Notifier *notifier) : fd(fd), notifier(notifier) {
+            auto onActive = [this](QSocketDescriptor, QSocketNotifier::Type type) {
+                if (type == QSocketNotifier::Read) {
+                    revents = PollEvent::In;
+                }
+                if (type == QSocketNotifier::Write) {
+                    revents = PollEvent::Out;
+                }
+                hasValue = true;
+                handle.resume();
             };
-            QObject::connect(current, &QSocketNotifier::activated, callback);
+            auto onDestroy = [this]() {
+                handle.resume();
+            };
+            if (events & PollEvent::In) {
+                inCon = QObject::connect(&notifier->read, &QSocketNotifier::activated, onActive);
+                notifier->read.setEnabled(true);
+                notifier->numOfRead += 1;
+            }
+            if (events & PollEvent::Out) {
+                outCon = QObject::connect(&notifier->write, &QSocketNotifier::activated, onActive);
+                notifier->write.setEnabled(true);
+                notifier->numOfWrite += 1;
+            }
+            destroyCon = QObject::connect(notifier, &QObject::destroyed, onDestroy);
         }
-        auto await_resume() -> Result<QSocketNotifier::Type> {
-            cleanup(); //< Cleanup connections...
+        Awaiter(const Awaiter &) = delete;
+        Awaiter(Awaiter &&) = delete;
+        ~Awaiter() {
+            if (inCon) {
+                notifier->read.disconnect(inCon);
+                notifier->numOfRead -= 1;
+            }
+            if (outCon) {
+                notifier->write.disconnect(outCon);
+                notifier->numOfWrite -= 1;
+            }
+            // Check all 
+            if (notifier->numOfRead == 0) notifier->read.setEnabled(false); 
+            if (notifier->numOfWrite == 0) notifier->write.setEnabled(false);
+            if (destroyCon) notifier->disconnect(destroyCon); 
+        }
+
+        auto await_ready() -> bool { return false; }
+        auto await_suspend(Task<uint32_t>::handle_type h) -> void { handle = h; }
+        auto await_resume() -> Result<uint32_t> {
             if (!hasValue) {
                 return Unexpected(Error::Canceled);
             }
-            return got;
-        }
-        auto onActived(QSocketDescriptor fd, QSocketNotifier::Type type) -> void {
-            got = type;
-            hasValue = true;
-            handle.resume();
-        }
-        auto cleanup() -> void {
-            // Disable we are using
-            current->setEnabled(false);
-            // Disconnect we are using
-            current->disconnect();
+            return revents;
         }
 
-        qintptr fd;
-        Notifier *notifier;
-        QSocketNotifier *current; //< Current we are using
-        QSocketNotifier::Type want;
-        QSocketNotifier::Type got;
-        std::coroutine_handle<> handle;
-        bool hasValue = false;
+        qintptr fd = qintptr(-1);
+        uint32_t revents = 0; //< Receive events
+        Notifier *notifier = nullptr;
+        bool hasValue = false; //< Does we recived value?
+        QMetaObject::Connection inCon;  //< User request in
+        QMetaObject::Connection outCon; //< User request out
+        QMetaObject::Connection destroyCon; //< The socket was destroyed con
+        Task<uint32_t>::handle_type handle; //< Self coroutine handle
     };
-    PollAwaiter awaiter;
-    awaiter.notifier = mFds[fd];
-    awaiter.want = want;
-    awaiter.fd = fd;
+    Awaiter awaiter {
+        qintptr(fd.get()),
+        events,
+        mFds[fd.get()]
+    };
     co_return co_await awaiter;
 }
 
+
+#if 0
 // Extensions
 
 template <typename ...Args>
@@ -346,5 +374,7 @@ template <typename InClass, typename Ret, typename Class, typename... Args>
 QWaitSignal(InClass*, Ret (Class::*fn)(Args...)) -> QWaitSignal<Args...>;
 template <typename InClass, typename Ret, typename Class, typename... Args>
 QWaitSignal(InClass*, Ret (Class::*fn)(Args...) const) -> QWaitSignal<Args...>;
+
+#endif
 
 ILIAS_NS_END

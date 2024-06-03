@@ -476,7 +476,7 @@ public:
 static_assert(StreamClient<SslClient<> >);
 
 // TODO:
-template <StreamClient T = IStreamListener>
+template <StreamListener T = IStreamListener>
 class SslListener : public SslSocket<T> {
 public:
     SslListener() = delete; //< Not Impl
