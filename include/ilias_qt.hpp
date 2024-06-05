@@ -242,7 +242,9 @@ inline QIoContext::Notifier::Notifier(QObject *parent, qintptr fd) :
     write.setEnabled(false);
     exception.setEnabled(false);
 }
-inline QIoContext::Notifier::~Notifier() { }
+inline QIoContext::Notifier::~Notifier() {
+    Q_EMIT destroyed();
+}
 
 inline auto QIoContext::poll(SocketView fd, uint32_t events) -> Task<uint32_t> {
     struct Awaiter {

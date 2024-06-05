@@ -43,12 +43,14 @@ public:
 
     // Poll
     auto poll(SocketView fd, uint32_t events) -> Task<uint32_t> override;
+
+    // Internal
+    auto _runIo(DWORD timeout) -> void;
 private:
     auto _calcWaiting() const -> DWORD;
     auto _runTimers() -> void;
     auto _initPoll() -> void;
     auto _loadFunctions() -> void;
-    auto _runIo(DWORD timeout) -> void;
     
     SockInitializer mInitalizer;
     HANDLE mIocpFd = INVALID_HANDLE_VALUE; //< iocp fd
@@ -65,8 +67,6 @@ private:
     std::map<uintptr_t, std::multimap<uint64_t, Timer>::iterator> mTimers;
     std::multimap<uint64_t, Timer> mTimerQueue;
     uint64_t mTimerIdBase = 0; //< A self-increasing timer id base
-template <typename T, typename RetT>
-friend class IOCPAwaiter;
 };
 
 ILIAS_NS_END

@@ -2,7 +2,9 @@
 #include "ilias_iocp.hpp"
 #include <winternl.h>
 #include <algorithm>
+#include <cinttypes>
 #include <memory>
+#include <future>
 
 #if 1
 // #if 0
@@ -71,10 +73,13 @@ IOCPContext::IOCPContext() {
     _initPoll();
 }
 IOCPContext::~IOCPContext() {
+    if (mAfdDevice != INVALID_HANDLE_VALUE) {
+        ::CloseHandle(mAfdDevice);
+    }
     ::CloseHandle(mIocpFd);
-    ::CloseHandle(mAfdDevice);
 }
 
+// TODO: Using GetQueuedCompletionStatusEx to get more Completion at one time
 inline
 auto IOCPContext::_runIo(DWORD timeout) -> void {
     DWORD bytesTrans = 0;
@@ -537,7 +542,9 @@ auto IOCPContext::_initPoll() -> void {
     if (!::CreateIoCompletionPort(device, mIocpFd, 0, 0)) {
         return;
     }
-    if (!::SetFileCompletionNotificationModes(device, FILE_SKIP_SET_EVENT_ON_HANDLE)) {
+    ::UCHAR flags = FILE_SKIP_SET_EVENT_ON_HANDLE;
+    flags |= FILE_SKIP_COMPLETION_PORT_ON_SUCCESS; //< Does it ok?, wepoll and libuv doesnot use it
+    if (!::SetFileCompletionNotificationModes(device, flags)) {
         return;
     }
 
@@ -545,21 +552,25 @@ auto IOCPContext::_initPoll() -> void {
     mAfdDevice = guard.release();
 }
 
-#define AFD_POLL_RECEIVE           0x0001
-#define AFD_POLL_RECEIVE_EXPEDITED 0x0002
-#define AFD_POLL_SEND              0x0004
-#define AFD_POLL_DISCONNECT        0x0008
-#define AFD_POLL_ABORT             0x0010
-#define AFD_POLL_LOCAL_CLOSE       0x0020
-#define AFD_POLL_ACCEPT            0x0080
-#define AFD_POLL_CONNECT_FAIL      0x0100
+enum AfdPoll {
+    AFD_POLL_RECEIVE           = 0x0001,
+    AFD_POLL_RECEIVE_EXPEDITED = 0x0002,
+    AFD_POLL_SEND              = 0x0004,
+    AFD_POLL_DISCONNECT        = 0x0008,
+    AFD_POLL_ABORT             = 0x0010,
+    AFD_POLL_LOCAL_CLOSE       = 0x0020,
+    AFD_POLL_ACCEPT            = 0x0080,
+    AFD_POLL_CONNECT_FAIL      = 0x0100,
+};
 
-struct PollAwaiter : public IOCPOverlapped {
-    PollAwaiter(SOCKET sock, HANDLE device, uint32_t events) : sock(sock), device(device) {
+struct AfdPollAwaiter : public IOCPOverlapped {
+    AfdPollAwaiter(IOCPContext *ctxt, SOCKET sock, HANDLE device, uint32_t events) : 
+        ctxt(ctxt), sock(sock), device(device) 
+    {
         // Settings OVERLAPPED callback
         IOCPOverlapped::onCompelete = onCompelete;
         // Fill the info
-        info.Exclusive = TRUE;
+        info.Exclusive = FALSE; //< Try false?
         info.NumberOfHandles = 1; //< Only one socket
         info.Timeout.QuadPart = INT64_MAX;
         info.Handles[0].Handle = HANDLE(sock);
@@ -577,14 +588,19 @@ struct PollAwaiter : public IOCPOverlapped {
         }
     }
     auto await_ready() -> bool {
-        if (!submitPoll(sock, device, &info, &rinfo, this)) {
-            auto err = ::WSAGetLastError();
-            if (err != ERROR_IO_PENDING) {
-                IOCP_LOG("[IOCP] Poll failed %d\n", int(err));
-                return true;
-            }
+        SOCKET sock = SOCKET(info.Handles[0].Handle);
+        if (submitPoll(device, &info, &rinfo, this)) {
+            //< We got the result right now
+            IOCP_LOG("[IOCP] Poll Submit with return, sock %" PRIxPTR "\n", sock);
+            compeleted = true;
+            return true;
         }
-        IOCP_LOG("[IOCP] Poll Start %p\n", this);
+        auto err = ::GetLastError();
+        if (err != ERROR_IO_PENDING) {
+            IOCP_LOG("[IOCP] Poll Submit failed %d\n", int(err));
+            return true;
+        }
+        IOCP_LOG("[IOCP] Poll Submit OVERLAPPED: %p, sock : %" PRIxPTR "\n", this, sock);
         started = true;
         return false;
     }
@@ -592,28 +608,44 @@ struct PollAwaiter : public IOCPOverlapped {
         handle = h;
     }
     auto await_resume() -> Result<uint32_t> {
-        if (!completed && started) {
+        if (!compeleted && !started) { //< Submit Poll Error
+            return Unexpected(Error::fromErrno());
+        }
+        if (!compeleted && started) {
             // Cancel the poll
-            // TODO:
             IOCP_LOG("[IOCP] TODO: Poll Canceling ...\n");
-            ::CancelIoEx(device, this);
+            cancelPoll();
         }
         uint32_t revents = 0;
-        if (rinfo.Handles[0].Events & (AFD_POLL_RECEIVE | AFD_POLL_DISCONNECT | AFD_POLL_ACCEPT | AFD_POLL_ABORT)) {
+        uint32_t afdEvents = rinfo.Handles[0].Events;
+        HANDLE sock = rinfo.Handles[0].Handle;
+        if (afdEvents & (AFD_POLL_LOCAL_CLOSE)) {
+            // User close the socket
+            return Unexpected(Error::Canceled);
+        }
+        if (afdEvents & (AFD_POLL_RECEIVE | AFD_POLL_DISCONNECT | AFD_POLL_ACCEPT | AFD_POLL_ABORT)) {
             revents |= PollEvent::In;
         }
-        if (rinfo.Handles[0].Events & (AFD_POLL_SEND | AFD_POLL_CONNECT_FAIL)) {
+        if (afdEvents & (AFD_POLL_SEND | AFD_POLL_CONNECT_FAIL)) {
             revents |= PollEvent::Out;
         }
-        if (rinfo.Handles[0].Events & (AFD_POLL_ABORT | AFD_POLL_CONNECT_FAIL)) {
+        if (afdEvents & (AFD_POLL_ABORT | AFD_POLL_CONNECT_FAIL)) {
             revents |= PollEvent::Err;
         }
-        IOCP_LOG("[IOCP] Poll Done %p\n", this);
+        // It think disconnect is Hup
+        if (afdEvents & (AFD_POLL_DISCONNECT)) {
+            revents |= PollEvent::Hup;
+        }
+        IOCP_LOG(
+            "[IOCP] Poll Done, sock %" PRIxPTR ", afdEvents %d : (%s)\n", 
+            sock, int(afdEvents), afdToString(afdEvents).c_str()
+        );
         return revents;
     }
 
     //< Submit a poll to device
-    static auto submitPoll(SOCKET sock, HANDLE device, AFD_POLL_INFO *in, AFD_POLL_INFO *out, OVERLAPPED *overlapped) -> BOOL {
+    static auto submitPoll(HANDLE device, AFD_POLL_INFO *in, AFD_POLL_INFO *out, OVERLAPPED *overlapped) -> BOOL {
+#if 0
         IO_STATUS_BLOCK *ioStatusBlock = nullptr;
         HANDLE event = nullptr;
         void *apcContext = nullptr;
@@ -637,41 +669,136 @@ struct PollAwaiter : public IOCPOverlapped {
             sizeof(*out)
         );
         auto err = NtFns.RtlNtStatusToDosError(status);
-        ::WSASetLastError(err);
+        ::SetLastError(err);
         return err == ERROR_SUCCESS;
+#else
+        return ::DeviceIoControl(device, IOCTL_AFD_POLL, in, sizeof(*in), out, sizeof(*out), nullptr, overlapped);
+#endif
     }
     static auto onCompelete(IOCPOverlapped *_self, BOOL ok, DWORD byteTrans) -> void {
-        IOCP_LOG("[IOCP] Poll Awake %p\n", _self);
-        auto self = static_cast<PollAwaiter*>(_self);
-        self->completed = true;
+        IOCP_LOG("[IOCP] Poll Awake on OVERLAPPED %p\n", _self);
+        auto self = static_cast<AfdPollAwaiter*>(_self);
+        self->compeleted = true;
         if (self->handle) {
             self->handle.resume();
         }
     }
+    // For debugging
+    static auto afdToString(ULONG afdEvents) -> std::string {
+        std::string ret;
+        if (afdEvents & AFD_POLL_RECEIVE) {
+            ret += "AFD_POLL_RECEIVE ";
+        }
+        if (afdEvents & AFD_POLL_RECEIVE_EXPEDITED) {
+            ret += "AFD_POLL_RECEIVE_EXPEDITED ";
+        }
+        if (afdEvents & AFD_POLL_SEND) {
+            ret += "AFD_POLL_SEND ";
+        }
+        if (afdEvents & AFD_POLL_DISCONNECT) {
+            ret += "AFD_POLL_DISCONNECT ";
+        }
+        if (afdEvents & AFD_POLL_ABORT) {
+            ret += "AFD_POLL_ABORT ";
+        }
+        if (afdEvents & AFD_POLL_LOCAL_CLOSE) {
+            ret += "AFD_POLL_LOCAL_CLOSE ";
+        }
+        if (afdEvents & AFD_POLL_ACCEPT) {
+            ret += "AFD_POLL_ACCEPT ";
+        }
+        if (afdEvents & AFD_POLL_CONNECT_FAIL) {
+            ret += "AFD_POLL_CONNECT_FAIL ";
+        }
+        return ret;
+    }
+    auto cancelPoll() -> void {
+        handle = nullptr;
+        if (!::CancelIoEx(device, this)) {
+            auto err = ::GetLastError();
+            if (err != ERROR_NOT_FOUND) {
+                IOCP_LOG("[IOCP] Cancel Poll failed %d\n", int(err));
+                return;
+            }
+            // If not found, we still have to got this result
+        }
+        while (!compeleted) {
+            ctxt->_runIo(INFINITE);
+        }
+    }
 
+    IOCPContext *ctxt;
     SOCKET sock = INVALID_SOCKET;
     HANDLE device = INVALID_HANDLE_VALUE;
     bool started = false;
-    bool completed = false;
+    bool compeleted = false;
     AFD_POLL_INFO info { };
     AFD_POLL_INFO rinfo { };
     std::coroutine_handle<> handle;
 };
 
-auto IOCPContext::poll(SocketView sock, uint32_t event) -> Task<uint32_t> {
-    if (!mAfdDevice) {
-        co_return Unexpected(Error::OperationNotSupported);
+struct WSAPollAwaiter {
+public:
+    WSAPollAwaiter(IOCPContext *ctxt, SocketView sock, uint32_t events) : ctxt(ctxt) {
+        IOCP_LOG("[ICOP] WARN: fd: %" PRIXPTR " Use the slow path of poll\n", sock.get());
+        pfd.events = events;
+        pfd.fd = sock.get();
+    }
+    auto await_ready() const noexcept -> bool { return false; }
+    auto await_suspend(std::coroutine_handle<> h) -> void {
+        handle = h;
+        future = std::async(&WSAPollAwaiter::run, this);
+    }
+    auto await_resume() -> Result<uint32_t> {
+        // TODO: Maybe here is compre exchange ?
+        handle = nullptr;
+        return future.get();
+    }
+    auto doPoll() -> Result<uint32_t> {
+        int n = 0;
+        while (handle.load()) {
+            // Not canceled
+            auto n = ::WSAPoll(&pfd, 1, 100);
+            if (n < 0) {
+                return Unexpected(Error::fromErrno());
+            }
+            if (n == 1) {
+                return pfd.revents;
+            }
+        }
+        // Cancel
+        return Unexpected(Error::Canceled);
+    }
+    auto run() -> Result<uint32_t> {
+        auto ret = doPoll();
+        auto h = handle.load();
+        if (h) {
+            ctxt->resumeHandle(h);
+        }
+        return ret;
+    }
+
+    ::pollfd pfd { };
+    IOCPContext *ctxt = nullptr;
+    std::future<Result<uint32_t> > future;
+    std::atomic<std::coroutine_handle<> > handle; //< Handle to self
+};
+
+auto IOCPContext::poll(SocketView sock, uint32_t events) -> Task<uint32_t> {
+    if (!mAfdDevice) [[unlikely]] {
+        // Fallback to normal WSAPoll
+        co_return co_await WSAPollAwaiter {this, sock, events};
     }
     ::SOCKET baseSocket = INVALID_SOCKET;
     ::DWORD bytesReturned = 0;
 
     // Get current handle
-    if (WSAIoctl(sock.get(), SIO_BASE_HANDLE, nullptr, 0, &baseSocket, sizeof(baseSocket), &bytesReturned, nullptr, nullptr) != 0) {
-        co_return Unexpected(Error::fromErrno());
+    if (::WSAIoctl(sock.get(), SIO_BASE_HANDLE, nullptr, 0, &baseSocket, sizeof(baseSocket), &bytesReturned, nullptr, nullptr) != 0) {
+        // Fallback to normal WSAPoll
+        co_return co_await WSAPollAwaiter {this, sock, events};
     }
 
-    PollAwaiter awaiter {baseSocket, mAfdDevice, event};
-    
+    AfdPollAwaiter awaiter {this, baseSocket, mAfdDevice, events};
     co_return co_await awaiter;
 }
 
