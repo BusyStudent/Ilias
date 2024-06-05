@@ -19,6 +19,7 @@ TEST(TaskTest, GetValue) {
     }();
     ASSERT_EQ(num.value(), 1);
 }
+
 TEST(TaskTest, Impl1) {
     auto task = []() -> Task<> {
         co_return {};
@@ -37,10 +38,29 @@ TEST(TaskTest, Go) {
     ASSERT_EQ(bool(handle), true);
     ASSERT_EQ(handle.join().value(), 114514);
 }
+
+TEST(TaskTest, BlockingWait) {
+    auto body = []() -> Task<> {
+        ilias_wait Sleep(1s);
+        co_return {};
+    };
+    ilias_wait [&]() -> Task<> {
+        auto [a, b] = co_await (Sleep(500ms) || body()); 
+        if (a) {
+            std::cout << "A" << std::endl;
+        }
+        if (b) {
+            std::cout << "B" << std::endl;
+        }
+        co_return {};
+    } ();
+}
+
 TEST(WhenAllTest, Test1) {
     auto task = []() -> Task<> {
         // auto [a0, b0] = co_await WhenAll(Sleep(1s), Sleep(10ms));
         auto [a0, b0, c0] = co_await (Sleep(1s) && Sleep(10ms) && Sleep(10ms));
+        ILIAS_ASSERT(a0 && b0 && c0);
         // auto [a1, b1] = co_await WhenAny(Sleep(1s), Sleep(10ms));
         auto [a1, b1, c1] = co_await (Sleep(1s) || Sleep(10ms) || Sleep(1145s));
         co_return Result<>();

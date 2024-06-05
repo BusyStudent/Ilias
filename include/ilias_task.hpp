@@ -23,6 +23,15 @@ concept IsTask = requires(T t) {
 };
 
 /**
+ * @brief Cancel status for cancel
+ * 
+ */
+enum class CancelStatus {
+    Pending, //< This cancel is still pending
+    Done,    //< This cancel is done
+};
+
+/**
  * @brief A Lazy way to get value
  * 
  * @tparam T 
@@ -58,8 +67,9 @@ public:
     /**
      * @brief Cancel the task
      * 
+     * @return CancelStatus
      */
-    auto cancel() const -> void {
+    auto cancel() const -> CancelStatus {
         ILIAS_CTRACE("[Ilias] Task<{}> Canceling {}", typeid(T).name(), name());
         return promise().cancel();
     }
@@ -94,8 +104,9 @@ public:
             return;
         }
         if (!mHandle.done()) {
-            // Cancel
-            cancel();
+            // Cancel current
+            auto status = cancel();
+            ILIAS_ASSERT(status == CancelStatus::Done);
         }
         mHandle.destroy();
         mHandle = nullptr;
@@ -148,20 +159,23 @@ public:
     auto initial_suspend() noexcept {
         struct Awaiter {
             auto await_ready() const noexcept -> bool { return false; }
-            auto await_suspend(std::coroutine_handle<>) const noexcept -> void { }
-            auto await_resume() { ILIAS_ASSERT(self); self->mStarted = true; }
+            auto await_suspend(std::coroutine_handle<>) const noexcept -> void { self->mSuspended = true; }
+            auto await_resume() { ILIAS_ASSERT(self); self->mStarted = true; self->mSuspended = false; }
             PromiseBase *self;
         };
         return Awaiter {this};
     }
     auto final_suspend() noexcept -> SwitchCoroutine {
+        mSuspended = true; //< Done is still suspended
         if (mStopOnDone) [[unlikely]] {
             mStopOnDone->stop();
         }
         if (mDestroyOnDone) [[unlikely]] {
             mEventLoop->destroyHandle(mHandle);
         }
-        if (mPrevAwaiting) {
+        // If has someone is waiting us and he is suspended
+        // We can not resume a coroutine which is not suspended, It will cause UB
+        if (mPrevAwaiting && mPrevAwaiting->mSuspended) {
             mPrevAwaiting->setResumeCaller(this);
             return mPrevAwaiting->mHandle;
         }
@@ -173,12 +187,18 @@ public:
     /**
      * @brief Cancel the current coroutine
      * 
+     * @return CancelStatus
      */
-    auto cancel() noexcept -> void {
+    auto cancel() -> CancelStatus {
         mCanceled = true;
+        if (!mSuspended) {
+            ILIAS_CTRACE("[Task] Cancel on a still running task\n");
+            return CancelStatus::Pending;
+        }
         while (!mHandle.done()) {
             mHandle.resume();
         }
+        return CancelStatus::Done;
     }
     auto eventLoop() const -> EventLoop * {
         return mEventLoop;
@@ -188,6 +208,9 @@ public:
     }
     auto isStarted() const -> bool {
         return mStarted;
+    }
+    auto isSuspended() const -> bool {
+        return mSuspended;
     }
     auto name() const -> const char * {
         return mName;
@@ -205,6 +228,15 @@ public:
      */
     auto setStopOnDone(StopToken *token) noexcept -> void {
         mStopOnDone = token;
+    }
+    /**
+     * @brief Set the Suspended object
+     * @internal Don't use this, it's for internal use, by AwaitRecorder
+     * 
+     * @param suspended 
+     */
+    auto setSuspended(bool suspended) noexcept -> void {
+        mSuspended = suspended;
     }
     /**
      * @brief Let it destroy on the coroutine done
@@ -235,6 +267,7 @@ public:
 protected:
     bool mStarted = false;
     bool mCanceled = false;
+    bool mSuspended = false; //< Is the coroutine suspended at await ?
     bool mDestroyOnDone = false;
     const char *mName = nullptr;
     StopToken *mStopOnDone = nullptr; //< The token will be stop on this promise done
@@ -263,11 +296,10 @@ public:
      */
     TaskPromise(ILIAS_CAPTURE_CALLER(name)) noexcept {
         mName = name.function_name();
-        ILIAS_CTRACE("[Ilias] Task<{}> created {}", typeid(T).name(), mName);
     }
     ~TaskPromise() noexcept {
-        ILIAS_CTRACE("[Ilias] Task<{}> destroyed {}", typeid(T).name(), mName);
         ILIAS_CO_REMOVE(mHandle); //< Self is destroy, remove this
+        ILIAS_ASSERT(!mException); //< If exception was no still in there, abort!
     }
     /**
      * @brief Transform user defined type
@@ -278,7 +310,7 @@ public:
      */
     template <NotAwaiter U>
     auto await_transform(U &&t) noexcept {
-        return AwaitTransform<U>().transform(this, std::forward<U>(t));
+        return AwaitRecorder {this, AwaitTransform<U>().transform(this, std::forward<U>(t))};
     }
     /**
      * @brief Passthrough Awaiter
@@ -288,8 +320,8 @@ public:
      * @return T 
      */
     template <Awaiter U>
-    auto await_transform(U &&t) const noexcept -> decltype(auto) {
-        return std::forward<U>(t);
+    auto await_transform(U &&t) noexcept {
+        return AwaitRecorder<U&&> {this, std::forward<U>(t)};
     }
 
     /**
@@ -310,9 +342,10 @@ public:
      */
     auto value() -> Result<T> {
         if (mException) {
-            std::rethrow_exception(mException);
+            std::rethrow_exception(std::move(mException));
         }
-        ILIAS_ASSERT(mValue.hasValue());
+        ILIAS_ASSERT_MSG(mHandle.done(), "Task<T> is not done yet!");
+        ILIAS_ASSERT_MSG(mValue.hasValue(), "Task<T> doesn't has value, do you forget co_return?");
         return std::move(*mValue);
     }
     /**
@@ -348,6 +381,35 @@ private:
 };
 
 /**
+ * @brief Helper class for record the suspend flags
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class AwaitRecorder {
+public:
+    auto await_ready() -> bool { 
+        return mAwaiter.await_ready(); 
+    }
+    template <typename U>
+    auto await_suspend(std::coroutine_handle<TaskPromise<U> > handle) {
+        ILIAS_ASSERT(&handle.promise() == mPromise); //< Is same promise? 
+        ILIAS_ASSERT(!mPromise->isSuspended());
+
+        mPromise->setSuspended(true);
+        return mAwaiter.await_suspend(handle);
+    }
+    auto await_resume() {
+        mPromise->setSuspended(false);
+        return mAwaiter.await_resume();
+    }
+
+    PromiseBase *mPromise;
+    T mAwaiter;
+};
+
+
+/**
  * @brief Handle used to observe the running task
  * 
  */
@@ -362,7 +424,7 @@ public:
     ~CancelHandle() { clear(); }
 
     auto clear() -> void;
-    auto cancel() -> void;
+    auto cancel() -> CancelStatus;
     auto isDone() const -> bool;
     auto isCanceled() const -> bool;
     auto operator =(CancelHandle &&h) -> CancelHandle &;
@@ -421,10 +483,11 @@ inline auto CancelHandle::_cohandle() const -> std::coroutine_handle<> {
     }
     return std::coroutine_handle<>();
 }
-inline auto CancelHandle::cancel() -> void {
+inline auto CancelHandle::cancel() -> CancelStatus {
     if (mPtr) {
-        mPtr->cancel();
+        return mPtr->cancel();
     }
+    return CancelStatus::Done;
 }
 inline auto CancelHandle::isDone() const -> bool {
     return _cohandle().done();

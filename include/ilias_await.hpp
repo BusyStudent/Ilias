@@ -40,7 +40,6 @@ public:
     TaskAwaiter& operator=(const TaskAwaiter &) = delete;
 
     auto await_ready() const -> bool {
-        ILIAS_CTRACE("[Ilias] TaskAwaiter<{}>::await_ready caller {}", typeid(T).name(), static_cast<void*>(&mCaller));
         if (mCaller.isCanceled()) {
             return true;
         }
@@ -58,11 +57,6 @@ public:
     }
     [[nodiscard("Don't discard await result")]]
     auto await_resume() const -> Result<U> {
-        ILIAS_CTRACE(
-            "[Ilias] TaskAwaiter<{}>::await_resume caller {} canceled {}, resumeCaller {}", 
-            typeid(T).name(), static_cast<void*>(&mCaller), 
-            mCaller.isCanceled(), static_cast<void*>(mCaller.resumeCaller())
-        );
         if (mCaller.isCanceled() && !mTask.handle().done()) {
             //< Avoid mTask is still no done, when it was cancel, it will resume the caller
             mTask.setPrevAwaiting(nullptr);

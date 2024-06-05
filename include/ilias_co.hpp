@@ -56,6 +56,8 @@ ILIAS_NS_BEGIN
 template <typename T>
 class AwaitTransform;
 template <typename T>
+class AwaitRecorder;
+template <typename T>
 class TaskPromise;
 class PromiseBase;
 
