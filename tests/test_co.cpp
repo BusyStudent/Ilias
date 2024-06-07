@@ -3,6 +3,7 @@
 #include "../include/ilias_task.hpp"
 #include "../include/ilias_await.hpp"
 #include "../include/ilias_channel.hpp"
+#include "../include/ilias_scope.hpp"
 #include "../include/ilias_loop.hpp"
 #include <gtest/gtest.h>
 #include <iostream>
@@ -142,6 +143,22 @@ TEST(ChannelTest, PrintUntilClosed) {
     ASSERT_EQ(a, 114514);
     ASSERT_EQ(b, 114514);
     }
+}
+
+// --- Test for TaskScope
+TEST(TaskScopeTest, TestTaskScope) {
+    bool value = true;
+
+    TaskScope scope;
+    scope.spawn([&]() -> Task<> {
+        scope.spawn([&]() -> Task<> {
+            value = false;
+            co_return {};
+        });
+        co_return {};
+    });
+    scope.syncWait();
+    ASSERT_EQ(value, false);
 }
 
 int main(int argc, char **argv) {
