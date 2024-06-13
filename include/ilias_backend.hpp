@@ -88,6 +88,10 @@ public:
     auto recv(void *buffer, size_t n) -> Task<size_t> {
         return mPtr->recv(buffer, n);
     }
+    auto close() noexcept -> void {
+        delete mPtr;
+        mPtr = nullptr;
+    }
 
     template <StreamClient T>
     T &view() const noexcept {

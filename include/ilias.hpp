@@ -1,6 +1,7 @@
 #pragma once
 
 #include <concepts>
+#include <cstdint>
 #include <string>
 #include <array>
 

@@ -248,72 +248,69 @@ private:
     InTuple mTasks;
 };
 
-/**
- * @brief Awaiter used for ilias_select
- * 
- * @tparam T 
- * @tparam Args 
- */
-template <typename T, typename ...Args>
-class SelectAwaiter {
+// Vec version
+template <typename T>
+class WhenAllVecAwaiter {
 public:
-    SelectAwaiter(TaskPromise<T> &caller, std::tuple<Args...> &s) : mCaller(caller), mExpressions(s) { }
-    SelectAwaiter(const SelectAwaiter &) = delete;
-    SelectAwaiter(SelectAwaiter &&) = default;
+    WhenAllVecAwaiter(PromiseBase &caller, std::vector<Task<T> > &vec) :
+        mCaller(caller), mVec(vec) { }
+    WhenAllVecAwaiter(const WhenAllVecAwaiter &) = delete;
+    WhenAllVecAwaiter(WhenAllVecAwaiter &&) = default;
+    ~WhenAllVecAwaiter() = default;
 
     auto await_ready() -> bool {
-        if (mCaller.isCanceled()) {
+        if (mCaller.isCanceled() || mVec.empty()) {
             return true;
         }
-        bool got = false; //< Does we got any value by resume it?
-        auto resume = [&](auto handle) {
-            if (got) {
-                return;
-            }
-            handle.resume();
-            if (handle.done()) {
-                mCaller.setResumeCaller(&handle.promise());
-                got = true;
-            }
-        };
-        // Dispatch all to resume
-        std::apply([&](auto &&...expression) {
-            (resume(expression.task.handle()), ...);
-        }, mExpressions);
-        return got;
+        // Try resume
+        for (auto &task : mVec) {
+            task.handle().resume();
+        }
+        _collectResult();
+        return mVec.empty();
     }
-    // Return to EventLoop
-    auto await_suspend(std::coroutine_handle<TaskPromise<T> > h) -> void {
-        auto setAwaiting = [this](auto handle) {
-            if (!handle.done()) {
-                handle.promise().setPrevAwaiting(&mCaller);
-            }
-        };
-        // Dispatch all to set Awating
-        std::apply([&](auto &&...expression) {
-            (setAwaiting(expression.task.handle()), ...);
-        }, mExpressions);
+    auto await_suspend(auto handle) -> void {
+        mHelper = _helperTask();
+        mHelper->setPrevAwaiting(&mCaller);
+        for (auto &task : mVec) {
+            task->setPrevAwaiting(&mHelper.promise());
+        }
     }
-    auto await_resume() -> void {
-        // Dispatch the result it
-        auto applyResult = [this](auto &&expression) {
-            auto &[task, callable] = expression;
-            task.promise().setPrevAwaiting(nullptr);
-            if (mCaller.isCanceled()) {
-                return;
-            }
-            if (mCaller.resumeCaller() == &task.promise()) {
-                callable(task.promise().value());
-            }
-        };
-        // Dispatch all to apply result
-        std::apply([&](auto &&...expression) {
-            (applyResult(expression), ...);
-        }, mExpressions);
+    auto await_resume() -> std::vector<Result<T> > {
+        if (mHelper) {
+            mHelper.cancel();
+        }
+        _collectResult();
+        return std::move(mResults);
     }
 private:
-    TaskPromise<T> &mCaller;
-    std::tuple<Args...> &mExpressions;
+    auto _helperTask() -> Task<void> {
+        size_t num = mVec.size();
+        while (num && !mHelper->isCanceled()) {
+            --num;
+            if (num) {
+                co_await std::suspend_always();
+            }
+        }
+        co_return {};
+    }
+    auto _collectResult() -> void {
+        // Try collect result from begin to end
+        for (auto it = mVec.begin(); it != mVec.end(); ) {
+            if (it->handle().done()) {
+                mResults.emplace_back(it->promise().value());
+                it = mVec.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+    }
+
+    PromiseBase &mCaller;
+    std::vector<Task<T> > &mVec;
+    std::vector<Result<T> > mResults;
+    Task<void> mHelper;
 };
 
 /**
@@ -388,29 +385,22 @@ struct _WhenAllTags {
 };
 
 /**
- * @brief A Bind Expression than hold task's callback ownship
+ * @brief Place holder for WhenAny(Vec<Task<T> >)
  * 
  * @tparam T 
- * @tparam Callable 
  */
-template <typename T, typename Callable>
-struct _BindExpression {
-    Task<T> task;
-    Callable callable;
+template <IsTask T>
+struct _WhenAnyVecTags {
+    std::vector<T> &vec;
 };
 
-/**
- * @brief A struct than hold the bind expression
- * 
- * @tparam Args 
- */
-template <typename ...Args>
-struct _SelectTags : public std::tuple<Args...> {
-    using std::tuple<Args...>::tuple;
+
+template <IsTask T>
+struct _WhenAllVecTags {
+    std::vector<T> &vec;
 };
 
-template <typename ...Args>
-_SelectTags(Args &&...) -> _SelectTags<Args...>;
+
 template <typename T>
 _WhenAnyTags(T) -> _WhenAnyTags<T>;
 template <typename T>
@@ -452,12 +442,12 @@ public:
     }
 };
 
-template <typename ...Expressions>
-class AwaitTransform<_SelectTags<Expressions...> > {
+template <IsTask T>
+class AwaitTransform<_WhenAllVecTags<T> > {
 public:
-    template <typename T>
-    static auto transform(TaskPromise<T> *caller, _SelectTags<Expressions...> &&tag) {
-        return SelectAwaiter(*caller, tag);
+    template <typename U>
+    static auto transform(TaskPromise<U> *caller, const _WhenAllVecTags<T> &tag) {
+        return WhenAllVecAwaiter(*caller, tag.vec);
     }
 };
 
@@ -467,32 +457,8 @@ public:
  * @param ms 
  * @return Task<> 
  */
-inline auto SleepFor(int64_t ms) -> Task<> {
-    co_return co_await _SleepTags{ms};
-}
-
-/**
- * @brief Sleep a specified time
- * 
- * @param ms 
- * @return Task<> 
- */
 inline auto Sleep(chrono::milliseconds ms) -> Task<> {
-    return SleepFor(ms.count());
-}
-
-/**
- * @brief Sleep until the specified time
- * 
- * @param t 
- * @return Task<> 
- */
-inline auto SleepUntil(chrono::steady_clock::time_point t) -> Task<> {
-    return SleepFor(
-        chrono::duration_cast<chrono::milliseconds>(
-            t - chrono::steady_clock::now()
-        ).count()
-    );
+    co_return co_await _SleepTags(ms.count());
 }
 
 /**
@@ -503,7 +469,7 @@ inline auto SleepUntil(chrono::steady_clock::time_point t) -> Task<> {
  * @return auto 
  */
 template <IsTask ...Args>
-inline auto WhenAny(Args &&...tasks) {
+inline auto WhenAny(Args &&...tasks) noexcept {
     return _WhenAnyTags { std::tuple((&tasks.promise())...) };
 }
 
@@ -515,34 +481,20 @@ inline auto WhenAny(Args &&...tasks) {
  * @return auto 
  */
 template <IsTask ...Args>
-inline auto WhenAll(Args &&...tasks) {
+inline auto WhenAll(Args &&...tasks) noexcept {
     return _WhenAllTags { std::tuple((&tasks.promise())...) };
 }
 
 /**
- * @brief Bind a task's result to a callable
- * 
- * @tparam T 
- * @tparam Any 
- * @param task 
- * @param any 
- * @return auto 
- */
-template <typename T, typename Any>
-inline auto operator >>(Task<T> &&task, Any &&any) {
-    return _BindExpression {std::move(task), std::move(any) };
-}
-
-/**
- * @brief Bind a task's result to null (drop the result)
+ * @brief When all task in vector ready and get value
  * 
  * @tparam T 
  * @param task 
  * @return auto 
  */
-template <typename T>
-inline auto operator >>(Task<T> &&task, std::nullptr_t) {
-    return _BindExpression {std::move(task), [](Result<T>) { } };
+template <IsTask T>
+inline auto WhenAll(std::vector<T> &task) noexcept {
+    return _WhenAllVecTags { task };
 }
 
 /**
@@ -555,12 +507,12 @@ inline auto operator >>(Task<T> &&task, std::nullptr_t) {
  * @return auto 
  */
 template <IsTask T1, IsTask T2>
-inline auto operator &&(const T1 &a, const T2 &b) {
+inline auto operator &&(const T1 &a, const T2 &b) noexcept {
     return _WhenAllTags { std::tuple{ &a.promise(), &b.promise() } };
 }
 
 template <PromiseTuple T, IsTask T1>
-inline auto operator &&(_WhenAllTags<T> a, const T1 &b) {
+inline auto operator &&(_WhenAllTags<T> a, const T1 &b) noexcept {
     return _WhenAllTags {
         std::tuple_cat(a.tuple, std::tuple{ &b.promise() })
     };
@@ -576,15 +528,42 @@ inline auto operator &&(_WhenAllTags<T> a, const T1 &b) {
  * @return auto 
  */
 template <IsTask T1, IsTask T2>
-inline auto operator ||(const T1 &t, const T2 &t2) {
+inline auto operator ||(const T1 &t, const T2 &t2) noexcept {
     return _WhenAnyTags { std::tuple{ &t.promise(), &t2.promise() } };
 }
 
 template <PromiseTuple T, IsTask T1>
-inline auto operator ||(_WhenAnyTags<T> a, const T1 &b) {
+inline auto operator ||(_WhenAnyTags<T> a, const T1 &b) noexcept {
     return _WhenAnyTags {
         std::tuple_cat(a.tuple, std::tuple{ &b.promise() })
     };
 }
+
+// This namespace for Get the task self' infomation or doing some yield or control... etc...
+namespace ThisTask {
+    struct _Yield {
+        auto await_ready() const noexcept -> bool { return false; }
+        auto await_suspend(auto handle) const noexcept -> void { handle.promise().eventLoop()->resumeHandle(handle); }
+        auto await_resume() const noexcept -> void { }
+    };
+
+    /**
+     * @brief Yield
+     * 
+     * @return _Yield 
+     */
+    [[nodiscard("Non't forget to use co_await")]]
+    inline auto yield() -> _Yield { return { }; }
+
+    /**
+     * @brief Sleep for ms
+     * 
+     * @param ms 
+     * @return auto 
+     */
+    [[nodiscard("Non't forget to use co_await")]]
+    inline auto msleep(int64_t ms) { return Sleep(chrono::milliseconds(ms)); }
+}
+namespace this_task = ThisTask; //< For STL Style
 
 ILIAS_NS_END

@@ -125,6 +125,14 @@ public:
     }
     auto operator =(const Task &) -> Task & = delete;
     /**
+     * @brief Access the promise directly
+     * 
+     * @return promise_type* 
+     */
+    auto operator ->() const -> promise_type * {
+        return &(mHandle.promise());
+    }
+    /**
      * @brief Check the task is empty or not
      * 
      * @return true 

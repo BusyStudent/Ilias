@@ -72,6 +72,32 @@ TEST(WhenAllTest, Test1) {
     ASSERT_LT(diff, 1100ms);
 }
 
+TEST(WhenAllTest, Test2) {
+    auto returnVal = [](int val) -> Task<int> {
+        if (val % 2) {
+            co_await Sleep(std::chrono::milliseconds(val));
+        }
+        co_return val;
+    };
+    auto task = [&](int range) -> Task<std::vector<int> > {
+        std::cout << range << std::endl;
+        std::vector<Task<int> > vec;
+        for (int i = 0; i < range; i++) {
+            vec.emplace_back(returnVal(i));
+        }
+        std::vector<int> vals;
+        for (auto &value : co_await WhenAll(vec)) {
+            std::cout << value.value() << std::endl;
+            vals.emplace_back(*value);
+        }
+        co_return vals;
+    };
+    ::srand(::time(nullptr));
+    auto num = ::rand() % 2048;
+    auto vec = ilias_wait task(num);
+    ASSERT_EQ(vec->size(), num);
+}
+
 // ---- Test for Channels
 // send n, return actually sended
 auto sendForN(Sender<int> s, int n) -> Task<int> {

@@ -49,7 +49,6 @@ inline std::set<std::coroutine_handle<> > _ilias_coset;
 #define ilias_go   ::ILIAS_NAMESPACE::EventLoop::instance() <<
 #define ilias_wait ::ILIAS_NAMESPACE::EventLoop::instance() >>
 #define ilias_spawn ::ILIAS_NAMESPACE::EventLoop::instance() <<
-#define ilias_select co_await ::ILIAS_NAMESPACE::_SelectTags
 
 ILIAS_NS_BEGIN
 

@@ -66,7 +66,7 @@ public:
         }
         BIO_METHOD *method;
     };
-    static BIO_METHOD *_register() {
+    static auto _register() -> BIO_METHOD * {
         BIO_METHOD *method = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_SOURCE_SINK, "IliasSslBio");
         BIO_meth_set_write_ex(method, [](BIO *b, const char *data, size_t len, size_t *ret) {
             return static_cast<SslBio*>(BIO_get_data(b))->_write(data, len, ret);
@@ -79,7 +79,7 @@ public:
         });
         return method;
     }
-    int _write(const char *data, size_t len, size_t *ret) {
+    auto _write(const char *data, size_t len, size_t *ret) -> int {
         if (!data) {
             return 0;
         }
@@ -91,7 +91,7 @@ public:
         *ret = mWriteRing.push(data, len);
         return 1;
     }
-    int _read(char *data, size_t len, size_t *ret) {
+    auto _read(char *data, size_t len, size_t *ret) -> int {
         if (!data) {
             return 0;
         }
@@ -103,7 +103,7 @@ public:
         *ret = mReadRing.pop(data, len);
         return 1;
     }
-    long _ctrl(int cmd, long num, void *ptr) {
+    auto _ctrl(int cmd, long num, void *ptr) -> long {
         switch (cmd) {
             case BIO_CTRL_FLUSH: mFlush = true; return 1;
         }
@@ -121,7 +121,7 @@ public:
  * @tparam T 
  */
 template <typename T>
-class SslWrap : public SslBio {
+class SslWrap final : public SslBio {
 public:
     SslWrap(T &&f) : mFd(std::move(f)) { }
     T mFd;
