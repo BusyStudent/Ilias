@@ -353,6 +353,19 @@ public:
             }
         }
     }
+    auto shutdown() -> Task<> {
+        while (true) {
+            int ret = SSL_shutdown(this->mSsl);
+            if (ret == 1) {
+                co_return Result<>();
+            }
+            int errcode = 0;
+            errcode = SSL_get_error(this->mSsl, ret);
+            if (auto ret = co_await this->_handleError(errcode); !ret) {
+                co_return Unexpected(ret.error());
+            }
+        }
+    }
 #endif
 };
 

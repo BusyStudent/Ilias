@@ -12,14 +12,6 @@
 
 ILIAS_NS_BEGIN
 
-// --- Enums
-enum PollEvent : uint32_t {
-    In  = POLLIN,
-    Out = POLLOUT,
-    Err = POLLERR,
-    Hup = POLLHUP,
-};
-
 // --- Concepts
 template <typename T>
 concept StreamClient = requires(T t) {

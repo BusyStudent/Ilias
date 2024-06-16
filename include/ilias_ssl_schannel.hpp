@@ -24,6 +24,41 @@ ILIAS_NS_BEGIN
 namespace Schannel {
 
 /**
+ * @brief Error category for explain Schannel Error c
+ * 
+ */
+class SslCategory final : public ErrorCategory {
+public:
+    auto name() const -> std::string_view override { 
+        return "schannel"; 
+    }
+    auto message(uint32_t code) const -> std::string override {
+        wchar_t *args = nullptr;
+        ::FormatMessageW(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr, code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            reinterpret_cast<wchar_t*>(&args), 0, nullptr
+        );
+        auto len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, nullptr, 0, nullptr, nullptr);
+        std::string ret(len, 0);
+        ::WideCharToMultiByte(CP_UTF8, 0, args, -1, &ret[0], len, nullptr, nullptr);
+        ::LocalFree(args);
+        return ret;
+    }
+    auto equivalent(uint32_t code, const Error &other) const -> bool override {
+        if (other.category() == IliasCategory::instance()) {
+            switch (other.value()) {
+                case Error::SSL:
+                case Error::SSLUnknown: return true;
+            }
+        }
+        return ErrorCategory::equivalent(code, other);
+    }
+    static auto instance() -> SslCategory & { static SslCategory ret; return ret; }
+    static auto makeError(DWORD code) -> Error { return Error(code, instance()); }
+};
+
+/**
  * @brief The schannel version of SslContext
  * 
  */
@@ -72,7 +107,6 @@ public:
     SslData(::PSecurityFunctionTableW t) : table(t) { }
     SslData(const SslData &) = delete;
     ~SslData() {
-        SCHANNEL_LOG("[Schannel] Shutdown\n");
         table->DeleteSecurityContext(&ssl);
     }
 
@@ -109,6 +143,7 @@ public:
         if (!mCtxt) {
             return;
         }
+        SCHANNEL_LOG("[Schannel] Close for %ls\n", mHost.c_str());
         mFd = T();
         mCtxt = nullptr;
         mData.reset();
@@ -202,8 +237,8 @@ protected:
                 // Done
             }
             else if (status != SEC_E_INCOMPLETE_MESSAGE) {
-                SCHANNEL_LOG("[Schannel] Failed to handshake %d\n", int(status));
-                co_return Unexpected(Error::SSLUnknown);
+                SCHANNEL_LOG("[Schannel] Failed to handshake 0x%x\n", status);
+                co_return Unexpected(SslCategory::makeError(status));
             }
             // Try send too many data, but we can
             if (received == incomingCapicity) {
@@ -344,8 +379,8 @@ protected:
                     co_return 0;
                 }
                 else if (status != SEC_E_INCOMPLETE_MESSAGE) {
-                    SCHANNEL_LOG("[Schannel] Failed to decrypt %d\n", int(status));
-                    co_return Unexpected(Error::SSLUnknown);
+                    SCHANNEL_LOG("[Schannel] Failed to decrypt 0x%x\n", status);
+                    co_return Unexpected(SslCategory::makeError(status));
                 }
             }
             if (incomingReceived == incomingCapicity) {
@@ -451,6 +486,9 @@ public:
             co_return Unexpected(ret.error());
         }
         co_return co_await this->_handshakeAsClient();
+    }
+    auto shutdown() -> Task<> {
+        return this->_disconnect();
     }
     auto send(const void *buffer, size_t n) -> Task<size_t> {
         return this->_send(buffer, n);

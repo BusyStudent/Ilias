@@ -2,10 +2,12 @@
 
 #include "ilias.hpp"
 #include "ilias_expected.hpp"
+#include <charconv>
 #include <cstring>
 #include <string>
+#include <span>
 
-// Platform
+// --- Platform
 #if  defined(_WIN32)
     #define ILIAS_INVALID_SOCKET INVALID_SOCKET
     #define ILIAS_ERRNO     ::WSAGetLastError()
@@ -17,6 +19,10 @@
     #define ILIAS_BYTE_T      char
     #define ILIAS_CLOSE(s)  ::closesocket(s)
     #define ILIAS_POLL      ::WSAPoll
+    #define ILIAS_SHUT_RD     SD_RECEIVE
+    #define ILIAS_SHUT_WR     SD_SEND
+    #define ILIAS_SHUT_RDWR   SD_BOTH
+
     #include <WinSock2.h>
     #include <WS2tcpip.h>
     #include <MSWSock.h>
@@ -35,6 +41,9 @@
     #define ILIAS_BYTE_T      void
     #define ILIAS_CLOSE(s)  ::close(s)
     #define ILIAS_POLL      ::poll
+    #define ILIAS_SHUT_RD     SHUT_RD
+    #define ILIAS_SHUT_WR     SHUT_WR
+    #define ILIAS_SHUT_RDWR   SHUT_RDWR
 
     #include <sys/socket.h>
     #include <netinet/in.h>
@@ -49,12 +58,26 @@
 
 ILIAS_NS_BEGIN
 
-// Platform 
+// --- Platform 
 using socket_t = ILIAS_SOCKET_T;
 using ssize_t  = ILIAS_SSIZE_T;
 using byte_t   = ILIAS_BYTE_T;
 using error_t  = ILIAS_ERROR_T;
 using fd_t     = ILIAS_FD_T;
+
+// --- Enums
+enum PollEvent : uint32_t {
+    In  = POLLIN,
+    Out = POLLOUT,
+    Err = POLLERR,
+    Hup = POLLHUP,
+};
+
+enum Shutdown : int {
+    Read  = ILIAS_SHUT_RD,
+    Write = ILIAS_SHUT_WR,
+    Both  = ILIAS_SHUT_RDWR,
+};
 
 /**
  * @brief Wrapper for v4
@@ -66,29 +89,136 @@ public:
     IPAddress4(::in_addr addr4);
     IPAddress4(const IPAddress4 &other) = default;
 
-    std::string toString() const;
-    uint32_t    toUint32() const;
-    uint32_t    toUint32NetworkOrder() const;
+    /**
+     * @brief Convert to human readable string
+     * 
+     * @return std::string 
+     */
+    auto toString() const -> std::string;
+    /**
+     * @brief Convert to uint32 host order
+     * 
+     * @return uint32_t 
+     */
+    auto toUint32() const -> uint32_t;
+    /**
+     * @brief Convert to uint32 network order
+     * 
+     * @return uint32_t 
+     */
+    auto toUint32NetworkOrder() const -> uint32_t;
+    /**
+     * @brief Get the readonly span of the data
+     * 
+     * @tparam T 
+     * @return std::span<const T> 
+     */
+    template <typename T = uint8_t>
+    auto span() const -> std::span<const T, sizeof(::in_addr) / sizeof(T)>;
 
-    bool isAny() const;
-    bool isNone() const;
-    bool isBroadcast() const;
-    bool isLoopback() const;
+    /**
+     * @brief Check current address is any
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isAny() const -> bool;
+    /**
+     * @brief Check current address is none
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isNone() const -> bool;
+    /**
+     * @brief Check current address is loopback
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isLoopback() const -> bool;
+    /**
+     * @brief Check current address is broadcast
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isBroadcast() const -> bool;
+    /**
+     * @brief Check current address is multicast
+     *
+     * @return true 
+     * @return false 
+     */
+    auto isMulticast() const -> bool;
 
-    bool operator ==(const IPAddress4 &other) const;
-    bool operator !=(const IPAddress4 &other) const;
-    
-    static IPAddress4 any();
-    static IPAddress4 none();
-    static IPAddress4 broadcast();
-    static IPAddress4 loopback();
-    static IPAddress4 fromString(const char *value);
-    static IPAddress4 fromHostname(const char *hostname);
-    static IPAddress4 fromUint32(uint32_t value);
-    static IPAddress4 fromUint32NetworkOrder(uint32_t value);
+    auto operator ==(const IPAddress4 &) const -> bool;
+    auto operator !=(const IPAddress4 &) const -> bool;
+
+    /**
+     * @brief Get any ipv4 address
+     * 
+     * @return IPAddress4 
+     */
+    static auto any() -> IPAddress4;
+    /**
+     * @brief Get none ipv4 address
+     * 
+     * @return IPAddress4 
+     */
+    static auto none() -> IPAddress4;
+    /**
+     * @brief Get loop ipv4 address
+     * 
+     * @return IPAddress4 
+     */
+    static auto loopback() -> IPAddress4;
+    /**
+     * @brief Get broadcast ipv4 address
+     * 
+     * @return IPAddress4 
+     */
+    static auto broadcast() -> IPAddress4;
+    /**
+     * @brief Copy data from buffer to create ipv4 address
+     * 
+     * @param mem pointer to network-format ipv4 address
+     * @param n must be sizeof(::in_addr)
+     * @return IPAddress4 
+     */
+    static auto fromRaw(const void *mem, size_t n) -> IPAddress4;
+    /**
+     * @brief Parse string and create ipv4 address
+     * 
+     * @param value 
+     * @return IPAddress4 
+     */
+    static auto fromString(const char *value) -> IPAddress4;
+    /**
+     * @brief Parse the hostname and get ipv4 address
+     * 
+     * @param hostname 
+     * @return IPAddress4 
+     */
+    static auto fromHostname(const char *hostname) -> IPAddress4;
+    /**
+     * @brief Create ipv4 address from uint32, host order
+     * 
+     * @param value 
+     * @return IPAddress4 
+     */
+    static auto fromUint32(uint32_t value)  -> IPAddress4;
+    /**
+     * @brief Create ipv4 address from uint32, network order
+     * 
+     * @param value 
+     * @return IPAddress4 
+     */
+    static auto fromUint32NetworkOrder(uint32_t value) -> IPAddress4;
 };
+
 /**
- * @brief Wrapper for v6
+ * @brief Wrapper for ipv6 address
  * 
  */
 class IPAddress6 : public ::in6_addr {
@@ -97,21 +227,86 @@ public:
     IPAddress6(::in6_addr addr6);
     IPAddress6(const IPAddress6 &other) = default;
 
-    std::string toString() const;
+    /**
+     * @brief Convert ipv6 address to human readable string
+     * 
+     * @return std::string 
+     */
+    auto toString() const -> std::string;
+    
+    /**
+     * @brief Get the readonly span of the data
+     * 
+     * @tparam T 
+     * @return std::span<const T> 
+     */
+    template <typename T = uint8_t>
+    auto span() const -> std::span<const T, sizeof(::in_addr6) / sizeof(T)>;
 
-    bool isAny() const;
-    bool isNone() const;
-    bool isLoopback() const;
-    bool isMulticast() const;
+    /**
+     * @brief Check this ipv6 address is any
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isAny() const -> bool;
+    /**
+     * @brief Check this ipv6 address is none
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isNone() const -> bool;
+    /**
+     * @brief Check this ipv6 address is loopback
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isLoopback() const -> bool;
+    /**
+     * @brief Check this ipv6 address is multicast
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isMulticast() const -> bool;
 
-    bool operator ==(const IPAddress6 &other) const;
-    bool operator !=(const IPAddress6 &other) const;
+    auto operator ==(const IPAddress6 &other) const -> bool;
+    auto operator !=(const IPAddress6 &other) const -> bool;
 
-    static IPAddress6 any();
-    static IPAddress6 none();
-    static IPAddress6 loopback();
-    static IPAddress6 fromString(const char *value);
-    static IPAddress6 fromHostname(const char *hostname);
+    /**
+     * @brief Get the any ipv6 address
+     * 
+     * @return IPAddress6 
+     */
+    static auto any() -> IPAddress6;
+    /**
+     * @brief Get the none ipv6 address
+     * 
+     * @return IPAddress6 
+     */
+    static auto none() -> IPAddress6;
+    /**
+     * @brief Get the loop ipv6 address
+     * 
+     * @return IPAddress6 
+     */
+    static auto loopback() -> IPAddress6;
+    /**
+     * @brief Parse the ipv6 address from string
+     * 
+     * @param value 
+     * @return IPAddress6 
+     */
+    static auto fromString(const char *value) -> IPAddress6;
+    /**
+     * @brief Parse the ipv6 address from hostname
+     * 
+     * @param hostname 
+     * @return IPAddress6 
+     */
+    static auto fromHostname(const char *hostname) -> IPAddress6;
 };
 
 /**
@@ -126,27 +321,105 @@ public:
     IPAddress(const char *str);
     IPAddress(const IPAddress &) = default;
 
-    std::string toString() const;
-    int  family() const;
-    int  length() const;
-    bool isValid() const;
-    const void *data() const;
-    template <typename T>
-    const T &data() const;
+    /**
+     * @brief Convert current address to human readable string
+     * 
+     * @return std::string 
+     */
+    auto toString() const -> std::string;
+    /**
+     * @brief Get the family of this address, like AF_INET or AF_INET6
+     * 
+     * @return int 
+     */
+    auto family() const -> int;
+    /**
+     * @brief Get the length of this address, like 4 or 16
+     * 
+     * @return int 
+     */
+    auto length() const -> int;
+    /**
+     * @brief Check this address is valid
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isValid() const -> bool;
 
-    void *data();
+    /**
+     * @brief Get the raw pointer of stored data
+     * 
+     * @return const void* 
+     */
+    auto data() const -> const void *;
+    /**
+     * @brief Get the raw pointer of stored data
+     * 
+     * @return void* 
+     */
+    auto data() -> void *;
+    /**
+     * @brief Cast to the referenced type
+     * 
+     * @tparam T 
+     * @return const T& 
+     */
     template <typename T>
-    T &data();
-
-    bool compare(const IPAddress &rhs) const;
-    bool operator ==(const IPAddress &rhs) const;
-    bool operator !=(const IPAddress &rhs) const;
-
-    static IPAddress fromString(const char *str);
-    static IPAddress fromHostname(const char *hostname);
-    static IPAddress fromRaw(const void *data, size_t size);
+    auto data() const -> const T &;
+    /**
+     * @brief Cast to the referenced type
+     * 
+     * @tparam T 
+     * @return T& 
+     */
     template <typename T>
-    static IPAddress fromRaw(const T &data);
+    auto data() -> T &;
+
+    /**
+     * @brief Get the span of the contained data
+     * 
+     * @tparam T 
+     * @return std::span<const T> 
+     */
+    template <typename T = uint8_t>
+    auto span() const -> std::span<const T>;
+
+    /**
+     * @brief Compare the endpoint, check it is same
+     * 
+     * @param rhs 
+     * @return true 
+     * @return false 
+     */
+    auto compare(const IPAddress &rhs) const -> bool;
+    auto operator ==(const IPAddress &rhs) const -> bool;
+    auto operator !=(const IPAddress &rhs) const -> bool;
+
+    /**
+     * @brief Parse the ip string
+     * 
+     * @param str 
+     * @return IPAddress 
+     */
+    static auto fromString(const char *str) -> IPAddress;
+    /**
+     * @brief Parse the hostname 
+     * 
+     * @param hostname 
+     * @return IPAddress 
+     */
+    static auto fromHostname(const char *hostname) -> IPAddress;
+    /**
+     * @brief Copy network-format ip address from buffer
+     * 
+     * @param data The pointer to the buffer
+     * @param size The size of the buffer (must be 4 or 16)
+     * @return IPAddress 
+     */
+    static auto fromRaw(const void *data, size_t size) -> IPAddress;
+    template <typename T>
+    static auto fromRaw(const T &data) -> IPAddress;
 private:
     union {
         ::in_addr v4;
@@ -166,54 +439,153 @@ private:
  */
 class IPEndpoint {
 public:
-    static_assert(AF_INET != 0 && AF_INET6 != 0, "We use mAddr.ss_family == 0 on invalid");
-    static_assert(AF_UNSPEC == 0, "We use mAddr.ss_family == 0 on invalid");
-
     IPEndpoint();
     IPEndpoint(const char *str);
+    IPEndpoint(const std::string &str);
+    IPEndpoint(std::string_view str);
     IPEndpoint(::sockaddr_in addr4);
     IPEndpoint(::sockaddr_in6 addr6);
     IPEndpoint(::sockaddr_storage storage);
     IPEndpoint(const IPAddress &address, uint16_t port);
     IPEndpoint(const IPEndpoint &) = default;
 
-    std::string toString() const;
-    IPAddress4 address4() const;
-    IPAddress6 address6() const;
-    IPAddress address() const;
-    uint16_t  port() const;
-    int       family() const;
-    int       length() const;
-    bool      isValid() const;
-    const void *data() const;
+    /**
+     * @brief Cast to human readable string (ip:port)
+     * 
+     * @return std::string 
+     */
+    auto toString() const -> std::string;
+    /**
+     * @brief Get the ipv4 address of the endpoint
+     * 
+     * @return IPAddress4 
+     */
+    auto address4() const -> IPAddress4;
+    /**
+     * @brief Get the ipv6 address of the endpoint
+     * 
+     * @return IPAddress6 
+     */
+    auto address6() const -> IPAddress6;
+    /**
+     * @brief Get the address of the endpoint
+     * 
+     * @return IPAddress 
+     */
+    auto address() const -> IPAddress;
+    /**
+     * @brief Get the port of the endpoint
+     * 
+     * @return uint16_t 
+     */
+    auto port() const -> uint16_t;
+    /**
+     * @brief Get the family of the endpoint
+     * 
+     * @return int 
+     */
+    auto family() const -> int;
+    /**
+     * @brief Get the length of the endpoint
+     * 
+     * @return int 
+     */
+    auto length() const -> int;
+    /**
+     * @brief Check the endpoint is valid
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isValid() const -> bool;
+    /**
+     * @brief Get the data of the current endpoint
+     * 
+     * @return const void* 
+     */
+    auto data() const -> const void *;
+    /**
+     * @brief Cast to endpoint data to
+     * 
+     * @tparam T 
+     * @return const T& 
+     */
     template <typename T>
-    const T &data() const;
+    auto data() const -> const T &;
 
-    void *data();
+    /**
+     * @brief Get the data of the current endpoint
+     * 
+     * @return void* 
+     */
+    auto data() -> void *;
+    /**
+     * @brief Cast to endpoint data to
+     * 
+     * @tparam T 
+     * @return const T& 
+     */
     template <typename T>
-    T &data();
+    auto data() -> T &;
 
-    bool compare(const IPEndpoint &rhs) const;
-    bool operator ==(const IPEndpoint &rhs) const;
-    bool operator !=(const IPEndpoint &rhs) const;
+    /**
+     * @brief Compare the endpoint is same
+     * 
+     * @param rhs 
+     * @return true 
+     * @return false 
+     */
+    auto compare(const IPEndpoint &rhs) const -> bool;
+    auto operator ==(const IPEndpoint &rhs) const -> bool;
+    auto operator !=(const IPEndpoint &rhs) const -> bool;
 
-    static IPEndpoint fromString(const char *str);
-    static IPEndpoint fromRaw(const void *data, size_t size);
+    /**
+     * @brief Parse string to endpoint
+     * 
+     * @param str 
+     * @return IPEndpoint 
+     */
+    static auto fromString(std::string_view str) -> IPEndpoint;
+    /**
+     * @brief Copy endpoint from network-format data
+     * 
+     * @param data The pointer to the data
+     * @param size The size of the data, must be sizeof(::sockaddr_in) or sizeof(::sockaddr_in6)
+     * @return IPEndpoint 
+     */
+    static auto fromRaw(const void *data, size_t size) -> IPEndpoint;
     template <typename T>
-    static IPEndpoint fromRaw(const T &data);
+    static auto fromRaw(const T &data) -> IPEndpoint;
 private:
     ::sockaddr_storage mAddr { };
 };
 
+/**
+ * @brief RAII Guard for windows socket initialization
+ * 
+ */
 class SockInitializer {
 public:
     SockInitializer();
     SockInitializer(const SockInitializer &) = delete;
     ~SockInitializer();
 
-    bool isInitalized() const noexcept { return mInited; }
+    /**
+     * @brief Check if we are initialized
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isInitalized() const noexcept -> bool { return mInited.has_value(); }
+    /**
+     * @brief Do initialization
+     * 
+     * @return Result<void> 
+     */
+    static auto initialize() -> Result<void>;
+    static auto uninitialize() -> Result<void>;
 private:
-    bool mInited;
+    Result<void> mInited { initialize() };
 };
 
 /**
@@ -226,44 +598,224 @@ public:
     SocketView(socket_t fd) : mFd(fd) { }
     SocketView(const SocketView &) = default;
 
-    Result<size_t> recv(void *buf, size_t len, int flags = 0) const;
-    Result<size_t> send(const void *buf, size_t len, int flags = 0) const;
-    Result<size_t> sendto(const void *buf, size_t len, int flags, const IPEndpoint *endpoint) const;
-    Result<size_t> sendto(const void *buf, size_t len, int flags, const IPEndpoint &endpoint) const;
-    Result<size_t> recvfrom(void *buf, size_t len, int flags, IPEndpoint *endpoint) const;
+    /**
+     * @brief Recv num of bytes
+     * 
+     * @param buf 
+     * @param len 
+     * @param flags 
+     * @return Result<size_t> 
+     */
+    auto recv(void *buf, size_t len, int flags = 0) const -> Result<size_t>;
 
+    /**
+     * @brief Send num of bytes
+     * 
+     * @param buf 
+     * @param len 
+     * @param flags 
+     * @return Result<size_t> 
+     */
+    auto send(const void *buf, size_t len, int flags = 0) const -> Result<size_t>;
+
+    /**
+     * @brief Sendto num of bytes to target endpoint
+     * 
+     * @param buf 
+     * @param len 
+     * @param flags 
+     * @param endpoint 
+     * @return Result<size_t> 
+     */
+    auto sendto(const void *buf, size_t len, int flags, const IPEndpoint *endpoint) const -> Result<size_t>;
+    auto sendto(const void *buf, size_t len, int flags, const IPEndpoint &endpoint) const -> Result<size_t>;
+    /**
+     * @brief Recvfrom num of bytes from , it can get the remote endpoint 
+     * 
+     * @param buf 
+     * @param len 
+     * @param flags 
+     * @param endpoint 
+     * @return Result<size_t> 
+     */
+    auto recvfrom(void *buf, size_t len, int flags, IPEndpoint *endpoint) const -> Result<size_t>;
+    auto recvfrom(void *buf, size_t len, int flags, IPEndpoint &endpoint) const -> Result<size_t>;
+
+    /**
+     * @brief Send data to the socket
+     * 
+     * @tparam T 
+     * @tparam N 
+     * @param buf 
+     * @param flags 
+     * @return Result<size_t> 
+     */
     template <typename T, size_t N>
-    Result<size_t> send(const T (&buf)[N], int flags = 0) const;
+    auto send(const T (&buf)[N], int flags = 0) const -> Result<size_t>;
 
-    Result<void> listen(int backlog = 0) const;
-    Result<void> connect(const IPEndpoint &endpoint) const;
-    Result<void> bind(const IPEndpoint &endpoint) const;
-    Result<void> setBlocking(bool blocking) const;
-    Result<void> setReuseAddr(bool reuse) const;
-    Result<void> setOption(int level, int optname, const void *optval, socklen_t optlen) const;
-    Result<void> getOption(int level, int optname, void *optval, socklen_t *optlen) const;
+    /**
+     * @brief Start listening on the socket
+     * 
+     * @param backlog 
+     * @return Result<void> 
+     */
+    auto listen(int backlog = 0) const -> Result<void>;
+
+    /**
+     * @brief Shutdown the socket by how, default shutdown buth read and write
+     * 
+     * @param how 
+     * @return Result<void> 
+     */
+    auto shutdown(int how = Shutdown::Both) const -> Result<void>;
+
+    /**
+     * @brief Connect to the specified endpoint
+     * 
+     * @param endpoint 
+     * @return Result<void> 
+     */
+    auto connect(const IPEndpoint &endpoint) const -> Result<void>;
+
+    /**
+     * @brief Bind the socket to the specified endpoint
+     * 
+     * @param endpoint 
+     * @return Result<void> 
+     */
+    auto bind(const IPEndpoint &endpoint) const -> Result<void>;
+
+    /**
+     * @brief Set blocking mode for the socket
+     * 
+     * @param blocking 
+     * @return Result<void> 
+     */
+    auto setBlocking(bool blocking) const -> Result<void>;
+
+    /**
+     * @brief Set reuse address option for the socket
+     * 
+     * @param reuse 
+     * @return Result<void> 
+     */
+    auto setReuseAddr(bool reuse) const -> Result<void>;
+
+    /**
+     * @brief Set socket option
+     * 
+     * @param level 
+     * @param optname 
+     * @param optval 
+     * @param optlen 
+     * @return Result<void> 
+     */
+    auto setOption(int level, int optname, const void *optval, socklen_t optlen) const -> Result<void>;
+
+    /**
+     * @brief Set the Option object, template version
+     * 
+     * @tparam T 
+     * @param level 
+     * @param optname 
+     * @param optval 
+     * @return Result<void> 
+     */
+    template <typename T>
+    auto setOption(int level, int optname, const T &optval) const -> Result<void>;
+
+    /**
+     * @brief Get socket option
+     * 
+     * @param level 
+     * @param optname 
+     * @param optval 
+     * @param optlen 
+     * @return Result<void> 
+     */
+    auto getOption(int level, int optname, void *optval, socklen_t *optlen) const -> Result<void>;
+
+    /**
+     * @brief Get the Option object, template version
+     * 
+     * @tparam T 
+     * @param level 
+     * @param optname 
+     * @return Result<T> 
+     */
+    template <typename T>
+    auto getOption(int level, int optname) const -> Result<T>;
 
 #ifdef _WIN32
-    Result<void> ioctl(long cmd, u_long *args) const;
+    /**
+     * @brief Perform IO control operation on the socket
+     * 
+     * @param cmd 
+     * @param args 
+     * @return Result<void> 
+     */
+    auto ioctl(long cmd, u_long *args) const -> Result<void>;
 #endif
 
-    bool isValid() const;
+    /**
+     * @brief Check if the socket is valid
+     * 
+     * @return bool 
+     */
+    auto isValid() const -> bool;
 
-    Result<int> family() const;
-    Result<int> type() const;
+    /**
+     * @brief Get the family of the socket
+     * 
+     * @return Result<int> 
+     */
+    auto family() const -> Result<int>;
+
+    /**
+     * @brief Get the type of the socket
+     * 
+     * @return Result<int> 
+     */
+    auto type() const -> Result<int>;
     
-    Result<Error> error() const;
+    /**
+     * @brief Get the error associated with the socket
+     * 
+     * @return Result<Error> 
+     */
+    auto error() const -> Result<Error>;
 
+    /**
+     * @brief Accept a connection on the socket
+     * 
+     * @tparam T 
+     * @return Result<std::pair<T, IPEndpoint>> 
+     */
     template <typename T>
-    Result<std::pair<T, IPEndpoint> > accept() const;
+    auto accept() const -> Result<std::pair<T, IPEndpoint>>;
 
-    Result<IPEndpoint> localEndpoint() const;
-    Result<IPEndpoint> remoteEndpoint() const;
+    /**
+     * @brief Get the local endpoint of the socket
+     * 
+     * @return Result<IPEndpoint> 
+     */
+    auto localEndpoint() const -> Result<IPEndpoint>;
 
-    socket_t get() const noexcept {
+    /**
+     * @brief Get the remote endpoint of the socket
+     * 
+     * @return Result<IPEndpoint> 
+     */
+    auto remoteEndpoint() const -> Result<IPEndpoint>;
+
+    /**
+     * @brief Get the underlying socket descriptor
+     * 
+     * @return socket_t 
+     */
+    auto get() const noexcept -> socket_t {
         return mFd;
     }
-
     static constexpr socket_t InvalidSocket = ILIAS_INVALID_SOCKET;
 protected:
     socket_t mFd = InvalidSocket;
@@ -282,16 +834,50 @@ public:
     explicit Socket(int family, int type, int protocol = 0);
     ~Socket();
 
-    socket_t release(socket_t newSocket = InvalidSocket);
-    bool     reset(socket_t newSocket = InvalidSocket);
-    bool     close();
+    /**
+     * @brief Release the socket ownship
+     * 
+     * @param newSocket 
+     * @return socket_t 
+     */
+    auto release(socket_t newSocket = InvalidSocket) -> socket_t;
 
-    Socket &operator =(Socket &&s);
-    Socket &operator =(const Socket &) = delete;
+    /**
+     * @brief Reset the socket and set it to
+     * 
+     * @param newSocket 
+     * @return true 
+     * @return false 
+     */
+    auto reset(socket_t newSocket = InvalidSocket) -> bool;
 
-    Result<std::pair<Socket, IPEndpoint> > accept() const;
+    /**
+     * @brief Close current socket
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto close() -> bool;
 
-    static Result<Socket> create(int family, int type, int protocol);
+    auto operator =(Socket &&s) -> Socket &;
+    auto operator =(const Socket &) -> Socket & = delete;
+
+    /**
+     * @brief Accept a new connection
+     * 
+     * @return Result<std::pair<Socket, IPEndpoint>> 
+     */
+    auto accept() const -> Result<std::pair<Socket, IPEndpoint> >;
+
+    /**
+     * @brief Create a new socket by family type proto
+     * 
+     * @param family 
+     * @param type 
+     * @param protocol 
+     * @return Result<Socket> 
+     */
+    static auto create(int family, int type, int protocol) -> Result<Socket>;
 };
 
 /**
@@ -312,66 +898,81 @@ public:
 inline IPAddress4::IPAddress4() { }
 inline IPAddress4::IPAddress4(::in_addr addr) : ::in_addr(addr) { }
 
-inline std::string IPAddress4::toString() const {
+inline auto IPAddress4::toString() const -> std::string {
     return ::inet_ntoa(*this);
 }
-inline uint32_t IPAddress4::toUint32() const {
+inline auto IPAddress4::toUint32() const -> uint32_t {
     return ::ntohl(toUint32NetworkOrder());
 }
-inline uint32_t IPAddress4::toUint32NetworkOrder() const {
+inline auto IPAddress4::toUint32NetworkOrder() const -> uint32_t {
     return reinterpret_cast<const uint32_t&>(*this);
 }
-inline bool IPAddress4::isAny() const {
+template <typename T>
+inline auto IPAddress4::span() const -> std::span<const T, sizeof(::in_addr) / sizeof(T)> {
+    static_assert(sizeof(::in_addr) % sizeof(T) == 0, "sizeof mismatch");
+    constexpr auto n = sizeof(::in_addr) / sizeof(T);
+    auto addr = reinterpret_cast<const T*>(this);
+    return std::span<const T, n>(addr, n);
+}
+
+inline auto IPAddress4::isAny() const -> bool {
     return toUint32() == INADDR_ANY;
 }
-inline bool IPAddress4::isNone() const {
+inline auto IPAddress4::isNone() const -> bool {
     return toUint32() == INADDR_NONE;
 }
-inline bool IPAddress4::isLoopback() const {
+inline auto IPAddress4::isLoopback() const -> bool {
     return toUint32() == INADDR_LOOPBACK;
 }
-inline bool IPAddress4::isBroadcast() const {
+inline auto IPAddress4::isBroadcast() const -> bool {
     return toUint32() == INADDR_BROADCAST;
 }
-inline bool IPAddress4::operator ==(const IPAddress4 &other) const {
+inline auto IPAddress4::isMulticast() const -> bool {
+    return IN_MULTICAST(toUint32());
+}
+inline auto IPAddress4::operator ==(const IPAddress4 &other) const -> bool {
     return toUint32NetworkOrder() == other.toUint32NetworkOrder();
 }
-inline bool IPAddress4::operator !=(const IPAddress4 &other) const {
+inline auto IPAddress4::operator !=(const IPAddress4 &other) const -> bool {
     return toUint32NetworkOrder() != other.toUint32NetworkOrder();
 }
 
-inline IPAddress4 IPAddress4::any() {
+inline auto IPAddress4::any() -> IPAddress4 {
     return IPAddress4::fromUint32(INADDR_ANY);
 }
-inline IPAddress4 IPAddress4::loopback() {
+inline auto IPAddress4::loopback() -> IPAddress4 {
     return IPAddress4::fromUint32(INADDR_LOOPBACK);   
 }
-inline IPAddress4 IPAddress4::broadcast() {
+inline auto IPAddress4::broadcast() -> IPAddress4 {
     return IPAddress4::fromUint32(INADDR_BROADCAST);
 }
-inline IPAddress4 IPAddress4::none() {
+inline auto IPAddress4::none() -> IPAddress4 {
     return IPAddress4::fromUint32(INADDR_NONE);
 }
-inline IPAddress4 IPAddress4::fromString(const char *address) {
+inline auto IPAddress4::fromRaw(const void *raw, size_t size) -> IPAddress4 {
+    ILIAS_ASSERT(size == sizeof(::in_addr));
+    return *static_cast<const ::in_addr*>(raw);
+}
+inline auto IPAddress4::fromString(const char *address) -> IPAddress4 {
     IPAddress4 addr;
     if (::inet_pton(AF_INET, address, &addr) != 1) {
         return IPAddress4::none();
     }
     return addr;
 }
-inline IPAddress4 IPAddress4::fromHostname(const char *hostnamne) {
+inline auto IPAddress4::fromHostname(const char *hostnamne) -> IPAddress4 {
     auto ent = ::gethostbyname(hostnamne);
     if (!ent || ent->h_addrtype != AF_INET) {
         return IPAddress4::none();
     }
     return *reinterpret_cast<const IPAddress4*>(ent->h_addr_list[0]);
 }
-inline IPAddress4 IPAddress4::fromUint32(uint32_t uint32) {
+inline auto IPAddress4::fromUint32(uint32_t uint32) -> IPAddress4 {
     static_assert(sizeof(uint32_t) == sizeof(::in_addr), "sizeof mismatch");
     uint32 = ::htonl(uint32);
     return reinterpret_cast<::in_addr&>(uint32);
 }
-inline IPAddress4 IPAddress4::fromUint32NetworkOrder(uint32_t uint32) {
+inline auto IPAddress4::fromUint32NetworkOrder(uint32_t uint32) -> IPAddress4 {
     return reinterpret_cast<::in_addr&>(uint32);
 }
 
@@ -379,40 +980,47 @@ inline IPAddress4 IPAddress4::fromUint32NetworkOrder(uint32_t uint32) {
 inline IPAddress6::IPAddress6() { }
 inline IPAddress6::IPAddress6(::in6_addr addr) : ::in6_addr(addr) { }
 
-inline std::string IPAddress6::toString() const {
+inline auto IPAddress6::toString() const -> std::string {
     char buf[INET6_ADDRSTRLEN] {0};
     ::inet_ntop(AF_INET6, this, buf, sizeof(buf));
     return buf;
 }
-inline bool IPAddress6::isAny() const {
+template <typename T>
+inline auto IPAddress6::span() const -> std::span<const T, sizeof(::in6_addr) / sizeof(T)> {
+    static_assert(sizeof(::in6_addr) % sizeof(T) == 0, "sizeof mismatch");
+    constexpr auto n = sizeof(::in6_addr) / sizeof(T);
+    auto addr = reinterpret_cast<const T*>(this);
+    return std::span<const T, n>(addr, n);
+}
+inline auto IPAddress6::isAny() const -> bool {
     return IN6_IS_ADDR_UNSPECIFIED(this);
 }
-inline bool IPAddress6::isNone() const {
+inline auto IPAddress6::isNone() const -> bool {
     return IN6_IS_ADDR_UNSPECIFIED(this);
 }
-inline bool IPAddress6::isLoopback() const {
+inline auto IPAddress6::isLoopback() const -> bool {
     return IN6_IS_ADDR_LOOPBACK(this);
 }
-inline bool IPAddress6::isMulticast() const {
+inline auto IPAddress6::isMulticast() const -> bool {
     return IN6_IS_ADDR_MULTICAST(this);
 }
-inline bool IPAddress6::operator ==(const IPAddress6 &addr) const {
+inline auto IPAddress6::operator ==(const IPAddress6 &addr) const -> bool {
     return IN6_ARE_ADDR_EQUAL(this, &addr);
 }
-inline bool IPAddress6::operator !=(const IPAddress6 &addr) const {
+inline auto IPAddress6::operator !=(const IPAddress6 &addr) const -> bool {
     return !IN6_ARE_ADDR_EQUAL(this, &addr);
 }
 
-inline IPAddress6 IPAddress6::any() {
+inline auto IPAddress6::any() -> IPAddress6 {
     return ::in6_addr IN6ADDR_ANY_INIT;
 }
-inline IPAddress6 IPAddress6::none() {
+inline auto IPAddress6::none() -> IPAddress6 {
     return ::in6_addr IN6ADDR_ANY_INIT;
 }
-inline IPAddress6 IPAddress6::loopback() {
+inline auto IPAddress6::loopback() -> IPAddress6 {
     return ::in6_addr IN6ADDR_LOOPBACK_INIT;
 }
-inline IPAddress6 IPAddress6::fromString(const char *str) {
+inline auto IPAddress6::fromString(const char *str) -> IPAddress6 {
     IPAddress6 addr;
     if (::inet_pton(AF_INET6, str, &addr) != 1) {
         return IPAddress6::any();
@@ -432,20 +1040,20 @@ inline IPAddress::IPAddress(const char *addr) {
     }
 }
 
-inline bool IPAddress::isValid() const {
+inline auto IPAddress::isValid() const -> bool {
     return mFamily != None;
 }
-inline int  IPAddress::family() const {
+inline auto IPAddress::family() const -> int {
     return mFamily;
 }
-inline int  IPAddress::length() const {
+inline auto IPAddress::length() const -> int {
     switch (mFamily) {
         case V4:  return sizeof(::in_addr);
         case V6:  return sizeof(::in6_addr);
         default:  return 0;
     }
 }
-inline std::string IPAddress::toString() const {
+inline auto IPAddress::toString() const -> std::string {
     if (!isValid()) {
         return std::string();
     }
@@ -455,17 +1063,26 @@ inline std::string IPAddress::toString() const {
 }
 
 template <typename T>
-inline const T &IPAddress::data() const {
+inline auto IPAddress::data() const -> const T & {
     return *reinterpret_cast<const T *>(&mStorage);
 }
-inline const void *IPAddress::data() const {
+inline auto IPAddress::data() const -> const void * {
     return &mStorage;
 }
-inline void *IPAddress::data() {
+inline auto IPAddress::data() -> void * {
     return &mStorage;
 }
 
-inline bool IPAddress::compare(const IPAddress &other) const {
+template <typename T>
+inline auto IPAddress::span() const -> std::span<const T> {
+    switch (mFamily) {
+        case V4: return data<IPAddress4>().span<T>();
+        case V6: return data<IPAddress6>().span<T>();
+        default: return {};
+    }
+}
+
+inline auto IPAddress::compare(const IPAddress &other) const -> bool {
     if (family() != other.family()) {
         return false;
     }
@@ -475,24 +1092,24 @@ inline bool IPAddress::compare(const IPAddress &other) const {
         default:  return true; //< All are invalid address
     }
 }
-inline bool IPAddress::operator ==(const IPAddress &other) const {
+inline auto IPAddress::operator ==(const IPAddress &other) const -> bool {
     return compare(other);
 }
-inline bool IPAddress::operator !=(const IPAddress &other) const {
+inline auto IPAddress::operator !=(const IPAddress &other) const -> bool {
     return !compare(other);
 }
 
-inline IPAddress IPAddress::fromString(const char *str) {
+inline auto IPAddress::fromString(const char *str) -> IPAddress {
     return IPAddress(str);
 }
-inline IPAddress IPAddress::fromHostname(const char *hostname) {
+inline auto IPAddress::fromHostname(const char *hostname) -> IPAddress {
     auto ent = ::gethostbyname(hostname);
     if (!ent) {
         return IPAddress();
     }
     return IPAddress::fromRaw(ent->h_addr_list[0], ent->h_length);
 }
-inline IPAddress IPAddress::fromRaw(const void *raw, size_t len) {
+inline auto IPAddress::fromRaw(const void *raw, size_t len) -> IPAddress {
     switch (len) {
         case sizeof(::in_addr): {
             return IPAddress(*static_cast<const ::in_addr *>(raw));
@@ -506,7 +1123,7 @@ inline IPAddress IPAddress::fromRaw(const void *raw, size_t len) {
     }
 }
 template <typename T>
-inline IPAddress IPAddress::fromRaw(const T &data) {
+inline auto IPAddress::fromRaw(const T &data) -> IPAddress {
     static_assert(sizeof(T) == sizeof(::in_addr) || sizeof(T) == sizeof(::in6_addr), "Invalid size");
     return IPAddress::fromRaw(&data, sizeof(T));
 }
@@ -514,6 +1131,8 @@ inline IPAddress IPAddress::fromRaw(const T &data) {
 // --- IPEndpoint Impl
 inline IPEndpoint::IPEndpoint() { }
 inline IPEndpoint::IPEndpoint(const char *str) : IPEndpoint(fromString(str)) { }
+inline IPEndpoint::IPEndpoint(std::string_view str) : IPEndpoint(fromString(str)) { }
+inline IPEndpoint::IPEndpoint(const std::string &str) : IPEndpoint(fromString(str)) { }
 inline IPEndpoint::IPEndpoint(::sockaddr_in addr4) { ::memcpy(&mAddr, &addr4, sizeof(addr4)); }
 inline IPEndpoint::IPEndpoint(::sockaddr_in6 addr6) { ::memcpy(&mAddr, &addr6, sizeof(addr6)); }
 inline IPEndpoint::IPEndpoint(::sockaddr_storage addr) : mAddr(addr) { }
@@ -535,20 +1154,20 @@ inline IPEndpoint::IPEndpoint(const IPAddress &addr, uint16_t port) {
     }
 }
 
-inline bool IPEndpoint::isValid() const {
+inline auto IPEndpoint::isValid() const -> bool {
     return mAddr.ss_family != 0;
 }
-inline int  IPEndpoint::family() const {
+inline auto IPEndpoint::family() const -> int {
     return mAddr.ss_family;
 }
-inline int  IPEndpoint::length() const {
+inline auto IPEndpoint::length() const -> int {
     switch (mAddr.ss_family) {
         case AF_INET: return sizeof(::sockaddr_in);
         case AF_INET6: return sizeof(::sockaddr_in6);
         default: return 0;
     }
 }
-inline uint16_t IPEndpoint::port() const {
+inline auto IPEndpoint::port() const -> uint16_t {
     switch (mAddr.ss_family) {
         case AF_INET: 
             return ::ntohs(data<::sockaddr_in>().sin_port);
@@ -557,7 +1176,7 @@ inline uint16_t IPEndpoint::port() const {
         default : return 0;
     }
 }
-inline IPAddress IPEndpoint::address() const {
+inline auto IPEndpoint::address() const -> IPAddress {
     switch (mAddr.ss_family) {
         case AF_INET: 
             return IPAddress::fromRaw(data<::sockaddr_in>().sin_addr);
@@ -566,15 +1185,15 @@ inline IPAddress IPEndpoint::address() const {
         default: return IPAddress();
     }
 }
-inline IPAddress4 IPEndpoint::address4() const {
+inline auto IPEndpoint::address4() const -> IPAddress4 {
     ILIAS_ASSERT(mAddr.ss_family == AF_INET);
     return IPAddress4(data<::sockaddr_in>().sin_addr);
 }
-inline IPAddress6 IPEndpoint::address6() const {
+inline auto IPEndpoint::address6() const -> IPAddress6 {
     ILIAS_ASSERT(mAddr.ss_family == AF_INET6);
     return IPAddress6(data<::sockaddr_in6>().sin6_addr);
 }
-inline std::string IPEndpoint::toString() const {
+inline auto IPEndpoint::toString() const -> std::string {
     if (!isValid()) {
         return std::string();
     }
@@ -583,29 +1202,29 @@ inline std::string IPEndpoint::toString() const {
     }
     return address().toString() + ':' + std::to_string(port());
 }
-inline const void *IPEndpoint::data() const {
+inline auto IPEndpoint::data() const -> const void * {
     return &mAddr;
 }
 template <typename T>
-inline const T &IPEndpoint::data() const {
+inline auto IPEndpoint::data() const -> const T & {
     return *reinterpret_cast<const T*>(&mAddr);
 }
 template <typename T>
-inline T &IPEndpoint::data() {
+inline auto IPEndpoint::data() -> T & {
     return *reinterpret_cast<T*>(&mAddr);
 }
 
-inline bool IPEndpoint::compare(const IPEndpoint &other) const {
+inline auto IPEndpoint::compare(const IPEndpoint &other) const -> bool {
     return family() == other.family() && address() == other.address() && port() == other.port();
 }
-inline bool IPEndpoint::operator ==(const IPEndpoint &other) const {
+inline auto IPEndpoint::operator ==(const IPEndpoint &other) const -> bool {
     return compare(other);
 }
-inline bool IPEndpoint::operator !=(const IPEndpoint &other) const {
+inline auto IPEndpoint::operator !=(const IPEndpoint &other) const -> bool {
     return !compare(other);
 }
 
-inline IPEndpoint IPEndpoint::fromString(const char *str) {
+inline auto IPEndpoint::fromString(std::string_view str) -> IPEndpoint {
     std::string buffer(str);
 
     // Split to addr and port
@@ -629,7 +1248,7 @@ inline IPEndpoint IPEndpoint::fromString(const char *str) {
     }
     return IPEndpoint(addr, port);
 }
-inline IPEndpoint IPEndpoint::fromRaw(const void *raw, size_t len) {
+inline auto IPEndpoint::fromRaw(const void *raw, size_t len) -> IPEndpoint {
     switch (len) {
         case sizeof(::sockaddr_in):
             return IPEndpoint(*static_cast<const ::sockaddr_in*>(raw));
@@ -642,7 +1261,7 @@ inline IPEndpoint IPEndpoint::fromRaw(const void *raw, size_t len) {
     }
 }
 template <typename T>
-inline IPEndpoint IPEndpoint::fromRaw(const T &raw) {
+inline auto IPEndpoint::fromRaw(const T &raw) -> IPEndpoint {
     static_assert(sizeof(T) == sizeof(::sockaddr_in) || 
                   sizeof(T) == sizeof(::sockaddr_in6) ||
                   sizeof(T) == sizeof(::sockaddr_storage), 
@@ -652,21 +1271,21 @@ inline IPEndpoint IPEndpoint::fromRaw(const T &raw) {
 }
 
 // --- SocketView Impl
-inline Result<size_t> SocketView::recv(void *buf, size_t len, int flags) const {
+inline auto SocketView::recv(void *buf, size_t len, int flags) const -> Result<size_t> {
     ssize_t ret = ::recv(mFd, static_cast<byte_t*>(buf), len, flags);
     if (ret < 0) {
         return Unexpected(Error::fromErrno());
     }
     return ret;
 }
-inline Result<size_t> SocketView::send(const void *buf, size_t len, int flags) const {
+inline auto SocketView::send(const void *buf, size_t len, int flags) const -> Result<size_t> {
     ssize_t ret = ::send(mFd, static_cast<const byte_t*>(buf), len, flags);
     if (ret < 0) {
         return Unexpected(Error::fromErrno());
     }
     return ret;
 }
-inline Result<size_t> SocketView::recvfrom(void *buf, size_t len, int flags, IPEndpoint *ep) const {
+inline auto SocketView::recvfrom(void *buf, size_t len, int flags, IPEndpoint *ep) const -> Result<size_t> {
     ::sockaddr_storage addr {};
     ::socklen_t size = sizeof(addr);
     ssize_t ret = ::recvfrom(mFd, static_cast<byte_t*>(buf), len, flags, reinterpret_cast<::sockaddr*>(&addr), &size);
@@ -678,7 +1297,10 @@ inline Result<size_t> SocketView::recvfrom(void *buf, size_t len, int flags, IPE
     }
     return ret;
 }
-inline Result<size_t> SocketView::sendto(const void *buf, size_t len, int flags, const IPEndpoint *ep) const {
+inline auto SocketView::recvfrom(void *buf, size_t len, int flags, IPEndpoint &ep) const -> Result<size_t> {
+    return recvfrom(buf, len, flags, &ep);
+}
+inline auto SocketView::sendto(const void *buf, size_t len, int flags, const IPEndpoint *ep) const -> Result<size_t> {
     const ::sockaddr *addr = ep ? &ep->data<::sockaddr>() : nullptr;
     const ::socklen_t addrLen = ep ? ep->length() : 0;
     ssize_t ret = ::sendto(mFd, static_cast<const byte_t*>(buf), len, flags, addr, addrLen);
@@ -687,55 +1309,74 @@ inline Result<size_t> SocketView::sendto(const void *buf, size_t len, int flags,
     }
     return ret;
 }
-inline Result<size_t> SocketView::sendto(const void *buf, size_t len, int flags, const IPEndpoint &ep) const {
+inline auto SocketView::sendto(const void *buf, size_t len, int flags, const IPEndpoint &ep) const -> Result<size_t> {
     return sendto(buf, len, flags, &ep);
 }    
 
 // Helper 
 template <typename T, size_t N>
-inline Result<size_t> SocketView::send(const T (&buf)[N], int flags) const {
+inline auto SocketView::send(const T (&buf)[N], int flags) const -> Result<size_t> {
     static_assert(std::is_standard_layout<T>::value && std::is_trivial<T>::value, "T must be POD type");
     return send(buf, sizeof(T) * N, flags);
 }
 
-inline Result<void> SocketView::listen(int backlog) const {
+inline auto SocketView::listen(int backlog) const -> Result<void> {
     if (::listen(mFd, backlog) == 0) {
         return Result<void>();
     }
     return Unexpected(Error::fromErrno());
 }
-inline Result<void> SocketView::connect(const IPEndpoint &ep) const {
+inline auto SocketView::connect(const IPEndpoint &ep) const -> Result<void> {
     if (::connect(mFd, &ep.data<::sockaddr>(), ep.length()) == 0) {
         return Result<void>();
     }
     return Unexpected(Error::fromErrno());
 }
-inline Result<void> SocketView::bind(const IPEndpoint &ep) const {
+inline auto SocketView::bind(const IPEndpoint &ep) const -> Result<void> {
     if (::bind(mFd, &ep.data<::sockaddr>(), ep.length()) == 0) {
         return Result<void>();
     }
     return Unexpected(Error::fromErrno());
 }
-inline bool SocketView::isValid() const {
+inline auto SocketView::shutdown(int how) const -> Result<void> {
+    if (::shutdown(mFd, how) == 0) {
+        return Result<void>();
+    }
+    return Unexpected(Error::fromErrno());
+}
+inline auto SocketView::isValid() const -> bool {
     return mFd != ILIAS_INVALID_SOCKET;
 }
-inline Result<void> SocketView::getOption(int level, int optname, void *optval, socklen_t *optlen) const {
+inline auto SocketView::getOption(int level, int optname, void *optval, socklen_t *optlen) const -> Result<void> {
     if (::getsockopt(mFd, level, optname, static_cast<byte_t*>(optval), optlen) == 0) {
         return Result<void>();
     }
     return Unexpected(Error::fromErrno());
 }
-inline Result<void> SocketView::setOption(int level, int optname, const void *optval, socklen_t optlen) const {
+template <typename T>
+inline auto SocketView::getOption(int level, int optname) const -> Result<T> {
+    T val;
+    socklen_t len = sizeof(val);
+    if (auto ret = getOption(level, optname, val, &len); !ret) {
+        co_return Unexpected(ret.error());
+    }
+    return val;
+}
+inline auto SocketView::setOption(int level, int optname, const void *optval, socklen_t optlen) const -> Result<void> {
     if (::setsockopt(mFd, level, optname, static_cast<const byte_t*>(optval), optlen) == 0) {
         return Result<void>();
     }
     return Unexpected(Error::fromErrno());
 }
-inline Result<void> SocketView::setReuseAddr(bool reuse) const {
+template <typename T>
+inline auto SocketView::setOption(int level, int optname, const T &optval) const -> Result<void> {
+    return setOption(level, optname, &optval, sizeof(T));
+}
+inline auto SocketView::setReuseAddr(bool reuse) const -> Result<void> {
     int data = reuse ? 1 : 0;
     return setOption(SOL_SOCKET, SO_REUSEADDR, &data, sizeof(data));
 }
-inline Result<void> SocketView::setBlocking(bool blocking) const {
+inline auto SocketView::setBlocking(bool blocking) const -> Result<void> {
 #ifdef _WIN32
     u_long block = blocking ? 0 : 1;
     return ioctl(FIONBIO, &block);
@@ -758,7 +1399,7 @@ inline Result<void> SocketView::setBlocking(bool blocking) const {
 }
 
 #ifdef _WIN32
-inline Result<void> SocketView::ioctl(long cmd, u_long *pargs) const {
+inline auto SocketView::ioctl(long cmd, u_long *pargs) const -> Result<void> {
     if (::ioctlsocket(mFd, cmd, pargs) == 0) {
         return Result<void>();
     }
@@ -766,7 +1407,7 @@ inline Result<void> SocketView::ioctl(long cmd, u_long *pargs) const {
 }
 #endif
 
-inline Result<int> SocketView::family() const {
+inline auto SocketView::family() const -> Result<int> {
 #ifdef _WIN32
     ::WSAPROTOCOL_INFO info;
     ::socklen_t len = sizeof(info);
@@ -783,7 +1424,8 @@ inline Result<int> SocketView::family() const {
     return family;
 #endif
 }
-inline Result<int> SocketView::type() const {
+
+inline auto SocketView::type() const -> Result<int> {
 #ifdef _WIN32
     ::WSAPROTOCOL_INFO info;
     ::socklen_t len = sizeof(info);
@@ -802,7 +1444,7 @@ inline Result<int> SocketView::type() const {
 }
 
 template <typename T>
-inline Result<std::pair<T, IPEndpoint> > SocketView::accept() const {
+inline auto SocketView::accept() const -> Result<std::pair<T, IPEndpoint>> {
     ::sockaddr_storage addr {};
     ::socklen_t len = sizeof(addr);
     int fd = ::accept(mFd, reinterpret_cast<::sockaddr*>(&addr), &len);
@@ -812,7 +1454,7 @@ inline Result<std::pair<T, IPEndpoint> > SocketView::accept() const {
     return Unexpected(Error::fromErrno());
 }
 
-inline Result<IPEndpoint> SocketView::localEndpoint() const {
+inline auto SocketView::localEndpoint() const -> Result<IPEndpoint> {
     ::sockaddr_storage addr {};
     ::socklen_t len = sizeof(addr);
     if (::getsockname(mFd, reinterpret_cast<::sockaddr*>(&addr), &len) == 0) {
@@ -820,7 +1462,7 @@ inline Result<IPEndpoint> SocketView::localEndpoint() const {
     }
     return Unexpected(Error::fromErrno());
 }
-inline Result<IPEndpoint> SocketView::remoteEndpoint() const {
+inline auto SocketView::remoteEndpoint() const -> Result<IPEndpoint> {
     ::sockaddr_storage addr {};
     ::socklen_t len = sizeof(addr);
     if (::getpeername(mFd, reinterpret_cast<::sockaddr*>(&addr), &len) == 0) {
@@ -828,7 +1470,7 @@ inline Result<IPEndpoint> SocketView::remoteEndpoint() const {
     }
     return Unexpected(Error::fromErrno());
 }
-inline Result<Error> SocketView::error() const {
+inline auto SocketView::error() const -> Result<Error> {
     error_t err;
     ::socklen_t len = sizeof(error_t);
     if (::getsockopt(mFd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&err), &len) == 0) {
@@ -845,12 +1487,12 @@ inline Socket::Socket(int family, int type, int proto) {
 }
 inline Socket::~Socket() { close(); }
 
-inline socket_t Socket::release(socket_t newSocket) {
+inline auto Socket::release(socket_t newSocket) -> socket_t {
     socket_t prev = mFd;
     mFd = newSocket;
     return prev;
 }
-inline bool Socket::reset(socket_t newSocket) {
+inline auto Socket::reset(socket_t newSocket) -> bool {
     bool ret = true;
     if (isValid()) {
         ret = (ILIAS_CLOSE(mFd) == 0);
@@ -858,11 +1500,11 @@ inline bool Socket::reset(socket_t newSocket) {
     mFd = newSocket;
     return ret;
 }
-inline bool Socket::close() {
+inline auto Socket::close() -> bool {
     return reset();
 }
 
-inline Socket &Socket::operator =(Socket &&s) {
+inline auto Socket::operator =(Socket &&s) -> Socket & {
     if (this == &s) {
         return *this;
     }
@@ -870,11 +1512,11 @@ inline Socket &Socket::operator =(Socket &&s) {
     return *this;
 }
 
-inline Result<std::pair<Socket, IPEndpoint> > Socket::accept() const {
+inline auto Socket::accept() const -> Result<std::pair<Socket, IPEndpoint>> {
     return SocketView::accept<Socket>();
 }
 
-inline Result<Socket> Socket::create(int family, int type, int proto) {
+inline auto Socket::create(int family, int type, int proto) -> Result<Socket> {
     auto sock = ::socket(family, type, proto);
     if (sock != ILIAS_INVALID_SOCKET) {
         return Result<Socket>(Socket(sock));
@@ -883,41 +1525,48 @@ inline Result<Socket> Socket::create(int family, int type, int proto) {
 }
 
 // -- Network order / Host
-inline uint16_t ToNetworkOrder(uint16_t v) {
+inline auto ToNetworkOrder(uint16_t v) -> uint16_t {
     return ::htons(v);
 }
-inline uint32_t ToNetworkOrder(uint32_t v) {
+inline auto ToNetworkOrder(uint32_t v) -> uint32_t {
     return ::htonl(v);
 }
-inline uint16_t ToHostOrder(uint16_t v) {
+inline auto ToHostOrder(uint16_t v) -> uint16_t {
     return ::ntohs(v);
 }
-inline uint32_t ToHostOrder(uint32_t v) {
+inline auto ToHostOrder(uint32_t v) -> uint32_t {
     return ::ntohl(v);
 }
 
 // --- Init spec
-inline bool Initialize() {
-#ifdef _WIN32
-    ::WSADATA data {};
-    return ::WSAStartup(MAKEWORD(2, 2), &data) == 0;
-#else
-    return true;
-#endif
-}
-inline void Uninitialize() {
-#ifdef _WIN32
-    ::WSACleanup();
-#endif
-}
-
 inline SockInitializer::SockInitializer() {
-    mInited = Initialize();
+
 }
 inline SockInitializer::~SockInitializer() {
     if (mInited) {
-        Uninitialize();
+        uninitialize();
     }
+}
+
+inline auto SockInitializer::initialize() -> Result<void> {
+
+#if defined(_WIN32)
+    ::WSADATA data { };
+    if (::WSAStartup(WINSOCK_VERSION, &data) != 0) {
+        return Unexpected(Error::fromErrno());
+    }
+#endif
+    return {};
+}
+
+inline auto SockInitializer::uninitialize() -> Result<void> {
+
+#if defined(_WIN32)
+    if (::WSACleanup() != 0) {
+        return Unexpected(Error::fromErrno());
+    }
+#endif
+    return {};
 }
 
 // --- Error mapping
@@ -1007,7 +1656,7 @@ inline auto SystemCategory::instance() -> SystemCategory & {
     return c;
 }
 
-inline Error Error::fromErrno(uint32_t code) {
+inline auto Error::fromErrno(uint32_t code) -> Error {
 
 #if 0
     return SystemCategory::translate(code);
@@ -1016,13 +1665,13 @@ inline Error Error::fromErrno(uint32_t code) {
 #endif
 
 }
-inline Error Error::fromHErrno(uint32_t code) {
+inline auto Error::fromHErrno(uint32_t code) -> Error {
     return Error::fromErrno(code);
 }
-inline Error Error::fromErrno() {
+inline auto Error::fromErrno() -> Error {
     return Error::fromErrno(ILIAS_ERRNO);
 }
-inline Error Error::fromHErrno() {
+inline auto Error::fromHErrno() -> Error {
     return Error::fromHErrno(ILIAS_H_ERRNO);
 }
 

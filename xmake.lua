@@ -2,6 +2,7 @@ add_rules("mode.debug", "mode.release", "mode.releasedbg")
 
 if is_plat("linux") then 
     add_cxxflags("-fcoroutines")
+    add_requires("openssl")
     add_links("pthread")
 end
 
@@ -28,10 +29,12 @@ target("test_httpserver")
     add_files("tests/test_httpserver.cpp")
 target_end()
 
+add_requires("gtest")
 target("test_addr")
     set_kind("binary")
     add_files("tests/test_addr.cpp")
     add_tests("addr")
+    add_packages("gtest")
 target_end()
 
 target("test_async")
@@ -62,34 +65,35 @@ target("test_expected")
     add_tests("expected")
 target_end()
 
-add_requires("openssl")
 add_requires("gtest")
 add_requires("zlib")
 target("test_http")
     set_kind("binary")
     add_packages("gtest")
-    add_packages("openssl")
     add_packages("zlib")
     add_files("tests/test_http.cpp")
     add_tests("http")
+
+    if is_plat("linux") then 
+        add_packages("openssl")
+    end
 target_end()
 
-add_requires("openssl")
 target("test_ssl")
     set_kind("binary")
     add_files("tests/test_ssl.cpp")
     add_tests("ssl")
 
-    add_packages("openssl")
+    if is_plat("linux") then 
+        add_packages("openssl")
+    end
 target_end()
 
-add_requires("openssl")
 target("test_ring")
     set_kind("binary")
     add_files("tests/test_ring.cpp")
     add_tests("ring")
 
-    add_packages("openssl")
     add_packages("gtest")
 target_end()
 
@@ -106,6 +110,10 @@ if has_config("enable_qt") then
         add_files("tests/test_qt.cpp")
         add_files("tests/test_qt.ui")
         add_frameworks("QtCore", "QtWidgets", "QtGui")
-        add_packages("openssl", "zlib")
+        add_packages("zlib")
+
+        if is_plat("linux") then 
+            add_packages("openssl")
+        end
     target_end()
 end

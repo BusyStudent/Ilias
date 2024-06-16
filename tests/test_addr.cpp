@@ -1,40 +1,59 @@
 #include "../include/ilias_inet.hpp"
+#include <gtest/gtest.h>
 #include <iostream>
 
 using namespace ILIAS_NAMESPACE;
 
-void printError(const char *where, Error err) {
-    std::cerr << where << ": " << err.message() << std::endl;
-    ::exit(1);
+// For V4 Address
+TEST(Address4, Parse) {
+    EXPECT_EQ(IPAddress4::fromString("0.0.0.0"), IPAddress4::any());
+    EXPECT_EQ(IPAddress4::fromString("255.255.255.255"), IPAddress4::none());
+    EXPECT_EQ(IPAddress4::fromString("255.255.255.255"), IPAddress4::broadcast());
+    EXPECT_EQ(IPAddress4::fromString("127.0.0.1"), IPAddress4::loopback());
 }
 
-int main() {
-    SockInitializer initializer;
+TEST(Address4, ToString) {
+    EXPECT_EQ(IPAddress4::fromString("0.0.0.0").toString(), "0.0.0.0");
+    EXPECT_EQ(IPAddress4::fromString("255.255.255.255").toString(), "255.255.255.255");
+    EXPECT_EQ(IPAddress4::fromString("127.0.0.1").toString(), "127.0.0.1");
 
-    IPEndpoint endpoint3(IPAddress4::fromHostname("www.baidu.com"), 80);
-    IPEndpoint endpoint2(IPAddress4::any(), 333);
-    IPAddress ipv6(IPAddress6::loopback());
-    IPEndpoint endpoint1(ipv6, 333);
-    IPEndpoint endpoint4("114.123.111.1:1145");
+    EXPECT_EQ(IPAddress4::any().toString(), "0.0.0.0");
+    EXPECT_EQ(IPAddress4::broadcast().toString(), "255.255.255.255");
+    EXPECT_EQ(IPAddress4::loopback().toString(), "127.0.0.1");
+}
 
-    std::cout << ipv6.toString() << std::endl;
-    std::cout << endpoint1.toString() << std::endl;
-    std::cout << endpoint2.toString() << std::endl;
-    std::cout << endpoint3.toString() << std::endl;
+TEST(Address4, Span) {
+    auto addr = IPAddress4::none();
+    auto span = addr.span();
+    EXPECT_EQ(span[0], 255);
+    EXPECT_EQ(span[1], 255);
+    EXPECT_EQ(span[2], 255);
+    EXPECT_EQ(span[3], 255);
+}
 
-    Socket socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (!socket.isValid()) {
-        return 0;
-    }
-    if (auto ret = socket.bind(IPEndpoint("127.0.0.1", 1145)); !ret) {
-        printError("FAIL TO BIND", ret.error());
-    }
-    if (auto ret = socket.listen(); !ret) {
-        printError("FAIL TO LISTEN", ret.error());
-    }
-    auto local = socket.localEndpoint().value();
-    std::cout << local.toString() << std::endl;
-    std::cout << (local.address() == "127.0.0.1") << std::endl;
-    std::cout << (local.port() == 1145) << std::endl;
-    std::cout << (local == IPEndpoint("127.0.0.1", 1145)) << std::endl;
+// For V6 Address
+TEST(Address6, Parse) {
+    EXPECT_EQ(IPAddress6::fromString("::1"), IPAddress6::loopback());
+}
+
+// For V4 / 6 Address
+TEST(Address, Parse) {
+    EXPECT_EQ(IPAddress::fromString("0.0.0.0").family(), AF_INET);
+    EXPECT_EQ(IPAddress::fromString("255.255.255.255").family(), AF_INET);
+    EXPECT_EQ(IPAddress::fromString("127.0.0.1").family(), AF_INET);
+    
+    EXPECT_EQ(IPAddress::fromString("::1").family(), AF_INET6);
+    EXPECT_EQ(IPAddress::fromString("::").family(), AF_INET6);
+    EXPECT_EQ(IPAddress::fromString("::ffff:192.168.1.1").family(), AF_INET6);
+}
+
+TEST(Address, ToString) {
+    EXPECT_EQ(IPAddress(IPAddress4::any()).toString(), "0.0.0.0");
+    EXPECT_EQ(IPAddress(IPAddress4::none()).toString(), "255.255.255.255");
+}
+
+auto main() -> int {
+    SockInitializer init;
+    ::testing::InitGoogleTest();
+    return RUN_ALL_TESTS();
 }

@@ -28,16 +28,17 @@ int main() {
     ctxt.runTask([&]() -> Task<> {
         TcpClient tcpClient = TcpClient(ctxt, AF_INET);
         SslClient<> sslClient(sslCtxt, std::move(tcpClient));
+        sslClient.setHostname("www.baidu.com");
         IStreamClient client = std::move(sslClient);
 
         IPEndpoint endpoint(IPAddress4::fromHostname("www.baidu.com"), 443);
         if (auto result = co_await client.connect(endpoint); !result) {
-            std::cout << result.error().message() << std::endl;
+            std::cout << result.error().toString() << std::endl;
             co_return Result<>();
         }
         std::string request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
         if (auto result = co_await client.send(request.data(), request.size()); !result) {
-            std::cout << result.error().message() << std::endl;
+            std::cout << result.error().toString() << std::endl;
             co_return Result<>();
         }
         do {

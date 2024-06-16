@@ -5,20 +5,24 @@
 #include <string>
 #include <array>
 
-#ifndef ILIAS_NAMESPACE
+#if  defined(__cpp_lib_format)
+    #include <format>
+#endif
+
+#if !defined(ILIAS_NAMESPACE)
     #define ILIAS_NAMESPACE Ilias
 #endif
 
-#ifndef ILIAS_ASSERT
+#if !defined(ILIAS_ASSERT)
     #define ILIAS_ASSERT(x) assert(x)
     #include <cassert>
 #endif
 
-#ifndef ILIAS_CHECK
+#if !defined(ILIAS_CHECK)
     #define ILIAS_CHECK(x) if (!(x)) { ILIAS_ASSERT(x); ::abort(); }
 #endif
 
-#ifndef ILIAS_MALLOC 
+#if !defined(ILIAS_MALLOC)
     #define ILIAS_REALLOC(x, y) ::realloc(x, y)
     #define ILIAS_MALLOC(x) ::malloc(x)
     #define ILIAS_FREE(x) ::free(x)
@@ -35,6 +39,7 @@
     }
 
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT((x) && (msg))
+#define ILIAS_NS ILIAS_NAMESPACE
 #define ILIAS_NS_BEGIN namespace ILIAS_NAMESPACE {
 #define ILIAS_NS_END }
 
@@ -181,6 +186,7 @@ public:
      */
     template <ErrorCode T>
     Error(T err);
+
     /**
      * @brief Construct a new Error object from a error code and category
      * 
@@ -188,8 +194,23 @@ public:
      * @param c 
      */
     Error(uint32_t err, const ErrorCategory &c);
-    Error(const Error &);
+
+    /**
+     * @brief Construct a new Error by copy
+     * 
+     */
+    Error(const Error &err);
+
+    /**
+     * @brief Construct a new Error object, equal to Error::Ok
+     * 
+     */
     Error();
+
+    /**
+     * @brief Destroy the Error object
+     * 
+     */
     ~Error();
 
     /**
@@ -342,11 +363,13 @@ inline auto Error::isOk() const -> bool {
     return mErr == Ok;
 }
 inline auto Error::toString() const -> std::string {
+    char num[64] {0};
+    ::sprintf(num, "0x%x", mErr);
     std::string ret;
     ret += '[';
     ret += mCategory->name();
-    ret += ':';
-    ret += std::to_string(mErr);
+    ret += ": ";
+    ret += num;
     ret += "] ";
     ret += message();
     return ret;

@@ -26,9 +26,15 @@ public:
      * 
      * @return socket_t 
      */
-    socket_t get() const noexcept {
-        return mFd.get();
-    }
+    auto get() const -> socket_t;
+
+    /**
+     * @brief Get the contained socket's view
+     * 
+     * @return SocketView 
+     */
+    auto view() const -> SocketView;
+
     /**
      * @brief Check current socket is valid
      * 
@@ -36,18 +42,59 @@ public:
      * @return false 
      */
     auto isValid() const -> bool;
+
     /**
      * @brief Get the endpoint of the socket
      * 
      * @return Result<IPEndpoint> 
      */
     auto localEndpoint() const -> Result<IPEndpoint>;
+
+    /**
+     * @brief Set the Reuse Addr object, allow multiple sockets bind to same address
+     * 
+     * @param reuse 
+     * @return Result<> 
+     */
+    auto setReuseAddr(bool reuse) -> Result<>;
+
+    /**
+     * @brief Set the Socket Option object
+     * 
+     * @param level 
+     * @param optname 
+     * @param optval 
+     * @param optlen 
+     * @return Result<> 
+     */
+    auto setOption(int level, int optname, const void *optval, socklen_t optlen) -> Result<>;
+    
+    /**
+     * @brief Get the Socket Option object
+     * 
+     * @param level 
+     * @param optname 
+     * @param optval 
+     * @param optlen 
+     * @return Result<> 
+     */
+    auto getOption(int level, int optname, void *optval, socklen_t *optlen) -> Result<>;
+
     /**
      * @brief Close current socket
      * 
      * @return Result<> 
      */
     auto close() -> Result<>;
+
+    /**
+     * @brief Shutdown current socket
+     * 
+     * @param how default in Shutdown::Both (all read and write)
+     * @return Task<> 
+     */
+    auto shutdown(int how = Shutdown::Both) -> Task<>;
+
     /**
      * @brief Poll current socket use PollEvent::In or PollEvent::Out
      * 
@@ -55,12 +102,14 @@ public:
      * @return Task<uint32_t> actually got events
      */
     auto poll(uint32_t event) -> Task<uint32_t>;
+
     /**
      * @brief Get the context of the socket
      * 
      * @return IoContext* 
      */
     auto context() const -> IoContext *;
+    
     /**
      * @brief Assign
      * 
@@ -86,6 +135,7 @@ protected:
 class TcpClient final : public AsyncSocket {
 public:
     TcpClient();
+
     /**
      * @brief Construct a new Tcp Client object by family
      * 
@@ -93,6 +143,7 @@ public:
      * @param family The family
      */
     TcpClient(IoContext &ctxt, int family);
+
     /**
      * @brief Construct a new Tcp Client object by extsts socket
      * 
@@ -107,6 +158,23 @@ public:
      * @return IPEndpoint 
      */
     auto remoteEndpoint() const -> Result<IPEndpoint>;
+    
+    /**
+     * @brief Set the Tcp Client Recv Buffer Size object
+     * 
+     * @param size 
+     * @return Result<> 
+     */
+    auto setRecvBufferSize(size_t size) -> Result<>;
+
+    /**
+     * @brief Set the Send Buffer Size object
+     * 
+     * @param size 
+     * @return Result<> 
+     */
+    auto setSendBufferSize(size_t size) -> Result<>;
+
     /**
      * @brief Recv data from
      * 
@@ -116,6 +184,7 @@ public:
      * @return Task<size_t> bytes on ok, error on fail
      */
     auto recv(void *buffer, size_t n) -> Task<size_t>;
+
     /**
      * @brief Send data to
      * 
@@ -125,6 +194,7 @@ public:
      * @return Task<size_t>
      */
     auto send(const void *buffer, size_t n) -> Task<size_t>;
+
     /**
      * @brief Connect to
      * 
@@ -132,7 +202,7 @@ public:
      * @param timeout
      * @return Task<void>
      */
-    auto connect(const IPEndpoint &addr) -> Task<void>;
+    auto connect(const IPEndpoint &addr) -> Task<>;
 };
 
 /**
@@ -146,6 +216,7 @@ public:
     TcpListener();
     TcpListener(IoContext &ctxt, int family);
     TcpListener(IoContext &ctxt, Socket &&socket);
+
     /**
      * @brief Bind the socket with endpoint
      * 
@@ -155,14 +226,12 @@ public:
      */
     auto bind(const IPEndpoint &endpoint, int backlog = 0) -> Result<>;
 
-#if defined(__cpp_lib_coroutine)
     /**
      * @brief Waiting accept socket
      * 
      * @return IAwaitable<AcceptHandlerArgsT<TcpClient> > 
      */
     auto accept() -> Task<std::pair<TcpClient, IPEndpoint> >;
-#endif
 };
 
 /**
@@ -190,10 +259,24 @@ public:
      */
     auto setBroadcast(bool broadcast) -> Result<>;
 
-#if defined(__cpp_lib_coroutine)
+    /**
+     * @brief Send num of the bytes to the target
+     * 
+     * @param buffer 
+     * @param n 
+     * @param endpoint 
+     * @return Task<size_t> 
+     */
     auto sendto(const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t>;
+
+    /**
+     * @brief Recv num of the bytes from
+     * 
+     * @param buffer 
+     * @param n 
+     * @return Task<std::pair<size_t, IPEndpoint> > 
+     */
     auto recvfrom(void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> >;
-#endif
 };
 
 /**
@@ -213,7 +296,6 @@ public:
     ByteStream(ByteStream &&);
     ~ByteStream();
 
-#if defined(__cpp_lib_coroutine)
     /**
      * @brief Get a new line from buffer by delim
      * 
@@ -221,6 +303,7 @@ public:
      * @return Task<string> 
      */
     auto getline(string_view delim = "\n") -> Task<string>;
+
     /**
      * @brief Recv data from
      * 
@@ -230,6 +313,7 @@ public:
      * @return Task<size_t> bytes on ok, error on fail
      */
     auto recv(void *buffer, size_t n) -> Task<size_t>;
+
     /**
      * @brief Recv data from, it will try to recv data as more as possible
      * 
@@ -238,6 +322,7 @@ public:
      * @return Task<size_t> 
      */
     auto recvAll(void *buffer, size_t n) -> Task<size_t>;
+
     /**
      * @brief Send data to
      * 
@@ -247,6 +332,7 @@ public:
      * @return Task<size_t>
      */
     auto send(const void *buffer, size_t n) -> Task<size_t>;
+
     /**
      * @brief Send all the data to, it will send data as more as possible
      * 
@@ -255,6 +341,7 @@ public:
      * @return Task<size_t> 
      */
     auto sendAll(const void *buffer, size_t n) -> Task<size_t>;
+
     /**
      * @brief Connect to
      * 
@@ -262,8 +349,8 @@ public:
      * @param timeout
      * @return Task<void>
      */
-    auto connect(const IPEndpoint &addr) -> Task<void>;
-#endif
+    auto connect(const IPEndpoint &addr) -> Task<>;
+
     /**
      * @brief Put back this data to buffer
      * 
@@ -271,17 +358,27 @@ public:
      * @param n 
      */
     auto unget(const void *buffer, size_t n) -> void;
+
     /**
      * @brief Unget this data to buffer
      * 
      * @param string 
      */
     auto unget(string_view string) -> void;
+
     /**
      * @brief Close the byte stream
      * 
      */
     auto close() -> void;
+
+    /**
+     * @brief Shutdown current stream
+     * 
+     * @return Task<> 
+     */
+    auto shutdown() -> Task<>;
+
     /**
      * @brief Assign a ByteStream from a moved
      * 
@@ -324,6 +421,13 @@ inline AsyncSocket::~AsyncSocket() {
         mContext->removeSocket(mFd);
     }
 }
+
+inline auto AsyncSocket::get() const -> socket_t {
+    return mFd.get();
+}
+inline auto AsyncSocket::view() const -> SocketView {
+    return mFd;
+}
 inline auto AsyncSocket::context() const -> IoContext * {
     return mContext;
 }
@@ -336,8 +440,20 @@ inline auto AsyncSocket::close() -> Result<> {
     }
     return Result<>();
 }
+inline auto AsyncSocket::shutdown(int how) -> Task<> {
+    co_return mFd.shutdown(how);
+}
 inline auto AsyncSocket::poll(uint32_t event) -> Task<uint32_t> {
     return mContext->poll(mFd, event);
+}
+inline auto AsyncSocket::setReuseAddr(bool reuse) -> Result<> {
+    return mFd.setReuseAddr(reuse);
+}
+inline auto AsyncSocket::setOption(int level, int optname, const void *optval, socklen_t optlen) -> Result<> {
+    return mFd.setOption(level, optname, optval, optlen);
+}
+inline auto AsyncSocket::getOption(int level, int optname, void *optval, socklen_t *optlen) -> Result<> {
+    return mFd.getOption(level, optname, optval, optlen);
 }
 inline auto AsyncSocket::localEndpoint() const -> Result<IPEndpoint> {
     return mFd.localEndpoint();
@@ -407,7 +523,6 @@ inline auto TcpListener::bind(const IPEndpoint &endpoint, int backlog) -> Result
     }
     return Result<>();
 }
-#if defined(__cpp_lib_coroutine)
 inline auto TcpListener::accept() -> Task<std::pair<TcpClient, IPEndpoint> > {
     auto ret = co_await mContext->accept(mFd);
     if (!ret) {
@@ -415,7 +530,6 @@ inline auto TcpListener::accept() -> Task<std::pair<TcpClient, IPEndpoint> > {
     }
     co_return std::pair{TcpClient(*mContext, std::move(ret->first)), ret->second};
 }
-#endif
 
 // --- UdpSocket Impl
 inline UdpClient::UdpClient() { }
@@ -437,14 +551,12 @@ inline auto UdpClient::setBroadcast(bool v) -> Result<> {
     return mFd.setOption(SOL_SOCKET, SO_BROADCAST, &intFlags, sizeof(intFlags));
 }
 
-#if defined(__cpp_lib_coroutine)
 inline auto UdpClient::sendto(const void *buffer, size_t n, const IPEndpoint &endpoint) -> Task<size_t> {
     return mContext->sendto(mFd, buffer, n, endpoint);
 }
 inline auto UdpClient::recvfrom(void *buffer, size_t n) -> Task<std::pair<size_t, IPEndpoint> > {
     return mContext->recvfrom(mFd, buffer, n);
 }
-#endif
 
 // --- ByteStream Impl
 template <typename T, typename Char>
@@ -504,6 +616,11 @@ inline auto ByteStream<T, Char>::close() -> void {
     mBufferTail = 0;
     mPosition = 0;
 }
+
+template <typename T, typename Char>
+inline auto ByteStream<T, Char>::shutdown() -> Task<> {
+    return mFd.shutdown();
+} 
 
 template <typename T, typename Char>
 inline auto ByteStream<T, Char>::recv(void *buffer, size_t n) -> Task<size_t> {
