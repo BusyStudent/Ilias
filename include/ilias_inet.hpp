@@ -241,7 +241,7 @@ public:
      * @return std::span<const T> 
      */
     template <typename T = uint8_t>
-    auto span() const -> std::span<const T, sizeof(::in_addr6) / sizeof(T)>;
+    auto span() const -> std::span<const T, sizeof(::in6_addr) / sizeof(T)>;
 
     /**
      * @brief Check this ipv6 address is any

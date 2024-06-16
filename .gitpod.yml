@@ -8,7 +8,7 @@
 tasks:
   - name: setup packages
     init: sudo apt update
-    command: sudo apt install libcairo2-dev libpango1.0-dev libsdl2-dev libgtest-dev zenity libavformat-dev libswscale-dev libswresample-dev libavdevice-dev cgdb -y
+    command: sudo apt install libgtest-dev liburing-dev cgdb -y
   - name: setup xmake
     command: bash <(curl -fsSL https://xmake.io/shget.text)
 
