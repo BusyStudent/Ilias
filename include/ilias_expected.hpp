@@ -1,26 +1,56 @@
 #pragma once
 
-#include <type_traits>
-
-#if __cplusplus >= 202002L
-#include <version>
-#endif
-#ifdef __cpp_lib_expected
-#include <expected>
-#define ILIAS_STD_EXPECTED_HPP
-#endif
-
 #include "ilias.hpp"
+#include <exception>
+#include <version>
+
+#if defined(__cpp_lib_expected)
+    #include <expected>
+    #define ILIAS_STD_EXPECTED_HPP
+#endif
 
 ILIAS_NS_BEGIN
 
-#ifdef ILIAS_STD_EXPECTED_HPP
+#if defined(ILIAS_STD_EXPECTED_HPP)
+
 template <typename T, typename E>
 using Expected = ::std::expected<T, E>;
 template <typename E>
 using Unexpected = ::std::unexpected<E>;
+template <typename E = void>
+using BadExpectedAccess = ::std::bad_expected_access<E>;
 
 #else
+
+template <typename E>
+class BadExpectedAccess;
+
+template <>
+class BadExpectedAccess<void> : public std::exception {
+public:
+    BadExpectedAccess() = default;
+    const char *what() const noexcept { return "Expected value is not set"; }
+};
+
+template <typename E>
+class BadExpectedAccess : public BadExpectedAccess<void> {
+public:
+    BadExpectedAccess(const E &error)
+        : mError(error)
+    {
+    }
+
+    BadExpectedAccess(E &&error)
+        : mError(std::move(error))
+    {
+    }
+
+    const E &error() const { return mError; }
+
+private:
+    const E mError;
+};
+
 template <typename E>
 class Unexpected {
 public:
@@ -196,8 +226,14 @@ public:
     const ValueT *operator->() const { return &mValue; }
 
     bool has_value() const { return !mType; }
-    ValueT &value() { return mValue; }
-    const ValueT &value() const { return mValue; }
+    ValueT &value() { 
+        if(!has_value()) throw BadExpectedAccess<ErrorT>(error()); 
+        return mValue; 
+    }
+    const ValueT &value() const { 
+        if(!has_value()) throw BadExpectedAccess<ErrorT>(error()); 
+        return mValue; 
+    }
     ValueT &value_or(ValueT &value) { return mType ? value : mValue; }
     const ValueT &value_or(const ValueT &value) const { return mType ? value : mValue; }
 
@@ -354,8 +390,14 @@ public:
     const ValueT *operator->() const { return &mValue; }
 
     bool has_value() const { return !mType; }
-    ValueT &value() { return mValue; }
-    const ValueT &value() const { return mValue; }
+    ValueT &value() { 
+        if(!has_value()) throw BadExpectedAccess<ErrorT>(error()); 
+        return mValue; 
+    }
+    const ValueT &value() const { 
+        if(!has_value()) throw BadExpectedAccess<ErrorT>(error()); 
+        return mValue; 
+    }
     ValueT &value_or(ValueT &value) { return mType ? value : mValue; }
     const ValueT &value_or(const ValueT &value) const { return mType ? value : mValue; }
 
@@ -488,7 +530,11 @@ public:
     operator bool() const  { return !mType; }
 
     bool has_value() const { return !mType; }
-    ValueT value() const { }
+    ValueT value() const {
+        if (!has_value()) {
+            throw BadExpectedAccess<ErrorT>(mError);
+        }
+    }
     ValueT value_or() const { }
 
     ErrorT &error() { return mError; }

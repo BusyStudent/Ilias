@@ -44,26 +44,77 @@ public:
     using result_type = Result<T>;
     using value_type = T;
 
+    /**
+     * @brief Construct a new Task object
+     * 
+     * @param h 
+     */
     explicit Task(handle_type h) : mHandle(h) { }
+
+    /**
+     * @brief Construct a new Task object (deleted)
+     * 
+     * @param t 
+     */
     Task(const Task &t) = delete;
+
+    /**
+     * @brief Construct a new Task object by move
+     * 
+     * @param t 
+     */
     Task(Task &&t) : mHandle(t.mHandle) { t.mHandle = nullptr; }
+
+    /**
+     * @brief Construct a new empty Task object
+     * 
+     */
     Task() { }
+
+    /**
+     * @brief Destroy the Task object
+     * 
+     */
     ~Task() { clear(); }
 
+    /**
+     * @brief Release the ownship of the internal coroutine handle
+     * 
+     * @return handle_type 
+     */
     auto leak() -> handle_type {
         auto h = mHandle;
         mHandle = nullptr;
         return h;
     }
+
+    /**
+     * @brief Get the coroutine handle
+     * 
+     * @return handle_type 
+     */
     auto handle() const -> handle_type {
         return mHandle;
     }
+
+    /**
+     * @brief Get the coroutine promise reference
+     * 
+     * @return promise_type& 
+     */
     auto promise() const -> promise_type & {
         return mHandle.promise();
     }
+    
+    /**
+     * @brief Get the name of the coroutine (for debug)
+     * 
+     * @return const char* 
+     */
     auto name() const -> const char * {
         return mHandle.promise().name();   
     }
+
     /**
      * @brief Cancel the task
      * 
@@ -73,6 +124,7 @@ public:
         ILIAS_CTRACE("[Ilias] Task<{}> Canceling {}", typeid(T).name(), name());
         return promise().cancel();
     }
+
     /**
      * @brief Get the task's event loop
      * 
@@ -81,6 +133,7 @@ public:
     auto eventLoop() const -> EventLoop * {
         return promise().eventLoop();
     }
+
     /**
      * @brief Get the result value
      * 
@@ -95,6 +148,7 @@ public:
         }
         return promise().value();
     }
+
     /**
      * @brief Clear the task
      * 
@@ -111,6 +165,7 @@ public:
         mHandle.destroy();
         mHandle = nullptr;
     }
+
     /**
      * @brief Assign a moved task
      * 
@@ -123,7 +178,9 @@ public:
         other.mHandle = nullptr;
         return *this;
     }
+
     auto operator =(const Task &) -> Task & = delete;
+
     /**
      * @brief Access the promise directly
      * 
@@ -132,6 +189,7 @@ public:
     auto operator ->() const -> promise_type * {
         return &(mHandle.promise());
     }
+
     /**
      * @brief Check the task is empty or not
      * 
@@ -141,6 +199,7 @@ public:
     explicit operator bool() const noexcept {
         return bool(mHandle);
     }
+
     /**
      * @brief Create task by the callable and args
      * 
@@ -173,6 +232,7 @@ public:
         };
         return Awaiter {this};
     }
+
     auto final_suspend() noexcept -> SwitchCoroutine {
         mSuspended = true; //< Done is still suspended
         if (mStopOnDone) [[unlikely]] {
@@ -183,15 +243,22 @@ public:
         }
         // If has someone is waiting us and he is suspended
         // We can not resume a coroutine which is not suspended, It will cause UB
-        if (mPrevAwaiting && mPrevAwaiting->mSuspended) {
+        if (mPrevAwaiting) {
+            ILIAS_ASSERT(mPrevAwaiting->isResumable());
             mPrevAwaiting->setResumeCaller(this);
             return mPrevAwaiting->mHandle;
         }
         return std::noop_coroutine();
     }
+
+    /**
+     * @brief Unhandled Exception on Coroutine, default in terminate
+     * 
+     */
     auto unhandled_exception() noexcept -> void {
-        mException = std::current_exception();
+        std::terminate();
     }
+
     /**
      * @brief Cancel the current coroutine
      * 
@@ -208,27 +275,44 @@ public:
         }
         return CancelStatus::Done;
     }
+
     auto eventLoop() const -> EventLoop * {
         return mEventLoop;
     }
+
     auto isCanceled() const -> bool {
         return mCanceled;
     }
+
     auto isStarted() const -> bool {
         return mStarted;
     }
+
     auto isSuspended() const -> bool {
         return mSuspended;
     }
+
+    auto isResumable() const -> bool {
+        return mSuspended && !mHandle.done();
+    }
+
     auto name() const -> const char * {
         return mName;
     }
+
     auto handle() const -> std::coroutine_handle<> {
         return mHandle;
     }
+
+    /**
+     * @brief Get the pointer of the promise which resume us
+     * 
+     * @return PromiseBase* 
+     */
     auto resumeCaller() const -> PromiseBase * {
         return mResumeCaller;
     }
+
     /**
      * @brief Set the Stop On Done object, the token's stop() method will be called when the promise done
      * 
@@ -237,6 +321,7 @@ public:
     auto setStopOnDone(StopToken *token) noexcept -> void {
         mStopOnDone = token;
     }
+
     /**
      * @brief Set the Suspended object
      * @internal Don't use this, it's for internal use, by AwaitRecorder
@@ -246,6 +331,7 @@ public:
     auto setSuspended(bool suspended) noexcept -> void {
         mSuspended = suspended;
     }
+
     /**
      * @brief Let it destroy on the coroutine done
      * 
@@ -253,6 +339,7 @@ public:
     auto setDestroyOnDone() noexcept -> void {
         mDestroyOnDone = true;
     }
+
     /**
      * @brief Set the Resume Caller object
      * 
@@ -261,6 +348,7 @@ public:
     auto setResumeCaller(PromiseBase *caller) noexcept -> void {
         mResumeCaller = caller;
     }
+
     /**
      * @brief Set the Prev Awaiting object, the awaiting will be resumed when the task done
      * 
@@ -269,6 +357,12 @@ public:
     auto setPrevAwaiting(PromiseBase *awaiting) noexcept -> void {
         mPrevAwaiting = awaiting;
     }
+
+    /**
+     * @brief Set the Event Loop object
+     * 
+     * @param eventLoop 
+     */
     auto setEventLoop(EventLoop *eventLoop) noexcept -> void {
         mEventLoop = eventLoop;
     }
@@ -305,10 +399,12 @@ public:
     TaskPromise(ILIAS_CAPTURE_CALLER(name)) noexcept {
         mName = name.function_name();
     }
+
     ~TaskPromise() noexcept {
         ILIAS_CO_REMOVE(mHandle); //< Self is destroy, remove this
         ILIAS_ASSERT(!mException); //< If exception was no still in there, abort!
     }
+
     /**
      * @brief Transform user defined type
      * 
@@ -320,6 +416,7 @@ public:
     auto await_transform(U &&t) noexcept {
         return AwaitRecorder {this, AwaitTransform<U>().transform(this, std::forward<U>(t))};
     }
+
     /**
      * @brief Passthrough Awaiter
      * 
@@ -343,19 +440,39 @@ public:
         ILIAS_CO_ADD(mHandle); //< Add to the alive coroutine set
         return Task<T>(handle);
     }
+
     /**
-     * @brief Get the stored return value
+     * @brief For task it will catch BadExpectedAccess<Error> and put it to the value
+     * 
+     */
+    auto unhandled_exception() noexcept -> void {
+        try {
+            throw;
+        }
+        catch (BadExpectedAccess<Error> &err) {
+            mValue.construct(Unexpected(err.error()));
+        }
+        catch (...) {
+            mException = std::current_exception();
+        }
+    }
+
+    /**
+     * @brief Get the stored return value, do not double call it or call it when the coroutine is still not done
      * 
      * @return Result<T> 
      */
     auto value() -> Result<T> {
         if (mException) {
-            std::rethrow_exception(std::move(mException));
+            auto exception = mException;
+            mException = nullptr;
+            std::rethrow_exception(exception);
         }
         ILIAS_ASSERT_MSG(mHandle.done(), "Task<T> is not done yet!");
         ILIAS_ASSERT_MSG(mValue.hasValue(), "Task<T> doesn't has value, do you forget co_return?");
         return std::move(*mValue);
     }
+
     /**
      * @brief Return the value, the any args version
      * 
@@ -366,6 +483,7 @@ public:
     auto return_value(U &&value) noexcept(std::is_nothrow_constructible_v<Result<T>, U>) -> void {
         mValue.construct(std::forward<U>(value));
     }
+
     /**
      * @brief Return the value, the moveable result<T> version
      * 
@@ -376,6 +494,7 @@ public:
     auto return_value(Result<T> &&value) noexcept(std::is_nothrow_move_constructible_v<Result<T> >) -> void {
         mValue.construct(std::move(value));
     }
+
     /**
      * @brief Get the promise handle type
      * 

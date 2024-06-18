@@ -57,6 +57,32 @@ TEST(TaskTest, BlockingWait) {
     } ();
 }
 
+TEST(TaskTest, Exception) {
+    auto taskThrowException = []() -> Task<> {
+        throw std::exception("Hello World");
+        co_return {};
+    };
+    try {
+        ilias_wait taskThrowException();
+    }
+    catch (std::exception &exp) {
+        EXPECT_EQ(exp.what(), std::string_view("Hello World"));
+    }
+}
+
+
+TEST(TaskTest, Exception2) {
+    auto taskThrowException = []() -> Task<> {
+        Result<void> result { Unexpected(Error::Unknown) };
+        result.value(); //< MUST THROW
+        ::abort();
+        co_return {};
+    };
+    auto val = ilias_wait taskThrowException();
+    EXPECT_TRUE(!val);
+    EXPECT_EQ(val.error(), Error::Unknown);
+}
+
 TEST(WhenAllTest, Test1) {
     auto task = []() -> Task<> {
         // auto [a0, b0] = co_await WhenAll(Sleep(1s), Sleep(10ms));

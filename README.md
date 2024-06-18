@@ -2,22 +2,30 @@
 
 ## A header-only network library based on cpp20 corotinue
 
-### 0 introduction
+### Introduction
 
 Ilias is a header-only network library based on cpp20 coroutine. It is designed to be easy to use and efficient.
 
-### 1 features
+### CI Status
 
-- light weight
-- easy to use
-- efficient
-- support for multiple backends
-- support for cancel
-- support exceptions, but we use error code default
+| CI Name | Status |
+| --------- | ------- |
+| Windows  | [![CI for windows by xmake](https://github.com/BusyStudent/Ilias/actions/workflows/xmake-test-on-windows.yml/badge.svg)](https://github.com/BusyStudent/Ilias/actions/workflows/xmake-test-on-windows.yml) |
+| Linux    | [![CI for linux by xmake](https://github.com/BusyStudent/Ilias/actions/workflows/xmake-test-on-linux.yml/badge.svg)](https://github.com/BusyStudent/Ilias/actions/workflows/xmake-test-on-linux.yml) |
+| Coverage | [![codecov](https://codecov.io/gh/BusyStudent/Ilias/graph/badge.svg?token=W9MQGIPX6F)](https://codecov.io/gh/BusyStudent/Ilias)|
 
-### 2 examples
+### Features
 
-- http client
+- Light weight
+- Easy to use
+- Efficient
+- Support for multiple backends
+- Support for cancel
+- Support exceptions, but we use error code default
+
+### Examples
+
+- Http client
 
 ``` cpp
 #include <ilias_networking.hpp>
@@ -47,7 +55,7 @@ int main() {
 }
 ```
 
-- socket
+- Socket
 
 ``` cpp
 // Another things as same as http client
@@ -62,9 +70,28 @@ auto task = [&]() -> Task<> {
 };
 ```
 
-### 3 backends
+- Error Handling
 
-| backend | progress | description |
+``` cpp
+
+auto task = []() -> Task<> {
+    auto val = co_await xxx();
+    if (!val) {
+        // Handle err?
+    }
+    // or
+    auto val = (co_await xxx()).value(); //< If not has value, it will throw BadExpectedAccess<Error>
+    // ...
+}
+
+auto v = co_await task(); //< If user throw BadExpectedAccess<Error> in task
+// the value of the task will be the error object stored in exception
+
+```
+
+### Backends
+
+| Backend | Progress | Description |
 | --------- | ---------- | ------------- |
 | epoll     | done         | linux only |
 | iocp      | almost done| windows only, not good support for cancel |
