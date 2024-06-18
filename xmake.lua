@@ -1,4 +1,4 @@
-add_rules("mode.debug", "mode.release", "mode.releasedbg")
+add_rules("mode.debug", "mode.release", "mode.releasedbg", "mode.coverage")
 
 if is_plat("linux") then 
     add_cxxflags("-fcoroutines")
