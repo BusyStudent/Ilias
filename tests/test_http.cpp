@@ -66,11 +66,11 @@ TEST(UrlTest, ValidUrl) {
     ASSERT_EQ(url.query(), "param=value%20with%20spaces");
 }
 
+static HttpSession *session = nullptr;
+
+#if 0
 TEST(RequestTest, Test1) {
-    HttpCookieJar jar;
-    HttpSession session;
     HttpRequest request("https://www.baidu.com");
-    session.setCookieJar(&jar);
 
     // auto ret = ilias_wait session.get(request);
     // // auto ret = ilias_wait session.get("https://www.bilibili.com");
@@ -82,16 +82,60 @@ TEST(RequestTest, Test1) {
     request2.setHeader(HttpHeaders::UserAgent, "vscode-restclient");
     request2.setHeader(HttpHeaders::Accept, "*/*");
     request2.setHeader(HttpHeaders::Referer, "https://www.bilibili.com/");
-    auto ret2 = ilias_wait session.get(request2);
+    auto ret2 = ilias_wait session->get(request2);
     if (ret2) {
         auto text = ilias_wait ret2->text();
         std::cout << text.value_or("READ FAILED") << std::endl;
     }
 }
+#endif
+
+TEST(HttpBinRequest, GET) {
+    auto reply = ilias_wait session->get("https://httpbin.org/get");
+    EXPECT_TRUE(reply);
+    EXPECT_EQ(reply->statusCode(), 200);
+    auto text = ilias_wait reply->text();
+    EXPECT_TRUE(text);
+
+    std::cout << text.value_or("READ FAILED") << std::endl;
+}
+
+TEST(HttpBinRequest, POST) {
+    auto reply = ilias_wait session->post("https://httpbin.org/post", "Hello, World!");
+    EXPECT_TRUE(reply);
+    EXPECT_EQ(reply->statusCode(), 200);
+    auto text = ilias_wait reply->text();
+    EXPECT_TRUE(text);
+
+    std::cout << text.value_or("READ FAILED") << std::endl;
+}
+
+#if !defined(ILIAS_NO_ZLIB)
+TEST(HttpBinRequest, Gzip) {
+    auto reply = ilias_wait session->get("https://httpbin.org/gzip");
+    EXPECT_TRUE(reply);
+    EXPECT_EQ(reply->statusCode(), 200);
+    auto text = ilias_wait reply->text();
+    EXPECT_TRUE(text);
+
+    std::cout << text.value_or("READ FAILED") << std::endl;
+}
+
+TEST(HttpBinRequest, Deflate) {
+    auto reply = ilias_wait session->get("https://httpbin.org/deflate");
+    EXPECT_TRUE(reply);
+    EXPECT_EQ(reply->statusCode(), 200);
+    auto text = ilias_wait reply->text();
+    EXPECT_TRUE(text);
+
+    std::cout << text.value_or("READ FAILED") << std::endl;
+}
+#endif
+
 
 int main(int argc, char **argv) {
 
-#ifdef _WIN32
+#if defined(_WIN32)
     IOCPContext ctxt;
     ::SetConsoleCP(65001);
     ::SetConsoleOutputCP(65001);
@@ -99,6 +143,11 @@ int main(int argc, char **argv) {
 #else
     PollContext ctxt;
 #endif
+
+    HttpCookieJar jar;
+    HttpSession _session;
+    _session.setCookieJar(&jar);
+    session = &_session;
 
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

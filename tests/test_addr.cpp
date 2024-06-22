@@ -24,7 +24,7 @@ TEST(Address4, ToString) {
 
 TEST(Address4, Span) {
     auto addr = IPAddress4::none();
-    auto span = addr.span();
+    auto span = addr.span<uint8_t>();
     EXPECT_EQ(span[0], 255);
     EXPECT_EQ(span[1], 255);
     EXPECT_EQ(span[2], 255);

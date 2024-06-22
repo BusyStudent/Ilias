@@ -3,9 +3,9 @@
 #include "ilias_http_headers.hpp"
 #include "ilias_http_request.hpp"
 #include "ilias_http_cookie.hpp"
-#include "ilias_http_zlib.hpp"
 #include "ilias_socks5.hpp"
 #include "ilias_async.hpp"
+#include "ilias_zlib.hpp"
 #include "ilias_url.hpp"
 #include "ilias_ssl.hpp"
 #include <chrono>
@@ -61,11 +61,54 @@ public:
     HttpSession();
     ~HttpSession();
 
+    /**
+     * @brief Send Get request
+     * 
+     * @param request 
+     * @return Task<HttpReply> 
+     */
     auto get(const HttpRequest &request) -> Task<HttpReply>;
+
+    /**
+     * @brief Send head request
+     * 
+     * @param request 
+     * @return Task<HttpReply> 
+     */
     auto head(const HttpRequest &request) -> Task<HttpReply>;
-    auto post(const HttpRequest &request, std::span<uint8_t> data = {}) -> Task<HttpReply>;
-    auto sendRequest(Operation op, HttpRequest request, std::span<uint8_t> extraData = {}) -> Task<HttpReply>;
+
+    /**
+     * @brief Send the post request
+     * 
+     * @param request 
+     * @param data The post data, in std::span format
+     * @return Task<HttpReply> 
+     */
+    auto post(const HttpRequest &request, std::span<const std::byte> data = {}) -> Task<HttpReply>;
+    auto post(const HttpRequest &reqyest, std::string_view data) -> Task<HttpReply>;
+
+    /**
+     * @brief Send custome request
+     * 
+     * @param op 
+     * @param request 
+     * @param payload 
+     * @return Task<HttpReply> 
+     */
+    auto sendRequest(Operation op, HttpRequest request, std::span<const std::byte> payload = {}) -> Task<HttpReply>;
+
+    /**
+     * @brief Set the Cookie Jar object
+     * 
+     * @param jar 
+     */
     auto setCookieJar(HttpCookieJar *jar) -> void;
+
+    /**
+     * @brief Set the Proxy object
+     * 
+     * @param proxy 
+     */
     auto setProxy(const Url &proxy) -> void;
 private:
     /**
@@ -82,7 +125,7 @@ private:
     };
     static constexpr auto BufferIncreaseSize = int64_t(4096);
 
-    auto _sendRequest(Operation op, const HttpRequest &request, std::span<uint8_t> extraData = {}) -> Task<HttpReply>;
+    auto _sendRequest(Operation op, const HttpRequest &request, std::span<const std::byte> extraData = {}) -> Task<HttpReply>;
     auto _readReply(Operation op, const HttpRequest &request, Connection connection) -> Task<HttpReply>;
     auto _readContent(Connection &connection, HttpReply &outReply) -> Task<void>;
     auto _readHeaders(Connection &connection, HttpReply &outReply) -> Task<void>;
@@ -116,10 +159,13 @@ inline auto HttpSession::get(const HttpRequest &request) -> Task<HttpReply> {
 inline auto HttpSession::head(const HttpRequest &request) -> Task<HttpReply> {
     return sendRequest(Operation::HEAD, request);
 }
-inline auto HttpSession::post(const HttpRequest &request, std::span<uint8_t> data) -> Task<HttpReply> {
+inline auto HttpSession::post(const HttpRequest &request, std::span<const std::byte> data) -> Task<HttpReply> {
     return sendRequest(Operation::POST, request, data);
 }
-inline auto HttpSession::sendRequest(Operation op, HttpRequest request, std::span<uint8_t> extraData) -> Task<HttpReply> {
+inline auto HttpSession::post(const HttpRequest &request, std::string_view data) -> Task<HttpReply> {
+    return sendRequest(Operation::POST, request, std::as_bytes(std::span(data.data(), data.size())));
+}
+inline auto HttpSession::sendRequest(Operation op, HttpRequest request, std::span<const std::byte> extraData) -> Task<HttpReply> {
     int n = 0;
     while (true) {
 #if 1
@@ -145,7 +191,7 @@ inline auto HttpSession::sendRequest(Operation op, HttpRequest request, std::spa
         if (std::find(redirectCodes.begin(), redirectCodes.end(), reply->statusCode())  != redirectCodes.end()) {
             auto newLocation = reply->headers().value(HttpHeaders::Location);
             if (!newLocation.empty() && n < request.maximumRedirects()) {
-                ::printf("Redirecting to %s by(%d, %s)\n", newLocation.data(), reply->statusCode(), reply->status().data());
+                ::fprintf(stderr, "[Http] Redirecting to %s by(%d, %s)\n", newLocation.data(), reply->statusCode(), reply->status().data());
                 request.setUrl(newLocation);
                 n += 1;
                 continue;
@@ -162,7 +208,7 @@ inline auto HttpSession::setProxy(const Url &proxy) -> void {
     // Drop all caches
     mConnections.clear();
 }
-inline auto HttpSession::_sendRequest(Operation op, const HttpRequest &request, std::span<uint8_t> extraData) -> Task<HttpReply> {
+inline auto HttpSession::_sendRequest(Operation op, const HttpRequest &request, std::span<const std::byte> payload) -> Task<HttpReply> {
     const auto &url = request.url();
     const auto host = url.host();
     const auto port = url.port();
@@ -204,6 +250,7 @@ while (true) {
     
     // Add host
     _sprintf(buffer, "Host: %s\r\n", std::string(host).c_str());
+
     // Add encoding
 #if !defined(ILIAS_NO_ZLIB)
     _sprintf(buffer, "Accept-Encoding: gzip, deflate\r\n");
@@ -213,7 +260,7 @@ while (true) {
 
     // Add userheaders
     for (const auto &[key, value] : request.headers()) {
-        ::printf("Adding header %s: %s\n", key.c_str(), value.c_str());
+        ::fprintf(stderr, "[Http] Adding header %s: %s\n", key.c_str(), value.c_str());
         _sprintf(buffer, "%s: %s\r\n", key.c_str(), value.c_str());
     }
     
@@ -223,7 +270,7 @@ while (true) {
         if (!cookies.empty()) {
             _sprintf(buffer, "Cookie: ");
             for (const auto &cookie : mCookieJar->cookiesForUrl(url)) {
-                ::printf("Adding cookie %s=%s\n", cookie.name().c_str(), cookie.value().c_str());
+                ::fprintf(stderr, "[Http] Adding cookie %s=%s\n", cookie.name().c_str(), cookie.value().c_str());
                 _sprintf(buffer, "%s=%s; ", cookie.name().c_str(), cookie.value().c_str());
             }
             // Remove last '; '
@@ -232,12 +279,19 @@ while (true) {
             _sprintf(buffer, "\r\n");
         }
     }
-    // Add padding extraData
-    if (!extraData.empty()) {
-        buffer.append(reinterpret_cast<const char*>(extraData.data()), extraData.size());
+
+    // Add the payload size if need
+    if (!payload.empty()) {
+        _sprintf(buffer, "Content-Length: %zu\r\n", payload.size_bytes());
     }
-    // Add end \r\n
+
+    // Add end \r\n on header end
     buffer.append("\r\n");
+
+    // Add the data sending to
+    if (!payload.empty()) {
+        buffer.append(reinterpret_cast<const char*>(payload.data()), payload.size_bytes());
+    }
 
     // Send this reuqets
     auto sended = co_await client.sendAll(buffer.data(), buffer.size());
@@ -249,7 +303,7 @@ while (true) {
     }
     auto reply = co_await _readReply(op, request, std::move(*con));
     if (!reply && fromCache) {
-        ::printf("ERROR from read reply in cache => %s, try again\n", reply.error().message().c_str());
+        ::fprintf(stderr, "[Http] ERROR from read reply in cache => %s, try again\n", reply.error().toString());
         continue; //< Try again
     }
     if (reply) {
@@ -276,7 +330,7 @@ inline auto HttpSession::_readReply(Operation op, const HttpRequest &request, Co
     auto encoding = reply.mResponseHeaders.value(HttpHeaders::ContentEncoding);
     if (encoding == "gzip") {
         // Decompress gzip
-        auto result = Gzip::decompress(reply.mContent);
+        auto result = Zlib::decompress(reply.mContent, Zlib::GzipFormat);
         if (result.empty()) {
             co_return Unexpected(Error::HttpBadReply);
         }
@@ -284,7 +338,7 @@ inline auto HttpSession::_readReply(Operation op, const HttpRequest &request, Co
     }
     else if (encoding == "deflate") {
         // Decompress deflate
-        auto result = Deflate::decompress(reply.mContent);
+        auto result = Zlib::decompress(reply.mContent, Zlib::DeflateFormat);
         if (result.empty()) {
             co_return Unexpected(Error::HttpBadReply);
         }
@@ -402,7 +456,7 @@ inline auto HttpSession::_readContent(Connection &con, HttpReply &reply) -> Task
             buffer.pop_back();
             ILIAS_ASSERT(buffer.back() == '\r');
             buffer.pop_back();
-            ::printf("chunk size %lld\n", len);
+            ::fprintf(stderr, "[Http] chunk size %zu\n", size_t(len));
             if (len == 0) {
                 break;
             }
@@ -439,7 +493,7 @@ inline auto HttpSession::_connect(const Url &url) -> Task<Connection> {
         if (iter->endpoint == endpoint) {
             // Cache hint
             ::fprintf(
-                stderr, "Using cached connection on %s\n", 
+                stderr, "[Http] Using cached connection on %s\n", 
                 endpoint.toString().c_str()
             );
             auto con = std::move(*iter);
@@ -482,7 +536,7 @@ inline auto HttpSession::_connectWithProxy(const Url &url) -> Task<Connection> {
         if (iter->host == host && iter->port == port) {
             // Cache hint
             ::fprintf(
-                stderr, "Using cached connection on %s:%d, proxyed\n",
+                stderr, "[Http] Using cached connection on %s:%d, proxyed\n",
                 iter->host.c_str(), iter->port
             );
             auto con = std::move(*iter);

@@ -6,6 +6,7 @@
 #include "../include/ilias_scope.hpp"
 #include "../include/ilias_loop.hpp"
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <iostream>
 #include <string>
 
@@ -59,15 +60,10 @@ TEST(TaskTest, BlockingWait) {
 
 TEST(TaskTest, Exception) {
     auto taskThrowException = []() -> Task<> {
-        throw std::exception("Hello World");
+        throw std::runtime_error("Hello World");
         co_return {};
     };
-    try {
-        ilias_wait taskThrowException();
-    }
-    catch (std::exception &exp) {
-        EXPECT_EQ(exp.what(), std::string_view("Hello World"));
-    }
+    EXPECT_THROW(ilias_wait taskThrowException(), std::runtime_error);
 }
 
 

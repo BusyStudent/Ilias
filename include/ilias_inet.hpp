@@ -1358,7 +1358,7 @@ inline auto SocketView::getOption(int level, int optname) const -> Result<T> {
     T val;
     socklen_t len = sizeof(val);
     if (auto ret = getOption(level, optname, val, &len); !ret) {
-        co_return Unexpected(ret.error());
+        return Unexpected(ret.error());
     }
     return val;
 }

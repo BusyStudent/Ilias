@@ -140,7 +140,7 @@ public:
     }
 
     auto close() -> void {
-        if (!mCtxt) {
+        if (!mData) {
             return;
         }
         SCHANNEL_LOG("[Schannel] Close for %ls\n", mHost.c_str());
