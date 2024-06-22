@@ -303,7 +303,7 @@ while (true) {
     }
     auto reply = co_await _readReply(op, request, std::move(*con));
     if (!reply && fromCache) {
-        ::fprintf(stderr, "[Http] ERROR from read reply in cache => %s, try again\n", reply.error().toString());
+        ::fprintf(stderr, "[Http] ERROR from read reply in cache => %s, try again\n", reply.error().toString().c_str());
         continue; //< Try again
     }
     if (reply) {

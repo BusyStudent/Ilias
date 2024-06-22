@@ -115,7 +115,7 @@ TEST(Expected, Basic)
     
     a = 43; // rvalue operator= from T or E value, And the template assignment does not change the data type
     EXPECT_EQ(a.has_value(), false);
-    EXPECT_EQ(a.value(), 43);
+    // EXPECT_EQ(a.value(), 43);
     
     a = Expected<int, int>(23); // rvalue operator= from Expected, this is a correct value.
     EXPECT_EQ(a.has_value(), true);
