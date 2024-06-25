@@ -88,7 +88,7 @@ public:
             BIO_set_retry_write(mBio);
             return 0;
         }
-        *ret = mWriteRing.push(data, len);
+        *ret = mWriteRing.push(std::as_bytes(std::span(data, len)));
         return 1;
     }
     auto _read(char *data, size_t len, size_t *ret) -> int {
@@ -100,7 +100,7 @@ public:
             BIO_set_retry_read(mBio);
             return 0;
         }
-        *ret = mReadRing.pop(data, len);
+        *ret = mReadRing.pop(std::as_writable_bytes(std::span(data, len)));
         return 1;
     }
     auto _ctrl(int cmd, long num, void *ptr) -> long {
@@ -196,7 +196,7 @@ protected:
     auto _flushWrite() -> Task<void> {
         // Flush the data
         size_t dataLeft = mBio->mWriteRing.size();
-        auto tmpbuffer = std::make_unique<uint8_t[]>(dataLeft);
+        auto tmpbuffer = std::make_unique<std::byte[]>(dataLeft);
         mBio->mWriteRing.pop(tmpbuffer.get(), dataLeft);
 
         auto current = tmpbuffer.get();
@@ -221,7 +221,7 @@ protected:
         }
 
         size_t ringLeft = mBio->mReadRing.capacity() - mBio->mReadRing.size();
-        auto tmpbuffer = std::make_unique<uint8_t[]>(ringLeft);
+        auto tmpbuffer = std::make_unique<std::byte[]>(ringLeft);
         auto ret = co_await mBio->mFd.recv(tmpbuffer.get(), ringLeft);
         if (!ret) {
             co_return Unexpected(ret.error()); //< Read Error

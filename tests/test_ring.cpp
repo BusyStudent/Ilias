@@ -9,8 +9,8 @@
 using namespace ILIAS_NAMESPACE;
 
 TEST(RingTest, Test1) {
-    
-    RingBuffer<20> ring;
+
+    RingBuffer<20, char> ring;
     EXPECT_EQ(ring.push("123", 3), 3);
     EXPECT_EQ(ring.push("456", 3), 3);
     EXPECT_EQ(ring.push("789", 3), 3);
@@ -19,7 +19,7 @@ TEST(RingTest, Test1) {
     EXPECT_EQ(ring.push("789", 3), 3);
     EXPECT_EQ(ring.push("123", 3), 2);
 
-    uint8_t buf[21] = {0};
+    char buf[21] = {0};
     EXPECT_EQ(ring.pop(buf, 15), 15);
     EXPECT_STREQ((char*)buf, "123456789123456");
     memset(buf, 0, sizeof(buf));
@@ -47,6 +47,24 @@ TEST(RingTest, Test1) {
     EXPECT_EQ(ring.push(buf, 13), 13);
     memset(buf, 0, sizeof(buf));
     EXPECT_EQ(ring.pop(buf, 20), 14);
+}
+
+TEST(RingTest, Test2) {
+    RingBuffer<10, char> ring;
+    EXPECT_EQ(ring.push("123", 3), 3);
+    EXPECT_EQ(ring.push("456", 3), 3);
+    EXPECT_EQ(ring.push("789", 3), 3);
+    
+    char tmpbuf[3];
+    memset(tmpbuf, 0, sizeof(tmpbuf));
+    EXPECT_EQ(ring.pop(tmpbuf, 3), 3);
+
+    // Now is still continuous
+    EXPECT_TRUE(ring.continuous());
+
+    // Should not continuous
+    EXPECT_EQ(ring.push("1234", 4), 4);
+    EXPECT_FALSE(ring.continuous());
 }
 
 int main(int argc, char **argv)

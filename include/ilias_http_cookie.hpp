@@ -163,7 +163,7 @@ inline auto HttpCookie::parse(std::string_view setCookie) -> std::vector<HttpCoo
     }
     return cookies;
 }
-auto HttpCookie::_parseTime(std::string_view expires) -> std::chrono::system_clock::time_point {
+inline auto HttpCookie::_parseTime(std::string_view expires) -> std::chrono::system_clock::time_point {
     // Like Wed, 23 Apr 2020 10:10:10 GMT
     //      week, days, months, years, hh, min, ss
     auto pos = expires.find(", ");
@@ -239,7 +239,7 @@ auto HttpCookie::_parseTime(std::string_view expires) -> std::chrono::system_clo
     }
     return std::chrono::system_clock::from_time_t(::mktime(&t));
 }
-auto HttpCookie::_strcasecmp(std::string_view a, std::string_view b) -> bool {
+inline auto HttpCookie::_strcasecmp(std::string_view a, std::string_view b) -> bool {
     if (a.size() != b.size()) {
         return false;
     }

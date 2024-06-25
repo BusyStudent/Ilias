@@ -68,7 +68,7 @@ TEST(UrlTest, ValidUrl) {
 
 static HttpSession *session = nullptr;
 
-#if 0
+#if 1
 TEST(RequestTest, Test1) {
     HttpRequest request("https://www.baidu.com");
 
