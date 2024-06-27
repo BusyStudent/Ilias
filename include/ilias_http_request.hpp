@@ -34,6 +34,7 @@ public:
     auto setOperation(Operation operation) -> void;
     auto setUrl(const Url &url) -> void;
     auto setMaximumRedirects(int maximumRedirects) -> void;
+    auto setTransferTimeout(std::chrono::milliseconds transferTimeout) -> void;
     auto header(std::string_view key) const -> std::string_view;
     auto header(WellKnownHeader header) const -> std::string_view;
     auto headers() const -> const HttpHeaders &;
@@ -68,6 +69,9 @@ inline auto HttpRequest::setUrl(const Url &url) -> void {
 }
 inline auto HttpRequest::setMaximumRedirects(int maximumRedirects) -> void {
     mMaximumRedirects = maximumRedirects;
+}
+inline auto HttpRequest::setTransferTimeout(std::chrono::milliseconds transferTimeout) -> void {
+    mTransferTimeout = transferTimeout;
 }
 inline auto HttpRequest::header(std::string_view key) const -> std::string_view {
     return mHeaders.value(key);

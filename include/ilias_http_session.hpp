@@ -216,7 +216,7 @@ inline auto HttpSession::_sendRequest(Operation op, const HttpRequest &request, 
     const auto scheme = url.scheme();
 
     // Check args
-    if (port <= 0 || host.empty() || (scheme != "https" && scheme != "http")) {
+    if (!url.portOrScheme() || (scheme != "https" && scheme != "http")) {
         co_return Unexpected(Error::InvalidArgument);
     }
     std::string requestString(path);
@@ -486,9 +486,9 @@ inline auto HttpSession::_connect(const Url &url) -> Task<Connection> {
     if (!mProxy.empty()) {
         co_return co_await _connectWithProxy(url);
     }
-
+    auto port = url.portOrScheme();
     auto addr = IPAddress::fromHostname(std::string(url.host()).c_str());
-    auto endpoint = IPEndpoint(addr, url.port());
+    auto endpoint = IPEndpoint(addr, port.value());
     for (auto iter = mConnections.begin(); iter != mConnections.end(); ++iter) {
         if (iter->endpoint == endpoint) {
             // Cache hint
@@ -530,7 +530,7 @@ inline auto HttpSession::_connect(const Url &url) -> Task<Connection> {
 }
 inline auto HttpSession::_connectWithProxy(const Url &url) -> Task<Connection> {
     auto host = url.host();
-    auto port = url.port();
+    auto port = url.portOrScheme();
     // Check cache
     for (auto iter = mConnections.begin(); iter != mConnections.end(); ++iter) {
         if (iter->host == host && iter->port == port) {
@@ -547,9 +547,9 @@ inline auto HttpSession::_connectWithProxy(const Url &url) -> Task<Connection> {
 
     // Prepare client on proxy
     IStreamClient client;
-    Socks5Client socks5(mIoContext, IPEndpoint(std::string(mProxy.host()).c_str(), mProxy.port()));
+    Socks5Client socks5(mIoContext, IPEndpoint(std::string(mProxy.host()).c_str(), mProxy.port().value()));
     // Connect it by proxy
-    if (auto err = co_await socks5.connect(host, port); !err) {
+    if (auto err = co_await socks5.connect(host, port.value()); !err) {
         co_return Unexpected(err.error());
     }
     if (url.scheme() == "http") {
@@ -569,7 +569,7 @@ inline auto HttpSession::_connectWithProxy(const Url &url) -> Task<Connection> {
     co_return Connection {
         .client = std::move(client),
         .host = std::string(host),
-        .port = port,
+        .port = port.value(),
         .lastUsedTime = std::chrono::steady_clock::now()
     };
 }

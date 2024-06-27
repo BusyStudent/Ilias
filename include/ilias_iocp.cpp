@@ -6,7 +6,7 @@
 #include <memory>
 #include <future>
 
-#if 1
+#if 1 && !defined(NDEBUG)
 // #if 0
     #define IOCP_LOG(...) ::fprintf(stderr, __VA_ARGS__)
 #else

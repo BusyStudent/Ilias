@@ -12,8 +12,8 @@
 #undef min
 #undef max
 
-#if 1
-    #define SCHANNEL_LOG(fmt, ...) ::printf(fmt, __VA_ARGS__)
+#if 1 && !defined(NDEBUG)
+    #define SCHANNEL_LOG(fmt, ...) ::fprintf(stderr, fmt, __VA_ARGS__)
 #else
     #define SCHANNEL_LOG(fmt, ...)
 #endif
