@@ -1,0 +1,13 @@
+BasedOnStyle: Google
+IndentWidth: 4
+ColumnLimit: 120
+AccessModifierOffset: -4
+DerivePointerAlignment: false
+PointerAlignment: Left
+ConstructorInitializerIndentWidth: 4
+AlwaysBreakTemplateDeclarations: true
+BreakBeforeBraces: Custom
+AlignOperands: true
+AlignTrailingComments: true
+AlignConsecutiveMacros: true
+AlignConsecutiveAssignments: true
