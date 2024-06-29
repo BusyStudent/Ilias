@@ -115,10 +115,12 @@ TEST(Expected, Basic) {
 
     Expected<void, int> b;  // void value template
     EXPECT_EQ(b.has_value(), true);
+    EXPECT_EQ(b.error_or(4), 4);
 
     b = Unexpected{54};  // rvalue operator= from E value.
     EXPECT_EQ(b.has_value(), false);
     EXPECT_EQ(b.error(), 54);
+    EXPECT_EQ(b.value_or(4), 4);
 
     int b_value = 55;  // lvalue operator= from E value
     b           = Unexpected{b_value};
@@ -147,6 +149,7 @@ TEST(Expected, Basic) {
 
     Expected<std::string, int> d = std::string("hello");
     EXPECT_EQ(d.has_value(), true);
+    EXPECT_EQ(d.error_or(4), 4);
     EXPECT_STREQ(d.value().c_str(), "hello");
 
     d = Unexpected{43};

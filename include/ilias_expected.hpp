@@ -272,6 +272,22 @@ public:
         }
     }
     template <class U>
+    E error_or(U&& default_error) const& {
+        static_assert(std::is_convertible_v<U, E>);
+        if (!has_value()) {
+            return mError;
+        }
+        return std::forward<U>(default_error);
+    }
+    template <class U>
+    E error_or(U&& default_error) && {
+        static_assert(std::is_convertible_v<U, E>);
+        if (!has_value()) {
+            return std::move(mError);
+        }
+        return std::forward<U>(default_error);
+    }
+    template <class U>
     T value_or(U&& default_value) const& {
         if (has_value()) {
             return mValue;
@@ -595,6 +611,22 @@ public:
             ILIAS_ASSERT(false);
         }
         return std::move(mError);
+    }
+    template <class U>
+    E error_or(U&& default_error) const& {
+        static_assert(std::is_convertible_v<U, E>);
+        if (!has_value()) {
+            return mError;
+        }
+        return std::forward<U>(default_error);
+    }
+    template <class U>
+    E error_or(U&& default_error) && {
+        static_assert(std::is_convertible_v<U, E>);
+        if (!has_value()) {
+            return std::move(mError);
+        }
+        return std::forward<U>(default_error);
     }
     template <class F>
     auto and_then(F&& f) & {
