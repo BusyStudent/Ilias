@@ -156,6 +156,54 @@ public:
     auto pop(value_type *mem, size_t n) noexcept -> size_t;    
 
     /**
+     * @brief Get the continuous memory Push Buffer
+     * must call endPushBuf to finish push.
+     * this function will return a tuple, first is the pointer of buf, 
+     * second is the size of contiguous memory size in the buf.
+     * @warning
+     *  ! Must be call endPush to finish push buf operator.
+     *  ! Do not manipulate memory that exceeds size, 
+     *    it will cause undefined behavior.
+     * 
+     * @return std::span<value_type>
+     */
+    auto getPushBuffer() -> std::span<value_type>;
+
+    /**
+     * @brief flush buf to finish push buf operator
+     * 
+     * while offset greater than remainder size, return false.
+     * 
+     * @param offset the size push by push buf.
+     * @return true 
+     * @return false 
+     */
+    auto endPush(size_t size) noexcept -> bool;
+
+    /**
+     * @brief Get the continuous memory of Pop Buf
+     * must call endPopBuf to finish pop.
+     * this function will return a tuple, first is the pointer of buf, 
+     * second is the size of contiguous memory size in the buf.
+     * @warning
+     *  ! Must be call endPushBuf to finish push buf operator.
+     *  ! Do not manipulate memory that exceeds size, 
+     *    it will cause undefined behavior.
+     * 
+     * @return std::span<const value_type>
+     */
+    auto getPopBuffer() -> std::span<const value_type>;
+
+    /**
+     * @brief flush buf to finish pop buf operator
+     * 
+     * @param offset the size pop by pop buf.
+     * @return true 
+     * @return false 
+     */
+    auto endPop(size_t offset) noexcept -> bool;
+
+    /**
      * @brief Check the ring's data is continuous?
      * 
      * @return true 
@@ -217,6 +265,12 @@ public:
     auto pop(T &value) noexcept -> bool { return mData.pop(value); }
     auto pop(std::span<T> values) noexcept -> size_t { return mData.pop(values); }
     auto pop(T *values, size_t n) noexcept -> size_t { return mData.pop(values, n); }
+
+    auto getPushBuffer() -> std::span<T> { return mData.getPushBuffer(); }
+    auto endPush(size_t offset) noexcept -> bool { return mData.endPush(offset); }
+
+    auto getPopBuffer() -> std::span<const T> { return mData.getPopBuffer(); }
+    auto endPop(size_t offset) noexcept -> bool { return mData.endPop(offset); }
 
     auto defragment() noexcept -> void { mData.defragment(); }
 private:
@@ -358,6 +412,72 @@ template <typename T>
 inline auto RingImpl<T>::pop(std::span<value_type> values) noexcept -> size_t {
     return pop(values.data(), values.size());
 }
+
+// startPush endPush etc...
+template <typename T>
+inline auto RingImpl<T>::getPushBuffer() -> std::span<value_type> {
+    if (mTail >= mHead) {
+        return std::span(mBuffer.data() + mTail, capacity() - mTail);
+    } 
+    else {
+        return std::span(mBuffer.data(), mHead - mTail);
+    }
+}
+
+template <typename T>
+inline auto RingImpl<T>::getPopBuffer() -> std::span<const value_type> {
+    if (mTail > mHead) {
+        return std::span(mBuffer.data() + mHead, mTail - mHead);
+    } 
+    else {
+        return std::span(mBuffer.data() + mHead, capacity() - mHead);
+    }
+}
+
+template <typename T>
+inline auto RingImpl<T>::endPop(size_t offset) noexcept -> bool {
+#ifdef ILIAS_RING_DEBUG
+    _printData(offset, '#');
+#endif
+    if (offset > mSize) {
+        return false;
+    }
+    if (mTail > mHead) {
+        mHead += offset;
+    }
+    else {
+        mHead = offset + mHead < capacity() ? mHead + offset : mHead + offset - capacity();
+    }
+    mSize -= offset;
+
+#ifdef ILIAS_RING_DEBUG
+    _printIndex();
+#endif
+    return true;
+}
+
+template <typename T>
+inline auto RingImpl<T>::endPush(size_t offset) noexcept -> bool {
+#ifdef ILIAS_RING_DEBUG
+    _printData(offset, '^');
+#endif
+    if (offset + mSize > capacity()) {
+        return false;
+    }
+    if (mTail < mHead) {
+        mTail += offset;
+    }
+    else {
+        mTail = offset + mTail < capacity() ? mTail + offset : mTail + offset - capacity();
+    }
+    mSize += offset;
+
+#ifdef ILIAS_RING_DEBUG
+    _printIndex();
+#endif
+    return true;
+}
+
 
 // Rebuild and the defragment
 // TODO:

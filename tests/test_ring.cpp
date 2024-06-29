@@ -47,6 +47,32 @@ TEST(RingTest, Test1) {
     EXPECT_EQ(ring.push(buf, 13), 13);
     memset(buf, 0, sizeof(buf));
     EXPECT_EQ(ring.pop(buf, 20), 14);
+
+    ring.push(1);
+    ring.push('5');
+    ring.push('6');
+    char value = 0;
+    ring.pop(value);
+
+    // auto writeBuf = ring.getPushBuffer();
+    // memset(writeBuf.data(), '1', writeBuf.size());
+    // ring.endPush(writeBuf.size());
+    // EXPECT_EQ(ring.size(), 19);
+
+    // auto writeBuf1 = ring.getPushBuffer();
+    // memset(writeBuf1.data(), '2', writeBuf1.size());
+    // ring.endPush(writeBuf1.size());
+    // EXPECT_EQ(ring.size(), 20);
+    
+    // auto readBuf = ring.getPopBuffer();
+    // EXPECT_STREQ(std::string(readBuf.data(), readBuf.size()).c_str(), "5611111111111111111");
+    // ring.endPop(readBuf.size());
+    // EXPECT_EQ(ring.size(), 1);
+
+    // auto readBuf1 = ring.getPopBuffer();
+    // EXPECT_STREQ(std::string(readBuf1.data(), readBuf.size()).c_str(), "2");
+    // ring.endPop(readBuf1.size());
+    // EXPECT_EQ(ring.size(), 0);
 }
 
 TEST(RingTest, Test2) {
