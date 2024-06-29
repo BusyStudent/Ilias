@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "../include/ilias_expected.hpp"
-
 #include <iostream>
+
+#include "../include/ilias_expected.hpp"
 
 using ILIAS_NAMESPACE::Expected;
 using ILIAS_NAMESPACE::Unexpected;
@@ -28,58 +28,40 @@ using ::std::remove_cvref_t;
 template <class T>
 using remove_cvref_t = typename ::std::remove_cv<typename ::std::remove_reference<T>::type>::type;
 #endif
-}
+}  // namespace v1
 ILIAS_NS_END
 
 class Error {
 public:
-    explicit Error(const int code, const std::string &message)
-        : mCode(code)
-        , mMessage(message)
-    {
+    explicit Error(const int code, const std::string& message) : mCode(code), mMessage(message) {
         std::cout << "\033[92mCreate\033[0m: " << mMessage << " code: " << mCode << std::endl;
     }
-    Error(const Error &error)
-        : mCode(error.mCode)
-        , mMessage(error.mMessage)
-    {
+    Error(const Error& error) : mCode(error.mCode), mMessage(error.mMessage) {
         std::cout << "\033[92mCopy\033[0m: " << mMessage << " code: " << mCode << std::endl;
     }
-    Error(Error &&error)
-        : mCode(std::move(error.mCode))
-        , mMessage(std::move(error.mMessage))
-    {
-        std::cout << "\033[92mCopy\033[0m: " << mMessage << " code: " << mCode << std::endl;
-    }
-    const std::string &message() const { return mMessage; }
+    const std::string& message() const { return mMessage; }
     const int code() const { return mCode; }
-    // Error &operator=(const Error &) = delete;
-    // Error &operator=(Error &&) = delete;
+    Error& operator=(const Error&) = delete;
     ~Error() { std::cout << "\033[91mDestroy\033[0m: " << mMessage << " code: " << mCode << std::endl; }
-    friend std::ostream &operator<<(std::ostream &os, const Error &error);
+    friend std::ostream& operator<<(std::ostream& os, const Error& error);
 
 private:
     std::string mMessage;
     int mCode;
 };
 
-std::ostream &operator<<(std::ostream &os, const Error &error)
-{
+std::ostream& operator<<(std::ostream& os, const Error& error) {
     return os << "message: " << error.mMessage << ".[code: " << error.mCode << "]";
 }
 
 template <typename T, typename enable = void>
 struct print_helper {
-    void operator()(const T &t)
-    {
-        std::cout << "\033[32mvalue:\033[0m " << t << std::endl;
-    }
+    void operator()(const T& t) { std::cout << "\033[32mvalue:\033[0m " << t << std::endl; }
 };
 
 template <typename ValueT, typename ErrorT>
 struct print_helper<Expected<ValueT, ErrorT>, ILIAS_NAMESPACE::enable_if_t<!ILIAS_NAMESPACE::is_void_v<ValueT>>> {
-    void operator()(const Expected<ValueT, ErrorT> &result)
-    {
+    void operator()(const Expected<ValueT, ErrorT>& result) {
         if (result.has_value()) {
             std::cout << "\033[32mvalue:\033[0m " << (*result) << std::endl;
         } else {
@@ -90,8 +72,7 @@ struct print_helper<Expected<ValueT, ErrorT>, ILIAS_NAMESPACE::enable_if_t<!ILIA
 
 template <typename ValueT, typename ErrorT>
 struct print_helper<Expected<ValueT, ErrorT>, ILIAS_NAMESPACE::enable_if_t<ILIAS_NAMESPACE::is_void_v<ValueT>>> {
-    void operator()(const Expected<ValueT, ErrorT> &result)
-    {
+    void operator()(const Expected<ValueT, ErrorT>& result) {
         if (result) {
             std::cout << "\033[32mvalue:\033[0m void" << std::endl;
         } else {
@@ -101,97 +82,99 @@ struct print_helper<Expected<ValueT, ErrorT>, ILIAS_NAMESPACE::enable_if_t<ILIAS
 };
 
 template <typename T>
-void print(T &&arg)
-{
-    print_helper<ILIAS_NAMESPACE::remove_cvref_t<T>> {}(std::forward<T>(arg));
+void print(T&& arg) {
+    print_helper<ILIAS_NAMESPACE::remove_cvref_t<T>>{}(std::forward<T>(arg));
 }
+#define OUT(x)                                   \
+    std::cout << ">>> [\033[34m" #x "\033[0m] "; \
+    print(x);
 
-TEST(Expected, Basic)
-{
+TEST(Expected, Basic) {
 #if !defined(__cpp_lib_expected)
     // T == E
-    Expected<int, int> a(23); // Correct value construction
+    Expected<int, int> a(23);  // Correct value construction
     EXPECT_EQ(a.value(), 23);
 
-    a = Unexpected<int>(23); // Assign an error value via a helper class
+    a = Unexpected<int>(23);  // Assign an error value via a helper class
     EXPECT_EQ(a.has_value(), false);
     EXPECT_EQ(a.error(), 23);
-    
-    a = 43; // rvalue operator= from T or E value, And the template assignment does not change the data type
-    EXPECT_EQ(a.has_value(), false);
+
+    a = 43;  // rvalue operator= from T or E value, And the template assignment
+             // does not change the data type
+    EXPECT_EQ(a.has_value(), true);
     // EXPECT_EQ(a.value(), 43);
-    
-    a = Expected<int, int>(23); // rvalue operator= from Expected, this is a correct value.
+
+    a = Expected<int, int>(23);  // rvalue operator= from Expected, this is a correct value.
     EXPECT_EQ(a.has_value(), true);
     EXPECT_EQ(a.value(), 23);
-    
+
     int a_value = 43;
-    a = a_value;    // lvalue operator= from T or E value, And the template assignment does not change the data type
+    a           = a_value;  // lvalue operator= from T or E value, And the template
+                            // assignment does not change the data type
     EXPECT_EQ(a.value(), 43);
 
     Expected<void, int> b;  // void value template
     EXPECT_EQ(b.has_value(), true);
 
-    b = Unexpected<int>(54);     // rvalue operator= from E value.
+    b = Unexpected{54};  // rvalue operator= from E value.
     EXPECT_EQ(b.has_value(), false);
     EXPECT_EQ(b.error(), 54);
 
-    Unexpected<int> b_value{55}; // lvalue operator= from E value
-    b = b_value;
+    int b_value = 55;  // lvalue operator= from E value
+    b           = Unexpected{b_value};
     EXPECT_EQ(b.error(), 55);
 
-    Expected<int, Error> c = 43;    // class type in T or E.
+    Expected<int, Error> c = 43;  // class type in T or E.
     EXPECT_EQ(c.has_value(), true);
     EXPECT_EQ(c.value(), 43);
 
-    Expected<int, Error> d = Unexpected<Error>(Error(43, "error note"));
+    c = Unexpected{Error(43, "error note")};
+    EXPECT_EQ(c.has_value(), false);
+    EXPECT_EQ(c.error().code(), 43);
+    EXPECT_STREQ(c.error().message().c_str(), "error note");
+    EXPECT_EQ(c.value_or(42), 42);
+
+    auto c_error = Error(547, "this is a error");
+    c            = Unexpected{c_error};
+    EXPECT_EQ(c.has_value(), false);
+    EXPECT_EQ(c.error().code(), 547);
+    EXPECT_STREQ(c.error().message().c_str(), "this is a error");
+
+    int c_value = 65;
+    c           = c_value;
+    EXPECT_EQ(c.has_value(), true);
+    EXPECT_EQ(c.value(), 65);
+
+    Expected<std::string, int> d = std::string("hello");
+    EXPECT_EQ(d.has_value(), true);
+    EXPECT_STREQ(d.value().c_str(), "hello");
+
+    d = Unexpected{43};
     EXPECT_EQ(d.has_value(), false);
-    EXPECT_EQ(d.error().code(), 43);
-    EXPECT_STREQ(d.error().message().c_str(), "error note");
-    EXPECT_EQ(d.value_or(42), 42);
+    EXPECT_EQ(d.error(), 43);
 
-    // auto c_error = Unexpected<Error>(Error(547, "this is a error"));
-    // c = c_error;
-    // EXPECT_EQ(c.has_value(), false);
-    // EXPECT_EQ(c.error().code(), 547);
-    // EXPECT_STREQ(c.error().message().c_str(), "this is a error");
+    d = std::string("test for string");
+    EXPECT_EQ(d.has_value(), true);
+    EXPECT_STREQ(d.value().c_str(), "test for string");
 
-    // int c_value = 65;
-    // c = c_value;
-    // EXPECT_EQ(c.has_value(), true);
-    // EXPECT_EQ(c.value(), 65);
+    auto eE = std::move(d);
+    EXPECT_STREQ(eE.value().c_str(), "test for string");
+    EXPECT_STREQ(d.value().c_str(), "");
 
-    // Expected<std::string, int> d = std::string("hello");
-    // EXPECT_EQ(d.has_value(), true);
-    // EXPECT_STREQ(d.value().c_str(), "hello");
+    Expected<std::string, Error> e = std::string("world");
+    EXPECT_EQ(e.has_value(), true);
+    EXPECT_STREQ(e.value().c_str(), "world");
 
-    // d = Unexpected<int>(43);
-    // EXPECT_EQ(d.has_value(), false);
-    // EXPECT_EQ(d.error(), 43);
+    e = Unexpected{Error(43, "error note")};
+    EXPECT_EQ(e.has_value(), false);
+    EXPECT_EQ(e.error().code(), 43);
+    EXPECT_STREQ(e.error().message().c_str(), "error note");
 
-    // d = std::string("test for string");
-    // EXPECT_EQ(d.has_value(), true);
-    // EXPECT_STREQ(d.value().c_str(), "test for string");
-    
-    // auto eE = std::move(d);
-    // EXPECT_STREQ(eE.value().c_str(), "test for string");
-    // EXPECT_STREQ(d.value().c_str(), "");
-
-    // Expected<std::string, Error> e = std::string("world");
-    // EXPECT_EQ(e.has_value(), true);
-    // EXPECT_STREQ(e.value().c_str(), "world");
-
-    // e = Expected<std::string, Error>(Unexpected<Error>(Error(43, "error note")));
-    // EXPECT_EQ(e.has_value(), false);
-    // EXPECT_EQ(e.error().code(), 43);
-    // EXPECT_STREQ(e.error().message().c_str(), "error note");
-
-    // Error err = std::move(e.error());
+    Error err = std::move(e.error());
 #endif
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

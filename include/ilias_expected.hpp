@@ -1,12 +1,16 @@
 #pragma once
 
-#include "ilias.hpp"
 #include <exception>
+#include <functional>
+#include <type_traits>
+#include <utility>
 #include <version>
 
+#include "ilias.hpp"
+
 #if defined(__cpp_lib_expected)
-    #include <expected>
-    #define ILIAS_STD_EXPECTED_HPP
+#include <expected>
+#define ILIAS_STD_EXPECTED_HPP
 #endif
 
 ILIAS_NS_BEGIN
@@ -19,33 +23,31 @@ template <typename E>
 using Unexpected = ::std::unexpected<E>;
 template <typename E = void>
 using BadExpectedAccess = ::std::bad_expected_access<E>;
-
+using Unexpect_t        = std::unexpect_t;
 #else
 
 template <typename E>
 class BadExpectedAccess;
 
+struct Unexpect_t {
+    explicit Unexpect_t() = default;
+};
+
 template <>
 class BadExpectedAccess<void> : public std::exception {
 public:
     BadExpectedAccess() = default;
-    const char *what() const noexcept { return "Expected value is not set"; }
+    const char* what() const noexcept { return "Expected value is not set"; }
 };
 
 template <typename E>
 class BadExpectedAccess : public BadExpectedAccess<void> {
 public:
-    BadExpectedAccess(const E &error)
-        : mError(error)
-    {
-    }
+    BadExpectedAccess(const E& error) : mError(error) {}
 
-    BadExpectedAccess(E &&error)
-        : mError(std::move(error))
-    {
-    }
+    BadExpectedAccess(E&& error) : mError(std::move(error)) {}
 
-    const E &error() const { return mError; }
+    const E& error() const { return mError; }
 
 private:
     const E mError;
@@ -54,503 +56,732 @@ private:
 template <typename E>
 class Unexpected {
 public:
-    Unexpected(const E &error)
-        : mError(error)
-    {
-    }
+    Unexpected(const E& error) : mError(error) {}
 
-    Unexpected(E &&error)
-        : mError(std::move(error))
-    {
-    }
+    Unexpected(E&& error) : mError(std::move(error)) {}
 
-    const E &error() const { return mError; }
+    const E& error() const { return mError; }
 
 private:
     const E mError;
 };
-template <typename T, typename E, class enable = void>
-class Expected;
-template <typename T, typename E>
-class Expected<T, E, typename std::enable_if<!std::is_void<T>::value>::type> {
-public:
-    using ValueT = T;
-    using ErrorT = E;
-    using value_type = T;
-    using error_type = E;
-private:
-    union {
-        ValueT mValue;
-        ErrorT mError;
-    };
-
-    enum {
-        ValueType,
-        ErrorType,
-    } mType;
-
-public:
-    Expected(const ValueT &value)
-        : mType(ValueType)
-    {
-        new (&mValue) ValueT(value);
-    }
-
-    Expected(ValueT &&value)
-        : mType(ValueType)
-    {
-        new (&mValue) ValueT(std::move(value));
-    }
-
-    Expected(const ErrorT &error)
-        : mType(ErrorType)
-    {
-        new (&mError) ErrorT(error);
-    }
-
-    Expected(ErrorT &&error)
-        : mType(ErrorType)
-    {
-        new (&mError) ErrorT(std::move(error));
-    }
-
-    Expected(const Expected &other) 
-        : mType(other.mType)
-    {
-        if (mType == ErrorType) {
-            new (&mError) ErrorT(other.mError);
-        } else {
-            new (&mValue) ValueT(other.mValue);
-        }
-    }
-
-    Expected(Expected &&other) 
-        : mType(std::move(other.mType))
-    {
-        if (mType == ErrorType) {
-            new (&mError) ErrorT(std::move(other.mError));
-        } else {
-            new (&mValue) ValueT(std::move(other.mValue));
-        }
-    }
-
-    template <typename U>
-    Expected(const Unexpected<U> &error)
-        : mType(ErrorType)
-    {
-        new (&mError) ErrorT(error.error());
-    }
-
-    template <typename U>
-    Expected(Unexpected<U> &&error)
-        : mType(ErrorType)
-    {
-        new (&mError) ErrorT(error.error());
-    }
-
-    template <typename U>
-    Expected &operator=(const Unexpected<U> &other) 
-    {
-        destory();
-        mType = ErrorType;
-        new (&mError) ErrorT(other.error());
-        return *this;
-    }
-
-    template <typename U>
-    Expected &operator=(Unexpected<U> &&other) 
-    {
-        destory();
-        mType = ErrorType;
-        new (&mError) ErrorT(std::move(other.error()));
-        return *this;
-    }
-
-    Expected &operator=(const Expected &other) 
-    {
-        destory();
-        mType = other.mType;
-        if (mType == ErrorType) {
-            new (&mError) ErrorT(other.mError);
-        } else {
-            new (&mValue) ValueT(other.mValue);
-        }
-        return *this;
-    }
-
-    Expected &operator=(Expected &&other) 
-    {
-        destory();
-        mType = std::move(other.mType);
-        if (mType == ErrorType) {
-            new (&mError) ErrorT(std::move(other.mError));
-        } else {
-            new (&mValue) ValueT(std::move(other.mValue));
-        }
-        return *this;
-    }
-
-    Expected &operator=(ValueT &&value)
-    {
-        destory();
-        mType = ValueType;
-        new (&mValue) ValueT(std::move(value));
-        return *this;
-    }
-    Expected &operator=(const ValueT &value)
-    {
-        destory();
-        mType = ValueType;
-        new (&mValue) ValueT(value);
-        return *this;
-    }
-    Expected &operator=(ErrorT &&error) 
-    {
-        destory();
-        mType = ErrorType;
-        new (&mError) ErrorT(std::move(error));
-        return *this;
-    }
-    Expected &operator=(const ErrorT &error) 
-    {
-        destory();
-        mType = ErrorType;
-        new (&mError) ErrorT(error);
-        return *this;
-    }
-
-    operator bool() const  { return !mType; }
-    ValueT &operator*() { return mValue; }
-    const ValueT &operator*() const { return mValue; }
-    ValueT *operator->() { return &mValue; }
-    const ValueT *operator->() const { return &mValue; }
-
-    bool has_value() const { return !mType; }
-    ValueT &value() { 
-        if(!has_value()) throw BadExpectedAccess<ErrorT>(error()); 
-        return mValue; 
-    }
-    const ValueT &value() const { 
-        if(!has_value()) throw BadExpectedAccess<ErrorT>(error()); 
-        return mValue; 
-    }
-    ValueT &value_or(ValueT &value) { return mType ? value : mValue; }
-    const ValueT &value_or(const ValueT &value) const { return mType ? value : mValue; }
-
-    ErrorT &error() { return mError; }
-    const ErrorT &error() const { return mError; }
-
-    ErrorT error_or(ErrorT error) const { return mType ? error : mError; }
-
-    ~Expected() { destory(); }
-
-private:
-    inline void destory()
-    {
-        if (mType == ErrorType) {
-            mError.~ErrorT();
-        } else {
-            mValue.~ValueT();
-        }
-    }
-};
-
-template <typename T>
-class Expected<T, T, typename std::enable_if<!std::is_void<T>::value>::type> {
-public:
-    using ValueT = T;
-    using ErrorT = T;
-    using UnexpectedT = Unexpected<T>;
-    using value_type = T;
-    using error_type = T;
-private:
-    union {
-        ValueT mValue;
-        ErrorT mError;
-    };
-
-    enum {
-        ValueType,
-        ErrorType,
-    } mType;
-
-public:
-    Expected(const ValueT &value)
-        : mType(ValueType)
-    {
-        new (&mValue) ValueT(value);
-    }
-
-    Expected(ValueT &&value)
-        : mType(ValueType)
-    {
-        new (&mValue) ValueT(std::move(value));
-    }
-
-    Expected(const Expected &other) 
-        : mType(other.mType)
-    {
-        if (mType == ValueType) {
-            new (&mValue) ValueT(other.mValue);
-        } else {
-            new (&mError) ErrorT(other.mError);
-        }
-    }
-
-    Expected(Expected &&other) 
-        : mType(std::move(other.mType))
-    {
-        if (mType == ValueType) {
-            new (&mValue) ValueT(std::move(other.mValue));
-        } else {
-            new (&mError) ErrorT(std::move(other.mError));
-        }
-    }
-
-    Expected(const UnexpectedT &error)
-        : mType(ErrorType)
-    {
-        new (&mError) ErrorT(error.error());
-    }
-
-    Expected(UnexpectedT &&error)
-        : mType(ErrorType)
-    {
-        new (&mError) ErrorT(error.error());
-    }
-
-    Expected operator=(const UnexpectedT &error)
-    {
-        destory();
-        mType = ErrorType;
-        new (&mError) ErrorT(error.error());
-        return *this;
-    }
-
-    Expected operator=(UnexpectedT &&error)
-    {
-        destory();
-        mType = ErrorType;
-        new (&mError) ErrorT(std::move(error.error()));
-        return *this;
-    }
-
-    Expected operator=(const Expected &other) 
-    {
-        destory();
-        if (other.mType == ErrorType) {
-            new (&mError) ErrorT(other.mError);
-            mType = ErrorType;
-        } else {
-            new (&mValue) ValueT(other.mValue);
-            mType = ValueType;
-        }
-        return *this;
-    }
-
-    Expected operator=(Expected &&other) 
-    {
-        destory();
-        mType = std::move(other.mType);
-        if (mType == ErrorType) {
-            new (&mError) ErrorT(std::move(other.mError));
-        } else {
-            new (&mValue) ValueT(std::move(other.mValue));
-        }
-        return *this;
-    }
-
-    Expected operator=(ValueT &&value)
-    {
-        destory();
-        if (mType == ErrorType) {
-            new (&mError) ErrorT(std::move(value));
-        } else {
-            new (&mValue) ValueT(std::move(value));
-        }
-        return *this;
-    }
-
-    Expected operator=(const ValueT &value)
-    {
-        destory();
-        if (mType == ErrorType) {
-            new (&mError) ErrorT(value);
-        } else {
-            new (&mValue) ValueT(value);
-        }
-        return *this;
-    }
-
-    operator bool() const  { return !mType; }
-
-    ValueT &operator*() { return mValue; }
-    const ValueT &operator*() const { return mValue; }
-    ValueT *operator->() { return &mValue; }
-    const ValueT *operator->() const { return &mValue; }
-
-    bool has_value() const { return !mType; }
-    ValueT &value() { 
-        if(!has_value()) throw BadExpectedAccess<ErrorT>(error()); 
-        return mValue; 
-    }
-    const ValueT &value() const { 
-        if(!has_value()) throw BadExpectedAccess<ErrorT>(error()); 
-        return mValue; 
-    }
-    ValueT &value_or(ValueT &value) { return mType ? value : mValue; }
-    const ValueT &value_or(const ValueT &value) const { return mType ? value : mValue; }
-
-    ErrorT error() { return mError; }
-    const ErrorT &error() const { return mError; }
-
-    ErrorT error_or(ErrorT error) const { return mType ? error : mError; }
-
-    ~Expected() { destory(); }
-
-private:
-    inline void destory()
-    {
-        if (mType == ErrorType) {
-            mError.~ErrorT();
-        } else {
-            mValue.~ValueT();
-        }
-    }
-};
 
 template <typename T, typename E>
-class Expected<T, E, typename std::enable_if<std::is_void<T>::value>::type> {
+class Expected {
 public:
-    using ValueT = T;
-    using ErrorT = E;
     using value_type = T;
     using error_type = E;
-private:
-    enum {
-        ValueType,
-        ErrorType,
-    } mType;
 
-    ErrorT mError;
 public:
-    Expected()
-        : mType(ValueType)
-    {
+    Expected() : mHasValue(true) { new (&mValue) T(); }
+    Expected(const Expected& other) : mHasValue(other.mHasValue) {
+        if (other.mHasValue) {
+            new (&mValue) T(other.mValue);
+        } else {
+            new (&mError) E(other.mError);
+        }
     }
-
-    Expected(const ErrorT &error)
-        : mType(ErrorType)
-        , mError(error)
-    {
+    Expected(Expected&& other) : mHasValue(other.mHasValue) {
+        if (other.mHasValue) {
+            new (&mValue) T(std::move(other.mValue));
+        } else {
+            new (&mError) E(std::move(other.mError));
+        }
     }
-
-    Expected(ErrorT &&error)
-        : mType(ErrorType)
-        , mError(std::move(error))
-    {
+    template <class U, class V>
+    explicit(!std::is_convertible_v<U, T> && !std::is_convertible_v<V, E>) Expected(const Expected<U, V>& other)
+        : mHasValue(other.mHasValue) {
+        if (other.mHasValue) {
+            new (&mValue) T(other.mValue);
+        } else {
+            new (&mError) E(other.mError);
+        }
     }
-
-    Expected(const Expected &other) 
-        : mType(other.mType),
-          mError(other.mError)
-    {
+    template <class U, class V>
+    explicit(!std::is_convertible_v<U, T> && !std::is_convertible_v<V, E>) Expected(Expected<U, V>&& other)
+        : mHasValue(other.mHasValue) {
+        if (other.mHasValue) {
+            new (&mValue) T(std::move(other.mValue));
+        } else {
+            new (&mError) E(std::move(other.mError));
+        }
     }
-
-    Expected(Expected &&other) 
-        : mType(std::move(other.mType)),
-          mError(std::move(other.mError))
-    {
+    template <class U = T>
+    explicit(!std::is_convertible_v<U, T>) Expected(U&& v) : mHasValue(true) {
+        new (&mValue) T(std::move(v));
     }
-
-    template <typename U>
-    Expected(const Unexpected<U> &error)
-        : mType(ErrorType)
-        , mError(error.error())
-    {
+    template <class G>
+    explicit(!std::is_convertible_v<const G&, E>) Expected(const Unexpected<G>& e) : mHasValue(false) {
+        new (&mError) E(e.error());
     }
-
-    template <typename U>
-    Expected(Unexpected<U> &&error)
-        : mType(ErrorType)
-        , mError(error.error())
-    {
+    template <class G>
+    explicit(!std::is_convertible_v<G, E>) Expected(Unexpected<G>&& e) : mHasValue(false) {
+        new (&mError) E(e.error());
     }
-
-    template <typename U>
-    Expected operator=(const Unexpected<U> &error)
-    {
-        mType = ErrorType;
-        mError = error.error();
+    template <class... Args>
+    explicit Expected(std::in_place_t, Args&&... args) : mHasValue(true) {
+        new (&mValue) T(std::forward<Args>(args)...);
+    }
+    template <class U, class... Args>
+    explicit Expected(std::in_place_t, std::initializer_list<U> il, Args&&... args) : mHasValue(true) {
+        new (&mValue) T(il, std::forward<Args>(args)...);
+    }
+    template <class... Args>
+    explicit Expected(Unexpect_t, Args&&... args) : mHasValue(false) {
+        new (&mError) E(std::forward<Args>(args)...);
+    }
+    template <class U, class... Args>
+    explicit Expected(Unexpect_t, std::initializer_list<U> il, Args&&... args) : mHasValue(false) {
+        new (&mError) E(il, std::forward<Args>(args)...);
+    }
+    ~Expected() { destroy(); }
+    Expected& operator=(const Expected& other) {
+        if (this == &other) {
+            return *this;
+        }
+        destroy();
+        mHasValue = other.mHasValue;
+        if (other.mHasValue) {
+            new (&mValue) T(other.mValue);
+        } else {
+            new (&mError) E(other.mError);
+        }
         return *this;
     }
-
-    template <typename U>
-    Expected operator=(Unexpected<U> &&error)
-    {
-        mType = ErrorType;
-        mError = std::move(error.error());
+    Expected& operator=(Expected&& other) {
+        if (this == &other) {
+            return *this;
+        }
+        destroy();
+        mHasValue = other.mHasValue;
+        if (other.mHasValue) {
+            new (&mValue) T(std::move(other.mValue));
+        } else {
+            new (&mError) E(std::move(other.mError));
+        }
         return *this;
     }
+    template <class U = T>
+        requires std::is_convertible_v<U, T>
+    Expected& operator=(U&& v) {
+        destroy();
+        new (&mValue) T(std::forward<U>(v));
+        mHasValue = true;
+        return *this;
+    }
+    template <class G>
+    Expected& operator=(const Unexpected<G>& other) {
+        destroy();
+        new (&mError) E(other.error());
+        mHasValue = false;
+        return *this;
+    }
+    template <class G>
+    Expected& operator=(Unexpected<G>&& other) {
+        destroy();
+        new (&mError) E(std::move(other.error()));
+        mHasValue = false;
+        return *this;
+    }
+    const T* operator->() const noexcept {
+        if (mHasValue) {
+            return &mValue;
+        }
+        throw BadExpectedAccess<E>(error());
+    }
+    T* operator->() noexcept {
+        if (mHasValue) {
+            return &mValue;
+        }
+        throw BadExpectedAccess<E>(error());
+    }
+    const T& operator*() const& noexcept {
+        if (mHasValue) {
+            return mValue;
+        }
+        throw BadExpectedAccess<E>(error());
+    }
+    T& operator*() & noexcept {
+        if (mHasValue) {
+            return mValue;
+        }
+        throw BadExpectedAccess<E>(error());
+    }
+    const T&& operator*() const&& noexcept {
+        if (mHasValue) {
+            return std::move(mValue);
+        }
+        throw BadExpectedAccess<E>(error());
+    }
+    T&& operator*() && noexcept {
+        if (mHasValue) {
+            return std::move(mValue);
+        }
+        throw BadExpectedAccess<E>(error());
+    }
+    explicit operator bool() const noexcept { return mHasValue; }
+    bool has_value() const noexcept { return mHasValue; }
+    T& value() & {
+        if (mHasValue) {
+            return mValue;
+        }
+        throw BadExpectedAccess<E>(error());
+    }
+    const T& value() const& {
+        if (mHasValue) {
+            return mValue;
+        }
+        throw BadExpectedAccess<E>(error());
+    }
+    T&& value() && {
+        if (mHasValue) {
+            return std::move(mValue);
+        }
+        throw BadExpectedAccess<E>(error());
+    }
+    const T&& value() const&& {
+        if (mHasValue) {
+            return std::move(mValue);
+        }
+        throw BadExpectedAccess<E>(error());
+    }
+    const E& error() const& noexcept {
+        if (mHasValue) {
+            ILIAS_ASSERT(false);
+        }
+        return mError;
+    }
+    E& error() & noexcept {
+        if (mHasValue) {
+            ILIAS_ASSERT(false);
+        }
+        return mError;
+    }
+    const E&& error() const&& noexcept {
+        if (mHasValue) {
+            ILIAS_ASSERT(false);
+        }
+        return std::move(mError);
+    }
+    E&& error() && noexcept {
+        {
+            if (mHasValue) {
+                ILIAS_ASSERT(false);
+            }
+            return std::move(mError);
+        }
+    }
+    template <class U>
+    T value_or(U&& default_value) const& {
+        if (has_value()) {
+            return mValue;
+        }
+        return std::forward<U>(default_value);
+    }
+    template <class U>
+    T value_or(U&& default_value) && {
+        if (has_value()) {
+            return std::move(mValue);
+        }
+        return std::forward<U>(default_value);
+    }
+    template <class F>
+    auto and_then(F&& f) & {
+        if (has_value()) {
+            return std::invoke(std::forward<F>(f), mValue);
+        }
+        using U = std::remove_cvref_t<std::invoke_result_t<F, decltype(mValue)> >;
+        return U(Unexpect_t{}, error());
+    }
+    template <class F>
+    auto and_then(F&& f) const& {
+        if (has_value()) {
+            return std::invoke(std::forward<F>(f), mValue);
+        }
+        using U = std::remove_cvref_t<std::invoke_result_t<F, decltype(mValue)> >;
+        return U(Unexpect_t{}, error());
+    }
+    template <class F>
+    auto and_then(F&& f) && {
+        if (has_value()) {
+            return std::invoke(std::forward<F>(f), std::move(mValue));
+        }
+        using U = std::remove_cvref_t<std::invoke_result_t<F, decltype(mValue)> >;
+        return U(Unexpect_t{}, std::move(mError));
+    }
+    template <class F>
+    auto and_then(F&& f) const&& {
+        if (has_value()) {
+            return std::invoke(std::forward<F>(f), std::move(mValue));
+        }
+        using U = std::remove_cvref_t<std::invoke_result_t<F, decltype(mValue)> >;
+        return U(Unexpect_t{}, std::move(mError));
+    }
+    template <class F>
+    auto transform(F&& f) & {
+        using U = std::remove_cvref_t<std::invoke_result_t<F, decltype(mValue)> >;
+        if (mHasValue) {
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(f), mValue);
+                return Expected<U, E>();
+            } else {
+                return Expected<U, E>(std::invoke(std::forward<F>(f), mValue));
+            }
+        } else {
+            return Expected<U, E>(Unexpect_t{}, mError);
+        }
+    }
+    template <class F>
+    auto transform(F&& f) const& {
+        using U = std::remove_cvref_t<std::invoke_result_t<F, decltype(mValue)> >;
+        if (mHasValue) {
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(f), mValue);
+                return Expected<U, E>();
+            } else {
+                return Expected<U, E>(std::invoke(std::forward<F>(f), mValue));
+            }
+        } else {
+            return Expected<U, E>(Unexpect_t{}, mError);
+        }
+    }
+    template <class F>
+    auto transform(F&& f) && {
+        using U = std::remove_cvref_t<std::invoke_result_t<F, decltype(mValue)> >;
+        if (mHasValue) {
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(f), std::move(mValue));
+                return Expected<U, E>();
+            } else {
+                return Expected<U, E>(std::invoke(std::forward<F>(f), std::move(mValue)));
+            }
+        } else {
+            return Expected<U, E>(Unexpect_t{}, std::move(mError));
+        }
+    }
+    template <class F>
+    auto transform(F&& f) const&& {
+        using U = std::remove_cvref_t<std::invoke_result_t<F, decltype(mValue)> >;
+        if (mHasValue) {
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(f), std::move(mValue));
+                return Expected<U, E>();
+            } else {
+                return Expected<U, E>(std::invoke(std::forward<F>(f), std::move(mValue)));
+            }
+        } else {
+            return Expected<U, E>(Unexpect_t{}, std::move(mError));
+        }
+    }
+    template <class F>
+    auto or_else(F&& f) & {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, decltype(mError)> >;
+        static_assert(std::is_same<typename G::value_type, T>::value, "or_else: error type must be same as value type");
+        if (mHasValue) {
+            return G(std::in_place, mValue);
+        } else {
+            return std::invoke(std::forward<F>(f), mError);
+        }
+    }
+    template <class F>
+    auto or_else(F&& f) const& {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, decltype(mError)> >;
+        static_assert(std::is_same<typename G::value_type, T>::value, "or_else: error type must be same as value type");
+        if (mHasValue) {
+            return G(std::in_place, mValue);
+        } else {
+            return std::invoke(std::forward<F>(f), mError);
+        }
+    }
+    template <class F>
+    auto or_else(F&& f) && {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, decltype(mError)> >;
+        static_assert(std::is_same<typename G::value_type, T>::value, "or_else: error type must be same as value type");
+        if (mHasValue) {
+            return G(std::in_place, std::move(mValue));
+        } else {
+            return std::invoke(std::forward<F>(f), std::move(mError));
+        }
+    }
+    template <class F>
+    auto or_else(F&& f) const&& {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, decltype(mError)> >;
+        static_assert(std::is_same<typename G::value_type, T>::value, "or_else: error type must be same as value type");
+        if (mHasValue) {
+            return G(std::in_place, std::move(mValue));
+        } else {
+            return std::invoke(std::forward<F>(f), std::move(mError));
+        }
+    }
+    template <class F>
+    auto transform_error(F&& f) & {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, E> >;
+        static_assert(std::is_same<typename G::value_type, T>::value,
+                      "transform_error: error type must be same as value type");
+        if (mHasValue) {
+            return G(std::in_place, mValue);
+        } else {
+            return std::invoke(std::forward<F>(f), mError);
+        }
+    }
+    template <class F>
+    auto transform_error(F&& f) const& {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, E> >;
+        static_assert(std::is_same<typename G::value_type, T>::value,
+                      "transform_error: error type must be same as value type");
+        if (mHasValue) {
+            return G(std::in_place, mValue);
+        } else {
+            return std::invoke(std::forward<F>(f), mError);
+        }
+    }
+    template <class F>
+    auto transform_error(F&& f) && {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, E> >;
+        static_assert(std::is_same<typename G::value_type, T>::value,
+                      "transform_error: error type must be same as value type");
+        if (mHasValue) {
+            return G(std::in_place, std::move(mValue));
+        } else {
+            return std::invoke(std::forward<F>(f), std::move(mError));
+        }
+    }
+    template <class F>
+    auto transform_error(F&& f) const&& {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, E> >;
+        static_assert(std::is_same<typename G::value_type, T>::value,
+                      "transform_error: error type must be same as value type");
+        if (mHasValue) {
+            return G(std::in_place, std::move(mValue));
+        } else {
+            return std::invoke(std::forward<F>(f), std::move(mError));
+        }
+    }
+    template <class... Args>
+        requires std::is_constructible_v<T, Args...>
+    T& emplace(Args&&... args) noexcept {
+        destroy();
+        mHasValue = true;
+        return std::construct_at(std::addressof(mValue), std::forward<Args>(args)...);
+    }
+    template <class U, class... Args>
+        requires std::is_constructible_v<T, std::initializer_list<U>, Args...>
+    T& emplace(std::initializer_list<U> il, Args&&... args) noexcept {
+        destroy();
+        mHasValue = true;
+        return std::construct_at(std::addressof(mValue), il, std::forward<Args>(args)...);
+    }
 
-    Expected operator=(const Expected &other) 
-    {
-        if (other.mType == ErrorType) {
+private:
+    void destroy() noexcept {
+        if (mHasValue) {
+            if constexpr (!std::is_void_v<T>) {
+                mValue.~T();
+            }
+        } else {
+            mError.~E();
+        }
+    }
+    union {
+        T mValue;
+        E mError;
+    };
+    bool mHasValue;
+};
+
+template <typename T, typename E>
+    requires std::is_void_v<T>
+class Expected<T, E> {
+public:
+    using value_type = T;
+    using error_type = E;
+
+public:
+    Expected() : mHasValue(true) {}
+    Expected(const Expected& other) : mHasValue(other.mHasValue) {
+        if (other.mHasValue) {
+        } else {
             mError = other.mError;
-            mType = ErrorType;
-        } else {
-            mType = ValueType;
+        }
+    }
+    Expected(Expected&& other) : mHasValue(other.mHasValue), mError(std::move(other.mError)) {}
+    template <class U, class V>
+    explicit(!std::is_convertible_v<U, T> && !std::is_convertible_v<V, E>) Expected(const Expected<U, V>& other)
+        : mHasValue(other.mHasValue), mError(other.mError) {}
+    template <class U, class V>
+    explicit(!std::is_convertible_v<U, T> && !std::is_convertible_v<V, E>) Expected(Expected<U, V>&& other)
+        : mHasValue(other.mHasValue), mError(std::move(other.mError)) {}
+    template <class G>
+    explicit(!std::is_convertible_v<const G&, E>) Expected(const Unexpected<G>& e)
+        : mHasValue(false), mError(e.error()) {}
+    template <class G>
+    explicit(!std::is_convertible_v<G, E>) Expected(Unexpected<G>&& e)
+        : mHasValue(false), mError(std::move(e.error())) {}
+    template <class... Args>
+    explicit Expected(Unexpect_t, Args&&... args) : mHasValue(false), mError(std::forward<Args>(args)...) {}
+    template <class U, class... Args>
+    explicit Expected(Unexpect_t, std::initializer_list<U> il, Args&&... args)
+        : mHasValue(false), mError(il, std::forward<Args>(args)...) {}
+    ~Expected() = default;
+    Expected& operator=(const Expected& other) {
+        if (this == &other) {
+            return *this;
+        }
+        mHasValue = other.mHasValue;
+        if (!other.mHasValue) {
+            mError = other.mError;
         }
         return *this;
     }
-
-    Expected operator=(Expected &&other) 
-    {
-        mType = std::move(other.mType);
-        if (mType == ErrorType) {
+    Expected& operator=(Expected&& other) {
+        if (this == &other) {
+            return *this;
+        }
+        mHasValue = other.mHasValue;
+        if (!other.mHasValue) {
             mError = std::move(other.mError);
         }
         return *this;
     }
-
-    Expected operator=(const ErrorT &error) 
-    {
-        mType = ErrorType;
-        mError = error;
+    template <class G>
+    Expected& operator=(const Unexpected<G>& other) {
+        mError    = other.mError;
+        mHasValue = false;
         return *this;
     }
-
-    Expected operator=(ErrorT &&error) 
-    {
-        mType = ErrorType;
-        mError = std::move(error);
+    template <class G>
+    Expected& operator=(Unexpected<G>&& other) {
+        mError    = std::move(other.error());
+        mHasValue = false;
         return *this;
     }
-
-    operator bool() const  { return !mType; }
-
-    bool has_value() const { return !mType; }
-    ValueT value() const {
-        if (!has_value()) {
-            throw BadExpectedAccess<ErrorT>(mError);
+    void operator*() const noexcept {
+        if (!mHasValue) {
+            throw BadExpectedAccess<E>(mError);
+        }
+    };
+    explicit operator bool() const noexcept { return mHasValue; }
+    bool has_value() const noexcept { return mHasValue; }
+    void value() const& {
+        if (!mHasValue) {
+            throw BadExpectedAccess<E>(mError);
         }
     }
-    ValueT value_or() const { }
+    void value() && {
+        if (!mHasValue) {
+            throw BadExpectedAccess<E>(mError);
+        }
+    }
+    const E& error() const& noexcept {
+        if (mHasValue) {
+            ILIAS_ASSERT(false);
+        }
+        return mError;
+    }
+    E& error() & noexcept {
+        if (mHasValue) {
+            ILIAS_ASSERT(false);
+        }
+        return mError;
+    }
+    const E&& error() const&& noexcept {
+        if (mHasValue) {
+            ILIAS_ASSERT(false);
+        }
+        return std::move(mError);
+    }
+    E&& error() && noexcept {
+        if (mHasValue) {
+            ILIAS_ASSERT(false);
+        }
+        return std::move(mError);
+    }
+    template <class F>
+    auto and_then(F&& f) & {
+        if (has_value()) {
+            return std::invoke(std::forward<F>(f));
+        }
+        using U = std::remove_cvref_t<std::invoke_result_t<F> >;
+        return U(Unexpect_t{}, error());
+    }
+    template <class F>
+    auto and_then(F&& f) const& {
+        if (has_value()) {
+            return std::invoke(std::forward<F>(f));
+        }
+        using U = std::remove_cvref_t<std::invoke_result_t<F> >;
+        return U(Unexpect_t{}, error());
+    }
+    template <class F>
+    auto and_then(F&& f) && {
+        if (has_value()) {
+            return std::invoke(std::forward<F>(f));
+        }
+        using U = std::remove_cvref_t<std::invoke_result_t<F> >;
+        return U(Unexpect_t{}, std::move(mError));
+    }
+    template <class F>
+    auto and_then(F&& f) const&& {
+        if (has_value()) {
+            return std::invoke(std::forward<F>(f));
+        }
+        using U = std::remove_cvref_t<std::invoke_result_t<F> >;
+        return U(Unexpect_t{}, std::move(mError));
+    }
+    template <class F>
+    auto transform(F&& f) & {
+        using U = std::remove_cvref_t<std::invoke_result_t<F> >;
+        if (mHasValue) {
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(f));
+                return Expected<U, E>();
+            } else {
+                return Expected<U, E>(std::invoke(std::forward<F>(f)));
+            }
+        } else {
+            return Expected<U, E>(Unexpect_t{}, mError);
+        }
+    }
+    template <class F>
+    auto transform(F&& f) const& {
+        using U = std::remove_cvref_t<std::invoke_result_t<F> >;
+        if (mHasValue) {
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(f));
+                return Expected<U, E>();
+            } else {
+                return Expected<U, E>(std::invoke(std::forward<F>(f)));
+            }
+        } else {
+            return Expected<U, E>(Unexpect_t{}, mError);
+        }
+    }
+    template <class F>
+    auto transform(F&& f) && {
+        using U = std::remove_cvref_t<std::invoke_result_t<F> >;
+        if (mHasValue) {
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(f));
+                return Expected<U, E>();
+            } else {
+                return Expected<U, E>(std::invoke(std::forward<F>(f)));
+            }
+        } else {
+            return Expected<U, E>(Unexpect_t{}, std::move(mError));
+        }
+    }
+    template <class F>
+    auto transform(F&& f) const&& {
+        using U = std::remove_cvref_t<std::invoke_result_t<F> >;
+        if (mHasValue) {
+            if constexpr (std::is_void_v<U>) {
+                std::invoke(std::forward<F>(f));
+                return Expected<U, E>();
+            } else {
+                return Expected<U, E>(std::invoke(std::forward<F>(f)));
+            }
+        } else {
+            return Expected<U, E>(Unexpect_t{}, std::move(mError));
+        }
+    }
+    template <class F>
+    auto or_else(F&& f) & {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, decltype(mError)> >;
+        static_assert(std::is_same<typename G::value_type, T>::value, "or_else: error type must be same as value type");
+        if (mHasValue) {
+            return G();
+        } else {
+            return std::invoke(std::forward<F>(f), mError);
+        }
+    }
+    template <class F>
+    auto or_else(F&& f) const& {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, decltype(mError)> >;
+        static_assert(std::is_same<typename G::value_type, T>::value, "or_else: error type must be same as value type");
+        if (mHasValue) {
+            return G();
+        } else {
+            return std::invoke(std::forward<F>(f), mError);
+        }
+    }
+    template <class F>
+    auto or_else(F&& f) && {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, decltype(mError)> >;
+        static_assert(std::is_same<typename G::value_type, T>::value, "or_else: error type must be same as value type");
 
-    ErrorT &error() { return mError; }
-    const ErrorT &error() const { return mError; }
+        if (mHasValue) {
+            return G();
+        } else {
+            return std::invoke(std::forward<F>(f), std::move(mError));
+        }
+    }
+    template <class F>
+    auto or_else(F&& f) const&& {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, decltype(mError)> >;
+        static_assert(std::is_same<typename G::value_type, T>::value, "or_else: error type must be same as value type");
+        if (mHasValue) {
+            return G();
+        } else {
+            return std::invoke(std::forward<F>(f), std::move(mError));
+        }
+    }
+    template <class F>
+    auto transform_error(F&& f) & {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, E> >;
+        static_assert(std::is_same<typename G::value_type, T>::value,
+                      "transform_error: error type must be same as value type");
+        if (mHasValue) {
+            return G();
+        } else {
+            return std::invoke(std::forward<F>(f), mError);
+        }
+    }
+    template <class F>
+    auto transform_error(F&& f) const& {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, E> >;
+        static_assert(std::is_same<typename G::value_type, T>::value,
+                      "transform_error: error type must be same as value type");
+        if (mHasValue) {
+            return G();
+        } else {
+            return std::invoke(std::forward<F>(f), mError);
+        }
+    }
+    template <class F>
+    auto transform_error(F&& f) && {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, E> >;
+        static_assert(std::is_same<typename G::value_type, T>::value,
+                      "transform_error: error type must be same as value type");
+        if (mHasValue) {
+            return G();
+        } else {
+            return std::invoke(std::forward<F>(f), std::move(mError));
+        }
+    }
+    template <class F>
+    auto transform_error(F&& f) const&& {
+        using G = std::remove_cvref_t<std::invoke_result_t<F, E> >;
+        static_assert(std::is_same<typename G::value_type, T>::value,
+                      "transform_error: error type must be same as value type");
+        if (mHasValue) {
+            return G();
+        } else {
+            return std::invoke(std::forward<F>(f), std::move(mError));
+        }
+    }
+    void emplace() noexcept { mHasValue = true; }
 
-    ErrorT error_or(ErrorT error) const { return mType ? error : mError; }
-
-    ~Expected() = default;
+private:
+    E mError;
+    bool mHasValue;
 };
 
 #endif
 
 /**
  * @brief A helper class for wrapping result T and error Error
- * 
- * @tparam T 
+ *
+ * @tparam T
  */
 template <typename T = void>
 class Result final : public Expected<T, Error> {
