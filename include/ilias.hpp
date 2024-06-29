@@ -29,7 +29,7 @@
     #include <cstdlib>
 #endif
 
-#define ILIAS_DECLARE_ERROR(errc, category_)   \
+#define ILIAS_DECLARE_ERROR_(errc, category_)  \
     template <>                                \
     class ErrorTraits<errc> {                  \
     public:                                    \
@@ -38,7 +38,17 @@
         }                                      \
     }
 
+#define ILIAS_DECLARE_ERROR(errc, category_)   \
+    template <>                                \
+    class ILIAS_NAMESPACE::ErrorTraits<errc> { \
+    public:                                    \
+        static const category_ & category() {  \
+            return category_::instance();      \
+        }                                      \
+    }
+
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT((x) && (msg))
+#define ILIAS_CHECK_MSG(x, msg) ILIAS_CHECK((x) && (msg))
 #define ILIAS_NS ILIAS_NAMESPACE
 #define ILIAS_NS_BEGIN namespace ILIAS_NAMESPACE {
 #define ILIAS_NS_END }
@@ -298,7 +308,7 @@ private:
     static consteval auto _errTable(std::index_sequence<N...>);
 };
 
-ILIAS_DECLARE_ERROR(Error::Code, IliasCategory);
+ILIAS_DECLARE_ERROR_(Error::Code, IliasCategory);
 
 // --- Error Impl
 template <Error::Code c>

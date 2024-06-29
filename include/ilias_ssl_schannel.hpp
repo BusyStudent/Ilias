@@ -432,7 +432,7 @@ protected:
             &credHandle, 
             &mData->ssl, 
             nullptr, 
-            &flags, 
+            flags, 
             0, 
             0, 
             &outdesc, 

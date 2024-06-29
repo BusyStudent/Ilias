@@ -66,6 +66,12 @@ public:
      * @return Task<size_t> 
      */
     auto send(const void *buf, size_t n) -> Task<size_t>;
+    /**
+     * @brief Shutdown conenction
+     * 
+     * @return Task<void> 
+     */
+    auto shutdown() -> Task<void>;
 private:
     auto _connect(uint8_t type, const void *buf, size_t n, uint16_t port) -> Task<void>;
 
@@ -232,6 +238,10 @@ inline auto Socks5Client::send(const void *buf, size_t bufSize) -> Task<size_t> 
 inline auto Socks5Client::recv(void *buf, size_t bufSize) -> Task<size_t> {
     return mClient.recv(buf, bufSize);
 }
+inline auto Socks5Client::shutdown() -> Task<void> {
+    return mClient.shutdown();
+}
+
 static_assert(StreamClient<Socks5Client>);
 
 ILIAS_NS_END

@@ -647,21 +647,7 @@ inline auto ByteStream<T, Char>::recv(void *buffer, size_t n) -> Task<size_t> {
 }
 template <typename T, typename Char>
 inline auto ByteStream<T, Char>::recvAll(void *buffer, size_t n) -> Task<size_t> {
-    auto cur = static_cast<uint8_t*>(buffer);
-    size_t received = 0;
-    while (n > 0) {
-        auto ret = co_await recv(cur, n);
-        if (!ret) {
-            co_return Unexpected(ret.error());
-        }
-        if (*ret == 0) {
-            break;
-        }
-        received += *ret;
-        n -= *ret;
-        cur += *ret;
-    }
-    co_return received;
+    return RecvAll(*this, buffer, n);
 }
 template <typename T, typename Char>
 inline auto ByteStream<T, Char>::send(const void *buffer, size_t n) -> Task<size_t> {
@@ -669,21 +655,7 @@ inline auto ByteStream<T, Char>::send(const void *buffer, size_t n) -> Task<size
 }
 template <typename T, typename Char>
 inline auto ByteStream<T, Char>::sendAll(const void *buffer, size_t n) -> Task<size_t> {
-    auto cur = static_cast<const uint8_t*>(buffer);
-    size_t sended = 0;
-    while (n > 0) {
-        auto ret = co_await send(buffer, n);
-        if (!ret) {
-            co_return Unexpected(ret.error());
-        }
-        if (*ret == 0) {
-            break;
-        }
-        sended += *ret;
-        n -= *ret;
-        cur += *ret;
-    }
-    co_return sended;
+    return SendAll(*this, buffer, n);
 }
 template <typename T, typename Char>
 inline auto ByteStream<T, Char>::connect(const IPEndpoint &endpoint) -> Task<void> {

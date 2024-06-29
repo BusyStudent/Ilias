@@ -19,8 +19,8 @@ public:
     Mutex() = default;
     Mutex(const Mutex &) = delete;
     ~Mutex() {
-        ILIAS_ASSERT_MSG(mWatingQueue.empty(), "Still someone waiting on the mutex, ill-formed code !!!");
-        ILIAS_ASSERT_MSG(!mIsLocked, "Still someone holding the mutex, ill-formed code !!!");
+        ILIAS_CHECK_MSG(mWatingQueue.empty(), "Still someone waiting on the mutex, ill-formed code !!!");
+        ILIAS_CHECK_MSG(!mIsLocked, "Still someone holding the mutex, ill-formed code !!!");
     }
 
     /**
@@ -81,7 +81,7 @@ public:
     MutexAwaiter(const MutexAwaiter &) = delete;
     MutexAwaiter(MutexAwaiter &&other) = delete; //< Do not allow move, we use the ptr of MutexAwaiter
     ~MutexAwaiter() {
-        ILIAS_ASSERT_MSG(mUsed, "Do you forget to use co_await to lock the Mutex???");
+        ILIAS_CHECK_MSG(mUsed, "Do you forget to use co_await to lock the Mutex???");
     }
 
     auto await_ready() noexcept -> bool {
@@ -151,7 +151,7 @@ private:
 };
 
 inline auto Mutex::unlock() -> void {
-    ILIAS_ASSERT_MSG(isLocked(), "You should not call unlock() if the mutex is not locked");
+    ILIAS_CHECK_MSG(isLocked(), "You should not call unlock() if the mutex is not locked");
     if (mWatingQueue.empty()) {
         // Non is wating it
         mIsLocked = false;
