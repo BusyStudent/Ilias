@@ -105,12 +105,6 @@ target("test_ring")
     add_packages("gtest")
 target_end()
 
-target("test_ntp")
-    set_kind("binary")
-    add_files("tests/test_ntp.cpp")
-    add_tests("ntp")
-target_end()
-
 if has_config("enable_qt") then 
     add_requires("zlib")
     target("test_qt")

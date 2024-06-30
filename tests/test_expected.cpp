@@ -31,15 +31,15 @@ using remove_cvref_t = typename ::std::remove_cv<typename ::std::remove_referenc
 }
 ILIAS_NS_END
 
-class Error {
+class TestError {
 public:
-    explicit Error(const int code, const std::string &message)
+    explicit TestError(const int code, const std::string &message)
         : mCode(code)
         , mMessage(message)
     {
         std::cout << "\033[92mCreate\033[0m: " << mMessage << " code: " << mCode << std::endl;
     }
-    Error(const Error &error)
+    TestError(const TestError &error)
         : mCode(error.mCode)
         , mMessage(error.mMessage)
     {
@@ -47,16 +47,16 @@ public:
     }
     const std::string &message() const { return mMessage; }
     const int code() const { return mCode; }
-    Error &operator=(const Error &) = delete;
-    ~Error() { std::cout << "\033[91mDestroy\033[0m: " << mMessage << " code: " << mCode << std::endl; }
-    friend std::ostream &operator<<(std::ostream &os, const Error &error);
+    TestError &operator=(const TestError &) = delete;
+    ~TestError() { std::cout << "\033[91mDestroy\033[0m: " << mMessage << " code: " << mCode << std::endl; }
+    friend std::ostream &operator<<(std::ostream &os, const TestError &error);
 
 private:
     std::string mMessage;
     int mCode;
 };
 
-std::ostream &operator<<(std::ostream &os, const Error &error)
+std::ostream &operator<<(std::ostream &os, const TestError &error)
 {
     return os << "message: " << error.mMessage << ".[code: " << error.mCode << "]";
 }
@@ -104,7 +104,7 @@ void print(T &&arg)
 
 TEST(Expected, Basic)
 {
-#if !defined(__cpp_lib_expected)
+#if !defined(ILIAS_STD_EXPECTED_HPP)
     // T == E
     Expected<int, int> a(23); // Correct value construction
     EXPECT_EQ(a.value(), 23);
@@ -136,17 +136,17 @@ TEST(Expected, Basic)
     b = b_value;
     EXPECT_EQ(b.error(), 55);
 
-    Expected<int, Error> c = 43;    // class type in T or E.
+    Expected<int, TestError> c = 43;    // class type in T or E.
     EXPECT_EQ(c.has_value(), true);
     EXPECT_EQ(c.value(), 43);
 
-    c = Error(43, "error note");
+    c = TestError(43, "error note");
     EXPECT_EQ(c.has_value(), false);
     EXPECT_EQ(c.error().code(), 43);
     EXPECT_STREQ(c.error().message().c_str(), "error note");
     EXPECT_EQ(c.value_or(42), 42);
 
-    auto c_error = Error(547, "this is a error");
+    auto c_error = TestError(547, "this is a error");
     c = c_error;
     EXPECT_EQ(c.has_value(), false);
     EXPECT_EQ(c.error().code(), 547);
@@ -173,16 +173,16 @@ TEST(Expected, Basic)
     EXPECT_STREQ(eE.value().c_str(), "test for string");
     EXPECT_STREQ(d.value().c_str(), "");
 
-    Expected<std::string, Error> e = std::string("world");
+    Expected<std::string, TestError> e = std::string("world");
     EXPECT_EQ(e.has_value(), true);
     EXPECT_STREQ(e.value().c_str(), "world");
 
-    e = Error(43, "error note");
+    e = TestError(43, "error note");
     EXPECT_EQ(e.has_value(), false);
     EXPECT_EQ(e.error().code(), 43);
     EXPECT_STREQ(e.error().message().c_str(), "error note");
 
-    Error err = std::move(e.error());
+    TestError err = std::move(e.error());
 #endif
 }
 
