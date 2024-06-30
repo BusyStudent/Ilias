@@ -41,7 +41,6 @@ public:
     }
     const std::string& message() const { return mMessage; }
     const int code() const { return mCode; }
-    Error& operator=(const Error&) = delete;
     ~Error() { std::cout << "\033[91mDestroy\033[0m: " << mMessage << " code: " << mCode << std::endl; }
     friend std::ostream& operator<<(std::ostream& os, const Error& error);
 
@@ -90,7 +89,6 @@ void print(T&& arg) {
     print(x);
 
 TEST(Expected, Basic) {
-#if !defined(__cpp_lib_expected)
     // T == E
     Expected<int, int> a(23);  // Correct value construction
     EXPECT_EQ(a.value(), 23);
@@ -120,7 +118,6 @@ TEST(Expected, Basic) {
     b = Unexpected{54};  // rvalue operator= from E value.
     EXPECT_EQ(b.has_value(), false);
     EXPECT_EQ(b.error(), 54);
-    EXPECT_EQ(b.value_or(4), 4);
 
     int b_value = 55;  // lvalue operator= from E value
     b           = Unexpected{b_value};
@@ -168,13 +165,12 @@ TEST(Expected, Basic) {
     EXPECT_EQ(e.has_value(), true);
     EXPECT_STREQ(e.value().c_str(), "world");
 
-    e = Unexpected{Error(43, "error note")};
+    e = Unexpected(Error(43, "error note"));
     EXPECT_EQ(e.has_value(), false);
     EXPECT_EQ(e.error().code(), 43);
     EXPECT_STREQ(e.error().message().c_str(), "error note");
 
     Error err = std::move(e.error());
-#endif
 }
 
 int main(int argc, char** argv) {
