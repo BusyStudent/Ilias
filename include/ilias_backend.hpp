@@ -62,9 +62,9 @@ public:
 };
 
 // --- Forward declare
-template <StreamClient T>
+template <typename T>
 inline auto SendAll(T &client, const void *buffer, size_t n) -> Task<size_t>;
-template <StreamClient T>
+template <typename T>
 inline auto RecvAll(T &client, void *buffer, size_t n) -> Task<size_t>;
 
 /**
@@ -461,7 +461,7 @@ static_assert(DatagramClient<IDatagramClient>); //< Make sure IDatagramClient is
  * @param n 
  * @return Task<size_t> 
  */
-template <StreamClient T>
+template <typename T>
 inline auto SendAll(T &client, const void *buffer, size_t n) -> Task<size_t> {
     auto cur = static_cast<const uint8_t*>(buffer);
     size_t sended = 0;
@@ -488,7 +488,7 @@ inline auto SendAll(T &client, const void *buffer, size_t n) -> Task<size_t> {
  * @param n 
  * @return Task<size_t> 
  */
-template <StreamClient T>
+template <typename T>
 inline auto RecvAll(T &client, void *buffer, size_t n) -> Task<size_t> {
     auto cur = static_cast<uint8_t*>(buffer);
     size_t received = 0;

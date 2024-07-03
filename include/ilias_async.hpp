@@ -322,6 +322,7 @@ public:
      * @return Task<size_t> 
      */
     auto recvAll(void *buffer, size_t n) -> Task<size_t>;
+    auto recvAll(std::span<std::byte> b) -> Task<size_t>;
 
     /**
      * @brief Send data to
@@ -341,6 +342,7 @@ public:
      * @return Task<size_t> 
      */
     auto sendAll(const void *buffer, size_t n) -> Task<size_t>;
+    auto sendAll(std::span<const std::byte> b) -> Task<size_t>;
 
     /**
      * @brief Connect to
@@ -650,12 +652,20 @@ inline auto ByteStream<T, Char>::recvAll(void *buffer, size_t n) -> Task<size_t>
     return RecvAll(*this, buffer, n);
 }
 template <typename T, typename Char>
+inline auto ByteStream<T, Char>::recvAll(std::span<std::byte> buffer) -> Task<size_t> {
+    return RecvAll(*this, buffer.data(), buffer.size());
+}
+template <typename T, typename Char>
 inline auto ByteStream<T, Char>::send(const void *buffer, size_t n) -> Task<size_t> {
     return mFd.send(buffer, n);
 }
 template <typename T, typename Char>
 inline auto ByteStream<T, Char>::sendAll(const void *buffer, size_t n) -> Task<size_t> {
     return SendAll(*this, buffer, n);
+}
+template <typename T, typename Char>
+inline auto ByteStream<T, Char>::sendAll(std::span<const std::byte> buffer) -> Task<size_t> {
+    return sendAll(*this, buffer.data(), buffer.size());
 }
 template <typename T, typename Char>
 inline auto ByteStream<T, Char>::connect(const IPEndpoint &endpoint) -> Task<void> {

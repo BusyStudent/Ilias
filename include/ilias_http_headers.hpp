@@ -70,6 +70,13 @@ public:
      * @param value 
      */
     auto append(std::string_view key, std::string_view value) -> void;
+    /**
+     * @brief Remove the value by key
+     * 
+     * @param key 
+     */
+    auto remove(std::string_view key) -> void;
+
 
     /**
      * @brief Check this header contains this key
@@ -99,6 +106,12 @@ public:
      * @param value 
      */
     auto append(WellKnownHeader header, std::string_view value) -> void;
+    /**
+     * @brief Remove the value by key
+     * 
+     * @param key 
+     */
+    auto remove(WellKnownHeader header) -> void;
     /**
      * @brief Get the begin iterator
      * 
@@ -160,6 +173,10 @@ inline auto HttpHeaders::values(std::string_view key) const -> std::vector<std::
 inline auto HttpHeaders::append(std::string_view key, std::string_view value) -> void {
     mValues.emplace(key, value);
 }
+inline auto HttpHeaders::remove(std::string_view key) -> void {
+    auto range = mValues.equal_range(key);
+    mValues.erase(range.first, range.second);
+}
 inline auto HttpHeaders::stringOf(WellKnownHeader header) -> std::string_view {
     using namespace std::literals;
     switch (header) {
@@ -188,6 +205,9 @@ inline auto HttpHeaders::values(WellKnownHeader header) const -> std::vector<std
 }
 inline auto HttpHeaders::append(WellKnownHeader header, std::string_view value) -> void {
     return append(stringOf(header), value);
+}
+inline auto HttpHeaders::remove(WellKnownHeader header) -> void {
+    return remove(stringOf(header));
 }
 inline auto HttpHeaders::begin() const {
     return mValues.begin();

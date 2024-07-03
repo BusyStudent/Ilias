@@ -33,4 +33,15 @@
     #define ILIAS_NO_SSL
 #endif
 
+
+// --- Basic SSL Extension concept
+ILIAS_NS_BEGIN
+
+template <typename T>
+concept SslSniExtension = requires(T t) {
+    t.setHostname("example.com");
+};
+
+ILIAS_NS_END
+
 #endif
