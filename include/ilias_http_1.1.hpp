@@ -49,6 +49,8 @@ public:
      */
     auto isBroken() const -> bool override;
 
+    auto shutdown() -> Task<void> override;
+
     /**
      * @brief Create a Http1 Connection from a IStreamClient
      * 
@@ -70,17 +72,44 @@ friend class Http1Stream;
  */
 class Http1Stream final : public HttpStream {
 public:
-    Http1Stream(Http1Connection *con) : mCon(con) { }
+    Http1Stream(Http1Connection *con) : mCon(con) { log("[Http1.1] New stream %p\n", this); }
     Http1Stream(const Http1Stream &) = delete;
     ~Http1Stream() { 
         if (!mContentEnd && !mCon->mBroken) {
             // User did not finish reading the response body
-            ::fprintf(stderr, "[Http1.1] Stream %p is not finished reading the response body\n", this);
-            ::fprintf(stderr, "[Http1.1] Stream %p was marked to broken\n", this);
+            log("[Http1.1] Stream %p is not finished reading the response body\n", this);
+            log("[Http1.1] Stream %p was marked to broken\n", this);
             mCon->mBroken = true;
         }
+        log("[Http1.1] Delete stream %p\n", this);
         mCon->mMutex.unlock(); 
     }
+
+#if !defined(NDEBUG)
+    auto returnError(Error err, std::source_location loc = std::source_location::current()) -> Unexpected<Error> {
+        mCon->mBroken = true;
+        log("[Http1.1] Error happended on %s: %d => %s\n", 
+            loc.function_name(), 
+            int(loc.line()), 
+            err.toString().c_str()
+        );
+        return Unexpected(err);
+    }
+
+    auto log(const char *fmt, ...) -> void {
+        va_list args;
+        va_start(args, fmt);
+        ::vfprintf(stderr, fmt, args);
+        va_end(args);
+    }
+#else
+    auto returnError(Error err) -> Unexpected<Error> {
+        mCon->mBroken = true;
+        return Unexpected(err);
+    }
+
+    auto log(const char *fmt, ...) -> void { }
+#endif
 
     auto sendRequest(HttpRequest &request, std::span<const std::byte> data) -> Task<void> override {
         auto &client = mCon->mClient;
@@ -88,6 +117,9 @@ public:
         if (!data.empty()) {
             request.setHeader(HttpHeaders::ContentLength, std::to_string(data.size()));
         }
+        // Host
+        request.setHeader("Host", request.url().host());
+        
         std::string headers;
 
         // FORMAT the first line
@@ -116,33 +148,24 @@ public:
         // Add the end of headers
         headers += "\r\n";
 
-        ::fprintf(stderr, "[Http1.1] Send Headers: \n%s", headers.c_str());
+        log("[Http1.1] Send Headers: \n%s", headers.c_str());
 
         // Send it
         auto val = co_await client.sendAll(headers.data(), headers.size());
         if (!val || *val != headers.size()) {
-            co_return Unexpected(val.error_or(Error::ConnectionAborted));
+            co_return returnError(val.error_or(Error::ConnectionAborted));
         }
         
         // Send the content if
         if (!data.empty()) {
             val = co_await client.sendAll(data.data(), data.size());
             if (!val || *val != data.size()) {
-                co_return Unexpected(val.error_or(Error::ConnectionAborted));
+                co_return returnError(val.error_or(Error::ConnectionAborted));
             }
         }
         mHeaderSent = true;
+        log("[Http1.1] Send Request Successfully\n");
         co_return {};
-    }
-
-    auto returnError(Error err, std::source_location loc = std::source_location::current()) -> Unexpected<Error> {
-        mCon->mBroken = true;
-        ::fprintf(stderr, "[Http1.1] Error happended on %s: %d => %s\n", 
-            loc.function_name(), 
-            int(loc.line()), 
-            err.toString().c_str()
-        );
-        return Unexpected(err);
     }
 
     auto recvContent(std::span<std::byte> data) -> Task<size_t> override {
@@ -182,7 +205,7 @@ public:
             if (ec != std::errc{}) {
                 co_return returnError(Error::HttpBadReply);
             }
-            ::fprintf(stderr, "[Http1.1] Reach new chunk, size = %zu\n", size);
+            log("[Http1.1] Reach new chunk, size = %zu\n", size);
             mChunkSize = size;
             mChunkRemain = size;
         }
@@ -192,11 +215,11 @@ public:
             mChunkRemain -= *num;
         }
         if (mChunkRemain == 0) {
-            ::fprintf(stderr, "[Http1.1] Current chunk was all readed = %zu\n", *mChunkSize);
+            log("[Http1.1] Current chunk was all readed = %zu\n", *mChunkSize);
             // Drop the \r\n, Every chunk end is \r\n
             auto str = co_await mCon->mClient.getline("\r\n");
             if (mChunkSize == 0 && str) {
-                ::fprintf(stderr, "[Http1.1] All chunk was readed\n");
+                log("[Http1.1] All chunk was readed\n");
                 mContentEnd = true;
             }
             mChunkSize = std::nullopt;
@@ -206,6 +229,7 @@ public:
 
     auto recvHeaders(int &statusCode, std::string &statusMessage, HttpHeaders &headers) -> Task<void> override {
         ILIAS_ASSERT(mHeaderSent && !mHeaderReceived);
+        log("[Http1.1] Recv header Begin\n");
         
         auto &client = mCon->mClient;
         // Recv the headers 
@@ -223,6 +247,8 @@ public:
         if (ec != std::errc{}) {
             co_return returnError(Error::HttpBadReply);
         }
+        
+        log("[Http1.1] Recv header > %s\n", line->c_str());
 
         // Seek to the status message
         lineView = lineView.substr(lineView.find(' ') + 1);
@@ -235,6 +261,7 @@ public:
             if (!line) {
                 co_return returnError(line.error());
             }
+            log("[Http1.1] Recv header > %s\n", line->c_str());
             if (line->empty()) {
                 break;
             }
@@ -254,6 +281,7 @@ public:
             auto value = lineView.substr(delim + skip);
             headers.append(key, value);
         }
+        log("[Http1.1] Recv header End\n");
 
         // Check keep alive
         mKeepAlive = headers.value(HttpHeaders::Connection) == "keep-alive";
@@ -326,6 +354,7 @@ inline auto Http1Connection::newStream() -> Task<std::unique_ptr<HttpStream> > {
     if (!val) {
         co_return Unexpected(val.error());
     }
+
     co_return std::make_unique<Http1Stream>(this);
 }
 
@@ -335,6 +364,15 @@ inline auto Http1Connection::activeStreams() const -> size_t {
 
 inline auto Http1Connection::isBroken() const -> bool {
     return mBroken;
+}
+
+inline auto Http1Connection::shutdown() -> Task<void> {
+    ILIAS_ASSERT(mNumOfStream == 0);
+    auto guard = co_await mMutex.lockGuard();
+    if (guard) {
+        co_return co_await mClient.shutdown();
+    }
+    co_return Unexpected(guard.error());
 }
 
 inline auto Http1Connection::make(IStreamClient &&client) -> std::unique_ptr<Http1Connection> {

@@ -65,6 +65,13 @@ public:
     virtual auto newStream() -> Task<std::unique_ptr<HttpStream> > = 0;
 
     /**
+     * @brief Gracefully shutdown the connection.
+     * 
+     * @return Task<void> 
+     */
+    virtual auto shutdown() -> Task<void> = 0;
+
+    /**
      * @brief Get the number of active streams. (0 means no active stream)
      *
      * 

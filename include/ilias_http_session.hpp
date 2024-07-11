@@ -4,7 +4,7 @@
 #include "ilias_http_request.hpp"
 #include "ilias_http_cookie.hpp"
 #include "ilias_http_reply.hpp"
-#include "ilias_http_1x1.hpp"
+#include "ilias_http_1.1.hpp"
 #include "ilias_socks5.hpp"
 #include "ilias_async.hpp"
 #include "ilias_zlib.hpp"
@@ -135,9 +135,11 @@ private:
      * @brief Connect to the target and open a new stream
      * 
      * @param url 
+     * @param proxy
+     * @param fromCache
      * @return Task<std::unique_ptr<HttpStream> > 
      */
-    auto _connect(const Url &url, bool &fromCache) -> Task<std::unique_ptr<HttpStream> >;
+    auto _connect(const Url &url, const Url &proxy, bool &fromCache) -> Task<std::unique_ptr<HttpStream> >;
 
 
     IoContext &mIoContext;
@@ -176,7 +178,7 @@ inline auto HttpSession::sendRequest(Operation op, HttpRequest request, std::spa
     request.setOperation(op);
     int n = 0;
     while (true) {
-#if 0
+#if 1
         // In here we add timeout check for avoid waiting to long
         auto [result, timeout] = co_await WhenAny(_sendRequest(request, extraData), Sleep(request.transferTimeout()));
         if (timeout) {
@@ -239,7 +241,7 @@ inline auto HttpSession::_sendRequest(HttpRequest request, std::span<const std::
 while (true) {
     auto fromCache = false;
     auto stream = std::unique_ptr<HttpStream>();
-    if (auto val = co_await _connect(url, fromCache); !val) {
+    if (auto val = co_await _connect(url, mProxy, fromCache); !val) {
         co_return Unexpected(val.error());
     }
     else {
@@ -282,9 +284,6 @@ inline auto HttpSession::_buildRequest(HttpRequest &request) -> void {
         }
     }
 
-    // Host
-    request.setHeader("Host", request.url().host());
-
     // Accept
     if (request.header(HttpHeaders::Accept).empty()) {
         request.setHeader("Accept", "*/*");
@@ -325,9 +324,10 @@ inline auto HttpSession::_buildReply(HttpRequest &request, std::unique_ptr<HttpS
     co_return reply;
 }
 
-inline auto HttpSession::_connect(const Url &url, bool &fromCache) -> Task<std::unique_ptr<HttpStream> > {
+inline auto HttpSession::_connect(const Url &url, const Url &proxy, bool &fromCache) -> 
+    Task<std::unique_ptr<HttpStream> > 
+{
     const auto host = url.host();
-    const auto addr = IPAddress::fromHostname(host.data());
     auto port = uint16_t(0);
 
     if (auto urlPort = url.port(); !urlPort) {
@@ -351,16 +351,17 @@ inline auto HttpSession::_connect(const Url &url, bool &fromCache) -> Task<std::
         .scheme = std::string(url.scheme()),
         .host = std::string(host),
         .port = port,
-        .proxy = mProxy
+        .proxy = proxy
     };
     auto [begin, end] = mConnections.equal_range(target);
     for (auto it = begin; it != end; ) {
-        auto &[con, lastTime, _] = it->second;
+        auto &[con, lastTime, version] = it->second;
         if (con->isBroken()) {
             it = mConnections.erase(it);
             continue;
         }
-        if (con->activeStreams() == 0) {
+        if (con->activeStreams() == 0 || version == 2) {
+            // Http2 or Idle Http1 Connection
             fromCache = true;
             co_return co_await con->newStream();
         }
@@ -368,30 +369,48 @@ inline auto HttpSession::_connect(const Url &url, bool &fromCache) -> Task<std::
     }
 
     // Do connet
-    TcpClient client(mIoContext, addr.family());
-    if (!mProxy.empty()) {
+    IStreamClient wrapped;
+    if (!proxy.empty()) {
         // Do connect proxy ...
+        const auto proxyPort = proxy.port();
+        const auto proxyHost = IPAddress::fromString(proxy.host().data());
+        if (!proxyPort) {
+            co_return Unexpected(Error::HttpBadRequest);
+        }
+        if (proxy.scheme() != "socks5" && proxy.scheme() != "socks5h") {
+            co_return Unexpected(Error::HttpBadRequest);
+        }
+
+        auto proxyClient = Socks5Client(mIoContext, proxyHost.family());
+        proxyClient.setServer(IPEndpoint(proxyHost, proxyPort.value()));
+        if (auto val = co_await proxyClient.connect(host, port); !val) {
+            co_return Unexpected(val.error());
+        }
+        wrapped = std::move(proxyClient);
     }
     else {
+        const auto addr = IPAddress::fromHostname(host.data());
+        if (!addr.isValid()) {
+            co_return Unexpected(Error::HostNotFound);
+        }
+        TcpClient client(mIoContext, addr.family());
         if (auto val = co_await client.connect(IPEndpoint(addr, port)); !val) {
             co_return Unexpected(val.error());
         }
+        wrapped = std::move(client);
     }
 
     // Check if we need wrap ssl
-    IStreamClient wrapped;
     if (url.scheme() == "https") {
         // Wrap ssl
 #if !defined(ILIAS_NO_SSL)
-        auto ssl = SslClient(mSslContext, std::move(client));
+        static_assert(SslSniExtension<SslClient<> >); //< The ssl impl must support SNI
+        auto ssl = SslClient(mSslContext, std::move(wrapped));
         ssl.setHostname(host);
         wrapped = std::move(ssl);
 #else
         ::abort();
 #endif
-    }
-    else {
-        wrapped = std::move(client);
     }
 
     // Create The http 1.1 on it

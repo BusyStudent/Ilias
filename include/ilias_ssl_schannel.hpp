@@ -248,6 +248,7 @@ protected:
             // Read new data here after this
             auto n = co_await mFd.recv(incoming + received, incomingCapicity - received);
             if (!n) {
+                SCHANNEL_LOG("[Schannel] Failed to handshake by recv failed %s\n", n.error().toString().c_str());
                 co_return Unexpected(n.error());
             }
             if (*n == 0) {
@@ -474,7 +475,7 @@ protected:
 };
 
 template <StreamClient T = IStreamClient>
-class SslClient : public SslSocket<T> {
+class SslClient final : public SslSocket<T> {
 public:
     using SslSocket<T>::SslSocket;
 
@@ -515,7 +516,7 @@ static_assert(StreamClient<SslClient<> >);
 
 // TODO:
 template <StreamListener T = IStreamListener>
-class SslListener : public SslSocket<T> {
+class SslListener final : public SslSocket<T> {
 public:
     SslListener() = delete; //< Not Impl
 private:
