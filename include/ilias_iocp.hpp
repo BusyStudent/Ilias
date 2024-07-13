@@ -1,5 +1,5 @@
-// #ifdef _WIN32
 #pragma once
+#define _ILIAS_IOCP_HPP_
 
 #include "ilias.hpp"
 #include "ilias_expected.hpp"
@@ -70,3 +70,5 @@ private:
 };
 
 ILIAS_NS_END
+
+#include "ilias_iocp.inl"

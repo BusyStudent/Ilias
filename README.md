@@ -5,6 +5,7 @@
 ### Introduction
 
 Ilias is a header-only network library based on cpp20 coroutine. It is designed to be easy to use and efficient.
+with minimal dependencies, only pay for what you need.
 
 ### CI Status
 

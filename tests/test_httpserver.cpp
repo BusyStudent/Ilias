@@ -1,13 +1,6 @@
-#include "../include/ilias_async.hpp"
+#include "../include/ilias_networking.hpp"
 #include <filesystem>
 #include <iostream>
-
-#ifdef _WIN32
-    #include "../include/ilias_iocp.hpp"
-    #include "../include/ilias_iocp.cpp"
-#else
-    #include "../include/ilias_poll.hpp"
-#endif
 
 using namespace ILIAS_NAMESPACE;
 
@@ -135,13 +128,7 @@ Task<> handleClient(ByteStream<TcpClient> client) {
 }
 
 int main() {
-#ifdef _WIN32
-    IOCPContext ctxt;
-#else
-    PollContext ctxt;
-#endif
-
-
+    PlatformIoContext ctxt;
     ctxt.runTask([&]() -> Task<> {
         TcpListener listener(ctxt, AF_INET);
         if (auto ret = listener.bind("127.0.0.1:0", 100); !ret) {

@@ -1,23 +1,13 @@
+#include "../include/ilias_networking.hpp"
 #include "../include/ilias_resolver.hpp"
 #include "../include/ilias_async.hpp"
 #include "../include/ilias_co.hpp"
 #include <iostream>
 
-#ifdef _WIN32
-    #include "../include/ilias_iocp.hpp"
-    #include "../include/ilias_iocp.cpp"
-#else
-    #include "../include/ilias_poll.hpp"
-#endif
-
 using namespace ILIAS_NAMESPACE;
 
 int main() {
-#ifdef _WIN32
-    IOCPContext ctxt;
-#else
-    PollContext ctxt;
-#endif
+    PlatformIoContext ctxt;
     Resolver resolver(ctxt);
     auto showResult = [&](std::string_view host) -> Task<> {
         std::cout << "resolveing: " << host << std::endl;

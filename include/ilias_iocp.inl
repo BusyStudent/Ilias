@@ -1,5 +1,9 @@
-#ifdef _WIN32
-#include "ilias_iocp.hpp"
+#if !defined(_ILIAS_IOCP_HPP_)
+    #include "ilias_iocp.hpp"
+#endif
+
+#include <WinSock2.h>
+#include <MSWSock.h>
 #include <winternl.h>
 #include <algorithm>
 #include <cinttypes>
@@ -25,6 +29,11 @@ struct WSAExtFunctions {
     LPFN_CONNECTEX ConnectEx = nullptr;
     LPFN_TRANSMITFILE TransmitFile = nullptr;
 };
+
+/**
+ * @brief The Overlapped with callback
+ * 
+ */
 class IOCPOverlapped : public ::OVERLAPPED {
 public:
     IOCPOverlapped() {
@@ -56,12 +65,12 @@ struct NtFunctions {
 };
 
 // Static data
-static WSAExtFunctions Fns;
-static NtFunctions NtFns;
-static std::once_flag FnsOnceFlag;
+inline static WSAExtFunctions Fns;
+inline static NtFunctions NtFns;
+inline static std::once_flag FnsOnceFlag;
 
 #pragma region Loop
-IOCPContext::IOCPContext() {
+inline IOCPContext::IOCPContext() {
     mIocpFd = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
     if (!mIocpFd) {
         return;
@@ -72,7 +81,7 @@ IOCPContext::IOCPContext() {
     // Init Poll
     _initPoll();
 }
-IOCPContext::~IOCPContext() {
+inline IOCPContext::~IOCPContext() {
     if (mAfdDevice != INVALID_HANDLE_VALUE) {
         ::CloseHandle(mAfdDevice);
     }
@@ -80,8 +89,7 @@ IOCPContext::~IOCPContext() {
 }
 
 // TODO: Using GetQueuedCompletionStatusEx to get more Completion at one time
-inline
-auto IOCPContext::_runIo(DWORD timeout) -> void {
+inline auto IOCPContext::_runIo(DWORD timeout) -> void {
     DWORD bytesTrans = 0;
     ULONG_PTR compeleteKey;
     LPOVERLAPPED overlapped = nullptr;
@@ -111,13 +119,13 @@ auto IOCPContext::_runIo(DWORD timeout) -> void {
         lap->onCompelete(lap, ret, bytesTrans);            
     }
 }
-auto IOCPContext::run(StopToken &token) -> void {
+inline auto IOCPContext::run(StopToken &token) -> void {
     while (!token.isStopRequested()) {
         _runTimers();
         _runIo(_calcWaiting());
     }
 }
-auto IOCPContext::post(void (*fn)(void *), void *args) -> void {
+inline auto IOCPContext::post(void (*fn)(void *), void *args) -> void {
     ::PostQueuedCompletionStatus(
         mIocpFd, 
         0x114514, 
@@ -128,7 +136,7 @@ auto IOCPContext::post(void (*fn)(void *), void *args) -> void {
 
 // Timer
 #pragma region Timer
-auto IOCPContext::delTimer(uintptr_t timer) -> bool {
+inline auto IOCPContext::delTimer(uintptr_t timer) -> bool {
     auto iter = mTimers.find(timer);
     if (iter == mTimers.end()) {
         return false;
@@ -137,7 +145,7 @@ auto IOCPContext::delTimer(uintptr_t timer) -> bool {
     mTimers.erase(iter);
     return true;
 }
-auto IOCPContext::addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags) -> uintptr_t {
+inline auto IOCPContext::addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags) -> uintptr_t {
     uintptr_t id = mTimerIdBase + 1;
     while (mTimers.find(id) != mTimers.end()) {
         id ++;
@@ -149,8 +157,7 @@ auto IOCPContext::addTimer(int64_t ms, void (*fn)(void *), void *arg, int flags)
     mTimers.insert(std::pair(id, iter));
     return id;
 }
-inline
-auto IOCPContext::_runTimers() -> void {
+inline auto IOCPContext::_runTimers() -> void {
     if (mTimerQueue.empty()) {
         return;
     }
@@ -175,8 +182,7 @@ auto IOCPContext::_runTimers() -> void {
         iter = mTimerQueue.erase(iter); // Move next
     }
 }
-inline
-auto IOCPContext::_calcWaiting() const -> DWORD {
+inline auto IOCPContext::_calcWaiting() const -> DWORD {
     if (mTimerQueue.empty()) {
         return INFINITE;
     }
@@ -186,7 +192,7 @@ auto IOCPContext::_calcWaiting() const -> DWORD {
 }
 
 // Add / Remove
-auto IOCPContext::addSocket(SocketView sock) -> Result<void> {
+inline auto IOCPContext::addSocket(SocketView sock) -> Result<void> {
     auto ret = ::CreateIoCompletionPort(HANDLE(sock.get()), mIocpFd, 0, 0);
     if (!ret) {
         return Unexpected(Error::fromErrno());
@@ -197,7 +203,7 @@ auto IOCPContext::addSocket(SocketView sock) -> Result<void> {
     );
     return {};
 }
-auto IOCPContext::removeSocket(SocketView sock) -> Result<void> {
+inline auto IOCPContext::removeSocket(SocketView sock) -> Result<void> {
     return {};
 }
 
@@ -207,15 +213,7 @@ template <typename T, typename RetT>
 class IOCPAwaiter : public IOCPOverlapped {
 public:
     IOCPAwaiter() {
-        onCompelete = [](IOCPOverlapped *data, BOOL ok, DWORD byteTrans) {
-            auto self = static_cast<IOCPAwaiter*>(data);
-            self->mOk = ok;
-            self->mGot = true; //< Got value
-            self->bytesTransfered = byteTrans;
-            if (self->mCallerHandle) {
-                self->mCallerHandle.resume();
-            }
-        };
+        onCompelete = &IOCPAwaiter::_onCompelete;
     }
     auto await_ready() const noexcept -> bool {
         return false;
@@ -279,6 +277,15 @@ private:
         // Call it
         static_cast<T*>(this)->onCompelete(mOk, bytesTransfered);
     }
+    static auto _onCompelete(IOCPOverlapped *data, BOOL ok, DWORD byteTrans) -> void {
+        auto self = static_cast<IOCPAwaiter*>(data);
+        self->mOk = ok;
+        self->mGot = true; //< Got value
+        self->bytesTransfered = byteTrans;
+        if (self->mCallerHandle) {
+            self->mCallerHandle.resume();
+        }
+    }
 
     PromiseBase *mCaller = nullptr;
     std::coroutine_handle<> mCallerHandle;
@@ -302,7 +309,7 @@ struct RecvAwaiter : public IOCPAwaiter<RecvAwaiter, Result<size_t> > {
     ::DWORD flags = 0;
 };
 
-auto IOCPContext::recv(SocketView sock, void *buf, size_t len) -> Task<size_t> {
+inline auto IOCPContext::recv(SocketView sock, void *buf, size_t len) -> Task<size_t> {
     RecvAwaiter awaiter;
     awaiter.ctxt = this;
     awaiter.sock = sock.get();
@@ -326,7 +333,7 @@ struct SendAwaiter : public IOCPAwaiter<SendAwaiter, Result<size_t> > {
     ::DWORD flags = 0;
 };
 
-auto IOCPContext::send(SocketView sock, const void *buf, size_t len) -> Task<size_t> {
+inline auto IOCPContext::send(SocketView sock, const void *buf, size_t len) -> Task<size_t> {
     SendAwaiter awaiter;
     awaiter.ctxt = this;
     awaiter.sock = sock.get();
@@ -366,7 +373,7 @@ struct ConnectAwaiter : public IOCPAwaiter<ConnectAwaiter, Result<void> > {
     IPEndpoint endpoint;
 };
 
-auto IOCPContext::connect(SocketView sock, const IPEndpoint &addr) -> Task<void> {
+inline auto IOCPContext::connect(SocketView sock, const IPEndpoint &addr) -> Task<void> {
     ConnectAwaiter awaiter;
     awaiter.ctxt = this;
     awaiter.sock = sock.get();
@@ -421,7 +428,7 @@ struct AcceptAwaiter : public IOCPAwaiter<AcceptAwaiter, Result<std::pair<Socket
     ::uint8_t addressBuffer[(sizeof(::sockaddr_storage) + 16) * 2];
 };
 
-auto IOCPContext::accept(SocketView sock) -> Task<std::pair<Socket, IPEndpoint> > {
+inline auto IOCPContext::accept(SocketView sock) -> Task<std::pair<Socket, IPEndpoint> > {
     AcceptAwaiter awaiter;
     awaiter.ctxt = this;
     awaiter.sock = sock.get();
@@ -450,7 +457,7 @@ struct SendtoAwaiter : public IOCPAwaiter<SendtoAwaiter, Result<size_t> > {
     IPEndpoint endpoint;
 };
 
-auto IOCPContext::sendto(SocketView sock, const void *buf, size_t len, const IPEndpoint &addr) -> Task<size_t> {
+inline auto IOCPContext::sendto(SocketView sock, const void *buf, size_t len, const IPEndpoint &addr) -> Task<size_t> {
     SendtoAwaiter awaiter;
     awaiter.ctxt = this;
     awaiter.sock = sock.get();
@@ -482,7 +489,7 @@ struct RecvfromAwaiter : public IOCPAwaiter<RecvfromAwaiter, Result<std::pair<si
     ::socklen_t len = sizeof(addr);
 };
 
-auto IOCPContext::recvfrom(SocketView sock, void *buf, size_t len) -> Task<std::pair<size_t, IPEndpoint> > {
+inline auto IOCPContext::recvfrom(SocketView sock, void *buf, size_t len) -> Task<std::pair<size_t, IPEndpoint> > {
     RecvfromAwaiter awaiter;
     awaiter.ctxt = this;
     awaiter.sock = sock.get();
@@ -497,7 +504,7 @@ auto IOCPContext::recvfrom(SocketView sock, void *buf, size_t len) -> Task<std::
 #define AFD_POLL               9
 #define IOCTL_AFD_POLL 0x00012024
 
-auto IOCPContext::_initPoll() -> void {    
+inline auto IOCPContext::_initPoll() -> void {    
     // Open the afd device for impl poll
     wchar_t path [] = L"\\Device\\Afd\\Ilias";
     ::HANDLE device = nullptr;
@@ -784,7 +791,7 @@ public:
     std::atomic<std::coroutine_handle<> > handle; //< Handle to self
 };
 
-auto IOCPContext::poll(SocketView sock, uint32_t events) -> Task<uint32_t> {
+inline auto IOCPContext::poll(SocketView sock, uint32_t events) -> Task<uint32_t> {
     if (!mAfdDevice) [[unlikely]] {
         // Fallback to normal WSAPoll
         co_return co_await WSAPollAwaiter {this, sock, events};
@@ -850,5 +857,3 @@ inline auto IOCPContext::_loadFunctions() -> void {
 }
 
 ILIAS_NS_END
-
-#endif

@@ -1,13 +1,7 @@
-#include <gtest/gtest.h>
+#include "../include/ilias_networking.hpp"
 #include "../include/ilias_http.hpp"
+#include <gtest/gtest.h>
 #include <fstream>
-
-#ifdef _WIN32
-    #include "../include/ilias_iocp.hpp"
-    #include "../include/ilias_iocp.cpp"
-#else
-    #include "../include/ilias_poll.hpp"
-#endif
 
 using namespace ILIAS_NAMESPACE;
 
@@ -159,13 +153,11 @@ TEST(HttpBinRequest, Deflate) {
 int main(int argc, char **argv) {
 
 #if defined(_WIN32)
-    IOCPContext ctxt;
     ::SetConsoleCP(65001);
     ::SetConsoleOutputCP(65001);
     std::setlocale(LC_ALL, ".utf-8");
-#else
-    PollContext ctxt;
 #endif
+    PlatformIoContext ctxt;
 
     HttpCookieJar jar;
     HttpSession _session;
