@@ -27,12 +27,14 @@ using Unexpect_t        = std::unexpect_t;
 
 #else
 
-template <typename E>
-class BadExpectedAccess;
-
 struct Unexpect_t {
     explicit Unexpect_t() = default;
 };
+
+#if defined(__cpp_exceptions)
+
+template <typename E>
+class BadExpectedAccess;
 
 template <>
 class BadExpectedAccess<void> : public std::exception {
@@ -53,6 +55,8 @@ public:
 private:
     const E mError;
 };
+
+#endif
 
 template <typename E>
 class Unexpected {
@@ -194,7 +198,7 @@ public:
         if (mHasValue) {
             return &mValue;
         }
-        throw BadExpectedAccess<E>(error());
+        ILIAS_THROW(BadExpectedAccess<E>(error()));
     }
     T *operator->() noexcept {
         if (mHasValue) {
@@ -232,25 +236,25 @@ public:
         if (mHasValue) {
             return mValue;
         }
-        throw BadExpectedAccess<E>(error());
+        ILIAS_THROW(BadExpectedAccess<E>(error()));
     }
     const T &value() const & {
         if (mHasValue) {
             return mValue;
         }
-        throw BadExpectedAccess<E>(error());
+        ILIAS_THROW(BadExpectedAccess<E>(error()));
     }
     T &&value() && {
         if (mHasValue) {
             return std::move(mValue);
         }
-        throw BadExpectedAccess<E>(error());
+        ILIAS_THROW(BadExpectedAccess<E>(error()));
     }
     const T &&value() const && {
         if (mHasValue) {
             return std::move(mValue);
         }
-        throw BadExpectedAccess<E>(error());
+        ILIAS_THROW(BadExpectedAccess<E>(error()));
     }
     const E &error() const & noexcept {
         if (mHasValue) {
@@ -598,19 +602,19 @@ public:
     }
     void operator*() const noexcept {
         if (!mHasValue) {
-            throw BadExpectedAccess<E>(mError);
+            ILIAS_THROW(BadExpectedAccess<E>(mError));
         }
     };
     explicit operator bool() const noexcept { return mHasValue; }
     bool     has_value() const noexcept { return mHasValue; }
     void     value() const     &{
         if (!mHasValue) {
-            throw BadExpectedAccess<E>(mError);
+            ILIAS_THROW(BadExpectedAccess<E>(mError));
         }
     }
     void value() && {
         if (!mHasValue) {
-            throw BadExpectedAccess<E>(mError);
+            ILIAS_THROW(BadExpectedAccess<E>(mError));
         }
     }
     const E &error() const & noexcept {

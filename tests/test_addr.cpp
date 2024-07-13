@@ -52,6 +52,15 @@ TEST(Address, ToString) {
     EXPECT_EQ(IPAddress(IPAddress4::none()).toString(), "255.255.255.255");
 }
 
+TEST(AddrInfo, Get) {
+    auto res = AddressInfo::fromHostname("www.baidu.com");
+    if (res) {
+        for (auto& addr : res.value().addresses()) {
+            std::cout << addr.toString() << std::endl;
+        }
+    }
+}
+
 auto main() -> int {
     SockInitializer init;
     ::testing::InitGoogleTest();

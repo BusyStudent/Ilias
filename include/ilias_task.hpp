@@ -121,7 +121,6 @@ public:
      * @return CancelStatus
      */
     auto cancel() const -> CancelStatus {
-        ILIAS_CTRACE("[Ilias] Task<{}> Canceling {}", typeid(T).name(), name());
         return promise().cancel();
     }
 
@@ -267,7 +266,6 @@ public:
     auto cancel() -> CancelStatus {
         mCanceled = true;
         if (!mSuspended) {
-            ILIAS_CTRACE("[Task] Cancel on a still running task\n");
             return CancelStatus::Pending;
         }
         while (!mHandle.done()) {
@@ -441,6 +439,7 @@ public:
         return Task<T>(handle);
     }
 
+#if defined(__cpp_exceptions)
     /**
      * @brief For task it will catch BadExpectedAccess<Error> and put it to the value
      * 
@@ -456,6 +455,7 @@ public:
             mException = std::current_exception();
         }
     }
+#endif
 
     /**
      * @brief Get the stored return value, do not double call it or call it when the coroutine is still not done

@@ -29,6 +29,12 @@
     #include <cstdlib>
 #endif
 
+#if !defined(__cpp_exceptions)
+    #define ILIAS_THROW(x) ::abort()
+#else
+    #define ILIAS_THROW(x) throw x
+#endif
+
 #define ILIAS_DECLARE_ERROR_(errc, category_)  \
     template <>                                \
     class ErrorTraits<errc> {                  \
@@ -39,12 +45,8 @@
     }
 
 #define ILIAS_DECLARE_ERROR(errc, category_)   \
-    template <>                                \
-    class ILIAS_NAMESPACE::ErrorTraits<errc> { \
-    public:                                    \
-        static const category_ & category() {  \
-            return category_::instance();      \
-        }                                      \
+    namespace ILIAS_NAMESPACE {                \
+        ILIAS_DECLARE_ERROR_(errc, category_)  \
     }
 
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT((x) && (msg))
@@ -386,17 +388,17 @@ inline auto Error::toString() const -> std::string {
 }
 
 // --- Compare
-inline bool operator ==(const ErrorCategory &cat1, const ErrorCategory &cat2) noexcept {
+inline auto operator ==(const ErrorCategory &cat1, const ErrorCategory &cat2) noexcept -> bool {
     return &cat1 == &cat2;
 }
-inline bool operator !=(const ErrorCategory &cat1, const ErrorCategory &cat2) noexcept {
+inline auto operator !=(const ErrorCategory &cat1, const ErrorCategory &cat2) noexcept -> bool {
     return &cat1 != &cat2;
 }
-inline bool operator ==(const Error &left, const Error &right) noexcept {
+inline auto operator ==(const Error &left, const Error &right) noexcept -> bool {
     // Only one category think that we are the same
     return left.category().equivalent(left.value(), right) || right.category().equivalent(right.value(), left);
 }
-inline bool operator !=(const Error &left, const Error &right) noexcept {
+inline auto operator !=(const Error &left, const Error &right) noexcept -> bool {
     return (!left.category().equivalent(left.value(), right)) && (!right.category().equivalent(right.value(), left));
 }
 

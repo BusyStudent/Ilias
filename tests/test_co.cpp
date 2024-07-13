@@ -58,6 +58,7 @@ TEST(TaskTest, BlockingWait) {
     } ();
 }
 
+#if defined(__cpp_exceptions)
 TEST(TaskTest, Exception) {
     auto taskThrowException = []() -> Task<> {
         throw std::runtime_error("Hello World");
@@ -78,6 +79,7 @@ TEST(TaskTest, Exception2) {
     EXPECT_TRUE(!val);
     EXPECT_EQ(val.error(), Error::Unknown);
 }
+#endif
 
 TEST(WhenAllTest, Test1) {
     auto task = []() -> Task<> {

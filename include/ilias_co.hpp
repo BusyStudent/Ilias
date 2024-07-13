@@ -10,23 +10,6 @@
 #error "Compiler does not support coroutines"
 #endif
 
-#if  defined(ILIAS_NO_SOURCE_LOCATION) || !defined(__cpp_lib_format)
-#undef ILIAS_COROUTINE_TRACE
-#endif
-
-#if !defined(ILIAS_COROUTINE_TRACE)
-#define ILIAS_CTRACE(fmt, ...)
-#define ILIAS_CAPTURE_CALLER(name) std::source_location name = std::source_location()
-#elif defined(__cpp_lib_print)
-#define ILIAS_CTRACE(fmt, ...) ::std::println(stderr, fmt, __VA_ARGS__);
-#define ILIAS_CAPTURE_CALLER(name) std::source_location name = std::source_location::current()
-#include <print>
-#else
-#define ILIAS_CTRACE(fmt, ...) ::fprintf(stderr, "%s\n", std::format(fmt, __VA_ARGS__).c_str());
-#define ILIAS_CAPTURE_CALLER(name) std::source_location name = std::source_location::current()
-#include <format>
-#endif
-
 // For the life-time track
 #if !defined(ILIAS_COROUTINE_LIFETIME_CHECK)
 #define ILIAS_CO_EXISTS(h) true
@@ -38,6 +21,13 @@
 #define ILIAS_CO_REMOVE(h) ILIAS_CHECK_EXISTS(h); _ilias_coset.erase(h)
 #include <set>
 inline std::set<std::coroutine_handle<> > _ilias_coset;
+#endif
+
+// For track the caller
+#if !defined(NDEBUG)
+#define ILIAS_CAPTURE_CALLER(name) std::source_location name = std::source_location()
+#else
+#define ILIAS_CAPTURE_CALLER(name) std::source_location name = std::source_location::current()
 #endif
 
 // For user easy macro
@@ -70,6 +60,7 @@ concept Awaiter = requires(T t) {
     t.await_ready();
     t.await_resume();
 };
+
 /**
  * @brief Check the type should be passed to await_transform
  * 
@@ -205,6 +196,7 @@ protected:
     EventLoop(const EventLoop &) = delete;
     ~EventLoop();
 };
+
 /**
  * @brief Helper class for switch to another coroutine handle
  * 
@@ -221,6 +213,7 @@ public:
 private:
     std::coroutine_handle<> mHandle;
 };
+
 /**
  * @brief Helper class for suspend current coroutine and get the coroutine handle
  * 
@@ -239,6 +232,7 @@ public:
 private:
     T mCallback;
 };
+
 /**
  * @brief Helper to construct the type by our self
  * 

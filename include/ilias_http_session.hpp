@@ -389,15 +389,32 @@ inline auto HttpSession::_connect(const Url &url, const Url &proxy, bool &fromCa
         wrapped = std::move(proxyClient);
     }
     else {
-        const auto addr = IPAddress::fromHostname(host.data());
-        if (!addr.isValid()) {
+        const auto info = AddressInfo::fromHostname(host.data());
+        if (!info) {
+            co_return Unexpected(info.error());
+        }
+        const auto addrs = info->addresses();
+        if (addrs.empty()) {
             co_return Unexpected(Error::HostNotFound);
         }
-        TcpClient client(mIoContext, addr.family());
-        if (auto val = co_await client.connect(IPEndpoint(addr, port)); !val) {
-            co_return Unexpected(val.error());
+        Result<void> lastStatus;
+        for (const auto &addr : addrs) {
+            TcpClient client(mIoContext, addr.family());
+            lastStatus = co_await client.connect(IPEndpoint(addr, port));
+            fprintf(stderr, "[Http] Do Tcp connect to %s: %s\n",
+                addr.toString().c_str(), 
+                lastStatus ? "ok" : lastStatus.error().toString().c_str()
+            );    
+            if (!lastStatus) {
+                continue;
+            }
+            // Got it
+            wrapped = std::move(client);
+            break;
         }
-        wrapped = std::move(client);
+        if (!lastStatus) {
+            co_return Unexpected(lastStatus.error());
+        }
     }
 
     // Check if we need wrap ssl
