@@ -209,7 +209,7 @@ public:
         if (mHasValue) {
             return &mValue;
         }
-        ILIAS_THROW(BadExpectedAccess<E>(error()));
+        ::abort();
     }
     T *operator->() noexcept {
         if (mHasValue) {

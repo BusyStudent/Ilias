@@ -12,6 +12,7 @@
  */
 
 #include "sys.hpp"
+#include <cstddef>
 #include <span>
 
 ILIAS_NS_BEGIN

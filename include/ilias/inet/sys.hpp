@@ -63,6 +63,11 @@
     #include <fcntl.h>
 #endif
 
+#include <cstring>
+#include <cstddef>
+#include <memory>
+#include <span>
+
 ILIAS_NS_BEGIN
 
 // ---Platform
