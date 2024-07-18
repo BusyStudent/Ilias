@@ -1,7 +1,5 @@
-#include "../include/ilias_networking.hpp"
-#include "../include/ilias_resolver.hpp"
-#include "../include/ilias_async.hpp"
-#include "../include/ilias_co.hpp"
+#include "../include/ilias/networking.hpp"
+#include "../include/ilias/resolver.hpp"
 #include <iostream>
 
 using namespace ILIAS_NAMESPACE;

@@ -1,5 +1,5 @@
-#include "../include/ilias_networking.hpp"
-#include "../include/ilias_http.hpp"
+#include "../include/ilias/networking.hpp"
+#include "../include/ilias/http.hpp"
 #include <gtest/gtest.h>
 #include <fstream>
 

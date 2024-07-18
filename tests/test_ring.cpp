@@ -2,9 +2,7 @@
 
 #define ILIAS_RING_DEBUG
 
-#include "../include/ilias_async.hpp"
-#include "../include/ilias_loop.hpp"
-#include "../include/ilias_ssl.hpp"
+#include "../include/ilias/ring.hpp"
 
 using namespace ILIAS_NAMESPACE;
 

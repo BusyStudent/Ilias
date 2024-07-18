@@ -1,8 +1,7 @@
 #pragma once
 
-#include "../include/ilias_mutex.hpp"
-#include "../include/ilias_loop.hpp"
-#include "../include/ilias_scope.hpp"
+#include "../include/ilias/coro/mini_loop.hpp"
+#include "../include/ilias/coro.hpp"
 #include <gtest/gtest.h>
 
 

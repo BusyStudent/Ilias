@@ -1,4 +1,4 @@
-#include "../include/ilias_inet.hpp"
+#include "../include/ilias/inet.hpp"
 #include <gtest/gtest.h>
 #include <iostream>
 

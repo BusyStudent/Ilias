@@ -3,10 +3,9 @@
 #include <QInputDialog>
 #include <QUrl>
 #include <QFile>
-#include "../include/ilias_qt.hpp"
-#include "../include/ilias_async.hpp"
-#include "../include/ilias_resolver.hpp"
-#include "../include/ilias_http.hpp"
+#include "../include/ilias/resolver.hpp"
+#include "../include/ilias/http.hpp"
+#include "../include/ilias/qt.hpp"
 #include "ui_test_qt.h"
 #include <iostream>
 
