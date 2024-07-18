@@ -4,6 +4,7 @@
 #include "ilias_ring.hpp"
 #include "ilias_backend.hpp"
 #define SECURITY_WIN32
+#include <VersionHelpers.h>
 #include <security.h>
 #include <schannel.h>
 #include <shlwapi.h>
@@ -96,6 +97,7 @@ private:
     ::HMODULE mDll = ::LoadLibraryA("secur32.dll");
     ::PSecurityFunctionTableW mTable = nullptr;
     ::CredHandle mCredHandle { }; //<
+    bool mHasAlpn = ::IsWindows8Point1OrGreater(); //< ALPN is on the Windows 8.1 and later
 };
 
 /**

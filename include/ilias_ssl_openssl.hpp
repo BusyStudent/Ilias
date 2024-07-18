@@ -308,16 +308,7 @@ public:
         if (!ret) {
             co_return ret;
         }
-        while (true) {
-            int sslCon = SSL_connect(this->mSsl);
-            if (sslCon == 1) {
-                co_return Result<>();
-            }
-            int errcode = SSL_get_error(this->mSsl, sslCon);
-            if (auto ret = co_await this->_handleError(errcode); !ret) {
-                co_return Unexpected(ret.error());
-            }
-        }
+        co_return co_await handshake();
     }
     auto recv(void *buffer, size_t n) -> Task<size_t> {
         while (true) {
@@ -361,6 +352,18 @@ public:
             }
             int errcode = 0;
             errcode = SSL_get_error(this->mSsl, ret);
+            if (auto ret = co_await this->_handleError(errcode); !ret) {
+                co_return Unexpected(ret.error());
+            }
+        }
+    }
+    auto handshake() -> Task<> {
+        while (true) {
+            int sslCon = SSL_connect(this->mSsl);
+            if (sslCon == 1) {
+                co_return Result<>();
+            }
+            int errcode = SSL_get_error(this->mSsl, sslCon);
             if (auto ret = co_await this->_handleError(errcode); !ret) {
                 co_return Unexpected(ret.error());
             }

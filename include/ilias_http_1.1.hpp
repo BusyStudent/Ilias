@@ -81,6 +81,9 @@ public:
             log("[Http1.1] Stream %p was marked to broken\n", this);
             mCon->mBroken = true;
         }
+        if (!mKeepAlive) {
+            mCon->mBroken = true;
+        }
         log("[Http1.1] Delete stream %p\n", this);
         mCon->mMutex.unlock(); 
     }

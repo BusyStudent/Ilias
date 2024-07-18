@@ -424,6 +424,11 @@ inline auto HttpSession::_connect(const Url &url, const Url &proxy, bool &fromCa
         static_assert(SslSniExtension<SslClient<> >); //< The ssl impl must support SNI
         auto ssl = SslClient(mSslContext, std::move(wrapped));
         ssl.setHostname(host);
+
+        // Begin Handshake make ssl connection
+        if (auto val = co_await ssl.handshake(); !val) {
+            co_return Unexpected(val.error());
+        }
         wrapped = std::move(ssl);
 #else
         ::abort();
