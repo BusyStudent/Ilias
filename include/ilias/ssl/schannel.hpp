@@ -31,20 +31,11 @@ public:
     auto name() const -> std::string_view override { 
         return "schannel"; 
     }
-    auto message(uint32_t code) const -> std::string override {
-        wchar_t *args = nullptr;
-        ::FormatMessageW(
-            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-            nullptr, code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-            reinterpret_cast<wchar_t*>(&args), 0, nullptr
-        );
-        auto len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, nullptr, 0, nullptr, nullptr);
-        std::string ret(len, 0);
-        ::WideCharToMultiByte(CP_UTF8, 0, args, -1, &ret[0], len, nullptr, nullptr);
-        ::LocalFree(args);
-        return ret;
+    auto message(int64_t code) const -> std::string override {
+        // SChannel using the win32 error code
+        return Error::fromErrno(code).message();
     }
-    auto equivalent(uint32_t code, const Error &other) const -> bool override {
+    auto equivalent(int64_t code, const Error &other) const -> bool override {
         if (other.category() == IliasCategory::instance()) {
             switch (other.value()) {
                 case Error::SSL:
@@ -90,6 +81,9 @@ public:
     }
     auto credHandle() const noexcept {
         return mCredHandle;
+    }
+    auto hasAlpn() const noexcept {
+        return mHasAlpn;
     }
 private:
     ::HMODULE mDll = ::LoadLibraryA("secur32.dll");
@@ -167,6 +161,11 @@ protected:
 
         SCHANNEL_LOG("[Schannel] handshake begin for %ls\n", mHost.c_str());
         for (;;) {
+            ::SecBuffer alpnBuffer { };
+            alpnBuffer.BufferType = SECBUFFER_APPLICATION_PROTOCOLS;
+            alpnBuffer.pvBuffer = mAlpn.data();
+            alpnBuffer.cbBuffer = mAlpn.size();
+
             ::SecBuffer inbuffers[2] { };
             inbuffers[0].BufferType = SECBUFFER_TOKEN;
             inbuffers[0].pvBuffer = incoming;
@@ -178,6 +177,8 @@ protected:
 
             ::SecBufferDesc indesc { SECBUFFER_VERSION, ARRAYSIZE(inbuffers), inbuffers };
             ::SecBufferDesc outdesc { SECBUFFER_VERSION, ARRAYSIZE(outbuffers), outbuffers };
+            ::SecBufferDesc alpnDesc { SECBUFFER_VERSION, 1, &alpnBuffer };
+            ::SecBufferDesc *firstDesc = mAlpn.empty() ? nullptr : &alpnDesc; //< If we have alpn, we need to pass it
 
             DWORD flags = ISC_REQ_USE_SUPPLIED_CREDS | ISC_REQ_ALLOCATE_MEMORY | 
                         ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
@@ -189,7 +190,7 @@ protected:
                 flags,
                 0,
                 0,
-                ctxt ? &indesc : nullptr,
+                ctxt ? &indesc : firstDesc,
                 0,
                 &ssl,
                 &outdesc,
@@ -471,6 +472,8 @@ protected:
     SslContext *mCtxt = nullptr;
     T           mFd; //< The target we input and output
     std::wstring mHost; //< The host, used as a ext
+    std::string mAlpnSelected; //< The ALPN selected
+    std::vector<uint8_t> mAlpn; //< The ALPN, used as a ext
     std::unique_ptr<SslData> mData; //< The Ssl data
 };
 
@@ -511,6 +514,48 @@ public:
         this->mHost.resize(len);
         len = ::MultiByteToWideChar(CP_UTF8, 0, hostname.data(), hostname.size(), this->mHost.data(), len);
     }
+#if 0
+    template <typename U>
+    auto setAlpn(U &&container) -> void {
+        // From curl/schannel.c
+        // if (!this->mCtxt->hasAlpn()) {
+        //     SCHANNEL_LOG("[Schannel] ALPN is not supported by the context\n");
+        //     return;
+        // }
+        uint8_t buffer[128];
+        auto now = buffer;
+
+        // First 4 bytes are the length of the buffer
+        auto extLength = reinterpret_cast<uint32_t*>(now);
+        now += sizeof(uint32_t);
+
+        // Next 4 bytes are the type of the extension
+        auto flags = reinterpret_cast<uint32_t*>(now);
+        now += sizeof(uint32_t);
+        *flags = SecApplicationProtocolNegotiationExt_ALPN;
+
+        auto len = reinterpret_cast<uint16_t*>(now);
+        now += sizeof(uint16_t);
+
+        // Generate the extension here
+        auto cur = now;
+        for (std::string_view str : container) {
+            *cur = uint8_t(str.size());
+            ++cur;
+            ::memcpy(cur, str.data(), str.size());
+            cur += str.size();
+        }
+
+        *len = uint16_t(cur - now);
+        *extLength = uint32_t(cur - buffer + sizeof(uint32_t));
+
+        // Copy to inside the buffer
+        this->mAlpn.assign(buffer, cur);
+    }
+    auto alpnSelected() const -> std::string_view {
+        return this->mAlpnSelected;
+    }
+#endif
 };
 static_assert(StreamClient<SslClient<> >);
 

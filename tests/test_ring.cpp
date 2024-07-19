@@ -2,7 +2,7 @@
 
 #define ILIAS_RING_DEBUG
 
-#include "../include/ilias/ring.hpp"
+#include "../include/ilias/detail/ring.hpp"
 
 using namespace ILIAS_NAMESPACE;
 

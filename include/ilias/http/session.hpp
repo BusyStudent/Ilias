@@ -4,11 +4,11 @@
 #include "../zlib.hpp"
 #include "../url.hpp"
 #include "../ssl.hpp"
+#include "http1.1.hpp"
 #include "headers.hpp"
 #include "request.hpp"
 #include "cookie.hpp"
 #include "reply.hpp"
-#include "1.1.hpp"
 #include <chrono>
 #include <array>
 #include <map>
@@ -416,19 +416,29 @@ inline auto HttpSession::_connect(const Url &url, const Url &proxy, bool &fromCa
         }
     }
 
+    // TODO: ALPN and HTTP2
+    bool h2 = false;
+
     // Check if we need wrap ssl
     if (url.scheme() == "https") {
         // Wrap ssl
 #if !defined(ILIAS_NO_SSL)
+        constexpr std::string_view alpns [] {
+            "http/1.1"
+        };
         static_assert(SslSniExtension<SslClient<> >); //< The ssl impl must support SNI
         auto ssl = SslClient(mSslContext, std::move(wrapped));
         ssl.setHostname(host);
+        // ssl.setAlpn(alpns);
 
         // Begin Handshake make ssl connection
         if (auto val = co_await ssl.handshake(); !val) {
             co_return Unexpected(val.error());
         }
+        // auto selected = ssl.alpnSelected();
+        // h2 = (selected == "h2");
         wrapped = std::move(ssl);
+        // ::fprintf(stderr, "[Http] ALPN Selected: %s\n", std::string(selected).c_str());
 #else
         ::abort();
 #endif

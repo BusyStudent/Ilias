@@ -18,6 +18,19 @@
 ILIAS_NS_BEGIN
 
 /**
+ * @brief Error for getaddrinfo and getnameinfo
+ * 
+ */
+class GaiCategory final : public ErrorCategory {
+public:
+    auto name() const -> std::string_view override;
+    auto message(int64_t code) const -> std::string override;
+    auto equivalent(int64_t self, const Error &other) const -> bool override;
+
+    static auto instance() -> GaiCategory &;
+};
+
+/**
  * @brief Wrapper for addrinfo
  * 
  */
@@ -103,11 +116,50 @@ inline auto AddressInfo::fromHostname(const char *hostname, int family) -> Resul
     };
     ::addrinfo *info = nullptr;
     if (auto err = ::getaddrinfo(hostname, nullptr, &hints, &info); err != 0) {
-        return Unexpected(Error::fromHErrno(err));
+
+#ifdef EAI_SYSTEM
+        if (err == EAI_SYSTEM) {
+            return Unexpected(Error::fromErrno());
+        }
+#endif
+
+        return Unexpected(Error(err, GaiCategory::instance()));
     }
     AddressInfo result;
     result.mInfo.reset(info);
     return result;
+}
+
+// GaiCategory
+inline auto GaiCategory::instance() -> GaiCategory & { 
+    static GaiCategory c; 
+    return c; 
+}
+inline auto GaiCategory::name() const -> std::string_view { 
+    return "getaddrinfo"; 
+}
+inline auto GaiCategory::message(int64_t code) const -> std::string {
+
+#ifdef _WIN32
+    // In Windows, the gai error is windows error
+    return Error::fromErrno(code).message();
+#else
+    return ::gai_strerror(code);
+#endif
+
+}
+inline auto GaiCategory::equivalent(int64_t code, const Error &other) const -> bool {
+    if (this == &other.category() && code == other.value()) {
+        //< Category is same, value is same
+        return true;
+    }
+    if (other.category() == IliasCategory::instance()) {
+        switch (code) {
+            case EAI_NONAME: return other == Error::HostNotFound;
+            default: return other == Error::Unknown;
+        }
+    }
+    return false;
 }
 
 ILIAS_NS_END

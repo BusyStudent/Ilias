@@ -110,7 +110,7 @@ public:
      * 
      * @return std::string 
      */
-    virtual auto message(uint32_t value) const -> std::string = 0;
+    virtual auto message(int64_t value) const -> std::string = 0;
     /**
      * @brief Get the name of the category
      * 
@@ -125,7 +125,7 @@ public:
      * @return true 
      * @return false 
      */
-    virtual auto equivalent(uint32_t self, const Error &other) const -> bool;
+    virtual auto equivalent(int64_t self, const Error &other) const -> bool;
 };
 
 /**
@@ -134,7 +134,7 @@ public:
  */
 class Error {
 public:
-    enum Code : uint32_t {
+    enum Code : int64_t {
         // --- Common
         Ok = 0,                      //< No Error
         Unknown,                     //< Unknown Error
@@ -216,7 +216,7 @@ public:
      * @param err 
      * @param c 
      */
-    Error(uint32_t err, const ErrorCategory &c);
+    Error(int64_t err, const ErrorCategory &c);
 
     /**
      * @brief Construct a new Error by copy
@@ -246,9 +246,9 @@ public:
     /**
      * @brief Get the value of the error
      * 
-     * @return uint32_t 
+     * @return int64_t 
      */
-    auto value() const -> uint32_t;
+    auto value() const -> int64_t;
     /**
      * @brief Get the message of the error
      * 
@@ -280,27 +280,14 @@ public:
      */
     static auto fromErrno() -> Error;
     /**
-     * @brief Get Error code from h_errno (WSAGetLastError)
-     * 
-     * @return 
-     */
-    static auto fromHErrno() -> Error;
-    /**
      * @brief Convert Errono code to Error
      * 
      * @param err 
      * @return Error 
      */
-    static auto fromErrno(uint32_t err) -> Error;
-    /**
-     * @brief Convert h_errno code to Error
-     * 
-     * @param err 
-     * @return Error 
-     */
-    static auto fromHErrno(uint32_t err) -> Error;
+    static auto fromErrno(int64_t err) -> Error;
 private:
-    uint32_t mErr = Ok;
+    int64_t mErr = Ok;
     const ErrorCategory *mCategory = nullptr;
 };
 
@@ -310,7 +297,7 @@ private:
  */
 class IliasCategory final : public ErrorCategory {
 public:
-    auto message(uint32_t err) const -> std::string override;
+    auto message(int64_t err) const -> std::string override;
     auto name() const -> std::string_view override;
 
     static auto instance() -> const IliasCategory &;
@@ -352,7 +339,7 @@ inline auto IliasCategory::instance() -> const IliasCategory & {
     static IliasCategory c;
     return c;
 }
-inline auto IliasCategory::message(uint32_t err) const -> std::string {
+inline auto IliasCategory::message(int64_t err) const -> std::string {
     constexpr auto table = _errTable(std::make_index_sequence<size_t(Error::User)>());
     if (err > table.size()) {
         return "Unknown error";
@@ -362,13 +349,13 @@ inline auto IliasCategory::message(uint32_t err) const -> std::string {
 inline auto IliasCategory::name() const -> std::string_view {
     return "ilias";
 }
-inline auto ErrorCategory::equivalent(uint32_t value, const Error &other) const -> bool {
+inline auto ErrorCategory::equivalent(int64_t value, const Error &other) const -> bool {
     return this == &other.category() && value == other.value();
 }
 
-inline Error::Error(uint32_t err, const ErrorCategory &c) : mErr(err), mCategory(&c) { }
+inline Error::Error(int64_t err, const ErrorCategory &c) : mErr(err), mCategory(&c) { }
 template <ErrorCode T>
-inline Error::Error(T err) : mErr(uint32_t(err)), mCategory(&ErrorTraits<T>::category()) { }
+inline Error::Error(T err) : mErr(int64_t(err)), mCategory(&ErrorTraits<T>::category()) { }
 inline Error::Error() : mErr(Ok), mCategory(&IliasCategory::instance()) { }
 inline Error::Error(const Error &) = default;
 inline Error::~Error() = default;
@@ -379,20 +366,18 @@ inline auto Error::message() const -> std::string {
 inline auto Error::category() const -> const ErrorCategory & {
     return *mCategory;   
 }
-inline auto Error::value() const -> uint32_t {
+inline auto Error::value() const -> int64_t {
     return mErr;
 }
 inline auto Error::isOk() const -> bool {
     return mErr == Ok;
 }
 inline auto Error::toString() const -> std::string {
-    char num[64] {0};
-    ::sprintf(num, "0x%x", mErr);
     std::string ret;
     ret += '[';
     ret += mCategory->name();
     ret += ": ";
-    ret += num;
+    ret += std::to_string(mErr);
     ret += "] ";
     ret += message();
     return ret;

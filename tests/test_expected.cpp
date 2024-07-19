@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "../include/ilias/expected.hpp"
+#include "../include/ilias/detail/expected.hpp"
 
 #include <iostream>
 

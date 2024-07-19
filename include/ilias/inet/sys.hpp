@@ -12,7 +12,6 @@
  */
 
 #include "../ilias.hpp"
-#include "../expected.hpp"
 
 // --- Platform
 #if  defined(_WIN32)
@@ -33,6 +32,7 @@
     #include <WinSock2.h>
     #include <WS2tcpip.h>
     #include <MSWSock.h>
+    #include <afunix.h>
 
     #ifdef _MSC_VER
         #pragma comment(lib, "Ws2_32.lib")
@@ -63,6 +63,8 @@
     #include <fcntl.h>
 #endif
 
+#include "../detail/expected.hpp"
+#include "../detail/charcvt.hpp"
 #include <cstring>
 #include <cstddef>
 #include <memory>
@@ -126,8 +128,8 @@ private:
 class SystemCategory final : public ErrorCategory {
 public:
     auto name() const -> std::string_view override;
-    auto message(uint32_t code) const -> std::string override;
-    auto equivalent(uint32_t self, const Error &other) const -> bool override;
+    auto message(int64_t code) const -> std::string override;
+    auto equivalent(int64_t self, const Error &other) const -> bool override;
 
     static auto instance() -> SystemCategory &;
     static auto translate(error_t sysErr) -> Error::Code;
@@ -182,7 +184,7 @@ inline auto SockInitializer::uninitialize() -> Result<void> {
 inline auto SystemCategory::name() const -> std::string_view {
     return "os";
 }
-inline auto SystemCategory::message(uint32_t code) const -> std::string {
+inline auto SystemCategory::message(int64_t code) const -> std::string {
 
 #ifdef _WIN32
     wchar_t *args = nullptr;
@@ -191,9 +193,7 @@ inline auto SystemCategory::message(uint32_t code) const -> std::string {
         nullptr, code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
         reinterpret_cast<wchar_t*>(&args), 0, nullptr
     );
-    auto len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, nullptr, 0, nullptr, nullptr);
-    std::string ret(len, 0);
-    ::WideCharToMultiByte(CP_UTF8, 0, args, -1, &ret[0], len, nullptr, nullptr);
+    auto ret = WideToUtf8(args);
     ::LocalFree(args);
     return ret;
 #else
@@ -249,7 +249,7 @@ inline auto SystemCategory::translate(error_t code) -> Error::Code {
 #undef MAP
 
 }
-inline auto SystemCategory::equivalent(uint32_t value, const Error &other) const -> bool {
+inline auto SystemCategory::equivalent(int64_t value, const Error &other) const -> bool {
     if (this == &other.category() && value == other.value()) {
         //< Category is same, value is same
         return true;
@@ -265,7 +265,7 @@ inline auto SystemCategory::instance() -> SystemCategory & {
     return c;
 }
 
-inline auto Error::fromErrno(uint32_t code) -> Error {
+inline auto Error::fromErrno(int64_t code) -> Error {
 
 #if 0
     return SystemCategory::translate(code);
@@ -274,14 +274,8 @@ inline auto Error::fromErrno(uint32_t code) -> Error {
 #endif
 
 }
-inline auto Error::fromHErrno(uint32_t code) -> Error {
-    return Error::fromErrno(code);
-}
 inline auto Error::fromErrno() -> Error {
     return Error::fromErrno(ILIAS_ERRNO);
-}
-inline auto Error::fromHErrno() -> Error {
-    return Error::fromHErrno(ILIAS_H_ERRNO);
 }
 
 ILIAS_NS_END

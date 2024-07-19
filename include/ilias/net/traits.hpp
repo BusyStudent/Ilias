@@ -29,6 +29,10 @@ concept DatagramClient = requires(T t) {
     t.sendto(nullptr, size_t{ }, IPEndpoint{ });
     t.recvfrom(nullptr, size_t{ });
 };
+template <typename T>
+concept Connectable = requires(T t) {
+    t.connect(IPEndpoint{ }); 
+};
 
 
 /**

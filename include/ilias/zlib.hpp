@@ -2,7 +2,7 @@
 
 #if __has_include(<zlib.h>) && !defined(ILIAS_NO_ZLIB)
 
-#include "expected.hpp"
+#include "detail/expected.hpp"
 #include "ilias.hpp"
 #include <cstring>
 #include <zlib.h>
@@ -57,8 +57,8 @@ public:
         return "zlib";
     }
 
-    auto message(uint32_t ev) const -> std::string override {
-        switch (int(ev)) {
+    auto message(int64_t ev) const -> std::string override {
+        switch (ev) {
             case ZError::Ok: return "Z_OK";
             case ZError::StreamError: return "Z_STREAM_ERROR";
             case ZError::DataError: return "Z_DATA_ERROR";

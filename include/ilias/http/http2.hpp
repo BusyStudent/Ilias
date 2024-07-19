@@ -1,8 +1,9 @@
 #pragma once
 
-#include "ilias_http_transfer.hpp"
-#include "ilias_channel.hpp"
-#include "ilias_mutex.hpp"
+
+#include "../coro/channel.hpp"
+#include "../coro/mutex.hpp"
+#include "transfer.hpp"
 #include <cmath>
 #include <span>
 #include <map>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../net/traits.hpp"
-#include "../ring.hpp"
+#include "../detail/ring.hpp"
 
 #include <openssl/bio.h>
 #include <openssl/err.h>
@@ -282,16 +282,34 @@ public:
         return SSL_set_tlsext_host_name(this->mSsl, std::string(hostname).c_str());
     }
     /**
-     * @brief Set the ALPN Protos object (for ALPN)
+     * @brief Set the Alpn Proto object
      * 
-     * @param buf 
-     * @param n 
+     * @param container The container of the protocols, in normal format (like "http/1.1")
      * @return true 
      * @return false 
      */
-    auto setAlpnProtos(const void *buf, size_t n) -> bool {
-        return SSL_set_alpn_protos(this->mSsl, static_cast<const uint8_t*>(buf), n);
+    template <typename U>
+    auto setAlpn(U &&container) -> bool {
+        std::string buf;
+        for (const auto &i : container) {
+            auto view = std::string_view(i);
+            buf.push_back(char(view.size()));
+            buf.append(view);
+        }
+        return SSL_set_alpn_protos(this->mSsl, reinterpret_cast<const uint8_t *>(buf.data()), buf.size()) == 0;
     }
+    /**
+     * @brief Get the selected ALPN Protocol
+     * 
+     * @return std::string_view (empty on no-alpn or else) like "http/1.1"
+     */
+    auto alpnSelected() const -> std::string_view {
+        const uint8_t *ptr = nullptr;
+        unsigned int len;
+        SSL_get0_alpn_selected(this->mSsl, &ptr, &len);
+        return std::string_view(reinterpret_cast<const char*>(ptr), len);
+    }
+
     /**
      * @brief Get remote Endpoint
      * 

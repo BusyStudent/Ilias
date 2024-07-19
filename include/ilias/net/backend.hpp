@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../expected.hpp"
+#include "../detail/expected.hpp"
 #include "../task.hpp"
 #include "../inet.hpp"
 
@@ -31,12 +31,6 @@ public:
         return dynamic_cast<IoContext*>(EventLoop::instance());
     }
 };
-
-// --- Forward declare
-template <typename T>
-inline auto SendAll(T &client, const void *buffer, size_t n) -> Task<size_t>;
-template <typename T>
-inline auto RecvAll(T &client, void *buffer, size_t n) -> Task<size_t>;
 
 /**
  * @brief Send all the data to, it will send data as more as possible

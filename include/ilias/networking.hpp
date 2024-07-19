@@ -4,6 +4,10 @@
 #include "task.hpp"
 #include "net.hpp"
 
+#if !defined(ILIAS_NO_SSL)
+    #include "ssl.hpp"
+#endif
+
 #if defined(_WIN32)
     #define ILIAS_PLATFORM_CONTEXT IOCPContext
     #include "net/iocp.hpp"

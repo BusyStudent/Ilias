@@ -19,18 +19,18 @@ with minimal dependencies, only pay for what you need.
 
 - Light weight
 - Easy to use
-- Efficient
 - Support for multiple backends
 - Support for cancel
 - Support exceptions, but we use error code default
+- HTTP1 with SSL (optional)
 
 ### Examples
 
 - Http client
 
 ``` cpp
-#include <ilias_networking.hpp>
-#include <ilias_http.hpp>
+#include <ilias/networking.hpp>
+#include <ilias/http.hpp>
 using namespace ILIAS_NAMESPACE;
 int main() {
     PlatformIoContext ctxt; //< Default select io context or you can select another one
