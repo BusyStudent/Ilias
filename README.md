@@ -50,7 +50,7 @@ int main() {
             co_return Unexpected(text.error());
         }
         std::cout << text.value() << std::endl;
-        co_return Result<>();
+        co_return {};
     };
     ctxt.runTask(task()); //< Blocking wait the task done
 }
@@ -60,15 +60,42 @@ int main() {
 
 ``` cpp
 // Another things as same as http client
-auto task = [&]() -> Task<> {
+auto listener = [&]() -> Task<> {
     TcpListener listener(ctxt, AF_INET);
     while (auto value = co_await listener.accept()) {
         auto &[client, addr] = *value;
         // Handle it...
         ctxt.spawn(handleIt, std::move(client), std::move(addr));
     }
-    co_return Result<>();
+    co_return {};
 };
+auto client = [&]() -> Task<> {
+    TcpClient client(ctxt, AF_INET);
+    if (auto ok = co_await client.connect("127.0.0.1:8080"); !ok) {
+        std::cout << "Connect failed by " << ok.error().toString() << std::endl;
+        co_return Unexpected(ok.error());
+    }
+    auto bytes = co_await client.recvAll(buffer, len);
+    // ...
+    co_return {};
+};
+
+auto clientWithExcpetions = [&]() -> Task<> {
+    TcpClient client(ctxt, AF_INET);
+    try {
+        (co_await client.connect("127.0.0.1:8080")).value();
+        (co_await client.recvAll(buffer, len)).value();
+        // ...
+    }
+    catch (const BadExpectedAccess<Error> &e) {
+        std::cout << "Network failed by " << e.error().toString() << std::endl;
+    }
+    co_return {};
+};
+// It is ok to not catch the expection, the task 's value will be the error stored in exception
+auto val = co_await clientWithExceptions();
+val.error(); //< 
+
 ```
 
 - Error Handling
@@ -94,6 +121,6 @@ auto v = co_await task(); //< If user throw BadExpectedAccess<Error> in task
 
 | Backend | Progress | Description |
 | --------- | ---------- | ------------- |
-| epoll     | done         | linux only |
-| iocp      | almost done| windows only, not good support for cancel |
+| epoll     | done | linux only |
+| iocp      | done | windows only |
 | qt        | done | poll model, using QSocketNotifier |

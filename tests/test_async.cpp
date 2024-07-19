@@ -14,7 +14,7 @@ int main() {
 
     ctxt.runTask([&]() -> Task<> {
         TcpClient client(ctxt, AF_INET);
-        ByteStream stream(std::move(client));
+        BufferedStream stream(std::move(client));
         IPEndpoint endpoint(IPAddress4::fromHostname("www.baidu.com"), 80);
         if (auto result = co_await stream.connect(endpoint); !result) {
             std::cout << result.error().toString() << std::endl;

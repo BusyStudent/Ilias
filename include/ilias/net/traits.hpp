@@ -11,27 +11,205 @@
 ILIAS_NS_BEGIN
 
 // --- Concepts
+
+/**
+ * @brief Define a stream client can connect, recv and send data
+ * 
+ * @tparam T 
+ */
 template <typename T>
 concept StreamClient = requires(T t) {
+    /**
+     * @brief Connect to a remote endpoint
+     * 
+     * @param endpoint 
+     * @return Task<void> 
+     */
     t.connect(IPEndpoint{ });
+
+    /**
+     * @brief Send data to the remote endpoint
+     * 
+     * @param buffer 
+     * @param size 
+     * @return Task<size_t> 
+     */
     t.send(nullptr, size_t{ });
+
+    /**
+     * @brief Receive data from the remote endpoint
+     * 
+     * @param buffer 
+     * @param size 
+     * @return Task<size_t> 
+     */
     t.recv(nullptr, size_t{ });
+
+    /**
+     * @brief Doing graceful shutdown
+     * 
+     * @return Task<void>
+     */
     t.shutdown();
 };
+
+/**
+ * @brief Define a listener can bind on a endpoint, accept new client
+ * 
+ * @tparam T 
+ */
 template <typename T>
 concept StreamListener = requires(T t) {
     t.bind(IPEndpoint{ }, int { });
     t.accept();
 };
+
+/**
+ * @brief Define a datagram client can bind on a endpoint, send and recv data
+ * 
+ * @tparam T 
+ */
 template <typename T>
 concept DatagramClient = requires(T t) {
     t.bind(IPEndpoint{ });
     t.sendto(nullptr, size_t{ }, IPEndpoint{ });
     t.recvfrom(nullptr, size_t{ });
 };
+
 template <typename T>
 concept Connectable = requires(T t) {
     t.connect(IPEndpoint{ }); 
+};
+
+/**
+ * @brief A CRTP for StreamClient, add useful methods like recvAll, sendAll etc...
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class AddStreamMethod {
+public:
+    /**
+     * @brief Send all the data to, it will send data as more as possible
+     * 
+     * @param buffer 
+     * @param n 
+     * @return Task<size_t> 
+     */
+    auto sendAll(const void *buffer, size_t n) -> Task<size_t> {
+        auto cur = static_cast<const uint8_t*>(buffer);
+        size_t sended = 0;
+        while (n > 0) {
+            auto ret = co_await self()->send(buffer, n);
+            if (!ret) {
+                co_return Unexpected(ret.error());
+            }
+            if (*ret == 0) {
+                break;
+            }
+            sended += *ret;
+            n -= *ret;
+            cur += *ret;
+        }
+        co_return sended;
+    }
+
+    /**
+     * @brief Send all the data to, it will send data as more as possible, span version
+     * 
+     * @param buffer 
+     * @return Task<size_t> 
+     */
+    auto sendAll(std::span<const std::byte> buffer) -> Task<size_t> {
+        return sendAll(buffer.data(), buffer.size());
+    }
+
+    auto writeAll(std::span<const std::byte> buffer) -> Task<size_t> { return sendAll(buffer); }
+    auto writeAll(const void *buffer, size_t n) -> Task<size_t> { return sendAll(buffer, n); }
+
+    /**
+     * @brief Recv data from, it will try to recv data as more as possible
+     * 
+     * @param buffer 
+     * @param n 
+     * @return Task<size_t> 
+     */
+    auto recvAll(void *buffer, size_t n) -> Task<size_t> {
+        auto cur = static_cast<uint8_t*>(buffer);
+        size_t received = 0;
+        while (n > 0) {
+            auto ret = co_await self()->recv(cur, n);
+            if (!ret) {
+                co_return Unexpected(ret.error());
+            }
+            if (*ret == 0) {
+                break;
+            }
+            received += *ret;
+            n -= *ret;
+            cur += *ret;
+        }
+        co_return received;
+    }
+
+    /**
+     * @brief Recv data from, it will try to recv data as more as possible, span version
+     * 
+     * @param buffer 
+     * @return Task<size_t> 
+     */
+    auto recvAll(std::span<std::byte> buffer) -> Task<size_t> {
+        return recvAll(buffer.data(), buffer.size());
+    }
+
+    auto readAll(std::span<std::byte> buffer) -> Task<size_t> { return recvAll(buffer); }
+    auto readAll(void *buffer, size_t n) -> Task<size_t> { return recvAll(buffer, n); }
+
+    /**
+     * @brief Alias of recv, used as compatibility
+     * 
+     * @param buffer 
+     * @return Task<size_t> 
+     */
+    auto read(std::span<std::byte> buffer) -> Task<size_t> {
+        return self()->recv(buffer.data(), buffer.size());
+    }
+
+    /**
+     * @brief Alias of recv, used as compatibility
+     * 
+     * @param buffer 
+     * @param n 
+     * @return Task<size_t> 
+     */
+    auto read(const void *buffer, size_t n) -> Task<size_t> {
+        return self()->recv(buffer, n);
+    }
+
+    /**
+     * @brief Alias of send, used as compatibility
+     * 
+     * @param buffer 
+     * @return Task<size_t> 
+     */
+    auto write(std::span<const std::byte> buffer) -> Task<size_t> {
+        return self()->send(buffer.data(), buffer.size());
+    }
+
+    /**
+     * @brief Alias of send, used as compatibility
+     * 
+     * @param buffer 
+     * @param n 
+     * @return Task<size_t> 
+     */
+    auto write(const void *buffer, size_t n) -> Task<size_t> { 
+        return self()->send(buffer, n); 
+    }
+private:
+    auto self() -> T * {
+        return static_cast<T *>(this);
+    }
 };
 
 
@@ -39,7 +217,7 @@ concept Connectable = requires(T t) {
  * @brief Helper class to wrap a StreamClient as dynamic type
  * 
  */
-class IStreamClient {
+class IStreamClient final : public AddStreamMethod<IStreamClient> {    
 public:
     IStreamClient() = default;
     IStreamClient(std::nullptr_t) { }
@@ -98,50 +276,6 @@ public:
 
     auto shutdown() -> Task<void> {
         return mPtr->shutdown();
-    }
-
-    /**
-     * @brief Recv all the data, as more as possible
-     * 
-     * @param buffer 
-     * @param n 
-     * @return Task<size_t> 
-     */
-    auto recvAll(void *buffer, size_t n) -> Task<size_t> {
-        return RecvAll(*this, buffer, n);
-    }
-
-    /**
-     * @brief Recv all the data, as more as possible
-     *
-     * @param buffer
-     * @param n
-     * @return Task<size_t> 
-     */
-    auto recvAll(std::span<std::byte> buffer) -> Task<size_t> {
-        return RecvAll(*this, buffer.data(), buffer.size_bytes());
-    }
-
-    /**
-     * @brief Send all the data, as more as possible
-     * 
-     * @param buffer 
-     * @param n 
-     * @return Task<size_t> 
-     */
-    auto sendAll(const void *buffer, size_t n) -> Task<size_t> {
-        return SendAll(*this, buffer, n);
-    }
-
-    /**
-     * @brief Send all the data, as more as possible
-     * 
-     * @param buffer 
-     * @param n 
-     * @return Task<size_t> 
-     */
-    auto sendAll(std::span<const std::byte> buffer) -> Task<size_t> {
-        return SendAll(*this, buffer.data(), buffer.size_bytes());
     }
 
     /**
@@ -207,7 +341,7 @@ static_assert(StreamClient<IStreamClient>); //< Make sure IStreamClient is a has
  * @brief Helper class to wrap a StreamListener as dynamic type
  * 
  */
-class IStreamListener {
+class IStreamListener final {
 public:
     using Client = IStreamClient;
 
@@ -316,7 +450,7 @@ static_assert(StreamListener<IStreamListener>); //< Make sure IStreamListener is
  * @brief Helper class to wrap a DatagramClient as dynamic type
  * 
  */
-class IDatagramClient {
+class IDatagramClient final {
 public:
     IDatagramClient() = default;
     IDatagramClient(const IDatagramClient &) = delete;

@@ -15,15 +15,27 @@ int main() {
 
     ctxt.runTask([&]() -> Task<> {
         TcpClient tcpClient = TcpClient(ctxt, AF_INET);
-        SslClient<> sslClient(sslCtxt, std::move(tcpClient));
-        sslClient.setHostname("www.baidu.com");
-        IStreamClient client = std::move(sslClient);
+        SslClient<> client(sslCtxt, std::move(tcpClient));
+        if constexpr (SslSniExtension<SslClient<> >) {
+            client.setHostname("www.baidu.com");
+        }
+        if constexpr (SslAlpnExtension<SslClient<> >) {
+            const char *alpns [] {
+                "http/1.1"
+            };
+            client.setAlpn(alpns);
+        }
 
         IPEndpoint endpoint(IPAddress4::fromHostname("www.baidu.com"), 443);
         if (auto result = co_await client.connect(endpoint); !result) {
             std::cout << result.error().toString() << std::endl;
             co_return Result<>();
         }
+
+        if constexpr (SslAlpnExtension<SslClient<> >) {
+            std::cout << "ALPN Selected: " << client.alpnSelected() << std::endl;
+        }
+
         std::string request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
         if (auto result = co_await client.send(request.data(), request.size()); !result) {
             std::cout << result.error().toString() << std::endl;

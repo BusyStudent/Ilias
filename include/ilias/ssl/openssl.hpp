@@ -254,7 +254,7 @@ protected:
  * @tparam T 
  */
 template <StreamClient T = IStreamClient>
-class SslClient : public SslSocket<T> {
+class SslClient final : public SslSocket<T>, public AddStreamMethod<SslClient<T> > {    
 public:
     SslClient() = default;
     SslClient(const SslClient &) = delete;
@@ -395,7 +395,7 @@ public:
  * @tparam T 
  */
 template <StreamListener T = IStreamListener>
-class SslListener : public SslSocket<T> {
+class SslListener final : public SslSocket<T> {
 public:
     using RawClient = typename T::Client;
     using Client    = SslClient<RawClient>;

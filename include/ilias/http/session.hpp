@@ -429,16 +429,16 @@ inline auto HttpSession::_connect(const Url &url, const Url &proxy, bool &fromCa
         static_assert(SslSniExtension<SslClient<> >); //< The ssl impl must support SNI
         auto ssl = SslClient(mSslContext, std::move(wrapped));
         ssl.setHostname(host);
-        // ssl.setAlpn(alpns);
+        ssl.setAlpn(alpns);
 
         // Begin Handshake make ssl connection
         if (auto val = co_await ssl.handshake(); !val) {
             co_return Unexpected(val.error());
         }
-        // auto selected = ssl.alpnSelected();
-        // h2 = (selected == "h2");
+        auto selected = ssl.alpnSelected();
+        h2 = (selected == "h2");
         wrapped = std::move(ssl);
-        // ::fprintf(stderr, "[Http] ALPN Selected: %s\n", std::string(selected).c_str());
+        ::fprintf(stderr, "[Http] ALPN Selected: %s\n", std::string(selected).c_str());
 #else
         ::abort();
 #endif

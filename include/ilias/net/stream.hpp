@@ -1,6 +1,8 @@
 #pragma once
 
 #include "traits.hpp"
+#include <cstring>
+#include <span>
 
 #undef min
 #undef max
@@ -8,21 +10,20 @@
 ILIAS_NS_BEGIN
 
 /**
- * @brief Helper class for impl getline and another things
+ * @brief A Adaptor for StreamClient with a internal buffer, so it has getline and something else
  * 
  * @tparam T 
  */
-template <typename T = IStreamClient, typename Char = char>
-class ByteStream {
+template <StreamClient T = IStreamClient>
+class BufferedStream final : public AddStreamMethod<BufferedStream<T> > {
 public:
-    static_assert(sizeof(Char) == sizeof(uint8_t), "Char must be 8-bit");
-    using string = std::basic_string<Char>;
-    using string_view = std::basic_string_view<Char>;
+    using string = std::string;
+    using string_view = std::string_view;
 
-    ByteStream();
-    ByteStream(T &&mFd);
-    ByteStream(ByteStream &&);
-    ~ByteStream();
+    BufferedStream();
+    BufferedStream(T &&mFd);
+    BufferedStream(BufferedStream &&);
+    ~BufferedStream();
 
     /**
      * @brief Get a new line from buffer by delim
@@ -43,16 +44,6 @@ public:
     auto recv(void *buffer, size_t n) -> Task<size_t>;
 
     /**
-     * @brief Recv data from, it will try to recv data as more as possible
-     * 
-     * @param buffer 
-     * @param n 
-     * @return Task<size_t> 
-     */
-    auto recvAll(void *buffer, size_t n) -> Task<size_t>;
-    auto recvAll(std::span<std::byte> b) -> Task<size_t>;
-
-    /**
      * @brief Send data to
      * 
      * @param buffer 
@@ -61,16 +52,6 @@ public:
      * @return Task<size_t>
      */
     auto send(const void *buffer, size_t n) -> Task<size_t>;
-
-    /**
-     * @brief Send all the data to, it will send data as more as possible
-     * 
-     * @param buffer 
-     * @param n 
-     * @return Task<size_t> 
-     */
-    auto sendAll(const void *buffer, size_t n) -> Task<size_t>;
-    auto sendAll(std::span<const std::byte> b) -> Task<size_t>;
 
     /**
      * @brief Connect to
@@ -110,12 +91,12 @@ public:
     auto shutdown() -> Task<>;
 
     /**
-     * @brief Assign a ByteStream from a moved
+     * @brief Assign a BufferedStream from a moved
      * 
-     * @return ByteStream &&
+     * @return BufferedStream &&
      */
-    auto operator =(ByteStream &&) -> ByteStream &;
-    auto operator =(T          &&) -> ByteStream &;
+    auto operator =(BufferedStream &&) -> BufferedStream &;
+    auto operator =(T          &&) -> BufferedStream &;
 private:
     /**
      * @brief Request a write window in recv buffer
@@ -137,17 +118,17 @@ private:
     // <mBuffer> UngetWindow  <mPosition> ReadWindow <mBufferTail>  WriteWindow <mBufferCapicity>
 };
 
-// --- ByteStream Impl
-template <typename T, typename Char>
-inline ByteStream<T, Char>::ByteStream() {
+// --- BufferedStream Impl
+template <StreamClient T>
+inline BufferedStream<T>::BufferedStream() {
 
 }
-template <typename T, typename Char>
-inline ByteStream<T, Char>::ByteStream(T &&mFd) : mFd(std::move(mFd)) {
+template <StreamClient T>
+inline BufferedStream<T>::BufferedStream(T &&mFd) : mFd(std::move(mFd)) {
 
 }
-template <typename T, typename Char>
-inline ByteStream<T, Char>::ByteStream(ByteStream &&other) : mFd(std::move(other.mFd)) {
+template <StreamClient T>
+inline BufferedStream<T>::BufferedStream(BufferedStream &&other) : mFd(std::move(other.mFd)) {
     mBuffer = other.mBuffer;
     mBufferCapacity = other.mBufferCapacity;
     mBufferTail = other.mBufferTail;
@@ -157,13 +138,13 @@ inline ByteStream<T, Char>::ByteStream(ByteStream &&other) : mFd(std::move(other
     other.mBufferTail = 0;
     other.mPosition = 0;
 }
-template <typename T, typename Char>
-inline ByteStream<T, Char>::~ByteStream() {
+template <StreamClient T>
+inline BufferedStream<T>::~BufferedStream() {
     close();
 }
 
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::operator =(ByteStream &&other) -> ByteStream & {
+template <StreamClient T>
+inline auto BufferedStream<T>::operator =(BufferedStream &&other) -> BufferedStream & {
     if (&other == this) {
         return *this;
     }
@@ -179,13 +160,13 @@ inline auto ByteStream<T, Char>::operator =(ByteStream &&other) -> ByteStream & 
     mFd = std::move(other.mFd);
     return *this;
 }
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::operator =(T &&mFd) -> ByteStream & {
-    (*this) = ByteStream(std::move(mFd));
+template <StreamClient T>
+inline auto BufferedStream<T>::operator =(T &&mFd) -> BufferedStream & {
+    (*this) = BufferedStream(std::move(mFd));
     return *this;
 };
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::close() -> void {
+template <StreamClient T>
+inline auto BufferedStream<T>::close() -> void {
     if (mBuffer) {
         ILIAS_FREE(mBuffer);
     }
@@ -196,13 +177,13 @@ inline auto ByteStream<T, Char>::close() -> void {
     mPosition = 0;
 }
 
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::shutdown() -> Task<> {
+template <StreamClient T>
+inline auto BufferedStream<T>::shutdown() -> Task<> {
     return mFd.shutdown();
 } 
 
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::recv(void *buffer, size_t n) -> Task<size_t> {
+template <StreamClient T>
+inline auto BufferedStream<T>::recv(void *buffer, size_t n) -> Task<size_t> {
     while (true) {
         auto [ptr, len] = _readWindow();
         if (len > 0) {
@@ -224,37 +205,21 @@ inline auto ByteStream<T, Char>::recv(void *buffer, size_t n) -> Task<size_t> {
         mBufferTail += ret.value();
     }
 }
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::recvAll(void *buffer, size_t n) -> Task<size_t> {
-    return RecvAll(*this, buffer, n);
-}
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::recvAll(std::span<std::byte> buffer) -> Task<size_t> {
-    return RecvAll(*this, buffer.data(), buffer.size());
-}
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::send(const void *buffer, size_t n) -> Task<size_t> {
+template <StreamClient T>
+inline auto BufferedStream<T>::send(const void *buffer, size_t n) -> Task<size_t> {
     return mFd.send(buffer, n);
 }
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::sendAll(const void *buffer, size_t n) -> Task<size_t> {
-    return SendAll(*this, buffer, n);
-}
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::sendAll(std::span<const std::byte> buffer) -> Task<size_t> {
-    return sendAll(*this, buffer.data(), buffer.size());
-}
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::connect(const IPEndpoint &endpoint) -> Task<void> {
+template <StreamClient T>
+inline auto BufferedStream<T>::connect(const IPEndpoint &endpoint) -> Task<void> {
     return mFd.connect(endpoint);
 }
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::getline(string_view delim) -> Task<string> {
+template <StreamClient T>
+inline auto BufferedStream<T>::getline(string_view delim) -> Task<string> {
     while (true) {
         // Scanning current buffer
         auto [ptr, len] = _readWindow();
         if (len >= delim.size()) {
-            string_view view(static_cast<Char*>(ptr), len);
+            string_view view(static_cast<char*>(ptr), len);
             size_t pos = view.find(delim);
             if (pos != string_view::npos) {
                 // Found the delimiter
@@ -275,20 +240,20 @@ inline auto ByteStream<T, Char>::getline(string_view delim) -> Task<string> {
         mBufferTail += ret.value();
     }
 }
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::unget(const void *buffer, size_t n) -> void {
+template <StreamClient T>
+inline auto BufferedStream<T>::unget(const void *buffer, size_t n) -> void {
     // Check position > 0 so we can add data to the front of the buffer
     auto ptr = _allocUngetWindow(n);
     ::memcpy(ptr, buffer, n);
     mPosition -= n;
 }
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::unget(string_view buffer) -> void {
+template <StreamClient T>
+inline auto BufferedStream<T>::unget(string_view buffer) -> void {
     unget(buffer.data(), buffer.size());
 }
 
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::_allocWriteWindow(size_t n) -> void * {
+template <StreamClient T>
+inline auto BufferedStream<T>::_allocWriteWindow(size_t n) -> void * {
     // Reset the read position
     if (mPosition == mBufferTail) {
         mBufferTail = 0;
@@ -318,8 +283,8 @@ inline auto ByteStream<T, Char>::_allocWriteWindow(size_t n) -> void * {
     }
     return nullptr;
 }
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::_allocUngetWindow(size_t n) -> void * {
+template <StreamClient T>
+inline auto BufferedStream<T>::_allocUngetWindow(size_t n) -> void * {
     if (n > mPosition) {
         // Bigger than current unget window, expand the buffer to n
         auto newCapicity = mBufferCapacity + n;
@@ -333,21 +298,24 @@ inline auto ByteStream<T, Char>::_allocUngetWindow(size_t n) -> void * {
     }
     return mBuffer + mPosition - n;
 }
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::_writeWindow() -> std::pair<void *, size_t> {
+template <StreamClient T>
+inline auto BufferedStream<T>::_writeWindow() -> std::pair<void *, size_t> {
     size_t still = mBufferCapacity - mBufferTail;
     if (still == 0) {
         return std::pair(nullptr, 0);
     }
     return std::pair(mBuffer + mBufferTail, still);
 }
-template <typename T, typename Char>
-inline auto ByteStream<T, Char>::_readWindow() -> std::pair<void *, size_t> {
+template <StreamClient T>
+inline auto BufferedStream<T>::_readWindow() -> std::pair<void *, size_t> {
     size_t still = mBufferTail - mPosition;
     if (still == 0) {
         return std::pair(nullptr, 0);
     }
     return std::pair(mBuffer + mPosition, still);
 }
+
+template <StreamClient T>
+using ByteStream [[deprecated("Use BufferedStream instead")]] = BufferedStream<T>;
 
 ILIAS_NS_END

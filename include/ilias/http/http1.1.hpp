@@ -29,7 +29,7 @@ public:
      * 
      * @param client 
      */
-    Http1Connection(ByteStream<> &&client) : mClient(std::move(client)) { }
+    Http1Connection(BufferedStream<> &&client) : mClient(std::move(client)) { }
 
     /**
      * @brief Create a new http stream on a physical connection
@@ -63,7 +63,7 @@ public:
      */
     static auto make(IStreamClient &&client) -> std::unique_ptr<Http1Connection>;
 private:
-    ByteStream<> mClient;
+    BufferedStream<> mClient;
     Mutex mMutex; //< For Http1 keep-alive, at one time, only a single request can be processed
     bool mBroken = false; //< False on physical connection close
     size_t mNumOfStream = 0; //< Number of Http1Stream alived

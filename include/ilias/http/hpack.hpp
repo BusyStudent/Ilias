@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ilias_http_headers.hpp"
+#include "headers.hpp"
 #include <cctype>
 #include <string>
 #include <array>

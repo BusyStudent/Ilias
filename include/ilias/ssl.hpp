@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ilias.hpp"
+#include <span>
 
 #if !defined(ILIAS_NO_SSL)
 
@@ -40,6 +41,12 @@ ILIAS_NS_BEGIN
 template <typename T>
 concept SslSniExtension = requires(T t) {
     t.setHostname("example.com");
+};
+
+template <typename T>
+concept SslAlpnExtension = requires(T t) {
+    t.setAlpn(std::span<const char *> {});
+    t.alpnSelected();
 };
 
 ILIAS_NS_END

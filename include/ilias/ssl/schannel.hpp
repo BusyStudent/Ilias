@@ -89,7 +89,7 @@ private:
     ::HMODULE mDll = ::LoadLibraryA("secur32.dll");
     ::PSecurityFunctionTableW mTable = nullptr;
     ::CredHandle mCredHandle { }; //<
-    bool mHasAlpn = ::IsWindows8Point1OrGreater(); //< ALPN is on the Windows 8.1 and later
+    bool mHasAlpn = ::IsWindows8OrGreater(); //< ALPN is on the Windows 8.1 and later
 };
 
 /**
@@ -107,6 +107,7 @@ public:
     ::PSecurityFunctionTableW table = nullptr;
     ::CtxtHandle ssl { }; //< The current ssl handle from schannel
     ::SecPkgContext_StreamSizes streamSizes { };
+    ::SecPkgContext_ApplicationProtocol alpnResult { }; //< The ALPN selected result
 
     // Buffer heres
     uint8_t incoming[16384 + 500]; //< The incoming buffer 2 ** 14 (MAX TLS SIZE) + header + trailer
@@ -257,7 +258,16 @@ protected:
             }
             received += *n;
         }
-        table->QueryContextAttributesW(ctxt, SECPKG_ATTR_STREAM_SIZES, &data->streamSizes);
+        // Get alpn result
+        if (!mAlpn.empty()) {
+            if (auto err = table->QueryContextAttributesW(ctxt, SECPKG_ATTR_APPLICATION_PROTOCOL, &data->alpnResult); err != SEC_E_OK) {
+                co_return Unexpected(SslCategory::makeError(err));
+            }
+        }
+        if (auto err = table->QueryContextAttributesW(ctxt, SECPKG_ATTR_STREAM_SIZES, &data->streamSizes); err != SEC_E_OK) {
+            SCHANNEL_LOG("[Schannel] Failed to get stream sizes 0x%x\n", err);
+            co_return Unexpected(SslCategory::makeError(err));
+        }
         mData = std::move(data);
         co_return {};
     }
@@ -472,13 +482,12 @@ protected:
     SslContext *mCtxt = nullptr;
     T           mFd; //< The target we input and output
     std::wstring mHost; //< The host, used as a ext
-    std::string mAlpnSelected; //< The ALPN selected
-    std::vector<uint8_t> mAlpn; //< The ALPN, used as a ext
+    std::string  mAlpn; //< The ALPN, used as a ext
     std::unique_ptr<SslData> mData; //< The Ssl data
 };
 
 template <StreamClient T = IStreamClient>
-class SslClient final : public SslSocket<T> {
+class SslClient final : public SslSocket<T>, public AddStreamMethod<SslClient<T> > {    
 public:
     using SslSocket<T>::SslSocket;
 
@@ -514,14 +523,14 @@ public:
         this->mHost.resize(len);
         len = ::MultiByteToWideChar(CP_UTF8, 0, hostname.data(), hostname.size(), this->mHost.data(), len);
     }
-#if 0
+#if 1
     template <typename U>
-    auto setAlpn(U &&container) -> void {
+    auto setAlpn(U &&container) -> bool {
         // From curl/schannel.c
-        // if (!this->mCtxt->hasAlpn()) {
-        //     SCHANNEL_LOG("[Schannel] ALPN is not supported by the context\n");
-        //     return;
-        // }
+        if (!this->mCtxt->hasAlpn()) {
+            SCHANNEL_LOG("[Schannel] ALPN is not supported by the context\n");
+            return false;
+        }
         uint8_t buffer[128];
         auto now = buffer;
 
@@ -547,13 +556,22 @@ public:
         }
 
         *len = uint16_t(cur - now);
-        *extLength = uint32_t(cur - buffer + sizeof(uint32_t));
+        *extLength = uint32_t(cur - buffer - sizeof(uint32_t));
 
         // Copy to inside the buffer
-        this->mAlpn.assign(buffer, cur);
+        this->mAlpn.assign(reinterpret_cast<const char*>(buffer), reinterpret_cast<const char*>(cur));
+        return true;
     }
     auto alpnSelected() const -> std::string_view {
-        return this->mAlpnSelected;
+        auto data = this->mData.get();
+        auto alpnResult = data ? &data->alpnResult : nullptr;
+        if (!alpnResult) {
+            return {};
+        }
+        if (alpnResult->ProtoNegoStatus != SecApplicationProtocolNegotiationStatus_Success) {
+            return {};
+        }
+        return std::string_view(reinterpret_cast<const char*>(alpnResult->ProtocolId), alpnResult->ProtocolIdSize);
     }
 #endif
 };

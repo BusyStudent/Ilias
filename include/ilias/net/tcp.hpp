@@ -9,7 +9,7 @@ ILIAS_NS_BEGIN
  * @brief Tcp Socket Client
  * 
  */
-class TcpClient final : public AsyncSocket {
+class TcpClient final : public AsyncSocket, public AddStreamMethod<TcpClient> {
 public:
     TcpClient();
 
