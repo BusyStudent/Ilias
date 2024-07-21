@@ -22,7 +22,7 @@ class Http1Stream;
 class Http1Connection final : public HttpConnection {
 public:
     Http1Connection(const Http1Connection &) = delete;
-    ~Http1Connection() = default;
+    ~Http1Connection();
 
     /**
      * @brief Construct a new Http 1 Connection object
@@ -63,10 +63,18 @@ public:
      */
     static auto make(IStreamClient &&client) -> std::unique_ptr<Http1Connection>;
 private:
+    /**
+     * @brief A Task will be started on idle, to check if the connection is broken
+     * 
+     * @return Task<> 
+     */
+    auto _waitBroken() -> Task<>;
+
     BufferedStream<> mClient;
     Mutex mMutex; //< For Http1 keep-alive, at one time, only a single request can be processed
     bool mBroken = false; //< False on physical connection close
     size_t mNumOfStream = 0; //< Number of Http1Stream alived
+    JoinHandle<void> mHandle; //< The handle of _waitBroken()
 friend class Http1Stream;
 };
 
@@ -351,6 +359,14 @@ inline auto Http1Stream::_sprintf(std::string &buf, const char *fmt, ...) -> voi
     va_start(varg, fmt);
     ::vsprintf(buf.data() + len, fmt, varg);
     va_end(varg);
+}
+
+inline Http1Connection::~Http1Connection() {
+    ILIAS_ASSERT(mNumOfStream == 0);
+    // if (mHandle) {
+    //     mHandle.cancel();
+    //     mHandle.join();
+    // }
 }
 
 inline auto Http1Connection::newStream() -> Task<std::unique_ptr<HttpStream> > {

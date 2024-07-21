@@ -474,8 +474,8 @@ protected:
             }
         }
 
-        close(); //< Close the T below us
-        co_return {};
+        // Shutdown fd below us
+        co_return co_await mFd.shutdown();
     }
     auto operator =(SslSocket &&other) -> SslSocket & = default;
 protected:

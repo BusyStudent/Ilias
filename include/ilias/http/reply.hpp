@@ -167,10 +167,18 @@ inline auto HttpReply::recvAll() -> Task<T> {
 
 #if !defined(ILIAS_NO_ZLIB)
     if (auto encoding = mResponseHeaders.value(HttpHeaders::ContentEncoding); encoding == "gzip") {
-        buf = Zlib::decompress<T>(std::as_bytes(std::span(buf)), Zlib::GzipFormat);
+        auto ret = Zlib::decompress<T>(std::as_bytes(std::span(buf)), Zlib::GzipFormat);
+        if (!ret) {
+            co_return Unexpected(ret.error());
+        }
+        buf = std::move(ret.value());
     }
     else if (encoding == "deflate") {
-        buf = Zlib::decompress<T>(std::as_bytes(std::span(buf)), Zlib::DeflateFormat);
+        auto ret = Zlib::decompress<T>(std::as_bytes(std::span(buf)), Zlib::DeflateFormat);
+        if (!ret) {
+            co_return Unexpected(ret.error());
+        }
+        buf = std::move(ret.value());
     }
 #endif
     co_return buf;

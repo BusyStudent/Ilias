@@ -403,7 +403,10 @@ inline auto HttpSession::_connect(const Url &url, const Url &proxy, bool &fromCa
             fprintf(stderr, "[Http] Do Tcp connect to %s: %s\n",
                 addr.toString().c_str(), 
                 lastStatus ? "ok" : lastStatus.error().toString().c_str()
-            );    
+            );
+            if (!lastStatus && lastStatus.error() == Error::Canceled) {
+                break;
+            }
             if (!lastStatus) {
                 continue;
             }

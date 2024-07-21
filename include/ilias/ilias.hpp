@@ -46,18 +46,10 @@
     #define ILIAS_THROW(x) throw x
 #endif
 
-#define ILIAS_DECLARE_ERROR_(errc, category_)  \
-    template <>                                \
-    class ErrorTraits<errc> {                  \
-    public:                                    \
-        static const category_ & category() {  \
-            return category_::instance();      \
-        }                                      \
-    }
-
-#define ILIAS_DECLARE_ERROR(errc, category_)   \
-    namespace ILIAS_NAMESPACE {                \
-        ILIAS_DECLARE_ERROR_(errc, category_)  \
+#define ILIAS_DECLARE_ERROR(errc, category)             \
+    inline auto _MakeError_Ilias(errc e) noexcept {     \
+        using ::ILIAS_NAMESPACE::Error;                 \
+        return Error{int64_t(e), category::instance()}; \
     }
 
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT((x) && (msg))
@@ -84,8 +76,6 @@ template <typename T>
 class AwaitTransform;
 
 // --- Error
-template <typename T>
-class ErrorTraits;
 class ErrorCategory;
 class Error;
 
@@ -96,7 +86,7 @@ class Error;
  */
 template <typename T>
 concept ErrorCode = requires(T t) {
-    ErrorTraits<T>::category();
+    { _MakeError_Ilias(t) } -> std::same_as<Error>;
 };
 
 /**
@@ -308,7 +298,7 @@ private:
     static consteval auto _errTable(std::index_sequence<N...>);
 };
 
-ILIAS_DECLARE_ERROR_(Error::Code, IliasCategory);
+ILIAS_DECLARE_ERROR(Error::Code, IliasCategory);
 
 // --- Error Impl
 template <Error::Code c>
@@ -353,9 +343,9 @@ inline auto ErrorCategory::equivalent(int64_t value, const Error &other) const -
     return this == &other.category() && value == other.value();
 }
 
-inline Error::Error(int64_t err, const ErrorCategory &c) : mErr(err), mCategory(&c) { }
 template <ErrorCode T>
-inline Error::Error(T err) : mErr(int64_t(err)), mCategory(&ErrorTraits<T>::category()) { }
+inline Error::Error(T err) : Error(_MakeError_Ilias(err)) { }
+inline Error::Error(int64_t err, const ErrorCategory &c) : mErr(err), mCategory(&c) { }
 inline Error::Error() : mErr(Ok), mCategory(&IliasCategory::instance()) { }
 inline Error::Error(const Error &) = default;
 inline Error::~Error() = default;

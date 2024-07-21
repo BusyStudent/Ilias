@@ -8,7 +8,7 @@ ILIAS_NS_BEGIN
  * @brief Wrap the connection to the socks5 proxy server, use it like normal TcpClient
  * 
  */
-class Socks5Client {
+class Socks5Client final : public AddStreamMethod<Socks5Client> {
 public:
     Socks5Client(IoContext &ctxt, int family);
     Socks5Client(IoContext &ctxt, const IPEndpoint &serverEndpoint);
@@ -109,7 +109,7 @@ inline auto Socks5Client::setAuth(std::string_view user, std::string_view passwo
 
 inline auto Socks5Client::connectProxy() -> Task<void> {
     if (mIsSocks5Connected) {
-        co_return Result<>();
+        co_return {};
     }
     auto err = co_await mClient.connect(mServer);
     if (!err) {
@@ -146,7 +146,7 @@ inline auto Socks5Client::connectProxy() -> Task<void> {
 
     // Done
     mIsSocks5Connected = true;
-    co_return Result<void>();
+    co_return {};
 }
 inline auto Socks5Client::_connect(uint8_t type, const void *buf, size_t bufSize, uint16_t port) -> Task<void> {
     // Send the connect request

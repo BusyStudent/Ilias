@@ -3,6 +3,7 @@
 #if __has_include(<zlib.h>) && !defined(ILIAS_NO_ZLIB)
 
 #include "detail/expected.hpp"
+#include <lzexpand.h>
 #include "ilias.hpp"
 #include <cstring>
 #include <zlib.h>
@@ -90,6 +91,8 @@ public:
     }
 };
 
+ILIAS_DECLARE_ERROR(ZError, ZCategory);
+
 
 // TODO 
 /**
@@ -170,14 +173,14 @@ private:
  * @tparam T 
  * @tparam U 
  * @param input 
- * @return T 
+ * @return Result<T> 
  */
 template <Output T = std::vector<std::byte> >
-inline auto decompress(std::span<const std::byte> input, int wbits) -> T {
+inline auto decompress(std::span<const std::byte> input, int wbits) -> Result<T> {
     ::z_stream stream {};
     ::memset(&stream, 0, sizeof(stream));
-    if (::inflateInit2(&stream, wbits) != Z_OK) {
-        return T();
+    if (auto err = ::inflateInit2(&stream, wbits); err != Z_OK) {
+        return Unexpected(ZError(err));
     }
     auto inPtr = (Bytef*) input.data();
     auto inSize = input.size_bytes();
@@ -195,7 +198,7 @@ inline auto decompress(std::span<const std::byte> input, int wbits) -> T {
             ret = ::inflate(&stream, Z_NO_FLUSH);
             if (ret == Z_STREAM_ERROR || ret == Z_NEED_DICT || ret == Z_DATA_ERROR || ret == Z_MEM_ERROR) {
                 ::inflateEnd(&stream);
-                return T();
+                return Unexpected(ZError(ret));
             }
         }
         while (stream.avail_out > 0 && ret != Z_STREAM_END);
@@ -216,9 +219,9 @@ inline auto decompress(std::span<const std::byte> input, int wbits) -> T {
  * 
  * @param input 
  * @param wbits The format
- * @return std::string 
+ * @return Result<std::string> 
  */
-inline auto decompress(std::string_view input, int wbits) -> std::string {
+inline auto decompress(std::string_view input, int wbits) -> Result<std::string> {
     return decompress<std::string>(
         std::as_bytes(std::span(input.data(), input.size())),
         wbits

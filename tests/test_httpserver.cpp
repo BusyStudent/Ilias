@@ -13,7 +13,7 @@ const char *statusString(int statusCode) {
     }
 }
 
-Task<> sendResponse(ByteStream<TcpClient> &client, int statusCode, const void *body, int64_t n = -1) {
+Task<> sendResponse(BufferedStream<TcpClient> &client, int statusCode, const void *body, int64_t n = -1) {
     if (n == -1) {
         n = ::strlen((char*)body);
     }
@@ -119,7 +119,7 @@ while (true) {
 #endif
 }
 }
-Task<> handleClient(ByteStream<TcpClient> client) {
+Task<> handleClient(BufferedStream<TcpClient> client) {
     auto err = co_await runClient(client);
     if (!err) {
         std::cout << "Closeing by " << err.error().toString() << std::endl;
