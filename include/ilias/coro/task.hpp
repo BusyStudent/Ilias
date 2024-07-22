@@ -2,8 +2,14 @@
 
 #include "../detail/expected.hpp"
 #include "promise.hpp"
-#include "task.hpp"
+#include <coroutine>
+#include <concepts>
 #include <optional>
+
+// Useful macros
+#define ilias_go   ::ILIAS_NAMESPACE::EventLoop::instance() <<
+#define ilias_wait ::ILIAS_NAMESPACE::EventLoop::instance() >>
+#define ilias_spawn ::ILIAS_NAMESPACE::EventLoop::instance() <<
 
 ILIAS_NS_BEGIN
 
@@ -310,11 +316,13 @@ public:
      * @return Result<T> 
      */
     auto value() -> Result<T> {
+#if defined(__cpp_exceptions)
         if (mException) {
             auto exception = mException;
             mException = nullptr;
             std::rethrow_exception(exception);
         }
+#endif
         ILIAS_ASSERT_MSG(mHandle.done(), "Task<T> is not done yet!");
         ILIAS_ASSERT_MSG(mValue.has_value(), "Task<T> doesn't has value, do you forget co_return?");
         return std::move(*mValue);
@@ -345,6 +353,9 @@ public:
         return handle_type::from_address(mHandle.address());
     }
 private:
+#if defined(__cpp_exceptions)
+    std::exception_ptr mException;
+#endif
     std::optional<Result<T> > mValue;
 };
 
@@ -375,128 +386,6 @@ public:
     PromiseBase *mPromise;
     T mAwaiter;
 };
-
-
-/**
- * @brief Handle used to observe the running task
- * 
- */
-class CancelHandle {
-public:
-    template <typename T>
-    explicit CancelHandle(std::coroutine_handle<T> handle) : mPtr(&handle.promise()) { }
-    CancelHandle(const CancelHandle &) = delete;
-    CancelHandle(CancelHandle &&other) : mPtr(other.mPtr) { other.mPtr = nullptr; }
-    CancelHandle(std::nullptr_t) { }
-    CancelHandle() = default;
-    ~CancelHandle() { clear(); }
-
-    auto clear() -> void;
-    auto cancel() -> CancelStatus;
-    auto isDone() const -> bool;
-    auto isCanceled() const -> bool;
-    auto operator =(CancelHandle &&h) -> CancelHandle &;
-    auto operator =(std::nullptr_t) -> CancelHandle &;
-    explicit operator bool() const noexcept { return mPtr; }
-private:
-    auto _cohandle() const -> std::coroutine_handle<>;
-protected:
-    PromiseBase *mPtr = nullptr;
-};
-
-/**
- * @brief Handle used to observe the running task but, it can blocking wait for it
- * 
- * @tparam T 
- */
-template <typename T>
-class JoinHandle final : public CancelHandle {
-public:
-    using handle_type = typename Task<T>::handle_type;
-
-    explicit JoinHandle(handle_type handle) : CancelHandle(handle) { }
-    JoinHandle(std::nullptr_t) : CancelHandle(nullptr) { }
-    JoinHandle(const JoinHandle &) = delete;
-    JoinHandle(JoinHandle &&) = default;
-    JoinHandle() = default;
-
-    /**
-     * @brief Blocking wait to get the result
-     * 
-     * @return Result<T> 
-     */
-    auto join() -> Result<T>;
-    auto joinable() const noexcept -> bool;
-    auto operator =(JoinHandle &&other) -> JoinHandle & = default;
-};
-
-// CancelHandle
-inline auto CancelHandle::clear() -> void {
-    auto h = _cohandle();
-    if (!h) {
-        return;
-    }
-    if (!h.done()) {
-        // Still not done, we detach it
-        mPtr->setDestroyOnDone();
-    }
-    else {
-        h.destroy(); //< Done, we destroy 
-    }
-    mPtr = nullptr;
-}
-inline auto CancelHandle::_cohandle() const -> std::coroutine_handle<> {
-    if (mPtr) {
-        return mPtr->handle();
-    }
-    return std::coroutine_handle<>();
-}
-inline auto CancelHandle::cancel() -> CancelStatus {
-    if (mPtr) {
-        return mPtr->cancel();
-    }
-    return CancelStatus::Done;
-}
-inline auto CancelHandle::isDone() const -> bool {
-    return _cohandle().done();
-}
-inline auto CancelHandle::isCanceled() const -> bool {
-    return mPtr->isCanceled();
-}
-inline auto CancelHandle::operator =(CancelHandle &&other) -> CancelHandle & {
-    if (this == &other) {
-        return *this;
-    }
-    clear();
-    mPtr = other.mPtr;
-    other.mPtr = nullptr;
-    return *this;
-}
-inline auto CancelHandle::operator =(std::nullptr_t) -> CancelHandle & {
-    clear();
-    return *this;
-}
-
-// JoinHandle
-template <typename T>
-inline auto JoinHandle<T>::join() -> Result<T> {
-    ILIAS_ASSERT(joinable());
-    auto h = static_cast<TaskPromise<T> *>(mPtr)->handle();
-    // If not done, we try to wait it done by enter the event loop
-    if (!h.done()) {
-        StopToken token;
-        h.promise().setStopOnDone(&token);
-        h.promise().eventLoop()->run(token);
-    }
-    // Get the value and drop the task
-    auto value = h.promise().value();
-    clear();
-    return value;
-}
-template <typename T>
-inline auto JoinHandle<T>::joinable() const noexcept -> bool {
-    return mPtr;
-}
 
 
 // Task

@@ -47,11 +47,6 @@ inline std::set<std::coroutine_handle<> > _ilias_coset;
 #define ILIAS_CHECK_NEXISTS(h) ILIAS_CHECK(!ILIAS_CO_EXISTS(h))
 #define ILIAS_CO_RESUME(h) if (h) { ILIAS_CHECK_EXISTS(h); h.resume(); }
 
-// Useful macros
-#define ilias_go   ::ILIAS_NAMESPACE::EventLoop::instance() <<
-#define ilias_wait ::ILIAS_NAMESPACE::EventLoop::instance() >>
-#define ilias_spawn ::ILIAS_NAMESPACE::EventLoop::instance() <<
-
 ILIAS_NS_BEGIN
 
 /**

@@ -3,7 +3,7 @@
 /**
  * @file promise.hpp
  * @author BusyStudent (fyw90mc@gmail.com)
- * @brief All coroutines's promise base, PromiseBase
+ * @brief All coroutines's promise base, CoroPromise
  * @version 0.1
  * @date 2024-07-18
  * 
@@ -21,65 +21,79 @@ ILIAS_NS_BEGIN
  * @brief Cancel status for cancel
  * 
  */
-enum class CancelStatus {
+enum class CancelStatus : uint8_t {
     Pending, //< This cancel is still pending
     Done,    //< This cancel is done
 };
 
-
 /**
- * @brief Helper class for switch to another coroutine handle
+ * @brief The state of the coroutines
  * 
  */
-class SwitchCoroutine {
-public:
-    template <typename T>
-    SwitchCoroutine(std::coroutine_handle<T> handle) noexcept : mHandle(handle) { }
-    ~SwitchCoroutine() = default;
+enum class CoroState : uint8_t {
+    Null,      //< This coroutine is not started, resume allowed
+    Running,   //< This coroutine is running, no resume allowed
+    Suspended, //< This coroutine is suspended, resume allowed
+    Done,      //< This coroutine is done, no resume allowed
+    // Null -> Running <-> Suspended -> Done
+};
 
-    auto await_ready() const noexcept -> bool { return false; }
-    auto await_suspend(std::coroutine_handle<> handle) noexcept { return mHandle; }
-    auto await_resume() const noexcept -> void { }
+
+/**
+ * @brief Helper class for switch to another coroutine handle and destroy the current one if needed
+ * 
+ */
+class _SwitchCoroutine : public std::suspend_always {    
+public:
+    _SwitchCoroutine(std::coroutine_handle<> handle, bool destroy) noexcept : mHandle(handle), mDestroy(destroy) { }
+    ~_SwitchCoroutine() = default;
+
+    auto await_suspend(std::coroutine_handle<> handle) noexcept { 
+        auto target = mHandle; //< Copy to stack
+        if (mDestroy) [[unlikely]] { //< destroy current coroutine if needed
+            handle.destroy();
+        }
+        return target; 
+    }
 private:
     std::coroutine_handle<> mHandle;
+    bool                    mDestroy;
 };
 
 /**
  * @brief All Promise's base
  * 
  */
-class PromiseBase {
+class CoroPromise {
 public:
-    PromiseBase() = default;
-    PromiseBase(const PromiseBase &) = delete; 
-    ~PromiseBase() = default;
+    CoroPromise() = default;
+    CoroPromise(const CoroPromise &) = delete; 
+    ~CoroPromise() = default;
 
     auto initial_suspend() noexcept {
         struct Awaiter {
             auto await_ready() const noexcept -> bool { return false; }
-            auto await_suspend(std::coroutine_handle<>) const noexcept -> void { self->mSuspended = true; }
-            auto await_resume() { ILIAS_ASSERT(self); self->mStarted = true; self->mSuspended = false; }
-            PromiseBase *self;
+            auto await_suspend(std::coroutine_handle<>) const noexcept -> void { }
+            auto await_resume() { ILIAS_ASSERT(self->mState == CoroState::Null); self->mState = CoroState::Running; }
+            CoroPromise *self;
         };
         return Awaiter {this};
     }
 
-    auto final_suspend() noexcept -> SwitchCoroutine {
-        mSuspended = true; //< Done is still suspended
+    auto final_suspend() noexcept -> _SwitchCoroutine {
+        mState = CoroState::Done; //< Done is still suspended
         if (mStopOnDone) [[unlikely]] {
             mStopOnDone->stop();
         }
-        if (mDestroyOnDone) [[unlikely]] {
-            mEventLoop->destroyHandle(mHandle);
-        }
         // If has someone is waiting us and he is suspended
         // We can not resume a coroutine which is not suspended, It will cause UB
+        std::coroutine_handle<> switchTo = std::noop_coroutine();
         if (mPrevAwaiting) {
             ILIAS_ASSERT(mPrevAwaiting->isResumable());
             mPrevAwaiting->setResumeCaller(this);
-            return mPrevAwaiting->mHandle;
+            switchTo = mPrevAwaiting->handle();
         }
-        return std::noop_coroutine();
+        return {switchTo, mDestroyOnDone};
     }
 
     /**
@@ -91,14 +105,17 @@ public:
     }
 
     /**
-     * @brief Cancel the current coroutine
+     * @brief Cancel the current coro
      * 
      * @return CancelStatus
      */
     auto cancel() -> CancelStatus {
         mCanceled = true;
-        if (!mSuspended) {
-            return CancelStatus::Pending;
+        switch (mState) {
+            //< If the coro is done, just return
+            case CoroState::Done: return CancelStatus::Done;
+            //< If the coro is still running, we can not notify it
+            case CoroState::Running: return CancelStatus::Pending;
         }
         while (!mHandle.done()) {
             mHandle.resume();
@@ -115,15 +132,15 @@ public:
     }
 
     auto isStarted() const -> bool {
-        return mStarted;
+        return mState != CoroState::Null;
     }
 
     auto isSuspended() const -> bool {
-        return mSuspended;
+        return mState == CoroState::Suspended;
     }
 
     auto isResumable() const -> bool {
-        return mSuspended && !mHandle.done();
+        return mState == CoroState::Suspended || mState == CoroState::Null;
     }
 
     auto name() const -> const char * {
@@ -137,9 +154,9 @@ public:
     /**
      * @brief Get the pointer of the promise which resume us
      * 
-     * @return PromiseBase* 
+     * @return CoroPromise* 
      */
-    auto resumeCaller() const -> PromiseBase * {
+    auto resumeCaller() const -> CoroPromise * {
         return mResumeCaller;
     }
 
@@ -159,7 +176,12 @@ public:
      * @param suspended 
      */
     auto setSuspended(bool suspended) noexcept -> void {
-        mSuspended = suspended;
+        if (suspended) {
+            mState = CoroState::Suspended;
+        }
+        else {
+            mState = CoroState::Running;
+        }
     }
 
     /**
@@ -175,7 +197,7 @@ public:
      * 
      * @param caller Who resume us
      */
-    auto setResumeCaller(PromiseBase *caller) noexcept -> void {
+    auto setResumeCaller(CoroPromise *caller) noexcept -> void {
         mResumeCaller = caller;
     }
 
@@ -184,7 +206,7 @@ public:
      * 
      * @param awaiting 
      */
-    auto setPrevAwaiting(PromiseBase *awaiting) noexcept -> void {
+    auto setPrevAwaiting(CoroPromise *awaiting) noexcept -> void {
         mPrevAwaiting = awaiting;
     }
 
@@ -197,17 +219,17 @@ public:
         mEventLoop = eventLoop;
     }
 protected:
-    bool mStarted = false;
     bool mCanceled = false;
-    bool mSuspended = false; //< Is the coroutine suspended at await ?
     bool mDestroyOnDone = false;
     const char *mName = nullptr;
+    CoroState mState = CoroState::Null;
     StopToken *mStopOnDone = nullptr; //< The token will be stop on this promise done
     EventLoop *mEventLoop = EventLoop::instance();
-    PromiseBase *mPrevAwaiting = nullptr;
-    PromiseBase *mResumeCaller = nullptr;
-    std::exception_ptr mException = nullptr;
+    CoroPromise *mPrevAwaiting = nullptr;
+    CoroPromise *mResumeCaller = nullptr;
     std::coroutine_handle<> mHandle = nullptr;
 };
+
+using PromiseBase [[deprecated("Use CoroPromise instead")]] = CoroPromise;
 
 ILIAS_NS_END
