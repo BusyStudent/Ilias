@@ -2,6 +2,7 @@
 
 #include "../../ilias.hpp"
 #include "../../detail/expected.hpp"
+#include "huffman.hpp"
 
 #include <vector>
 #include <string>

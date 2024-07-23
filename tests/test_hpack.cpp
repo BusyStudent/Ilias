@@ -350,6 +350,12 @@ TEST(Hpack, ContextDynamicTable) {
     EXPECT_EQ(context.dynamicTableSize(), 0);
 }
 
+TEST(Hpack, HuffmanCodeTest) {
+    std::byte input[10];
+    std::byte output[10];
+    
+}
+
 TEST(Hpack, IntDecoderTest) {
     HpackContext context;
     std::byte    buffer[1];
