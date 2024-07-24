@@ -268,7 +268,7 @@ public:
     }
 
     /**
-     * @brief Passthrough Awaiter
+     * @brief Wrap legacy Awaiter with _AwaitRecorder
      * 
      * @tparam T must be Awaiter
      * @param t 
@@ -278,6 +278,18 @@ public:
     [[deprecated("impl Awaitable<T> instead, using the : AwaiterImpl<T>")]]
     auto await_transform(U &&t) noexcept {
         return _AwaitRecorder<U&&> {this, std::forward<U>(t)};
+    }
+
+    /**
+     * @brief Passthrough Awaiter
+     * 
+     * @tparam U 
+     * @param t 
+     * @return decltype(auto) 
+     */
+    template <Awaiter U>
+    auto await_transform(U &&t) noexcept -> decltype(auto) {
+        return std::forward<U>(t);
     }
 
     /**

@@ -84,7 +84,6 @@ TEST(UrlTest, Encode) {
 
 static HttpSession *session = nullptr;
 
-#if 1
 
 TEST(RequestTest, Test1) {
     HttpRequest request("https://www.baidu.com");
@@ -105,6 +104,8 @@ TEST(RequestTest, Test1) {
         std::cout << text.value_or("READ FAILED") << std::endl;
     }
 }
+
+#if 0
 
 TEST(HttpBinRequest, GET) {
     auto reply = ilias_wait session->get("https://httpbin.org/get");
@@ -129,7 +130,7 @@ TEST(HttpBinRequest, POST) {
 #if !defined(ILIAS_NO_ZLIB)
 TEST(HttpBinRequest, Gzip) {
     auto reply = ilias_wait session->get("https://httpbin.org/gzip");
-    EXPECT_TRUE(reply);
+    ASSERT_TRUE(reply);
     EXPECT_EQ(reply->statusCode(), 200);
     auto text = ilias_wait reply->text();
     EXPECT_TRUE(text);
@@ -139,7 +140,7 @@ TEST(HttpBinRequest, Gzip) {
 
 TEST(HttpBinRequest, Deflate) {
     auto reply = ilias_wait session->get("https://httpbin.org/deflate");
-    EXPECT_TRUE(reply);
+    ASSERT_TRUE(reply);
     EXPECT_EQ(reply->statusCode(), 200);
     auto text = ilias_wait reply->text();
     EXPECT_TRUE(text);

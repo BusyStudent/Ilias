@@ -40,24 +40,18 @@ enum class CoroState : uint8_t {
 
 
 /**
- * @brief Helper class for switch to another coroutine handle and destroy the current one if needed
- * 
+ * @brief Helper class for switch to another coroutine handle
+ *   
  */
 class _SwitchCoroutine : public std::suspend_always {    
 public:
-    _SwitchCoroutine(std::coroutine_handle<> handle, bool destroy) noexcept : mHandle(handle), mDestroy(destroy) { }
+    template <typename T>
+    _SwitchCoroutine(std::coroutine_handle<T> handle) noexcept : mHandle(handle) { }
     ~_SwitchCoroutine() = default;
 
-    auto await_suspend(std::coroutine_handle<> handle) noexcept { 
-        auto target = mHandle; //< Copy to stack
-        if (mDestroy) [[unlikely]] { //< destroy current coroutine if needed
-            handle.destroy();
-        }
-        return target; 
-    }
+    auto await_suspend(std::coroutine_handle<> self) noexcept { return mHandle; }
 private:
-    std::coroutine_handle<> mHandle;
-    bool                    mDestroy;
+    std::coroutine_handle<> mHandle; //< The target
 };
 
 /**
@@ -74,7 +68,10 @@ public:
         struct Awaiter {
             auto await_ready() const noexcept -> bool { return false; }
             auto await_suspend(std::coroutine_handle<>) const noexcept -> void { }
-            auto await_resume() { ILIAS_ASSERT(self->mState == CoroState::Null); self->mState = CoroState::Running; }
+            auto await_resume() { 
+                ILIAS_ASSERT(self->mState == CoroState::Null); 
+                self->mState = CoroState::Running; 
+            }
             CoroPromise *self;
         };
         return Awaiter {this};
@@ -85,15 +82,18 @@ public:
         if (mStopOnDone) [[unlikely]] {
             mStopOnDone->stop();
         }
+        if (mDestroyOnDone) [[unlikely]] { 
+            //< Using the lazy delete, emm, it will cause crash on windows if we delete self at final awaiter
+            mEventLoop->destroyHandle(mHandle);
+        }
         // If has someone is waiting us and he is suspended
         // We can not resume a coroutine which is not suspended, It will cause UB
-        std::coroutine_handle<> switchTo = std::noop_coroutine();
         if (mPrevAwaiting) {
             ILIAS_ASSERT(mPrevAwaiting->isResumable());
             mPrevAwaiting->setResumeCaller(this);
-            switchTo = mPrevAwaiting->handle();
+            return mPrevAwaiting->handle();
         }
-        return {switchTo, mDestroyOnDone};
+        return std::noop_coroutine();
     }
 
     /**

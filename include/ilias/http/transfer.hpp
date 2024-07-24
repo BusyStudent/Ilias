@@ -20,12 +20,12 @@ public:
     /**
      * @brief Send a request to the server
      * 
-     * @param header The request of it. impl may modify the headers such as add Content-Length
+     * @param header The request of it
      * @param data The data of the post request. can be null
      * 
      * 
      */
-    virtual auto sendRequest(HttpRequest &request, std::span<const std::byte> data) -> Task<void> = 0;
+    virtual auto sendRequest(const HttpRequest &request, std::span<const std::byte> data) -> Task<void> = 0;
 
     /**
      * @brief Recv the content, (chunked encoding should was removed in implementation)

@@ -116,6 +116,8 @@ private:
 
 ILIAS_NS_END
 
+#if 0
+// FIXME : Compile err on linux
 /**
  * @brief Hash function for coro handle
  * 
@@ -132,3 +134,4 @@ struct std::hash<ILIAS_NAMESPACE::CoroHandle> {
         return hash1 ^ (hash2 << 1);
     }
 };
+#endif

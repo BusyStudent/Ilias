@@ -56,7 +56,7 @@ public:
             // Void or Bool
             return _self().suspend(handle);
         }
-        else if constexpr (std::is_same<type, CoroHandle>) {
+        else if constexpr (std::is_same_v<type, CoroHandle>) {
             // our coro handle, cast to std version
             return _self().suspend(handle).stdHandle();
         }

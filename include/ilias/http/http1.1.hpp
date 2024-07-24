@@ -126,16 +126,17 @@ public:
     auto log(const char *fmt, ...) -> void { }
 #endif
 
-    auto sendRequest(HttpRequest &request, std::span<const std::byte> data) -> Task<void> override {
+    auto sendRequest(const HttpRequest &request, std::span<const std::byte> data) -> Task<void> override {
         auto &client = mCon->mClient;
+        auto headers = request.headers(); //< Copy it
         // Add content length if needeed
         if (!data.empty()) {
-            request.setHeader(HttpHeaders::ContentLength, std::to_string(data.size()));
+            headers.append(HttpHeaders::ContentLength, std::to_string(data.size()));
         }
         // Host
-        request.setHeader("Host", request.url().host());
+        headers.append("Host", request.url().host());
         
-        std::string headers;
+        std::string headersBuf;
 
         // FORMAT the first line
         const char *operation = nullptr;
@@ -154,20 +155,20 @@ public:
             requestString += query;
         }
 
-        _sprintf(headers, "%s %s HTTP/1.1\r\n", operation, requestString.c_str());
+        _sprintf(headersBuf, "%s %s HTTP/1.1\r\n", operation, requestString.c_str());
 
         // Then format request headers
-        for (const auto &[key, value] : request.headers()) {
-            _sprintf(headers, "%s: %s\r\n", key.c_str(), value.c_str());
+        for (const auto &[key, value] : headers) {
+            _sprintf(headersBuf, "%s: %s\r\n", key.c_str(), value.c_str());
         }
         // Add the end of headers
-        headers += "\r\n";
+        headersBuf += "\r\n";
 
-        log("[Http1.1] Send Headers: \n%s", headers.c_str());
+        log("[Http1.1] Send Headers: \n%s", headersBuf.c_str());
 
         // Send it
-        auto val = co_await client.sendAll(headers.data(), headers.size());
-        if (!val || *val != headers.size()) {
+        auto val = co_await client.sendAll(headersBuf.data(), headersBuf.size());
+        if (!val || *val != headersBuf.size()) {
             co_return returnError(val.error_or(Error::ConnectionAborted));
         }
         

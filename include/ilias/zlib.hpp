@@ -3,7 +3,6 @@
 #if __has_include(<zlib.h>) && !defined(ILIAS_NO_ZLIB)
 
 #include "detail/expected.hpp"
-#include <lzexpand.h>
 #include "ilias.hpp"
 #include <cstring>
 #include <zlib.h>
