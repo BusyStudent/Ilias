@@ -1,22 +1,21 @@
 #pragma once
 
 #include "../detail/expected.hpp"
+#include "awaiter.hpp"
 #include "promise.hpp"
 #include <coroutine>
 #include <concepts>
 #include <optional>
 
 // Useful macros
-#define ilias_go   ::ILIAS_NAMESPACE::EventLoop::instance() <<
 #define ilias_wait ::ILIAS_NAMESPACE::EventLoop::instance() >>
-#define ilias_spawn ::ILIAS_NAMESPACE::EventLoop::instance() <<
 
 ILIAS_NS_BEGIN
 
 template <typename T>
 class TaskPromise;
 template <typename T>
-class AwaitRecorder;
+class _AwaitRecorder;
 
 /**
  * @brief Check a type is Task<T>
@@ -24,7 +23,7 @@ class AwaitRecorder;
  * @tparam T 
  */
 template <typename T>
-concept IsTask = requires(T t) {
+concept _IsTask = requires(T t) {
     t.handle();
     t.promise();
     t.cancel();  
@@ -36,7 +35,7 @@ concept IsTask = requires(T t) {
  * @tparam T 
  */
 template <typename T>
-concept Awaiter = requires(T t) {
+concept _Awaiter = requires(T t) {
     t.await_ready();
     t.await_resume();
 };
@@ -47,7 +46,7 @@ concept Awaiter = requires(T t) {
  * @tparam T 
  */
 template <typename T>
-concept NotAwaiter = !Awaiter<T>;
+concept _NotAwaiter = !_Awaiter<T>;
 
 /**
  * @brief A Lazy way to get value
@@ -237,7 +236,7 @@ private:
  * @tparam T 
  */
 template <typename T>
-class TaskPromise final : public PromiseBase {
+class TaskPromise final : public CoroPromise {
 public:
     using handle_type = std::coroutine_handle<TaskPromise<T> >;
     using value_type = Result<T>;
@@ -263,9 +262,9 @@ public:
      * @param t 
      * @return auto 
      */
-    template <NotAwaiter U>
+    template <_NotAwaiter U>
     auto await_transform(U &&t) noexcept {
-        return AwaitRecorder {this, AwaitTransform<U>().transform(this, std::forward<U>(t))};
+        return _AwaitRecorder {this, AwaitTransform<U>().transform(this, std::forward<U>(t))};
     }
 
     /**
@@ -275,9 +274,28 @@ public:
      * @param t 
      * @return T 
      */
-    template <Awaiter U>
+    template <_Awaiter U>
+    [[deprecated("impl Awaitable<T> instead, using the : AwaiterImpl<T>")]]
     auto await_transform(U &&t) noexcept {
-        return AwaitRecorder<U&&> {this, std::forward<U>(t)};
+        return _AwaitRecorder<U&&> {this, std::forward<U>(t)};
+    }
+
+    /**
+     * @brief Transform std::suspend_always into our SuspendAlways 
+     * 
+     * @return auto 
+     */
+    auto await_transform(std::suspend_always) noexcept {
+        return SuspendAlways { };
+    }
+
+    /**
+     * @brief Transfom std::suspend_never into our SuspendNever
+     * 
+     * @return auto 
+     */
+    auto await_transform(std::suspend_never) noexcept {
+        return SuspendNever { };
     }
 
     /**
@@ -354,9 +372,44 @@ public:
     }
 private:
 #if defined(__cpp_exceptions)
+
     std::exception_ptr mException;
 #endif
     std::optional<Result<T> > mValue;
+};
+
+/**
+ * @brief Awaiter for Task<T>
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class _TaskAwaiter final : public AwaiterImpl<_TaskAwaiter<T> > {
+public:
+    _TaskAwaiter(TaskPromise<T> &self) : mSelf(self) { }
+
+    auto ready() const -> bool {
+        ILIAS_ASSERT(!mSelf.isStarted()); //< Task is lazy started, so it is not started yet
+        auto handle = mSelf.handle();
+        handle.resume();
+        return handle.done();
+    }
+    
+    auto suspend(CoroHandle caller) const -> void {
+        // When the task done, let it resume the caller
+        mSelf.setPrevAwaiting(&caller.promise());
+    }
+    
+    auto resume() const -> Result<T> {
+        return mSelf.value();
+    }
+
+    auto cancel() const -> CancelStatus {
+        mSelf.setPrevAwaiting(nullptr); //< Unlink it
+        return mSelf.cancel();
+    }
+private:
+    TaskPromise<T> &mSelf;
 };
 
 /**
@@ -365,7 +418,7 @@ private:
  * @tparam T 
  */
 template <typename T>
-class AwaitRecorder {
+class _AwaitRecorder {
 public:
     auto await_ready() -> bool { 
         return mAwaiter.await_ready(); 
@@ -387,13 +440,29 @@ public:
     T mAwaiter;
 };
 
+/**
+ * @brief Awaiter for Task<T>
+ * 
+ * @tparam U 
+ */
+template <typename U>
+class AwaitTransform<Task<U> > {
+public:
+    template <typename T>
+    static auto transform(TaskPromise<T> *caller, Task<U> &&task) {
+        return _TaskAwaiter<U>(task.promise());
+    }
+    // Not allowed to get awaiter by normal reference
+    template <typename T>
+    static auto transform(TaskPromise<T> *caller, const Task<U> &task) = delete;
+};
 
 // Task
 template <typename T>
 template <typename Callable, typename ...Args>
 inline auto Task<T>::fromCallable(Callable &&callable, Args &&...args) {
     using TaskType = std::invoke_result_t<Callable, Args...>;
-    static_assert(IsTask<TaskType>, "Invoke result must be a task");
+    static_assert(_IsTask<TaskType>, "Invoke result must be a task");
     if constexpr(!std::is_class_v<Callable> || std::is_empty_v<Callable>) {
         return std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...);
     }
@@ -410,34 +479,10 @@ inline auto EventLoop::runTask(const Task<T> &task) {
     task.promise().setEventLoop(this);
     return task.value();
 }
-template <typename T>
-inline auto EventLoop::postTask(Task<T> &&task) {
-    auto handle = task.leak();
-    handle.promise().setEventLoop(this);
-    resumeHandle(handle);
-    return JoinHandle<T>(handle);
-}
-template <typename Callable, typename ...Args>
-inline auto EventLoop::spawn(Callable &&callable, Args &&...args) {
-    return postTask(Task<>::fromCallable(std::forward<Callable>(callable), std::forward<Args>(args)...));
-}
 
-// Helper operators
-template <typename T>
-inline auto operator <<(EventLoop *eventLoop, Task<T> &&task) {
-    return eventLoop->postTask(std::move(task));
-}
-template <std::invocable Callable>
-inline auto operator <<(EventLoop *eventLoop, Callable &&callable) {
-    return eventLoop->spawn(std::forward<Callable>(callable));
-}
 template <typename T>
 inline auto operator >>(EventLoop *eventLoop, const Task<T> &task) {
     return eventLoop->runTask(task);
-}
-template <typename Callable, typename ...Args>
-inline auto co_spawn(Callable &&callable, Args &&...args) {
-    return EventLoop::instance()->spawn(std::forward<Callable>(callable), std::forward<Args>(args)...);
 }
 
 ILIAS_NS_END

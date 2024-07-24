@@ -103,7 +103,7 @@ struct _WhenAnyTags {
  * 
  * @tparam T 
  */
-template <IsTask T>
+template <_IsTask T>
 struct _WhenAnyVecTags {
     std::vector<T> &vec;
 };
@@ -128,7 +128,7 @@ public:
  * @param tasks 
  * @return auto 
  */
-template <IsTask ...Args>
+template <_IsTask ...Args>
 inline auto WhenAny(Args &&...tasks) noexcept {
     return _WhenAnyTags { std::tuple((&tasks.promise())...) };
 }
@@ -143,12 +143,12 @@ inline auto WhenAny(Args &&...tasks) noexcept {
  * @param t2 
  * @return auto 
  */
-template <IsTask T1, IsTask T2>
+template <_IsTask T1, _IsTask T2>
 inline auto operator ||(const T1 &t, const T2 &t2) noexcept {
     return _WhenAnyTags { std::tuple{ &t.promise(), &t2.promise() } };
 }
 
-template <typename T, IsTask T1>
+template <typename T, _IsTask T1>
 inline auto operator ||(_WhenAnyTags<T> a, const T1 &b) noexcept {
     return _WhenAnyTags {
         std::tuple_cat(a.tuple, std::tuple{ &b.promise() })

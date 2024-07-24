@@ -18,6 +18,5 @@
 #include "coro/cancel_handle.hpp"
 #include "coro/join_handle.hpp"
 #include "coro/coro_handle.hpp"
-#include "coro/task_await.hpp"
 #include "coro/when_all.hpp"
 #include "coro/when_any.hpp"

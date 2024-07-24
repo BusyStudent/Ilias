@@ -3,7 +3,11 @@
 #include "cancel_handle.hpp"
 #include "task.hpp"
 
+#define ilias_spawn ::ILIAS_NAMESPACE::EventLoop::instance() <<
+#define ilias_go    ::ILIAS_NAMESPACE::EventLoop::instance() <<
+
 ILIAS_NS_BEGIN
+
 /**
  * @brief Handle used to observe the running task but, it can blocking wait for it
  * 
@@ -48,9 +52,34 @@ inline auto JoinHandle<T>::join() -> Result<T> {
 }
 template <typename T>
 inline auto JoinHandle<T>::joinable() const noexcept -> bool {
-    return mCoro;
+    return bool(mCoro);
 }
 
+// --- post
+template <typename T>
+inline auto EventLoop::postTask(Task<T> &&task) {
+    auto handle = task.leak();
+    handle.promise().setEventLoop(this);
+    resumeHandle(handle);
+    return JoinHandle<T>(handle);
+}
+template <typename Callable, typename ...Args>
+inline auto EventLoop::spawn(Callable &&callable, Args &&...args) {
+    return postTask(Task<>::fromCallable(std::forward<Callable>(callable), std::forward<Args>(args)...));
+}
 
+// Helper operators
+template <typename T>
+inline auto operator <<(EventLoop *eventLoop, Task<T> &&task) {
+    return eventLoop->postTask(std::move(task));
+}
+template <std::invocable Callable>
+inline auto operator <<(EventLoop *eventLoop, Callable &&callable) {
+    return eventLoop->spawn(std::forward<Callable>(callable));
+}
+template <typename Callable, typename ...Args>
+inline auto co_spawn(Callable &&callable, Args &&...args) {
+    return EventLoop::instance()->spawn(std::forward<Callable>(callable), std::forward<Args>(args)...);
+}
 
 ILIAS_NS_END

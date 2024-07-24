@@ -171,7 +171,7 @@ struct _WhenAllTags {
     T tuple;
 };
 
-template <IsTask T>
+template <_IsTask T>
 struct _WhenAllVecTags {
     std::vector<T> &vec;
 };
@@ -189,7 +189,7 @@ public:
     }
 };
 
-template <IsTask T>
+template <_IsTask T>
 class AwaitTransform<_WhenAllVecTags<T> > {
 public:
     template <typename U>
@@ -205,7 +205,7 @@ public:
  * @param tasks 
  * @return auto 
  */
-template <IsTask ...Args>
+template <_IsTask ...Args>
 inline auto WhenAll(Args &&...tasks) noexcept {
     return _WhenAllTags { std::tuple((&tasks.promise())...) };
 }
@@ -217,7 +217,7 @@ inline auto WhenAll(Args &&...tasks) noexcept {
  * @param task 
  * @return auto 
  */
-template <IsTask T>
+template <_IsTask T>
 inline auto WhenAll(std::vector<T> &task) noexcept {
     return _WhenAllVecTags { task };
 }
@@ -231,12 +231,12 @@ inline auto WhenAll(std::vector<T> &task) noexcept {
  * @param t2 
  * @return auto 
  */
-template <IsTask T1, IsTask T2>
+template <_IsTask T1, _IsTask T2>
 inline auto operator &&(const T1 &a, const T2 &b) noexcept {
     return _WhenAllTags { std::tuple{ &a.promise(), &b.promise() } };
 }
 
-template <typename T, IsTask T1>
+template <typename T, _IsTask T1>
 inline auto operator &&(_WhenAllTags<T> a, const T1 &b) noexcept {
     return _WhenAllTags {
         std::tuple_cat(a.tuple, std::tuple{ &b.promise() })
