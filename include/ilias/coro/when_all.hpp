@@ -1,30 +1,41 @@
 #pragma once
 
 #include "task.hpp"
-
+#include "awaiter.hpp"
 
 ILIAS_NS_BEGIN
 
 /**
+ * @brief Helper task for count N of resume
+ * 
+ * @param waitCount 
+ * @return Task<> 
+ */
+inline auto _CounterTask(size_t waitCount) -> Task<> {
+    while (waitCount) {
+        if (auto ret = co_await SuspendAlways{}; !ret) {
+            //< Canceled
+            co_return ret;
+        }
+        waitCount --;
+    }
+    co_return {};
+}
+
+/**
  * @brief When all tasks done
  * 
- * @tparam T 
  * @tparam Args 
  */
-template <typename T, typename ...Args>
-class WhenAllAwaiter {
+template <typename ...Args>
+class WhenAllAwaiter final : public AwaiterImpl<WhenAllAwaiter<Args...> >{
 public:
     using InTuple = std::tuple<TaskPromise<Args>* ...>;
     using OutTuple = std::tuple<Result<Args> ...>;
 
-    WhenAllAwaiter(TaskPromise<T> &caller, const InTuple &tasks) : mCaller(caller), mTasks(tasks) { }
-    WhenAllAwaiter(const WhenAllAwaiter &) = delete;
-    WhenAllAwaiter(WhenAllAwaiter &&) = default;
+    WhenAllAwaiter(const InTuple &tasks) : mTasks(tasks) { }
 
-    auto await_ready() -> bool {
-        if (mCaller.isCanceled()) {
-            return true;
-        }
+    auto ready() -> bool {
         auto resume = [](auto task) {
             task->handle().resume();
         };
@@ -43,9 +54,9 @@ public:
         return mWaitCount == 0;
     }
     // Return to Event Loop
-    auto await_suspend(std::coroutine_handle<TaskPromise<T> > h) -> std::coroutine_handle<> {
+    auto suspend(CoroHandle caller) -> std::coroutine_handle<> {
         // Let the wating task resume the helper task
-        mHelperTask = _helperTask();
+        mHelperTask = _CounterTask(mWaitCount);
         auto setAwaiting = [this](auto task) {
             if (!task->handle().done()) {
                 task->setPrevAwaiting(&mHelperTask.promise());
@@ -55,20 +66,26 @@ public:
             (setAwaiting(tasks), ...);
         }, mTasks);
         // Let the helper task resume us
-        mHelperTask.promise().setPrevAwaiting(&mCaller);
+        mHelperTask.promise().setPrevAwaiting(&caller.promise());
 
         // Switch to the helper task
         return mHelperTask.handle();
     }
-    auto await_resume() const -> OutTuple {
+    auto resume() const -> OutTuple {
+        if (mHelperTask) {
+            // MUST done
+            ILIAS_ASSERT(mHelperTask.handle().done());
+        }
+        return _makeResult(std::make_index_sequence<sizeof ...(Args)>());
+    }
+    auto cancel() -> void {
+        // Unlink all tasks
         if (mHelperTask) {
             mHelperTask.promise().setPrevAwaiting(nullptr);
             mHelperTask.cancel();
+            mHelperTask.clear();
         }
-        if (mCaller.isCanceled()) {
-            return _makeCanceledResult(std::make_index_sequence<sizeof ...(Args)>());
-        }
-        return _makeResult(std::make_index_sequence<sizeof ...(Args)>());
+        _cancelAll(std::make_index_sequence<sizeof ...(Args)>());
     }
 private:
     template <size_t ...N>
@@ -78,24 +95,14 @@ private:
         };
     }
     template <size_t ...N>
-    auto _makeCanceledResult(std::index_sequence<N...>) const -> OutTuple {
-        return OutTuple {
+    auto _cancelAll(std::index_sequence<N...>) const -> void {
+        std::tuple {
             (   std::get<N>(mTasks)->setPrevAwaiting(nullptr),
-                std::get<N>(mTasks)->cancel(),
-                Unexpected(Error::Canceled)
+                std::get<N>(mTasks)->cancel()
             )...
         };
     }
-    // Make a helper task, let awating task resume it and let it resume us
-    auto _helperTask() -> Task<void> {
-        while (mWaitCount && !mCaller.isCanceled()) {
-            co_await std::suspend_always();
-            mWaitCount --;
-        }
-        co_return Result<>();
-    }
 
-    TaskPromise<T> &mCaller;
     InTuple mTasks;
     size_t mWaitCount = sizeof ...(Args);
     Task<void> mHelperTask;
@@ -103,18 +110,11 @@ private:
 
 // Vec version
 template <typename T>
-class WhenAllVecAwaiter {
+class WhenAllVecAwaiter final : public AwaiterImpl<WhenAllVecAwaiter<T> > {
 public:
-    WhenAllVecAwaiter(PromiseBase &caller, std::vector<Task<T> > &vec) :
-        mCaller(caller), mVec(vec) { }
-    WhenAllVecAwaiter(const WhenAllVecAwaiter &) = delete;
-    WhenAllVecAwaiter(WhenAllVecAwaiter &&) = default;
-    ~WhenAllVecAwaiter() = default;
+    WhenAllVecAwaiter(std::vector<Task<T> > &vec) : mVec(vec) { }
 
-    auto await_ready() -> bool {
-        if (mCaller.isCanceled() || mVec.empty()) {
-            return true;
-        }
+    auto ready() -> bool {
         // Try resume
         for (auto &task : mVec) {
             task.handle().resume();
@@ -122,27 +122,32 @@ public:
         _collectResult();
         return mVec.empty();
     }
-    auto await_suspend(auto handle) -> void {
+    auto suspend(CoroHandle handle) -> void {
         mHelper = _helperTask();
-        mHelper->setPrevAwaiting(&mCaller);
+        mHelper->setPrevAwaiting(&handle.promise());
         for (auto &task : mVec) {
             task->setPrevAwaiting(&mHelper.promise());
         }
     }
-    auto await_resume() -> std::vector<Result<T> > {
+    auto resume() -> std::vector<Result<T> > {
         if (mHelper) {
             mHelper.cancel();
         }
         _collectResult();
         return std::move(mResults);
     }
+    auto cancel() { 
+        // No-op 
+    }
 private:
     auto _helperTask() -> Task<void> {
         size_t num = mVec.size();
-        while (num && !mHelper->isCanceled()) {
+        while (num) {
             --num;
             if (num) {
-                co_await std::suspend_always();
+                if (!co_await SuspendAlways{}) {
+                    co_return {};
+                }
             }
         }
         co_return {};
@@ -160,7 +165,6 @@ private:
         }
     }
 
-    PromiseBase &mCaller;
     std::vector<Task<T> > &mVec;
     std::vector<Result<T> > mResults;
     Task<void> mHelper;
@@ -185,7 +189,7 @@ class AwaitTransform<_WhenAllTags<Tuple> > {
 public:
     template <typename T>
     static auto transform(TaskPromise<T> *caller, const _WhenAllTags<Tuple> &tag) {
-        return WhenAllAwaiter(*caller, tag.tuple);
+        return WhenAllAwaiter(tag.tuple);
     }
 };
 
@@ -194,7 +198,7 @@ class AwaitTransform<_WhenAllVecTags<T> > {
 public:
     template <typename U>
     static auto transform(TaskPromise<U> *caller, const _WhenAllVecTags<T> &tag) {
-        return WhenAllVecAwaiter(*caller, tag.vec);
+        return WhenAllVecAwaiter(tag.vec);
     }
 };
 

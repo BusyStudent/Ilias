@@ -280,6 +280,7 @@ public:
         return _AwaitRecorder<U&&> {this, std::forward<U>(t)};
     }
 
+#if 0
     /**
      * @brief Passthrough Awaiter
      * 
@@ -291,6 +292,7 @@ public:
     auto await_transform(U &&t) noexcept -> decltype(auto) {
         return std::forward<U>(t);
     }
+#endif
 
     /**
      * @brief Transform std::suspend_always into our SuspendAlways 

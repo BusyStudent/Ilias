@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../detail/expected.hpp"
 #include "promise.hpp"
 #include "coro_handle.hpp"
 
@@ -91,27 +92,31 @@ private:
 };
 
 /**
- * @brief Alternative to std::suspend_always, just suspend the coro always
+ * @brief Alternative to std::suspend_always, just suspend the coro always, user can get notify if the coro is canceled
  * 
  */
 class SuspendAlways final : public AwaiterImpl<SuspendAlways> {
 public:
     auto ready() const noexcept -> bool { return false; }
     auto suspend(CoroHandle) const noexcept -> void { }
-    auto resume() const noexcept -> void { }
-    auto cancel() const noexcept -> void { }
+    auto resume() const noexcept -> Result<> { return mResult; }
+    auto cancel() noexcept -> void { mResult = Unexpected(Error::Canceled); }
+private:
+    Result<> mResult;
 };
 
 /**
- * @brief Alternative to std::suspend_never, just resume the coro always
+ * @brief Alternative to std::suspend_never, just never suspend the coro, user can get notify if the coro is canceled
  * 
  */
 class SuspendNever final : public AwaiterImpl<SuspendNever> {
 public:
     auto ready() const noexcept -> bool { return true; }
     auto suspend(CoroHandle) const noexcept -> void { }
-    auto resume() const noexcept -> void { }
-    auto cancel() const noexcept -> void { }
+    auto resume() const noexcept -> Result<> { return mResult; }
+    auto cancel() noexcept -> void { mResult = Unexpected(Error::Canceled); }
+private:
+    Result<> mResult;
 };
 
 static_assert(Awaiter<SuspendAlways>);
