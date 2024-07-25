@@ -3,6 +3,7 @@
 #include "../../ilias.hpp"
 #include "../../detail/expected.hpp"
 #include "huffman.hpp"
+#include "integer.hpp"
 
 #include <vector>
 #include <string>
@@ -10,7 +11,6 @@
 #include <span>
 
 #define HTTP_2_HPACK_ESTIMATED_OVERHEAD 32
-#define HTTP_2_HPACK_INTERGER_REPRESENTATION_PREFIX_N 8
 
 ILIAS_NS_BEGIN
 
@@ -19,6 +19,13 @@ namespace http2::detail {
 enum class HpackError : uint32_t {
     Ok,
     InvalidIndexForDecodingTable,
+    IntegerOverflow,
+    NeedMoreData,
+    InvalidHuffmanEncodedData,
+    IndexParserError,
+    IndexOutOfRange,
+
+    UnknownError = 0x7FFFFFFF
 };
 
 class HpackErrorCategory final : public ErrorCategory {
@@ -190,8 +197,6 @@ public:
         mDynamicTableSize += itemSize;
         mDynamicHeaderTables.emplace_front(name, value);
     }
-    inline void setIntegerPrefixLength(int length) noexcept { mIntegerPrefixLength = length; }
-    inline int  integerPrefixLength() const noexcept { return mIntegerPrefixLength; }
 
 private:
     constexpr static const std::array<NameValuePair, 61> kStaticHeaderTables =
@@ -200,109 +205,145 @@ private:
     std::deque<std::pair<std::string, std::string>> mDynamicHeaderTables;
     std::size_t                                     mMaxDynamicTableSize = -1;
     std::size_t                                     mDynamicTableSize    = 0;
-    std::size_t mIntegerPrefixLength = HTTP_2_HPACK_INTERGER_REPRESENTATION_PREFIX_N;
 };
 
 class HpackDecoder {
 public:
     inline HpackDecoder(HpackContext &context) : mContext(context) {}
-    inline HpackDecoder(HpackContext &context, std::span<std::byte> buffer, const int offset = 0)
-        : mContext(context), mBuffer(buffer), mOffset(offset) {}
+    inline HpackDecoder(HpackContext &context, std::span<const std::byte> buffer, const int offset = 0)
+        : mContext(context) {}
 
-    void resetBuffer(std::span<std::byte> buffer, const int offset = 0) {
-        mBuffer = buffer;
-        mOffset = offset;
+    inline auto decode(std::span<const std::byte> buffer) -> Result<int> {}
+
+    inline auto IndexedHeaderField(std::span<const std::byte> buffer) -> Result<int> {
+        int  index  = -1;
+        auto offset = getInt(buffer, index, 7);
+        if (!offset) {
+            return Unexpected(HpackError::IndexParserError);
+        }
+        if (index < 0 || offset.value() < 0) {
+            return Unexpected(HpackError::IndexParserError);
+        }
+        if (index == 0 || index > mContext.staticTableIndexSize() + mContext.dynamicTableIndexSize()) {
+            return Unexpected(HpackError::IndexOutOfRange);
+        }
+        auto ret = mContext.indexToNameValuePair(index);
+        if (!ret) {
+            return Unexpected(ret.error());
+        }
+        mDecodeHeaderList.push_back(ret.value());
+        return offset.value();
     }
-    int offset() const {
-        return mOffset;
-    }
-    void setOffset(const int offset) {
-        mOffset = offset;
+
+    inline auto LiteralHeaderFieldWithIncrementalIndexing(std::span<const std::byte> buffer) -> Result<void> {
+        int  index  = -1;
+        auto offset = getInt(buffer, index, 6);
+        if (!offset) {
+            return Unexpected(HpackError::IndexParserError);
+        }
+        if (index < 0) {
+            return Unexpected(HpackError::IndexParserError);
+        }
+        if (index == 0) {
+            std::string name, value;
+            auto        toffset = getString(buffer, name);
+            // TODO:
+        }
     }
 
     /**
      * @brief read a integer from buffer
-     * Integers are used to represent name indexes, header field indexes, or
-     * string lengths.  An integer representation can start anywhere within
-     * an octet.  To allow for optimized processing, an integer
-     * representation always finishes at the end of an octet.
-     * An integer is represented in two parts: a prefix that fills the
-     * current octet and an optional list of octets that are used if the
-     * integer value does not fit within the prefix.  The number of bits of
-     * the prefix (called N) is a parameter of the integer representation.
-     * If the integer value is small enough, i.e., strictly less than 2^N-1,
-     * it is encoded within the N-bit prefix.
-     *   0   1   2   3   4   5   6   7
-     * +---+---+---+---+---+---+---+---+
-     * | ? | ? | ? |       Value       |
-     * +---+---+---+-------------------+
-     * Otherwise, all the bits of the prefix are set to 1, and the value,
-     * decreased by 2^N-1, is encoded using a list of one or more octets.
-     * The most significant bit of each octet is used as a continuation
-     * flag: its value is set to 1 except for the last octet in the list.
-     * The remaining bits of the octets are used to encode the decreased
-     * value.
-     *   0   1   2   3   4   5   6   7
-     * +---+---+---+---+---+---+---+---+
-     * | ? | ? | ? | 1   1   1   1   1 |
-     * +---+---+---+-------------------+
-     * | 1 |    Value-(2^N-1) LSB      |
-     * +---+---------------------------+
-     *                ...
-     * +---+---------------------------+
-     * | 0 |    Value-(2^N-1) MSB      |
-     * +---+---------------------------+
      * @return int the next position if successful, -1 otherwise
      */
     template <typename T>
-    int getInt(T &value) const {
-        ILIAS_ASSERT(mContext.integerPrefixLength() <= 8 && mContext.integerPrefixLength() > 0);
-        ILIAS_ASSERT(mOffset < mBuffer.size());
-
-        std::byte b {static_cast<unsigned char>((1U << mContext.integerPrefixLength()) - 1U)};
-        if (static_cast<unsigned char>(mBuffer[mOffset] & b) < static_cast<unsigned char>(b)) {
-            value = static_cast<T>(mBuffer[mOffset] & b);
-            return mOffset + 1;
+    inline auto getInt(std::span<const std::byte> buffer, T &value, const int allowPrefixBits = 8) const
+        -> Result<int> {
+        ILIAS_ASSERT(buffer.size() > 0);
+        ILIAS_ASSERT(allowPrefixBits <= 8);
+        auto ret = IntegerDecoder::decode(buffer, value, 8 - allowPrefixBits);
+        if (ret < 0) {
+            return Unexpected(ret == -1 ? HpackError::IntegerOverflow : HpackError::NeedMoreData);
         }
-        int current = mOffset + 1, mBitsOffset = 0;
-        value = 0;
-        while (current < mBuffer.size() && (static_cast<unsigned char>(mBuffer[current]) & 0b10000000U)) {
-            value |= static_cast<T>(static_cast<unsigned char>(mBuffer[current]) & 0b01111111U) << mBitsOffset;
-            mBitsOffset += 7;
-            if (mBitsOffset + 7 > sizeof(T) * 8) {
-                return -1;
+        return ret;
+    }
+
+    inline auto getString(std::span<const std::byte> buffer, std::string &value) const -> Result<int> {
+        ILIAS_ASSERT(buffer.size() > 0);
+        bool        isHuffman = static_cast<unsigned char>(buffer[0]) & 0b10000000U;
+        std::size_t length;
+        auto        ret = getInt(buffer, length, 7);
+        if (!ret) {
+            return Unexpected(ret.error());
+        }
+        auto length_length = ret.value();
+        if (length_length < 0 || length_length + length > buffer.size()) {
+            return Unexpected(HpackError::NeedMoreData);
+        }
+        if (isHuffman) {
+            std::vector<std::byte> decoded;
+            auto decode_length = HuffmanDecoder::decode(buffer.subspan(length_length, length), decoded);
+            if (decode_length != length) {
+                return Unexpected(HpackError::InvalidHuffmanEncodedData);
             }
-            ++current;
+            value = std::string(reinterpret_cast<const char *>(decoded.data()), decoded.size());
+            return decode_length + length_length;
         }
-        if (current < mBuffer.size()) {
-            value |= static_cast<T>(static_cast<unsigned char>(mBuffer[current]) & 0b01111111U) << mBitsOffset;
-            return current + 1;
+        else {
+            value = std::string(reinterpret_cast<const char *>(buffer.data() + length_length), length);
+            return length + length_length;
         }
-        // FIXME: if current == buffer.size() then is error ?
-        return -1;
-    }
-
-    int getString(std::string &value) const {
-        ILIAS_ASSERT(mOffset < mBuffer.size());
-        bool isHuffman = static_cast<unsigned char>(mBuffer[mOffset]) & 0b10000000U;
-        
     }
 
 private:
-
-
-private:
-    HpackContext        &mContext;
-    std::span<std::byte> mBuffer;
-    std::size_t          mOffset = 0;
+    HpackContext              &mContext;
+    std::vector<NameValuePair> mDecodeHeaderList;
 };
 
 class HpackEncoder {
 public:
     inline HpackEncoder(HpackContext &context) : mContext(context) {}
 
+    template <typename T>
+    inline auto saveInt(T &&value, const int allowPrefixBits = 8) -> Result<void> {
+        ILIAS_ASSERT(allowPrefixBits <= 8);
+        auto ret = IntegerEncoder::encode(std::forward<T>(value), mBuffer, 8 - allowPrefixBits);
+        if (ret < 0) {
+            return Unexpected(HpackError::UnknownError);
+        }
+        return Result<void> {};
+    }
+
+    inline auto saveString(const std::string &value, const bool huffmanEncoding = false) -> Result<void> {
+        if (huffmanEncoding) {
+            std::vector<std::byte> buffer;
+
+            if (HuffmanEncoder::encode({reinterpret_cast<const std::byte *>(value.data()), value.size()}, buffer) !=
+                0) {
+                return Unexpected(HpackError::UnknownError);
+            }
+            mBuffer.push_back(static_cast<std::byte>(0x80));
+            saveInt(buffer.size(), 7);
+            mBuffer.insert(mBuffer.end(), buffer.begin(), buffer.end());
+            return Result<void> {};
+        }
+        else {
+            mBuffer.push_back(static_cast<std::byte>(0x00));
+            saveInt(value.size(), 7);
+            mBuffer.insert(mBuffer.end(), reinterpret_cast<const std::byte *>(value.data()),
+                           reinterpret_cast<const std::byte *>(value.data()) + value.size());
+            return Result<void> {};
+        }
+    }
+
+    void reset() { mBuffer.clear(); }
+
+    std::vector<std::byte>       &buffer() { return mBuffer; }
+    const std::vector<std::byte> &buffer() const { return mBuffer; }
+    std::size_t                   size() const { return mBuffer.size(); }
+
 private:
-    HpackContext &mContext;
+    HpackContext          &mContext;
+    std::vector<std::byte> mBuffer;
 };
 
 } // namespace http2::detail

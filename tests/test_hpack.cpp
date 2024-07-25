@@ -1,10 +1,9 @@
 #include <gtest/gtest.h>
 
 #include "../include/ilias/http/detail/hpack.hpp"
+#include "../include/ilias/http/detail/dictionary_tree.hpp"
 
-using Ilias::http2::detail::HpackContext;
-using Ilias::http2::detail::HpackDecoder;
-using Ilias::http2::detail::HpackError;
+using namespace Ilias::http2::detail;
 
 TEST(Hpack, ContextTestStaticTable) {
     HpackContext context;
@@ -351,29 +350,182 @@ TEST(Hpack, ContextDynamicTable) {
 }
 
 TEST(Hpack, HuffmanCodeTest) {
-    std::byte input[10];
-    std::byte output[10];
-    
+    std::byte input[10] = {std::byte {'a'}, std::byte {'b'}, std::byte {'c'}, std::byte {'d'}, std::byte {'e'}};
+
+    std::vector<std::byte> outputBuffer;
+    HuffmanEncoder         encoder;
+    encoder.encode({input, 5}, outputBuffer);
+    // |00011 |100011 |00100 |100100 |00101
+    // 0001|1100|0110|0100|1001|0000|1011|
+    // 0x1c 0x64 0x90 0xbf
+    std::vector<std::byte> ansower = {std::byte {0x1c}, std::byte {0x64}, std::byte {0x90}, std::byte {0xbf}};
+    ASSERT_EQ(outputBuffer.size(), ansower.size());
+    for (int i = 0; i < outputBuffer.size(); i++) {
+        EXPECT_EQ(outputBuffer[i], ansower[i]);
+    }
+
+    std::vector<std::byte> outputBuffer2;
+    HuffmanDecoder         decoder;
+    decoder.decode(outputBuffer, outputBuffer2);
+    ASSERT_EQ(outputBuffer2.size(), 5);
+    EXPECT_EQ(memcmp(outputBuffer2.data(), input, 5), 0);
 }
 
 TEST(Hpack, IntDecoderTest) {
     HpackContext context;
     std::byte    buffer[1];
     buffer[0] = std::byte {0xf2};
-    HpackDecoder decoder(context, buffer);
+    HpackDecoder decoder(context);
     int          value;
-    EXPECT_EQ(decoder.getInt(value), 1);
+    EXPECT_EQ(decoder.getInt(buffer, value).value(), 1);
     EXPECT_EQ(value, 242);
 
+    std::vector<std::byte> buffer4;
+    EXPECT_EQ(IntegerEncoder::encode(242, buffer4), 0);
+    EXPECT_EQ(buffer4.size(), 1);
+    EXPECT_EQ(buffer4[0], std::byte {0xf2});
+
     std::byte buffer2[5] = {std::byte {0xff}, std::byte {0xf2}, std::byte {0x83}, std::byte {0xf4}, std::byte {0x7f}};
-    decoder.resetBuffer(buffer2);
-    EXPECT_EQ(decoder.getInt(value), 5);
-    EXPECT_EQ(value, 268239346);
+    EXPECT_EQ(decoder.getInt(buffer2, value).value(), 5);
+    EXPECT_EQ(value, 268239601);
+
+    buffer4.clear();
+    EXPECT_EQ(IntegerEncoder::encode(268239601, buffer4), 0);
+    EXPECT_EQ(buffer4.size(), 5);
+    EXPECT_EQ(memcmp(buffer4.data(), buffer2, 5), 0);
 
     std::byte buffer3[6] = {std::byte {0xff}, std::byte {0xf2}, std::byte {0x83},
                             std::byte {0xf4}, std::byte {0x8f}, std::byte {0x70}};
-    decoder.resetBuffer(buffer3);
-    EXPECT_EQ(decoder.getInt(value), -1);
+    EXPECT_EQ(decoder.getInt(buffer3, value).error(), HpackError::IntegerOverflow);
+
+    buffer[0] = std::byte {10};
+    EXPECT_EQ(decoder.getInt(buffer, value, 5).value(), 1);
+    EXPECT_EQ(value, 10);
+
+    buffer4.clear();
+    EXPECT_EQ(IntegerEncoder::encode(10, buffer4, 3), 0);
+    EXPECT_EQ(buffer4.size(), 1);
+    EXPECT_EQ(buffer4[0], std::byte {10});
+
+    buffer2[0] = std::byte {31};
+    buffer2[1] = std::byte {0b10011010};
+    buffer2[2] = std::byte {0b00001010};
+    EXPECT_EQ(decoder.getInt({buffer2, 3}, value, 5).value(), 3);
+    EXPECT_EQ(value, 1337);
+
+    buffer4.clear();
+    EXPECT_EQ(IntegerEncoder::encode(1337, buffer4, 3), 0);
+    EXPECT_EQ(buffer4.size(), 3);
+    EXPECT_EQ(memcmp(buffer4.data(), buffer2, 3), 0);
+}
+
+TEST(Hpack, EncoderDecoder) {
+    HpackContext context;
+    HpackEncoder encoder(context);
+
+    std::string str_data      = "Hello, World!";
+    std::byte   encode_data[] = {std::byte {0x0D}, std::byte {'H'}, std::byte {'e'}, std::byte {'l'}, std::byte {'l'},
+                                 std::byte {'o'},  std::byte {','}, std::byte {' '}, std::byte {'W'}, std::byte {'o'},
+                                 std::byte {'r'},  std::byte {'l'}, std::byte {'d'}, std::byte {'!'}};
+    EXPECT_TRUE(encoder.saveString(str_data).has_value());
+    EXPECT_EQ(encoder.buffer().size(), 14);
+    for (size_t i = 0; i < 14; ++i) {
+        EXPECT_EQ(encoder.buffer()[i], encode_data[i]);
+    }
+
+    HpackDecoder decoder(context);
+    std::string  str_data2;
+    EXPECT_EQ(decoder.getString(encode_data, str_data2).value(), 14);
+    EXPECT_STREQ(str_data2.c_str(), str_data.c_str());
+
+    encoder.reset();
+    // 1100|0110|0101|1010|0010|1000|0011|1111|1101|0010|1001|1100|1000|1111|0110|0101|0001|0010|0111|1111|0001|1111
+    // C6|5A|28|3F|D2|9C|8F|65|12|7F|1F
+    std::byte encode_data2[] = {std::byte {0x8B}, std::byte {0xC6}, std::byte {0x5A}, std::byte {0x28},
+                                std::byte {0x3F}, std::byte {0xD2}, std::byte {0x9C}, std::byte {0x8F},
+                                std::byte {0x65}, std::byte {0x12}, std::byte {0x7F}, std::byte {0x1F}};
+    EXPECT_TRUE(encoder.saveString(str_data, true).has_value());
+    EXPECT_EQ(encoder.buffer().size(), 12);
+    for (size_t i = 0; i < 12; ++i) {
+        EXPECT_EQ(encoder.buffer()[i], encode_data2[i]);
+    }
+
+    EXPECT_EQ(decoder.getString(encode_data2, str_data2).value(), 12);
+    EXPECT_STREQ(str_data2.c_str(), str_data.c_str());
+};
+
+TEST(Hpack, DictionaryTree) {
+    DictionaryTree<int> tree;
+    tree.insert("foo", 1);
+    EXPECT_EQ(tree.find("foo"), 1);
+    EXPECT_EQ(tree.find("bar"), std::nullopt);
+    tree.insert("bar", 2);
+    EXPECT_EQ(tree.find("bar"), 2);
+    tree.remove("foo");
+    EXPECT_EQ(tree.find("foo"), std::nullopt);
+    EXPECT_EQ(tree.find("bar"), 2);
+    tree.remove("bar");
+    EXPECT_EQ(tree.find("bar"), std::nullopt);
+    tree.insert("a", 1);
+    tree.insert("aa", 2);
+    tree.insert("aaa", 3);
+    EXPECT_EQ(tree.find("a"), 1);
+    EXPECT_EQ(tree.find("aa"), 2);
+    EXPECT_EQ(tree.find("aaa"), 3);
+    EXPECT_EQ(tree.find("aaaa"), std::nullopt);
+    tree.remove("a");
+    EXPECT_EQ(tree.find("a"), std::nullopt);
+    EXPECT_EQ(tree.find("aa"), 2);
+    EXPECT_EQ(tree.find("aaa"), 3);
+    EXPECT_EQ(tree.find("aaaa"), std::nullopt);
+    tree.remove("aa");
+    EXPECT_EQ(tree.find("aa"), std::nullopt);
+    EXPECT_EQ(tree.find("aaa"), 3);
+    EXPECT_EQ(tree.find("aaaa"), std::nullopt);
+    tree.remove("aaa");
+    EXPECT_EQ(tree.find("aaa"), std::nullopt);
+
+    DictionaryTree<int, 2> tree2;
+    tree2.setZero('0');
+    tree2.insert("0", 1);
+    EXPECT_EQ(tree2.find("0"), 1);
+    EXPECT_EQ(tree2.find("1"), std::nullopt);
+    tree2.insert("1", 2);
+    EXPECT_EQ(tree2.find("1"), 2);
+    EXPECT_EQ(tree2.find("0"), 1);
+    tree2.insert("01", 3);
+    EXPECT_EQ(tree2.find("01"), 3);
+    tree2.insert("001", 4);
+    EXPECT_EQ(tree2.find("001"), 4);
+    EXPECT_EQ(tree2.find("000"), std::nullopt);
+    EXPECT_EQ(tree2.find("1"), 2);
+    tree2.remove("01");
+    tree2.remove("0");
+    EXPECT_EQ(tree2.find("0"), std::nullopt);
+    EXPECT_EQ(tree2.find("1"), 2);
+    EXPECT_EQ(tree2.find("01"), std::nullopt);
+    EXPECT_EQ(tree2.find("001"), 4);
+    EXPECT_EQ(tree2.find(1U, 3), 4);
+    EXPECT_EQ(tree2.find(1U, 1), 2);
+
+    tree2.clear();
+    EXPECT_EQ(tree2.find("0"), std::nullopt);
+
+    tree2.insert(0b00010111, 1, 8);
+    EXPECT_EQ(tree2.find(0b00010111, 8), 1);
+    EXPECT_EQ(tree2.find(0b00010111, 7), std::nullopt);
+    EXPECT_EQ(tree2.find(0b00010111, 1), std::nullopt);
+    tree2.insert(0b00011111, 2, 8);
+    EXPECT_EQ(tree2.find(0b00011111, 8), 2);
+    EXPECT_EQ(tree2.find(0b00011111, 7), std::nullopt);
+    tree2.insert(0b0001111, 3, 7);
+    tree2.insert(0b000111, 4, 6);
+    EXPECT_EQ(tree2.find(0b000111, 6), 4);
+    tree2.remove(0b000111, 6);
+    EXPECT_EQ(tree2.find(0b000111, 6), std::nullopt);
+    EXPECT_EQ(tree2.find(0b0001111, 7), 3);
+    EXPECT_EQ(tree2.find(0b00011111, 8), 2);
+    EXPECT_EQ(tree2.size(), 3);
 }
 
 int main(int argc, char **argv) {

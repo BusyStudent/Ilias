@@ -28,53 +28,60 @@ struct HuffmanCode {
 
 class HuffmanEncoder {
 public:
-    inline int encode(std::span<std::byte> byteBuffer, std::vector<std::byte> &outputBuffer) {
+    static inline int encode(std::span<const std::byte> byteBuffer, std::vector<std::byte> &outputBuffer) {
         int bitsOffset = 0;
         for (auto byte : byteBuffer) {
             bitsOffset = encodeOne(outputBuffer, bitsOffset, static_cast<unsigned char>(byte));
-            if (bitsOffset < 0) {
-                return -1;
-            }
         }
         if (bitsOffset != 0) {
             auto eos = kStaticHuffmanCode[HTTP_2_HPACK_HUFFMAN_CODE_EOS];
-            outputBuffer.back() ^= static_cast<std::byte>(eos.encode >> (eos.encodeBits - bitsOffset));
+            outputBuffer.back() ^= static_cast<std::byte>(eos.encode) >> bitsOffset;
         }
         return 0;
     }
-    inline int encodeOne(std::vector<std::byte> byteBuffer, const uint8_t bitsOffset, unsigned char code) const {
+    static inline int encodeOne(std::vector<std::byte> &outputBuffer, const uint8_t bitsOffset, unsigned char code) {
         ILIAS_ASSERT(bitsOffset < 8);
 
         auto huffmanCode = kStaticHuffmanCode[code];
-        int  copyBytes   = huffmanCode.encodeBits / 8;
-        for (int i = 0; i < copyBytes; ++i) {
-            uint8_t hc = (huffmanCode.encode >> ((copyBytes - i) * 8)) & 0xff;
+        // |11111111|11111111|01010
+        // like this, we need to copy 2 bytes and remain 4 bits.
+        int     copyBytes  = huffmanCode.encodeBits / 8;
+        uint8_t remainBits = huffmanCode.encodeBits - copyBytes * 8; // this huffmanCode remain bits after copy bytes as much as possible.
+        for (int i = copyBytes - 1; i >= 0; --i) {
+            // |11111111|11111111|01010 make the highest 8-digit valid value to the lowest digit.
+            uint8_t hc = (huffmanCode.encode >> (i * 8 + remainBits)) & 0xff;
+            // if bitsOffset > 0, we need to merge the previous value
             if (bitsOffset > 0) {
-                byteBuffer.back() ^= std::byte(hc >> bitsOffset);
-                byteBuffer.push_back(std::byte(hc << (8 - bitsOffset)));
+                outputBuffer.back() ^= std::byte(hc >> bitsOffset);        // merge the previous value.
+                outputBuffer.push_back(std::byte(hc << (8 - bitsOffset))); // write remain valid bits to next byte.
             }
             else {
-                byteBuffer.push_back(std::byte(hc));
+                outputBuffer.push_back(std::byte(hc)); // write bits in next byte.
             }
         }
-        if (copyBytes * 8 < huffmanCode.encodeBits) {
-            uint8_t hc = huffmanCode.encode & 0xff;
+        // remain less than 8 bits
+        if (remainBits > 0) {
+            uint8_t hc = (huffmanCode.encode & 0xff)
+                         << (8 - remainBits); // make the lowest remain valid digit to the highest digit
             if (bitsOffset > 0) {
-                byteBuffer.back() ^= std::byte(hc >> bitsOffset);
-                if ((8 - bitsOffset) < (huffmanCode.encodeBits - copyBytes * 8)) {
-                    byteBuffer.push_back(std::byte(hc << (8 - bitsOffset)));
-                    return huffmanCode.encodeBits - copyBytes * 8 - 8;
+                outputBuffer.back() ^= std::byte(hc >> bitsOffset); // merge the previous value
+                if (8 < remainBits + bitsOffset) {
+                    // if remainBits + bitsOffset > 8, Then there is still some data that is deposited
+                    // we need to write it to the next byte
+                    outputBuffer.push_back(std::byte(hc << (8 - bitsOffset)));
+                    return remainBits + bitsOffset - 8; // then this byte will remain 8 - (remainBits + bitsOffset) % 8
+                                                        // bits, offset is remainBits + bitsOffset - 8.
                 }
-                else {
-                    return huffmanCode.encodeBits - copyBytes * 8;
-                }
+                // or remainBits + bitsOffset <= 8, then we have finished write all bits
+                // then this byte will remain 8 - remainBits - bitsOffset bits, the offset is 8 - remain bits. and it must less then 8.
+                return remainBits + bitsOffset >= 8 ? 0 : remainBits + bitsOffset;
             }
             else {
-                byteBuffer.push_back(std::byte(hc));
-                return huffmanCode.encodeBits - copyBytes * 8;
+                outputBuffer.push_back(std::byte(hc)); // write bits in next byte.
+                return remainBits; // then this byte will remain 8 - remainBits.
             }
         }
-        return 0;
+        return bitsOffset;
     }
 
 private:
@@ -169,31 +176,29 @@ private:
 
 class HuffmanDecoder {
 public:
-    inline int decode(std::span<std::byte> buffer, const std::size_t byteOffset, std::size_t &bitOffset,
-                      std::span<std::byte> outputBuffer, std::size_t &outputByteOffset) {
-        ILIAS_ASSERT(byteOffset < buffer.size());
-        ILIAS_ASSERT(bitOffset < 8);
-        ILIAS_ASSERT(outputByteOffset < outputBuffer.size());
+    inline static int decode(std::span<const std::byte> buffer, std::vector<std::byte> &outputBuffer) {
+        ILIAS_ASSERT(buffer.size() > 0);
+        uint8_t bitOffset = 0;
 
-        int new_offset = byteOffset, code = 0;
-        while (new_offset < buffer.size()) {
-            auto offset = decodeOne(buffer, new_offset, bitOffset, code);
+        int ByteOffset = 0, code = 0;
+        while (ByteOffset < buffer.size()) {
+            auto offset = decodeOne(buffer, ByteOffset, bitOffset, code);
             if (offset == -1) {
                 break;
             }
             if (code == HTTP_2_HPACK_HUFFMAN_CODE_EOS) {
                 return -1;
             }
-            if (outputByteOffset < outputBuffer.size()) {
-                break;
-            }
-            new_offset                       = offset;
-            outputBuffer[outputByteOffset++] = std::byte(code);
+            ByteOffset = offset;
+            outputBuffer.push_back(std::byte(code));
         }
-        return new_offset;
+        if (bitOffset != 0) {
+            ByteOffset += 1;
+        }
+        return ByteOffset;
     }
-    inline int decodeOne(std::span<std::byte> buffer, const std::size_t byteOffset, std::size_t &bitOffset,
-                         int &decode_code) {
+    inline static int decodeOne(std::span<const std::byte> buffer, const std::size_t byteOffset, uint8_t &bitOffset,
+                                int &decode_code) {
         ILIAS_ASSERT(byteOffset < buffer.size());
         ILIAS_ASSERT(bitOffset < 8);
 
@@ -201,11 +206,12 @@ public:
         auto     start = kStaticHuffmanCodeSortByHex.begin();
         while (bits < 30 && (bits < 5 || start->encode != code || start->encodeBits != bits)) {
             if (bits + bitOffset < 8) {
-                code = (code << 1) | (static_cast<unsigned char>(buffer[byteOffset]) >> (7 - bits - bitOffset));
+                code = (code << 1) | ((static_cast<unsigned char>(buffer[byteOffset]) >> (7 - bits - bitOffset)) & 1);
             }
             else if (byteOffset + (bits + bitOffset) / 8 < buffer.size()) {
-                code = (code << 1) | (static_cast<unsigned char>(buffer[byteOffset + (bits + bitOffset) / 8]) >>
-                                      (7 - (bits + bitOffset) % 8));
+                code = (code << 1) | ((static_cast<unsigned char>(buffer[byteOffset + (bits + bitOffset) / 8]) >>
+                                       (7 - (bits + bitOffset) % 8)) &
+                                      1);
             }
             else {
                 return -1;
@@ -219,9 +225,10 @@ public:
             start = f;
             ++bits;
         }
-        decode_code = start->rawCode;
-        bitOffset   = (bits + bitOffset) % 8;
-        return bitOffset + (bits + bitOffset) / 8;
+        decode_code      = start->rawCode;
+        auto byteOffset_ = byteOffset + (bits + bitOffset) / 8;
+        bitOffset        = (bits + bitOffset) % 8;
+        return byteOffset_;
     }
 
 private:
