@@ -49,7 +49,7 @@ public:
 private:
     auto _onTaskDone() -> Task<>;
 
-    std::set<PromiseBase *> mSet;
+    std::set<CoroPromise *> mSet;
     StopToken *mToken = nullptr;
     EventLoop *mLoop = EventLoop::instance();
     Task<> mHelper; //< Used to get notified when one task done

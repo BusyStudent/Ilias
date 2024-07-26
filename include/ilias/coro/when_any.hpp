@@ -63,14 +63,14 @@ public:
         std::apply([](auto ...tasks) {
             (tasks->setPrevAwaiting(nullptr), ...);
         }, mTasks); //< Clear all flags
-        return makeAllResult(std::make_index_sequence<sizeof ...(Args)>());
+        return _makeAllResult(std::make_index_sequence<sizeof ...(Args)>());
     }
     auto cancel() noexcept -> void {
         mCaller->setResumeCaller(nullptr); //< Set none-resume it, it will generator all std::nullopt tuple
     }
 private:
     template <size_t I>
-    auto makeResult() -> std::tuple_element_t<I, OutTuple> {
+    auto _makeResult() -> std::tuple_element_t<I, OutTuple> {
         auto task = std::get<I>(mTasks);
         if (mCaller->resumeCaller() != task) {
             return std::nullopt;
@@ -78,7 +78,7 @@ private:
         return task->value();
     }
     template <size_t ...N>
-    auto makeAllResult(std::index_sequence<N...>) -> OutTuple {
+    auto _makeAllResult(std::index_sequence<N...>) -> OutTuple {
         return OutTuple(_makeResult<N>()...);
     }
 

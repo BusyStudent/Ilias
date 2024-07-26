@@ -18,7 +18,6 @@ class Receiver;
 template <typename T>
 class Channel {
 public:
-    using handle_type = std::coroutine_handle<>;
 
     /**
      * @brief Create a channel
@@ -38,8 +37,8 @@ private:
     auto _isEmpty() const -> bool;
     auto _isFull() const -> bool;
 
-    std::deque<handle_type> mSenderHandles; //< The sender handle
-    handle_type mReceiverHandle; //< The recv handle
+    std::deque<CoroHandle> mSenderHandles; //< The sender handle
+    CoroHandle mReceiverHandle; //< The recv handle
     std::queue<Result<T> > mQueue;
     size_t mCapicity = 0; //< The capicity of the channel
     size_t mSenderCount = 0;
@@ -322,7 +321,6 @@ inline auto Channel<T>::_closeSender() -> void {
         auto h = mReceiverHandle;
         mReceiverHandle = nullptr;
         
-        ILIAS_CHECK_EXISTS(h);
         h.resume();
     }
     mRefcount -= 1;
@@ -338,7 +336,6 @@ inline auto Channel<T>::_closeReceiver() -> void {
         auto h = mSenderHandles.front();
         mSenderHandles.pop_front();
 
-        ILIAS_CHECK_EXISTS(h);
         h.resume();
     }
     mRefcount -= 1;
@@ -363,9 +360,9 @@ inline auto Channel<T>::_isFull() const -> bool {
 }
 template <typename T>
 inline auto Channel<T>::_send(Result<T> &&v) -> Task<> {
-    struct Awaiter {
-        auto await_ready() const -> bool { return false; }
-        auto await_suspend(typename Task<>::handle_type h) -> bool {
+    struct Awaiter : AwaiterImpl<Awaiter> {
+        auto ready() const -> bool { return false; }
+        auto suspend(CoroHandle h) -> bool {
             handle = h;
             auto &promise = handle.promise();
             if (promise.isCanceled()) {
@@ -377,7 +374,7 @@ inline auto Channel<T>::_send(Result<T> &&v) -> Task<> {
             }
             // Is Full, we try to resume the receiver in the event loop
             if (self->mReceiverHandle) {
-                promise.eventLoop()->resumeHandle(self->mReceiverHandle);
+                promise.eventLoop()->resumeHandle(self->mReceiverHandle.stdHandle());
                 self->mReceiverHandle = nullptr;
             }
             // We add our handle to the waiting list
@@ -385,7 +382,7 @@ inline auto Channel<T>::_send(Result<T> &&v) -> Task<> {
             added = true;
             return true;
         }
-        auto await_resume() -> Result<> {
+        auto resume() -> Result<> {
             if (self->_isBroken()) {
                 return Unexpected(Error::ChannelBroken);
             }
@@ -393,7 +390,7 @@ inline auto Channel<T>::_send(Result<T> &&v) -> Task<> {
             self->mQueue.emplace(std::move(*value));
             // Try resume the waiting list
             if (self->mReceiverHandle) {
-                handle.promise().eventLoop()->resumeHandle(self->mReceiverHandle);
+                handle.promise().eventLoop()->resumeHandle(self->mReceiverHandle.stdHandle());
                 self->mReceiverHandle = nullptr;
             }
             // Check if we are canceled
@@ -403,14 +400,18 @@ inline auto Channel<T>::_send(Result<T> &&v) -> Task<> {
                     self->mSenderHandles.erase(it);
                 }
             }
-            if (handle.promise().isCanceled()) {
+            if (canceled) {
                 // handle
                 return Unexpected(Error::Canceled);
             }
-            return Result<void>();
+            return {};
         }
-        typename Task<>::handle_type handle;
+        auto cancel() {
+            canceled = true;
+        }
+        CoroHandle handle;
         bool added = false; //< Did we add our handle to waiting list?
+        bool canceled = false; //< If we are canceled ?
         Result<T> *value = nullptr;
         Channel<T> *self = nullptr;
     };
@@ -432,15 +433,14 @@ inline auto Channel<T>::_trySend(Result<T> &&v) -> Result<void> {
         auto h = mReceiverHandle;
         mReceiverHandle = nullptr;
 
-        ILIAS_CHECK_EXISTS(h);
         h.resume();
     }
 }
 template <typename T>
 inline auto Channel<T>::_recv() -> Task<T> {
-    struct Awaiter {
-        auto await_ready() const -> bool { return false; }
-        auto await_suspend(typename Task<T>::handle_type h) -> bool {
+    struct Awaiter : public AwaiterImpl<Awaiter> {
+        auto ready() const -> bool { return false; }
+        auto suspend(CoroHandle h) -> bool {
             handle = h;
             auto &promise = handle.promise();
             if (promise.isCanceled()) {
@@ -452,7 +452,7 @@ inline auto Channel<T>::_recv() -> Task<T> {
             self->mReceiverHandle = handle;
             return true;
         }
-        auto await_resume() -> Result<T> {
+        auto resume() -> Result<T> {
             if (self->mReceiverHandle == handle) {
                 self->mReceiverHandle = nullptr;
             }
@@ -470,12 +470,15 @@ inline auto Channel<T>::_recv() -> Task<T> {
             // Check for sender waiting on it
             if (!self->mSenderHandles.empty()) {
                 auto loop = handle.promise().eventLoop();
-                loop->resumeHandle(self->mSenderHandles.front());
+                loop->resumeHandle(self->mSenderHandles.front().stdHandle());
                 self->mSenderHandles.pop_front();
             }
             return val;
         }
-        typename Task<T>::handle_type handle;
+        auto cancel() {
+            // No-op
+        }
+        CoroHandle handle;
         Result<T> *value = nullptr;
         Channel<T> *self = nullptr;
     };
@@ -496,8 +499,6 @@ inline auto Channel<T>::_tryRecv() -> Result<T> {
     if (!mSenderHandles.empty()) {
         auto h = mSenderHandles.front();
         mSenderHandles.pop_front();
-
-        ILIAS_CHECK_EXISTS(h);
         h.resume();
     }
     return value;

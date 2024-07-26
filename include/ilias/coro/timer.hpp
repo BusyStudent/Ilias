@@ -43,7 +43,7 @@ public:
 private:
     static void _onTimer(void *ptr) {
         auto self = static_cast<_SleepAwaiter *>(ptr);
-        ILIAS_CHECK_EXISTS(self->mCaller.handle());
+        ILIAS_CHECK_EXISTS(self->mCaller.stdHandle());
         self->mTimer = 0;
         self->mCaller.resume();
     }

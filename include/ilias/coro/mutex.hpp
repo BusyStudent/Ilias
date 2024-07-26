@@ -74,7 +74,7 @@ private:
 friend class MutexAwaiter;
 };
 
-class MutexAwaiter {
+class MutexAwaiter : public AwaiterImpl<MutexAwaiter> {
 public:
     MutexAwaiter(Mutex &mutex) : mMutex(mutex) { }
     MutexAwaiter(const MutexAwaiter &) = delete;
@@ -83,12 +83,12 @@ public:
         ILIAS_CHECK_MSG(mUsed, "Do you forget to use co_await to lock the Mutex???");
     }
 
-    auto await_ready() noexcept -> bool {
+    auto ready() noexcept -> bool {
         mIter = mMutex.mWatingQueue.end();
         mUsed = true;
         return false;
     }
-    auto await_suspend(auto handle) -> bool {
+    auto suspend(CoroHandle handle) -> bool {
         auto &promise = handle.promise();
         if (promise.isCanceled()) {
             return false; //< Cancel the suspend
@@ -103,32 +103,38 @@ public:
         return true;
     }
     [[nodiscard("Please check the return value, it may be canceled, so lock is failed")]]
-    auto await_resume() -> Result<void> {
+    auto resume() -> Result<void> {
         if (mLocked) { //< We successfully locked the mutex
             return {};
         }
-        if (mIter != mMutex.mWatingQueue.end()) {
-            // Canceled
-            mMutex.mWatingQueue.erase(mIter);
+        if (mCanceled) {
             return Unexpected(Error::Canceled);
         }
         // Now we should get the mutex
         ILIAS_ASSERT(mMutex.isLocked());
         return {};
     }
-    auto resume() {
+    auto cancel() {
+        if (mIter != mMutex.mWatingQueue.end()) {
+            // Canceled
+            mMutex.mWatingQueue.erase(mIter);
+        }
+        mCanceled = true;
+    }
+    auto _onResume() {
         mIter = mMutex.mWatingQueue.end();
         mHandle.resume();
     }
-    auto mutex() -> Mutex & {
+    auto _mutex() -> Mutex & {
         return mMutex;
     }
 private:
-    std::coroutine_handle<> mHandle;
+    CoroHandle mHandle;
     std::list<MutexAwaiter *>::iterator mIter;
     Mutex &mMutex;
     bool   mUsed = false;
     bool   mLocked = false; //< Try lock 
+    bool   mCanceled = false;
 };
 
 class MutexGuardAwaiter {
@@ -143,7 +149,7 @@ public:
         if (!v) {
             return Unexpected(v.error());
         }
-        return {std::unique_lock<Mutex> {mAwaiter.mutex(), std::adopt_lock} };
+        return {std::unique_lock<Mutex> {mAwaiter._mutex(), std::adopt_lock} };
      }
 private:
     MutexAwaiter mAwaiter;
@@ -159,7 +165,7 @@ inline auto Mutex::unlock() -> void {
     // Now resume the first one
     auto awaiter = mWatingQueue.front();
     mWatingQueue.pop_front();
-    awaiter->resume();
+    awaiter->_onResume();
 }
 
 inline auto Mutex::tryLock() -> bool {
