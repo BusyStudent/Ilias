@@ -28,12 +28,12 @@ inline auto _CounterTask(size_t waitCount) -> Task<> {
  * @tparam Args 
  */
 template <typename ...Args>
-class WhenAllAwaiter final : public AwaiterImpl<WhenAllAwaiter<Args...> >{
+class _WhenAllAwaiter final : public AwaiterImpl<_WhenAllAwaiter<Args...> >{
 public:
     using InTuple = std::tuple<TaskPromise<Args>* ...>;
     using OutTuple = std::tuple<Result<Args> ...>;
 
-    WhenAllAwaiter(const InTuple &tasks) : mTasks(tasks) { }
+    _WhenAllAwaiter(const InTuple &tasks) : mTasks(tasks) { }
 
     auto ready() -> bool {
         auto resume = [](auto task) {
@@ -110,9 +110,9 @@ private:
 
 // Vec version
 template <typename T>
-class WhenAllVecAwaiter final : public AwaiterImpl<WhenAllVecAwaiter<T> > {
+class _WhenAllVecAwaiter final : public AwaiterImpl<_WhenAllVecAwaiter<T> > {
 public:
-    WhenAllVecAwaiter(std::vector<Task<T> > &vec) : mVec(vec) { }
+    _WhenAllVecAwaiter(std::vector<Task<T> > &vec) : mVec(vec) { }
 
     auto ready() -> bool {
         // Try resume
@@ -189,7 +189,7 @@ class AwaitTransform<_WhenAllTags<Tuple> > {
 public:
     template <typename T>
     static auto transform(TaskPromise<T> *caller, const _WhenAllTags<Tuple> &tag) {
-        return WhenAllAwaiter(tag.tuple);
+        return _WhenAllAwaiter(tag.tuple);
     }
 };
 
@@ -198,7 +198,7 @@ class AwaitTransform<_WhenAllVecTags<T> > {
 public:
     template <typename U>
     static auto transform(TaskPromise<U> *caller, const _WhenAllVecTags<T> &tag) {
-        return WhenAllVecAwaiter(tag.vec);
+        return _WhenAllVecAwaiter(tag.vec);
     }
 };
 

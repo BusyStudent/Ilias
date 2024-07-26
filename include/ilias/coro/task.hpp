@@ -450,7 +450,7 @@ public:
         return mAwaiter.await_resume();
     }
 
-    PromiseBase *mPromise;
+    CoroPromise *mPromise;
     T mAwaiter;
 };
 

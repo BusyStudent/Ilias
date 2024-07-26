@@ -13,7 +13,7 @@
 
 #include "coro/promise.hpp"
 #include "coro/loop.hpp"
-#include "coro/sleep.hpp"
+#include "coro/timer.hpp"
 #include "coro/task.hpp"
 #include "coro/cancel_handle.hpp"
 #include "coro/join_handle.hpp"
