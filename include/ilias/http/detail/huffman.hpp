@@ -178,14 +178,13 @@ private:
 
 class HuffmanDecoder {
 public:
-    /// @brief 编码 buffer->huffman
-    /// @param buffer 需要编码的 buffer 数据
-    /// @param huffman 编码后的 huffman 数据
-    /// @param inout_byte 0 <= inout_byte <= 2^7，且一定是 2 的幂次。输入时表示：上次填充到末尾 byte 的哪个 bit
-    /// 位；编码完成时表示，填充到末尾 byte 的哪个 bit位。当 ending=1 时，输出一定是 0。此值用于连续编码不完整的 buffer
-    /// 数据包，对于完整的 buffer 数据包允许使用 nullptr
-    /// @param ending 是否使用 1 填充结尾以结束编码
-    /// @return 已解析的长度
+    /// @brief Decode huffman->buffer
+    /// @param huffman The buffman data to be decoded
+    /// @param buffer Decoded buffer data
+    /// @param inout_state On input, it means the end state of the last decoding; on output, it means the state of the
+    /// current decoding. The default state is 0. This value is used to decode incomplete huffman packets consecutively,
+    /// nullptr is allowed for complete huffman packets.
+    /// @return Decoded data length
     inline static int decode(std::span<const std::byte> huffman, std::vector<std::byte> &buffer,
                              int16_t *inout_state = nullptr) {
         int16_t cur  = {}; // 当前所在的 HuffmanTree 中的节点
