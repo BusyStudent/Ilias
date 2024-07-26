@@ -3,312 +3,312 @@
 #include "../include/ilias/http/detail/hpack.hpp"
 #include "../include/ilias/http/detail/dictionary_tree.hpp"
 
-using namespace Ilias::http2::detail;
+using namespace ILIAS_NAMESPACE::http2::detail;
 
 TEST(Hpack, ContextTestStaticTable) {
     HpackContext context;
     {
-        auto field = context.indexToNameValuePair(1).value();
+        auto field = context.indexToHeaderField(1).value();
         EXPECT_STREQ(field.headerName.data(), ":authority");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(2).value();
+        auto field = context.indexToHeaderField(2).value();
         EXPECT_STREQ(field.headerName.data(), ":method");
         EXPECT_STREQ(field.headerValue.data(), "GET");
     }
     {
-        auto field = context.indexToNameValuePair(3).value();
+        auto field = context.indexToHeaderField(3).value();
         EXPECT_STREQ(field.headerName.data(), ":method");
         EXPECT_STREQ(field.headerValue.data(), "POST");
     }
     {
-        auto field = context.indexToNameValuePair(4).value();
+        auto field = context.indexToHeaderField(4).value();
         EXPECT_STREQ(field.headerName.data(), ":path");
         EXPECT_STREQ(field.headerValue.data(), "/");
     }
     {
-        auto field = context.indexToNameValuePair(5).value();
+        auto field = context.indexToHeaderField(5).value();
         EXPECT_STREQ(field.headerName.data(), ":path");
         EXPECT_STREQ(field.headerValue.data(), "/index.html");
     }
     {
-        auto field = context.indexToNameValuePair(6).value();
+        auto field = context.indexToHeaderField(6).value();
         EXPECT_STREQ(field.headerName.data(), ":scheme");
         EXPECT_STREQ(field.headerValue.data(), "http");
     }
     {
-        auto field = context.indexToNameValuePair(7).value();
+        auto field = context.indexToHeaderField(7).value();
         EXPECT_STREQ(field.headerName.data(), ":scheme");
         EXPECT_STREQ(field.headerValue.data(), "https");
     }
     {
-        auto field = context.indexToNameValuePair(8).value();
+        auto field = context.indexToHeaderField(8).value();
         EXPECT_STREQ(field.headerName.data(), ":status");
         EXPECT_STREQ(field.headerValue.data(), "200");
     }
     {
-        auto field = context.indexToNameValuePair(9).value();
+        auto field = context.indexToHeaderField(9).value();
         EXPECT_STREQ(field.headerName.data(), ":status");
         EXPECT_STREQ(field.headerValue.data(), "204");
     }
     {
-        auto field = context.indexToNameValuePair(10).value();
+        auto field = context.indexToHeaderField(10).value();
         EXPECT_STREQ(field.headerName.data(), ":status");
         EXPECT_STREQ(field.headerValue.data(), "206");
     }
     {
-        auto field = context.indexToNameValuePair(11).value();
+        auto field = context.indexToHeaderField(11).value();
         EXPECT_STREQ(field.headerName.data(), ":status");
         EXPECT_STREQ(field.headerValue.data(), "304");
     }
     {
-        auto field = context.indexToNameValuePair(12).value();
+        auto field = context.indexToHeaderField(12).value();
         EXPECT_STREQ(field.headerName.data(), ":status");
         EXPECT_STREQ(field.headerValue.data(), "400");
     }
     {
-        auto field = context.indexToNameValuePair(13).value();
+        auto field = context.indexToHeaderField(13).value();
         EXPECT_STREQ(field.headerName.data(), ":status");
         EXPECT_STREQ(field.headerValue.data(), "404");
     }
     {
-        auto field = context.indexToNameValuePair(14).value();
+        auto field = context.indexToHeaderField(14).value();
         EXPECT_STREQ(field.headerName.data(), ":status");
         EXPECT_STREQ(field.headerValue.data(), "500");
     }
     {
-        auto field = context.indexToNameValuePair(15).value();
+        auto field = context.indexToHeaderField(15).value();
         EXPECT_STREQ(field.headerName.data(), "accept-charset");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(16).value();
+        auto field = context.indexToHeaderField(16).value();
         EXPECT_STREQ(field.headerName.data(), "accept-encoding");
         EXPECT_STREQ(field.headerValue.data(), "gzip, deflate");
     }
     {
-        auto field = context.indexToNameValuePair(17).value();
+        auto field = context.indexToHeaderField(17).value();
         EXPECT_STREQ(field.headerName.data(), "accept-language");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(18).value();
+        auto field = context.indexToHeaderField(18).value();
         EXPECT_STREQ(field.headerName.data(), "accept-ranges");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(19).value();
+        auto field = context.indexToHeaderField(19).value();
         EXPECT_STREQ(field.headerName.data(), "accept");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(20).value();
+        auto field = context.indexToHeaderField(20).value();
         EXPECT_STREQ(field.headerName.data(), "access-control-allow-origin");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(21).value();
+        auto field = context.indexToHeaderField(21).value();
         EXPECT_STREQ(field.headerName.data(), "age");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(22).value();
+        auto field = context.indexToHeaderField(22).value();
         EXPECT_STREQ(field.headerName.data(), "allow");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(23).value();
+        auto field = context.indexToHeaderField(23).value();
         EXPECT_STREQ(field.headerName.data(), "authorization");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(24).value();
+        auto field = context.indexToHeaderField(24).value();
         EXPECT_STREQ(field.headerName.data(), "cache-control");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(25).value();
+        auto field = context.indexToHeaderField(25).value();
         EXPECT_STREQ(field.headerName.data(), "content-disposition");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(26).value();
+        auto field = context.indexToHeaderField(26).value();
         EXPECT_STREQ(field.headerName.data(), "content-encoding");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(27).value();
+        auto field = context.indexToHeaderField(27).value();
         EXPECT_STREQ(field.headerName.data(), "content-language");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(28).value();
+        auto field = context.indexToHeaderField(28).value();
         EXPECT_STREQ(field.headerName.data(), "content-length");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(29).value();
+        auto field = context.indexToHeaderField(29).value();
         EXPECT_STREQ(field.headerName.data(), "content-location");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(30).value();
+        auto field = context.indexToHeaderField(30).value();
         EXPECT_STREQ(field.headerName.data(), "content-range");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(31).value();
+        auto field = context.indexToHeaderField(31).value();
         EXPECT_STREQ(field.headerName.data(), "content-type");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(32).value();
+        auto field = context.indexToHeaderField(32).value();
         EXPECT_STREQ(field.headerName.data(), "cookie");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(33).value();
+        auto field = context.indexToHeaderField(33).value();
         EXPECT_STREQ(field.headerName.data(), "date");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(34).value();
+        auto field = context.indexToHeaderField(34).value();
         EXPECT_STREQ(field.headerName.data(), "etag");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(35).value();
+        auto field = context.indexToHeaderField(35).value();
         EXPECT_STREQ(field.headerName.data(), "expect");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(36).value();
+        auto field = context.indexToHeaderField(36).value();
         EXPECT_STREQ(field.headerName.data(), "expires");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(37).value();
+        auto field = context.indexToHeaderField(37).value();
         EXPECT_STREQ(field.headerName.data(), "from");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(38).value();
+        auto field = context.indexToHeaderField(38).value();
         EXPECT_STREQ(field.headerName.data(), "host");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(39).value();
+        auto field = context.indexToHeaderField(39).value();
         EXPECT_STREQ(field.headerName.data(), "if-match");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(40).value();
+        auto field = context.indexToHeaderField(40).value();
         EXPECT_STREQ(field.headerName.data(), "if-modified-since");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(41).value();
+        auto field = context.indexToHeaderField(41).value();
         EXPECT_STREQ(field.headerName.data(), "if-none-match");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(42).value();
+        auto field = context.indexToHeaderField(42).value();
         EXPECT_STREQ(field.headerName.data(), "if-range");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(43).value();
+        auto field = context.indexToHeaderField(43).value();
         EXPECT_STREQ(field.headerName.data(), "if-unmodified-since");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(44).value();
+        auto field = context.indexToHeaderField(44).value();
         EXPECT_STREQ(field.headerName.data(), "last-modified");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(45).value();
+        auto field = context.indexToHeaderField(45).value();
         EXPECT_STREQ(field.headerName.data(), "link");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(46).value();
+        auto field = context.indexToHeaderField(46).value();
         EXPECT_STREQ(field.headerName.data(), "location");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(47).value();
+        auto field = context.indexToHeaderField(47).value();
         EXPECT_STREQ(field.headerName.data(), "max-forwards");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(48).value();
+        auto field = context.indexToHeaderField(48).value();
         EXPECT_STREQ(field.headerName.data(), "proxy-authenticate");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(49).value();
+        auto field = context.indexToHeaderField(49).value();
         EXPECT_STREQ(field.headerName.data(), "proxy-authorization");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(50).value();
+        auto field = context.indexToHeaderField(50).value();
         EXPECT_STREQ(field.headerName.data(), "range");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(51).value();
+        auto field = context.indexToHeaderField(51).value();
         EXPECT_STREQ(field.headerName.data(), "referer");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(52).value();
+        auto field = context.indexToHeaderField(52).value();
         EXPECT_STREQ(field.headerName.data(), "refresh");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(53).value();
+        auto field = context.indexToHeaderField(53).value();
         EXPECT_STREQ(field.headerName.data(), "retry-after");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(54).value();
+        auto field = context.indexToHeaderField(54).value();
         EXPECT_STREQ(field.headerName.data(), "server");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(55).value();
+        auto field = context.indexToHeaderField(55).value();
         EXPECT_STREQ(field.headerName.data(), "set-cookie");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(56).value();
+        auto field = context.indexToHeaderField(56).value();
         EXPECT_STREQ(field.headerName.data(), "strict-transport-security");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(57).value();
+        auto field = context.indexToHeaderField(57).value();
         EXPECT_STREQ(field.headerName.data(), "transfer-encoding");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(58).value();
+        auto field = context.indexToHeaderField(58).value();
         EXPECT_STREQ(field.headerName.data(), "user-agent");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(59).value();
+        auto field = context.indexToHeaderField(59).value();
         EXPECT_STREQ(field.headerName.data(), "vary");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(60).value();
+        auto field = context.indexToHeaderField(60).value();
         EXPECT_STREQ(field.headerName.data(), "via");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
     {
-        auto field = context.indexToNameValuePair(61).value();
+        auto field = context.indexToHeaderField(61).value();
         EXPECT_STREQ(field.headerName.data(), "www-authenticate");
         EXPECT_STREQ(field.headerValue.data(), "");
     }
@@ -316,33 +316,33 @@ TEST(Hpack, ContextTestStaticTable) {
 
 TEST(Hpack, ContextDynamicTable) {
     HpackContext context;
-    context.addNameValuePair("custom-header1", "custom-value");
-    context.addNameValuePair("custom-header1", "custom-value1");
-    context.addNameValuePair("custom-header3", "custom-value3");
+    context.appendHeaderField("custom-header1", "custom-value");
+    context.appendHeaderField("custom-header1", "custom-value1");
+    context.appendHeaderField("custom-header3", "custom-value3");
     EXPECT_EQ(context.dynamicTableSize(), 176);
 
-    auto field = context.indexToNameValuePair(62).value();
+    auto field = context.indexToHeaderField(62).value();
     EXPECT_STREQ(field.headerName.data(), "custom-header3");
     EXPECT_STREQ(field.headerValue.data(), "custom-value3");
-    field = context.indexToNameValuePair(63).value();
+    field = context.indexToHeaderField(63).value();
     EXPECT_STREQ(field.headerName.data(), "custom-header1");
     EXPECT_STREQ(field.headerValue.data(), "custom-value1");
 
     context.setMaxDynamicTableSize(70);
     EXPECT_EQ(context.dynamicTableSize(), 59);
-    field = context.indexToNameValuePair(62).value();
+    field = context.indexToHeaderField(62).value();
     EXPECT_STREQ(field.headerName.data(), "custom-header3");
     EXPECT_STREQ(field.headerValue.data(), "custom-value3");
 
-    context.addNameValuePair(
+    context.appendHeaderField(
         "custom-header1", "a very very big value for this test,                                                     "
                           "                                                                                         ");
-    auto ret = context.indexToNameValuePair(62);
-    EXPECT_EQ(ret.error(), HpackError::InvalidIndexForDecodingTable);
+    auto ret = context.indexToHeaderField(62);
+    EXPECT_EQ(ret.error(), HpackError::IndexOutOfRange);
 
-    context.addNameValuePair("custom-header1", "custom-value1");
+    context.appendHeaderField("custom-header1", "custom-value1");
     EXPECT_EQ(context.dynamicTableSize(), 59);
-    field = context.indexToNameValuePair(62).value();
+    field = context.indexToHeaderField(62).value();
     EXPECT_STREQ(field.headerName.data(), "custom-header1");
     EXPECT_STREQ(field.headerValue.data(), "custom-value1");
     context.setMaxDynamicTableSize(0);
@@ -371,12 +371,42 @@ TEST(Hpack, HuffmanCodeTest) {
     EXPECT_EQ(memcmp(outputBuffer2.data(), input, 5), 0);
 }
 
-TEST(Hpack, IntDecoderTest) {
+namespace ILIAS_NAMESPACE::http2::detail {
+class HpackDecoderTest {
+public:
+    HpackDecoderTest() : context(), decoder(context) {}
+    auto decode(std::span<const std::byte> buffer) -> ILIAS_NAMESPACE::Result<void> { return decoder.decode(buffer); }
+    auto headerFieldList() const noexcept -> const std::vector<HeaderField> & { return decoder.headerFieldList(); }
+    auto headerFieldList() noexcept -> std::vector<HeaderField> & { return decoder.headerFieldList(); }
+    auto clear() noexcept -> void { decoder.clear(); }
+    auto indexedHeaderField(std::span<const std::byte> buffer) -> ILIAS_NAMESPACE::Result<int> {
+        return decoder.indexedHeaderField(buffer);
+    }
+    auto literalHeaderField(std::span<const std::byte> buffer, const bool incremental = true)
+        -> ILIAS_NAMESPACE::Result<int> {
+        return decoder.literalHeaderField(buffer, incremental);
+    }
+    auto updateDynamicTableSize(std::span<const std::byte> buffer) -> ILIAS_NAMESPACE::Result<int> {
+        return decoder.updateDynamicTableSize(buffer);
+    }
+    template <typename T>
+    auto getInt(std::span<const std::byte> buffer, T &value, const int allowPrefixBits = 8) const
+        -> ILIAS_NAMESPACE::Result<int> {
+        return decoder.getInt(buffer, value, allowPrefixBits);
+    }
+    auto getString(std::span<const std::byte> buffer, std::string &value) const -> ILIAS_NAMESPACE::Result<int> {
+        return decoder.getString(buffer, value);
+    }
     HpackContext context;
-    std::byte    buffer[1];
+    HpackDecoder decoder;
+};
+} // namespace ILIAS_NAMESPACE::http2::detail
+
+TEST(Hpack, IntDecoderTest) {
+    HpackDecoderTest decoder;
+    std::byte        buffer[1];
     buffer[0] = std::byte {0xf2};
-    HpackDecoder decoder(context);
-    int          value;
+    int value;
     EXPECT_EQ(decoder.getInt(buffer, value).value(), 1);
     EXPECT_EQ(value, 242);
 
@@ -418,10 +448,47 @@ TEST(Hpack, IntDecoderTest) {
     EXPECT_EQ(buffer4.size(), 3);
     EXPECT_EQ(memcmp(buffer4.data(), buffer2, 3), 0);
 }
+namespace ILIAS_NAMESPACE::http2::detail {
+class HpackEncoderTest {
+public:
+    HpackEncoderTest() : context(), encoder(context) {}
+
+    auto encode(const std::vector<HeaderField> &headerList) -> ILIAS_NAMESPACE::Result<int> {
+        return encoder.encode(headerList);
+    }
+    auto encode(HeaderFieldView header) -> ILIAS_NAMESPACE::Result<int> { return encoder.encode(header); }
+    auto encode(std::string_view name, std::string_view value, const HeaderFieldType type = HeaderFieldType::Unknow)
+        -> ILIAS_NAMESPACE::Result<int> {
+        return encoder.encode(name, value, type);
+    }
+    auto reset() -> void { encoder.reset(); }
+    auto buffer() -> std::vector<std::byte> & { return encoder.buffer(); }
+    auto buffer() const -> const std::vector<std::byte> & { return encoder.buffer(); }
+    auto size() const -> std::size_t { return encoder.buffer().size(); }
+    auto literalHeaderField(std::span<const std::byte> buffer, const bool incremental = true)
+        -> ILIAS_NAMESPACE::Result<int> {
+        return encoder.literalHeaderField(buffer, incremental);
+    }
+    auto indexedHeaderField(std::span<const std::byte> buffer) -> ILIAS_NAMESPACE::Result<int> {
+        return encoder.indexedHeaderField(buffer);
+    }
+    auto updateDynamicTableSize(std::span<const std::byte> buffer) -> ILIAS_NAMESPACE::Result<int> {
+        return encoder.updateDynamicTableSize(buffer);
+    }
+    template <typename T>
+    auto saveInt(T &&value, const int allowPrefixBits = 8) -> ILIAS_NAMESPACE::Result<void> {
+        return encoder.saveInt(std::forward<T>(value), allowPrefixBits);
+    }
+    auto saveString(const std::string &value, const bool huffmanEncoding = false) -> ILIAS_NAMESPACE::Result<void> {
+        return encoder.saveString(value, huffmanEncoding);
+    }
+    HpackContext context;
+    HpackEncoder encoder;
+};
+} // namespace ILIAS_NAMESPACE::http2::detail
 
 TEST(Hpack, EncoderDecoder) {
-    HpackContext context;
-    HpackEncoder encoder(context);
+    HpackEncoderTest encoder;
 
     std::string str_data      = "Hello, World!";
     std::byte   encode_data[] = {std::byte {0x0D}, std::byte {'H'}, std::byte {'e'}, std::byte {'l'}, std::byte {'l'},
@@ -433,8 +500,8 @@ TEST(Hpack, EncoderDecoder) {
         EXPECT_EQ(encoder.buffer()[i], encode_data[i]);
     }
 
-    HpackDecoder decoder(context);
-    std::string  str_data2;
+    HpackDecoderTest decoder;
+    std::string      str_data2;
     EXPECT_EQ(decoder.getString(encode_data, str_data2).value(), 14);
     EXPECT_STREQ(str_data2.c_str(), str_data.c_str());
 
@@ -453,6 +520,76 @@ TEST(Hpack, EncoderDecoder) {
     EXPECT_EQ(decoder.getString(encode_data2, str_data2).value(), 12);
     EXPECT_STREQ(str_data2.c_str(), str_data.c_str());
 };
+
+TEST(Hpack, LiteralHeaderFieldWithIndexing) {
+    HpackContext context;
+    HpackDecoder decoder(context);
+
+    std::byte data[] = {
+        std::byte {0x40}, std::byte {0x0a}, std::byte {0x63}, std::byte {0x75}, std::byte {0x73}, std::byte {0x74},
+        std::byte {0x6f}, std::byte {0x6d}, std::byte {0x2d}, std::byte {0x6b}, std::byte {0x65}, std::byte {0x79},
+        std::byte {0x0d}, std::byte {0x63}, std::byte {0x75}, std::byte {0x73}, std::byte {0x74}, std::byte {0x6f},
+        std::byte {0x6d}, std::byte {0x2d}, std::byte {0x68}, std::byte {0x65}, std::byte {0x61}, std::byte {0x64},
+        std::byte {0x65}, std::byte {0x72},
+    };
+
+    EXPECT_TRUE(decoder.decode(data).operator bool());
+    EXPECT_EQ(decoder.headerFieldList().size(), 1);
+    EXPECT_STREQ(decoder.headerFieldList()[0].headerName.c_str(), "custom-key");
+    EXPECT_STREQ(decoder.headerFieldList()[0].headerValue.c_str(), "custom-header");
+    EXPECT_EQ(decoder.headerFieldList()[0].type, HeaderFieldType::IncrementalIndexing);
+    EXPECT_EQ(context.dynamicTableIndexSize(), 1);
+    auto filed = context.indexToHeaderField(62);
+    ASSERT_TRUE(filed.has_value());
+    EXPECT_STREQ(filed.value().headerName.data(), "custom-key");
+    EXPECT_STREQ(filed.value().headerValue.data(), "custom-header");
+}
+
+TEST(Hpack, LiteralHeaderFieldWithoutIndexing) {
+    HpackContext context;
+    HpackDecoder decoder(context);
+
+    std::byte data[] = {std::byte {0x04}, std::byte {0x0c}, std::byte {0x2f}, std::byte {0x73}, std::byte {0x61},
+                        std::byte {0x6d}, std::byte {0x70}, std::byte {0x6c}, std::byte {0x65}, std::byte {0x2f},
+                        std::byte {0x70}, std::byte {0x61}, std::byte {0x74}, std::byte {0x68}};
+    EXPECT_TRUE(decoder.decode(data).operator bool());
+    EXPECT_EQ(decoder.headerFieldList().size(), 1);
+    EXPECT_STREQ(decoder.headerFieldList()[0].headerName.c_str(), ":path");
+    EXPECT_STREQ(decoder.headerFieldList()[0].headerValue.c_str(), "/sample/path");
+    EXPECT_EQ(context.dynamicTableIndexSize(), 0);
+}
+
+TEST(Hpack, LiteralHeaderFieldNeverIndexed) {
+    HpackContext context;
+    HpackDecoder decoder(context);
+
+    std::byte data[] = {std::byte {0x10}, std::byte {0x08}, std::byte {0x70}, std::byte {0x61}, std::byte {0x73},
+                        std::byte {0x73}, std::byte {0x77}, std::byte {0x6f}, std::byte {0x72}, std::byte {0x64},
+                        std::byte {0x06}, std::byte {0x73}, std::byte {0x65}, std::byte {0x63}, std::byte {0x72},
+                        std::byte {0x65}, std::byte {0x74}};
+    EXPECT_TRUE(decoder.decode(data).operator bool());
+    EXPECT_EQ(decoder.headerFieldList().size(), 1);
+    EXPECT_STREQ(decoder.headerFieldList()[0].headerName.c_str(), "password");
+    EXPECT_STREQ(decoder.headerFieldList()[0].headerValue.c_str(), "secret");
+    EXPECT_EQ(context.dynamicTableIndexSize(), 0);
+}
+
+TEST(Hpack, IndexedHeaderField) {
+    HpackContext context;
+    HpackDecoder decoder(context);
+
+    std::byte data[] = {std::byte {0x82}};
+    EXPECT_TRUE(decoder.decode(data).operator bool());
+    EXPECT_EQ(decoder.headerFieldList().size(), 1);
+    EXPECT_STREQ(decoder.headerFieldList()[0].headerName.c_str(), ":method");
+    EXPECT_STREQ(decoder.headerFieldList()[0].headerValue.c_str(), "GET");
+    EXPECT_EQ(context.dynamicTableIndexSize(), 0);
+}
+
+TEST(Hpack, RequestWithoutHuffmanConding) {
+    EXPECT_TRUE(true);
+    // TODO: implement
+}
 
 TEST(Hpack, DictionaryTree) {
     DictionaryTree<int> tree;

@@ -19,7 +19,7 @@
 #endif
 
 #if defined(HPACK_DEBUG) && defined(HPACK_LOG_CONTEXT)
-#include <format.h>
+#include <fmt/format.h>
 #define HPACK_DEBUG(fmt, ...) printf("Debug -- [%s:%s] %s", __FILE__, __LINE__, std::format(fmt, ##__VA_ARGS__).c_str())
 #define HPACK_ASSERT(cond, fmt, ...)                                                                                   \
     if (!(cond)) {                                                                                                     \
@@ -27,7 +27,7 @@
         abort();                                                                                                       \
     }
 #elif defined(HPACK_DEBUG)
-#include <format.h>
+#include <fmt/format.h>
 #define HPACK_DEBUG(...) printf("Debug -- [%s:%s] %s", __FILE__, __LINE__, std::format(##__VA_ARGS__).c_str())
 #define HPACK_ASSERT(cond, ...)                                                                                        \
     if (!(cond)) {                                                                                                     \
@@ -40,7 +40,7 @@
 #endif
 
 #if defined(HPACK_LOG) && defined(HPACK_LOG_CONTEXT)
-#include <format.h>
+#include <fmt/format.h>
 #define HPACK_LOG_INFO(fmt, ...)                                                                                       \
     printf("Info -- [%s:%s] %s", __FILE__, __LINE__, std::format(fmt, ##__VA_ARGS__).c_str())
 #define HPACK_LOG_WARN(fmt, ...)                                                                                       \
@@ -51,7 +51,7 @@
     printf("Fata -- [%s:%s] %s", __FILE__, __LINE__, std::format(fmt, ##__VA_ARGS__).c_str());                         \
     abort();
 #elif defined(HPACK_LOG)
-#include <format.h>
+#include <fmt/format.h>
 #define HPACK_LOG_INFO(...) printf("Info -- %s", std::format(##__VA_ARGS__).c_str())
 #define HPACK_LOG_WARN(...) printf("Warn -- %s", std::format(##__VA_ARGS__).c_str())
 #define HPACK_LOG_ERROR(...) printf("Error -- %s", std::format(##__VA_ARGS__).c_str())
