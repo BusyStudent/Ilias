@@ -14,7 +14,7 @@
 
 ILIAS_NS_BEGIN
 
-namespace http2::detail {
+namespace http2 {
 
 enum class HpackError : uint32_t {
     Ok,
@@ -25,6 +25,9 @@ enum class HpackError : uint32_t {
     IndexParserError,
     IndexOutOfRange,
     UnknowHeaderField,
+    SizeOutOfLimit,
+    FieldNotInTable,
+    UnknowFieldType,
 
     UnknownError = 0x7FFFFFFF
 };
@@ -37,11 +40,11 @@ public:
     static auto  instance() -> const HpackErrorCategory &;
 };
 
-} // namespace http2::detail
+} // namespace http2
 
-ILIAS_DECLARE_ERROR_(http2::detail::HpackError, http2::detail::HpackErrorCategory);
+ILIAS_DECLARE_ERROR_(http2::HpackError, http2::HpackErrorCategory);
 
-namespace http2::detail {
+namespace http2 {
 
 enum class HeaderFieldType : uint8_t {
     Indexed             = 0,
@@ -190,7 +193,7 @@ public:
      * @param value
      */
     auto appendHeaderField(std::string_view name, std::string_view value) -> void;
-    auto findHeaderField(std::string_view name, std::string_view value) -> int;
+    auto findHeaderField(std::string_view name, std::string_view value = "") -> int;
 
 private:
     HpackContext(const HpackContext &)            = delete;
@@ -207,6 +210,9 @@ private:
 };
 
 class HpackDecoder {
+    using HuffmanDecoder = detail::HuffmanDecoder;
+    using IntegerDecoder = detail::IntegerDecoder;
+
 public:
     HpackDecoder(HpackContext &context);
     HpackDecoder(HpackContext &context, std::span<const std::byte> buffer, const int offset = 0);
@@ -389,25 +395,31 @@ private:
 };
 
 class HpackEncoder {
+    using HuffmanEncoder = detail::HuffmanEncoder;
+    using IntegerEncoder = detail::IntegerEncoder;
+
 public:
     HpackEncoder(HpackContext &context);
     ~HpackEncoder() = default;
-    auto encode(const std::vector<HeaderField> &headerList) -> Result<int>;
-    auto encode(HeaderFieldView header) -> Result<int>;
+    auto encode(const std::vector<HeaderField> &headerList) -> Result<void>;
+    auto encode(HeaderFieldView header) -> Result<void>;
     auto encode(std::string_view name, std::string_view value, const HeaderFieldType type = HeaderFieldType::Unknow)
-        -> Result<int>;
+        -> Result<void>;
     auto reset() -> void;
     auto buffer() -> std::vector<std::byte> &;
     auto buffer() const -> const std::vector<std::byte> &;
     auto size() const -> std::size_t;
 
 private:
-    auto literalHeaderField(std::span<const std::byte> buffer, const bool incremental = true) -> Result<int>;
-    auto indexedHeaderField(std::span<const std::byte> buffer) -> Result<int>;
-    auto updateDynamicTableSize(std::span<const std::byte> buffer) -> Result<int>;
+    auto literalHeaderField(std::string_view name, std::string_view value, const bool incremental = true)
+        -> Result<void>;
+    auto literalHeaderField(std::size_t name_index, std::string_view value, const bool incremental = true)
+        -> Result<void>;
+    auto indexedHeaderField(const std::size_t index) -> Result<void>;
+    auto updateDynamicTableSize(const std::size_t index) -> Result<void>;
     template <typename T>
     auto saveInt(T &&value, const int allowPrefixBits = 8) -> Result<void>;
-    auto saveString(const std::string &value, const bool huffmanEncoding = false) -> Result<void>;
+    auto saveString(std::string_view value, const bool huffmanEncoding = false) -> Result<void>;
 
 private:
     friend class HpackEncoderTest;
@@ -600,8 +612,7 @@ inline auto HpackDecoder::indexedHeaderField(std::span<const std::byte> buffer) 
     return offset.value();
 }
 
-inline auto HpackDecoder::literalHeaderField(std::span<const std::byte> buffer, const bool incremental)
-    -> Result<int> {
+inline auto HpackDecoder::literalHeaderField(std::span<const std::byte> buffer, const bool incremental) -> Result<int> {
     int  index  = -1;
     auto offset = getInt(buffer, index, incremental ? 6 : 4);
     if (!offset || offset.value() < 1) {
@@ -694,20 +705,61 @@ inline auto HpackDecoder::getString(std::span<const std::byte> buffer, std::stri
 inline HpackEncoder::HpackEncoder(HpackContext &context) : mContext(context) {
 }
 
-inline auto HpackEncoder::encode(const std::vector<HeaderField> &headerList) -> Result<int> {
+inline auto HpackEncoder::encode(const std::vector<HeaderField> &headerList) -> Result<void> {
     // TODO: Implement
     return Result<int>();
 }
 
-inline auto HpackEncoder::encode(HeaderFieldView header) -> Result<int> {
-    // TODO: Implement
-    return Result<int>();
+inline auto HpackEncoder::encode(HeaderFieldView header) -> Result<void> {
+    auto index = -1;
+    while (header.type == HeaderFieldType::Unknow) {
+        index = mContext.findHeaderField(header.headerName, header.headerValue);
+        if (index != -1) { // has in context table
+            header.type = HeaderFieldType::Indexed;
+            break;
+        }
+        header.type = HeaderFieldType::IncrementalIndexing; // not in context table, default insert in table.
+    }
+    switch (header.type) {
+        case HeaderFieldType::Indexed:
+            if (index <= 0) {
+                auto ret = mContext.findHeaderField(header.headerName, header.headerValue);
+                if (ret == -1) {
+                    return Unexpected(HpackError::FieldNotInTable);
+                }
+                index = ret;
+            }
+            mBuffer.push_back(static_cast<std::byte>(0x80));
+            return indexedHeaderField(index);
+        case HeaderFieldType::IncrementalIndexing:
+            index = mContext.findHeaderField(header.headerName);
+            mBuffer.push_back(static_cast<std::byte>(0x40));
+            if (index < 0) {
+                return literalHeaderField(header.headerName, header.headerValue, true);
+            }
+            else {
+                return literalHeaderField(index, header.headerValue, true);
+            }
+        case HeaderFieldType::WithoutIndexing:
+            index = mContext.findHeaderField(header.headerName);
+            mBuffer.push_back(static_cast<std::byte>(0x00));
+            if (index < 0) {
+                return literalHeaderField(header.headerName, header.headerValue, false);
+            }
+            else {
+                return literalHeaderField(index, header.headerValue, false);
+            }
+        case HeaderFieldType::NeverIndexed:
+            mBuffer.push_back(static_cast<std::byte>(0x01));
+            return literalHeaderField(header.headerName, header.headerValue, false);
+        default:
+            return Unexpected(HpackError::UnknowFieldType);
+    }
 }
 
 inline auto HpackEncoder::encode(std::string_view name, std::string_view value, const HeaderFieldType type)
-    -> Result<int> {
-    // TODO: Implement
-    return Result<int>();
+    -> Result<void> {
+    return encode(HeaderFieldView(name, value, type));
 }
 
 template <typename T>
@@ -720,7 +772,7 @@ inline auto HpackEncoder::saveInt(T &&value, const int allowPrefixBits) -> Resul
     return Result<void> {};
 }
 
-inline auto HpackEncoder::saveString(const std::string &value, const bool huffmanEncoding) -> Result<void> {
+inline auto HpackEncoder::saveString(std::string_view value, const bool huffmanEncoding) -> Result<void> {
     if (huffmanEncoding) {
         std::vector<std::byte> buffer;
 
@@ -755,19 +807,53 @@ inline auto HpackEncoder::size() const -> std::size_t {
     return mBuffer.size();
 }
 
-inline auto HpackEncoder::literalHeaderField(std::span<const std::byte> buffer, const bool incremental) -> Result<int> {
-    // TODO: implement
-    return Result<int>();
+inline auto HpackEncoder::literalHeaderField(std::string_view name, std::string_view value, const bool incremental)
+    -> Result<void> {
+    if (incremental) {
+        mContext.appendHeaderField(name, value);
+    }
+    auto ret = saveString(name, true);
+    if (!ret) {
+        return ret;
+    }
+    ret = saveString(value, true);
+    return ret;
 }
 
-inline auto HpackEncoder::indexedHeaderField(std::span<const std::byte> buffer) -> Result<int> {
-    // TODO: implement
-    return Result<int>();
+inline auto HpackEncoder::literalHeaderField(std::size_t name_index, std::string_view value, const bool incremental)
+    -> Result<void> {
+    ILIAS_ASSERT(name_index < mContext.dynamicTableIndexSize() + mContext.staticTableIndexSize());
+    if (incremental) {
+        auto ret = mContext.indexToHeaderField(name_index);
+        if (!ret) {
+            return Unexpected(ret.error());
+        }
+        mContext.appendHeaderField(ret.value().headerName, value);
+        auto ret1 = saveInt(name_index, 6);
+        if (!ret1) {
+            return Unexpected(ret1.error());
+        }
+        return saveString(value, true);
+    }
+    else {
+        auto ret = saveInt(name_index, 4);
+        if (!ret) {
+            return Unexpected(ret.error());
+        }
+        return saveString(value, true);
+    }
 }
 
-inline auto HpackEncoder::updateDynamicTableSize(std::span<const std::byte> buffer) -> Result<int> {
-    // TODO: implement
-    return Result<int>();
+inline auto HpackEncoder::indexedHeaderField(const std::size_t index) -> Result<void> {
+    return saveInt(index, 7);
+}
+
+inline auto HpackEncoder::updateDynamicTableSize(const std::size_t size) -> Result<void> {
+    if (size > mContext.limitDynamicTableSize()) {
+        return Unexpected(HpackError::SizeOutOfLimit);
+    }
+    mContext.setMaxDynamicTableSize(size);
+    return saveInt(size, 5);
 }
 
 inline auto HpackErrorCategory::message(int64_t value) const -> std::string {
@@ -784,6 +870,6 @@ inline auto HpackErrorCategory::instance() -> const HpackErrorCategory & {
     return instance;
 }
 
-} // namespace http2::detail
+} // namespace http2
 
 ILIAS_NS_END

@@ -3,6 +3,7 @@
 #include "../include/ilias/http/detail/hpack.hpp"
 #include "../include/ilias/http/detail/dictionary_tree.hpp"
 
+using namespace ILIAS_NAMESPACE::http2;
 using namespace ILIAS_NAMESPACE::http2::detail;
 
 TEST(Hpack, ContextTestStaticTable) {
@@ -353,7 +354,7 @@ TEST(Hpack, HuffmanCodeTest) {
     std::byte input[10] = {std::byte {'a'}, std::byte {'b'}, std::byte {'c'}, std::byte {'d'}, std::byte {'e'}};
 
     std::vector<std::byte> outputBuffer;
-    HuffmanEncoder         encoder;
+    detail::HuffmanEncoder         encoder;
     encoder.encode({input, 5}, outputBuffer);
     // |00011 |100011 |00100 |100100 |00101
     // 0001|1100|0110|0100|1001|0000|1011|
@@ -365,13 +366,13 @@ TEST(Hpack, HuffmanCodeTest) {
     }
 
     std::vector<std::byte> outputBuffer2;
-    HuffmanDecoder         decoder;
+    detail::HuffmanDecoder         decoder;
     decoder.decode(outputBuffer, outputBuffer2);
     ASSERT_EQ(outputBuffer2.size(), 5);
     EXPECT_EQ(memcmp(outputBuffer2.data(), input, 5), 0);
 }
 
-namespace ILIAS_NAMESPACE::http2::detail {
+namespace ILIAS_NAMESPACE::http2 {
 class HpackDecoderTest {
 public:
     HpackDecoderTest() : context(), decoder(context) {}
@@ -448,7 +449,7 @@ TEST(Hpack, IntDecoderTest) {
     EXPECT_EQ(buffer4.size(), 3);
     EXPECT_EQ(memcmp(buffer4.data(), buffer2, 3), 0);
 }
-namespace ILIAS_NAMESPACE::http2::detail {
+namespace ILIAS_NAMESPACE::http2 {
 class HpackEncoderTest {
 public:
     HpackEncoderTest() : context(), encoder(context) {}
@@ -465,16 +466,6 @@ public:
     auto buffer() -> std::vector<std::byte> & { return encoder.buffer(); }
     auto buffer() const -> const std::vector<std::byte> & { return encoder.buffer(); }
     auto size() const -> std::size_t { return encoder.buffer().size(); }
-    auto literalHeaderField(std::span<const std::byte> buffer, const bool incremental = true)
-        -> ILIAS_NAMESPACE::Result<int> {
-        return encoder.literalHeaderField(buffer, incremental);
-    }
-    auto indexedHeaderField(std::span<const std::byte> buffer) -> ILIAS_NAMESPACE::Result<int> {
-        return encoder.indexedHeaderField(buffer);
-    }
-    auto updateDynamicTableSize(std::span<const std::byte> buffer) -> ILIAS_NAMESPACE::Result<int> {
-        return encoder.updateDynamicTableSize(buffer);
-    }
     template <typename T>
     auto saveInt(T &&value, const int allowPrefixBits = 8) -> ILIAS_NAMESPACE::Result<void> {
         return encoder.saveInt(std::forward<T>(value), allowPrefixBits);
