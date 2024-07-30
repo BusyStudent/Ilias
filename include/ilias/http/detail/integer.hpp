@@ -10,35 +10,25 @@ ILIAS_NS_BEGIN
 namespace http2::detail {
 
 struct IntegerEncoder {
+    /**
+     * @brief encode a integer to buffer
+     * Pseudocode to represent an integer I is as follows:
+     * if I < 2^N - 1, encode I on N bits
+     * else
+     *     encode (2^N - 1) on N bits
+     *     I = I - (2^N - 1)
+     *     while I >= 128
+     *          encode (I % 128 + 128) on 8 bits
+     *          I = I / 128
+     *     encode I on 8 bits
+     * @tparam T
+     * @param value
+     * @param outputBuffer
+     * @param bitsOffset
+     * @return int
+     */
     template <typename T>
-    static int encode(T &&value, std::vector<std::byte> &outputBuffer, const uint8_t bitsOffset = 0) {
-        ILIAS_ASSERT(bitsOffset < 8 && bitsOffset >= 0);
-
-        std::byte b {static_cast<unsigned char>((1U << (8 - bitsOffset)) - 1U)};
-        if (value < static_cast<unsigned char>(b)) {
-            if (outputBuffer.empty()) {
-                outputBuffer.emplace_back(static_cast<std::byte>(value));
-            } else {
-                outputBuffer.back() |= static_cast<std::byte>(value);
-            }
-        }
-        else {
-            if (outputBuffer.empty()) {
-                outputBuffer.emplace_back(b);
-            } else {
-                outputBuffer.back() |= b;
-            }
-            auto remain = value - static_cast<unsigned char>(b);
-            while (remain > 0x7F) {
-                auto r = remain % 0x80;
-                r += 0x80;
-                outputBuffer.push_back(static_cast<std::byte>(r));
-                remain /= 0x80;
-            }
-            outputBuffer.push_back(static_cast<std::byte>(remain));
-        }
-        return 0;
-    }
+    static int encode(T &&value, std::vector<std::byte> &outputBuffer, const uint8_t bitsOffset = 0);
 };
 
 struct IntegerDecoder {
@@ -58,6 +48,7 @@ struct IntegerDecoder {
      * +---+---+---+---+---+---+---+---+
      * | ? | ? | ? |       Value       |
      * +---+---+---+-------------------+
+     * Figure 2: Integer Value Encoded within the Prefix (Shown for N = 5)
      * Otherwise, all the bits of the prefix are set to 1, and the value,
      * decreased by 2^N-1, is encoded using a list of one or more octets.
      * The most significant bit of each octet is used as a continuation
@@ -74,36 +65,76 @@ struct IntegerDecoder {
      * +---+---------------------------+
      * | 0 |    Value-(2^N-1) MSB      |
      * +---+---------------------------+
+     * Figure 3: Integer Value Encoded after the Prefix (Shown for N = 5)
+     * Pseudocode to decode an integer I is as follows:
+     * decode I from the next N bits
+     * if I < 2^N - 1, return I
+     * else
+     *     M = 0
+     *     repeat
+     *         B = next octet
+     *         I = I + (B & 127) * 2^M
+     *         M = M + 7
+     *     while B & 128 == 128
+     *     return I
      * @return int the next position if successful, -1 otherwise
      */
     template <typename T>
-    static int decode(std::span<const std::byte> buffer, T &value, const uint8_t bitsOffset = 0) {
-        ILIAS_ASSERT(bitsOffset < 8 && bitsOffset >= 0);
-        ILIAS_ASSERT(buffer.size() > 0);
-
-        std::byte b {static_cast<unsigned char>((1U << (8 - bitsOffset)) - 1U)};
-        if (static_cast<unsigned char>(buffer[0] & b) < static_cast<unsigned char>(b)) {
-            value = static_cast<T>(buffer[0] & b);
-            return 1;
-        }
-        int current = 1, valueBitsOffset = 0;
-        value = 0;
-        while (current < buffer.size() && (static_cast<unsigned char>(buffer[current]) & 0b10000000U)) {
-            value |= static_cast<T>(static_cast<unsigned char>(buffer[current]) & 0b01111111U) << valueBitsOffset;
-            valueBitsOffset += 7;
-            if (valueBitsOffset + 7 > sizeof(T) * 8) {
-                return -1;
-            }
-            ++current;
-        }
-        if (current < buffer.size()) {
-            value |= static_cast<T>(static_cast<unsigned char>(buffer[current]) & 0b01111111U) << valueBitsOffset;
-            value += static_cast<unsigned char>(b);
-            return current + 1;
-        }
-        // FIXME: if current == buffer.size() then is error ?
-        return -2;
-    }
+    static int decode(std::span<const std::byte> buffer, T &value, const uint8_t bitsOffset = 0);
 };
+
+template <typename T>
+inline int IntegerEncoder::encode(T &&value, std::vector<std::byte> &outputBuffer, const uint8_t bitsOffset) {
+    ILIAS_ASSERT(bitsOffset < 8 && bitsOffset >= 0);
+    if (outputBuffer.empty()) {
+        outputBuffer.emplace_back(static_cast<std::byte>(0));
+    }
+    std::byte b {static_cast<unsigned char>((1U << (8 - bitsOffset)) - 1U)};
+    if (value < static_cast<unsigned char>(b)) {
+        outputBuffer.back() |= static_cast<std::byte>(value);
+    }
+    else {
+        outputBuffer.back() |= b;
+        auto remain = value - static_cast<unsigned char>(b);
+        while (remain > 0x7F) {
+            auto r = remain % 0x80;
+            r += 0x80;
+            outputBuffer.push_back(static_cast<std::byte>(r));
+            remain /= 0x80;
+        }
+        outputBuffer.push_back(static_cast<std::byte>(remain));
+    }
+    return 0;
+}
+
+template <typename T>
+inline int IntegerDecoder::decode(std::span<const std::byte> buffer, T &value, const uint8_t bitsOffset) {
+    ILIAS_ASSERT(bitsOffset < 8 && bitsOffset >= 0);
+    ILIAS_ASSERT(buffer.size() > 0);
+
+    std::byte b {static_cast<unsigned char>((1U << (8 - bitsOffset)) - 1U)};
+    if (static_cast<unsigned char>(buffer[0] & b) < static_cast<unsigned char>(b)) {
+        value = static_cast<T>(buffer[0] & b);
+        return 1;
+    }
+    int current = 1, valueBitsOffset = 0;
+    value = 0;
+    while (current < buffer.size() && (static_cast<unsigned char>(buffer[current]) & 0b10000000U)) {
+        value |= static_cast<T>(static_cast<unsigned char>(buffer[current]) & 0b01111111U) << valueBitsOffset;
+        valueBitsOffset += 7;
+        if (valueBitsOffset + 7 > sizeof(T) * 8) {
+            return -1;
+        }
+        ++current;
+    }
+    if (current < buffer.size()) {
+        value |= static_cast<T>(static_cast<unsigned char>(buffer[current]) & 0b01111111U) << valueBitsOffset;
+        value += static_cast<unsigned char>(b);
+        return current + 1;
+    }
+    // FIXME: if current == buffer.size() then is error ?
+    return -2;
+}
+
 } // namespace http2::detail
 ILIAS_NS_END
