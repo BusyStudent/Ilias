@@ -1,0 +1,57 @@
+# ---
+# Checks:          'readability-identifer*'
+# WarningsAsErrors: ''
+# HeaderFileExtensions:
+#   - ''
+#   - h
+#   - hh
+#   - hpp
+#   - hxx
+# ImplementationFileExtensions:
+#   - c
+#   - cc
+#   - cpp
+#   - cxx
+# HeaderFilterRegex: ''
+# FormatStyle:     none
+# User:            admin
+# CheckOptions:
+#   # 命名规范
+#   ##  类、结构体
+#   ### 名: CamelCase
+#   readability-identifer-naming.ClassCase:   'CamelCase'
+#   readability-identifer-naming.StructCase:  'CamelCase'
+#   ### 成员变量名: camelCase（公有）、_camelCase（保护、私有）
+#   readability-identifer-naming.PublicMemberCase:      'camelCase'
+#   readability-identifer-naming.ProtectedMemberCase:   'camelCase'
+#   readability-identifer-naming.ProtectedMemberPrefix: '_'
+#   readability-identifer-naming.PrivateMemberCase:     'camelCase'
+#   readability-identifer-naming.PrivateMemberPrefix:   '_'
+#   ### 成员函数名: lower_case（公有）、_lower_case（保护、私有）
+#   readability-identifer-naming.PublicMethodCase:      'lower_case'
+#   readability-identifer-naming.ProtectedMethodCase:   'lower_case'
+#   readability-identifer-naming.ProtectedMethodPrefix: '_'
+#   readability-identifer-naming.PrivateMethodCase:     'lower_case'
+#   readability-identifer-naming.PrivateMethodPrefix:   '_'
+#   ##  枚举
+#   ### 名: CamelCase
+#   readability-identifer-naming.EnumCase:  'CamelCase'
+#   ### 枚举值: eCamelCase
+#   readability-identifer-naming.EnumConstantCase:    'CamelCase'
+#   readability-identifer-naming.EnumConstantPrefix:  'e'
+#   ##  函数
+#   readability-identifer-naming.FunctionCase:  'lower_case'
+#   ##  变量
+#   ### 局部变量: camelCase
+#   readability-identifer-naming.LocalVariableCase: 'camelCase'
+#   ### 全局变量: g_camelCase
+#   readability-identifer-naming.GlobalVariableCase:    'camelCase'
+#   readability-identifer-naming.GlobalVariablePrefix:  'g_'
+#   ### 静态变量: k_camelCase
+#   readability-identifer-naming.StaticVariableCase:    'camelCase'
+#   readability-identifer-naming.StaticVariablePrefix:  'k_'
+#   ### 编译期变量: CamelCase
+#   readability-identifer-naming.ConstexprVariableCase:   'CamelCase'
+#   readability-identifer-naming.ConstexprVariablePrefix: ''
+# SystemHeaders:   true
+# ...
