@@ -40,11 +40,7 @@ public:
     static auto  instance() -> const HpackErrorCategory &;
 };
 
-} // namespace http2
-
-ILIAS_DECLARE_ERROR_(http2::HpackError, http2::HpackErrorCategory);
-
-namespace http2 {
+ILIAS_DECLARE_ERROR(HpackError, HpackErrorCategory)
 
 enum class HeaderFieldType : uint8_t {
     Indexed             = 0,
