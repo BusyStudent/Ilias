@@ -17,7 +17,8 @@
 #include <utility>
 #include <version>
 
-#include "../ilias.hpp"
+#include <ilias/ilias.hpp>
+#include <ilias/error.hpp>
 
 #if defined(__cpp_lib_expected)
 #include <expected>
