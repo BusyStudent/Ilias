@@ -340,3 +340,16 @@ inline auto operator !=(const Error &left, const Error &right) noexcept -> bool 
 }
 
 ILIAS_NS_END
+
+// --- Formatter for Error
+#if defined(__cpp_lib_format)
+template <>
+struct std::formatter<ILIAS_NAMESPACE::Error> {
+    constexpr auto parse(std::format_parse_context &ctxt) {
+        return ctxt.begin();
+    }
+    auto format(const ILIAS_NAMESPACE::Error &err, std::format_context &ctxt) const {
+        return std::format_to(ctxt.out(), "[{}: {}] {}", err.category().name(), err.value(), err.message());
+    }
+};
+#endif

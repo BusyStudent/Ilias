@@ -43,9 +43,7 @@ public:
      * @param handle The coroutine handle to schedule
      */
     auto schedule(std::coroutine_handle<> handle) -> void {
-        post([](void *handle) {
-            std::coroutine_handle<>::from_address(handle).resume();
-        }, handle.address());
+        post(scheduleImpl, handle.address());
     }
 
     /**
@@ -83,6 +81,15 @@ private:
     static auto currentThreadImpl() -> Executor * & {
         static thread_local Executor *current = nullptr;
         return current;
+    }
+
+    /**
+     * @brief The callback function to schedule a coroutine
+     * 
+     * @param ptr 
+     */
+    static auto scheduleImpl(void *ptr) -> void {
+        std::coroutine_handle<>::from_address(ptr).resume();
     }
 };
 

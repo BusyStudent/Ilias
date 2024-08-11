@@ -8,10 +8,13 @@
  * @copyright Copyright (c) 2024
  * 
  */
+#pragma once
 
 #include <ilias/task/executor.hpp>
 #include <ilias/detail/expected.hpp>
 #include <ilias/cancellation_token.hpp>
+#include <optional>
+#include <vector>
 
 ILIAS_NS_BEGIN
 
@@ -21,9 +24,9 @@ class SwitchCoroutine {
 public:
     SwitchCoroutine(std::coroutine_handle<> handle) : mHandle(handle) { }
 
-    auto await_ready() { return false; }
-    auto await_suspend(std::coroutine_handle<>) { return mHandle; }
-    auto await_resume() { ::abort(); }
+    auto await_ready() noexcept { return false; }
+    auto await_suspend(std::coroutine_handle<>) noexcept { return mHandle; }
+    auto await_resume() noexcept { ::abort(); }
 private:
     std::coroutine_handle<> mHandle;
 };
@@ -48,6 +51,9 @@ public:
      * @return SwitchCoroutine 
      */
     auto final_suspend() noexcept -> SwitchCoroutine {
+        for (auto &[callback, arg] : mCallbacks) {
+            callback(arg);
+        }
         if (!mAwaitingCoroutine) {
             mAwaitingCoroutine = std::noop_coroutine();
         }
@@ -72,6 +78,15 @@ public:
     }
 
     /**
+     * @brief Get the executor object
+     * 
+     * @return Executor* 
+     */
+    auto executor() -> Executor * {
+        return mExecutor;
+    }
+
+    /**
      * @brief Set the Awaiting Coroutine object
      * 
      * @param handle The coroutine handle that is waiting for us
@@ -79,10 +94,21 @@ public:
     auto setAwaitingCoroutine(std::coroutine_handle<> handle) -> void {
         mAwaitingCoroutine = handle;
     }
+
+    /**
+     * @brief Register a callback that will be called when the coroutine is done
+     * 
+     * @param callback 
+     * @param arg 
+     */
+    auto registerCallback(void (*callback)(void *), void *arg) -> void {
+        mCallbacks.emplace_back(callback, arg);
+    }
 protected:  
     Executor *mExecutor = Executor::currentThread(); //< The executor, doing the 
     CancellationToken mToken; //< The cancellation token
     std::coroutine_handle<> mAwaitingCoroutine; //< The coroutine handle that is waiting for us, we will resume it when done 
+    std::vector<std::pair<void (*)(void *), void *> > mCallbacks; //< The callbacks that will be called when the coroutine is done
 };
 
 /**
@@ -147,16 +173,20 @@ public:
      * @return value_type 
      */
     auto value() -> value_type {
+#if defined(__cpp_exceptions)
         if (mException) {
             std::rethrow_exception(mException);
         }
+#endif
         ILIAS_ASSERT(handle().done()); //< The coroutine should be done
         ILIAS_ASSERT(mValue.has_value()); //< The value should be set
         return std::move(*mValue);
     }
 private:
     std::optional<value_type> mValue; //< The value
+#if defined(__cpp_exceptions)
     std::exception_ptr mException; //< The exception
+#endif
 };
 
 }
