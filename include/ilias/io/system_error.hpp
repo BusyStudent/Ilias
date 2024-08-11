@@ -17,6 +17,7 @@
 
 #if defined(_WIN32)
     #define _WINSOCKAPI_ // Avoid windows.h to include winsock.h
+    #define NOMINMAX
     #include <Windows.h>
 #endif
 

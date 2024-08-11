@@ -39,6 +39,22 @@ inline auto strcasecmp(std::string_view lhs, std::string_view rhs) {
 }
 
 /**
+ * @brief Do the memory comparison of two memories.
+ * 
+ * @param lhs 
+ * @param rhs 
+ * @param n 
+ * @return auto 
+ */
+inline auto memcmp(const void *lhs, const void *rhs, size_t n) {
+    switch (::memcmp(lhs, rhs, n)) {
+        case -1: return std::strong_ordering::less;
+        case 0: return std::strong_ordering::equal;
+        case 1: return std::strong_ordering::greater;
+    }
+}
+
+/**
  * @brief Make a string lowercase.
  * 
  * @param str 
