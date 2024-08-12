@@ -140,6 +140,11 @@ inline auto SystemCategory::translate(error_t code) -> Error::Code {
         case MAP(ESOCKTNOSUPPORT): return Error::SocketTypeNotSupported;
         case MAP(ETIMEDOUT): return Error::TimedOut;
         case MAP(EWOULDBLOCK): return Error::WouldBlock;
+
+#if defined(ERROR_OPERATION_ABORTED) //< For IOCP Cancelation
+        case ERROR_OPERATION_ABORTED: return Error::Canceled;
+#endif
+
         default: return Error::Unknown;
     }
 #undef MAP

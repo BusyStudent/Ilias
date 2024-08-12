@@ -280,8 +280,8 @@ public:
      */
     static auto fromRaw(const void *mem, size_t n) -> Result<IPEndpoint> {
         switch (n) {
-            case sizeof(::sockaddr_in): *reinterpret_cast<const ::sockaddr_in *>(mem);
-            case sizeof(::sockaddr_in6): *reinterpret_cast<const ::sockaddr_in6 *>(mem);
+            case sizeof(::sockaddr_in): return *reinterpret_cast<const ::sockaddr_in *>(mem);
+            case sizeof(::sockaddr_in6): return *reinterpret_cast<const ::sockaddr_in6 *>(mem);
             default: return Unexpected(Error::InvalidArgument);
         }
     }

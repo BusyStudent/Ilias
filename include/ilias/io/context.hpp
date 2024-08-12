@@ -25,6 +25,17 @@ class IPEndpoint;
  * 
  */
 class IoDescriptor {
+public:
+    /**
+     * @brief The type of the descriptor, used on addDescriptor
+     * 
+     */
+    enum class Type {
+        Socket, //< Socket descriptor
+        File,   //< Generic file descriptor
+        Pipe,   //< Pipe descriptor
+        Unknown //< Unknown type, let the backend decide by os api
+    };
 protected:
     IoDescriptor() = default;
     ~IoDescriptor() = default;
@@ -40,18 +51,18 @@ public:
      * @brief Add a new system descriptor to the context
      * 
      * @param fd 
-     * @param flags 
+     * @param type 
      * @return Result<IoDescriptor*> 
      */
-    virtual auto addDescriptor(fd_t fd, int flags) -> Result<IoDescriptor*> = 0;
+    virtual auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> = 0;
 
     /**
      * @brief Remove a descriptor from the context
      * 
-     * @param desc 
+     * @param fd
      * @return Result<void> 
      */
-    virtual auto removeDescriptor(IoDescriptor* desc) -> Result<void> = 0;
+    virtual auto removeDescriptor(IoDescriptor *fd) -> Result<void> = 0;
 
     /**
      * @brief Sleep for a specified amount of time
@@ -66,7 +77,7 @@ public:
      * 
      * @param fd 
      * @param buffer 
-     * @param offset 
+     * @param offset The offset in the file, std::nullopt means on ignore
      * @return Task<size_t> 
      */
     virtual auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> = 0;
@@ -76,7 +87,7 @@ public:
      * 
      * @param fd 
      * @param buffer 
-     * @param offset 
+     * @param offset The offset in the file, std::nullopt means on ignore
      * @return Task<size_t> 
      */
     virtual auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> = 0;
@@ -84,7 +95,7 @@ public:
     /**
      * @brief Connect to a remote endpoint
      * 
-     * @param fd 
+     * @param fd The fd must be a socket
      * @param endpoint 
      * @return Task<void> 
      */
@@ -94,9 +105,10 @@ public:
      * @brief Accept a connection
      * 
      * @param fd The fd must be a listening socket
+     * @param remoteEndpoint The endpoint of the remote, if nullptr, the endpoint will be ignored
      * @return Task<socket_t> 
      */
-    virtual auto accept(IoDescriptor *fd) -> Task<socket_t> = 0;
+    virtual auto accept(IoDescriptor *fd, IPEndpoint *remoteEndpoint) -> Task<socket_t> = 0;
 
     /**
      * @brief Send data to a remote endpoint
@@ -117,6 +129,24 @@ public:
      * @return Task<size_t> 
      */
     virtual auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, IPEndpoint *endpoint) -> Task<size_t> = 0;
+
+    /**
+     * @brief Poll a descriptor for events
+     * 
+     * @param fd The fd must suport polling (like socket or pipe)
+     * @param event The event to poll for (like PollEvent::In)
+     * @return Task<uint32_t> The event we actualy got
+     */
+    virtual auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> = 0;
+
+    /**
+     * @brief Get the current thread io context
+     * 
+     * @return IoContext* 
+     */
+    static auto currentThread() -> IoContext * {
+        return static_cast<IoContext*>(Executor::currentThread());
+    }
 };
 
 

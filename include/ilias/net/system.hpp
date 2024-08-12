@@ -40,8 +40,11 @@
     #define ILIAS_SHUT_RDWR        SHUT_RDWR
 
     #include <sys/socket.h>
+    #include <netinet/in.h>
     #include <arpa/inet.h>
     #include <unistd.h>
+    #include <netdb.h>
+    #include <fcntl.h>
 #endif
 
 

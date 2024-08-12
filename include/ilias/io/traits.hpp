@@ -16,6 +16,9 @@
 
 ILIAS_NS_BEGIN
 
+// Forward declaration
+class IPEndpoint;
+
 /**
  * @brief Concept for types that can be read to a a byte span.
  * 
@@ -37,11 +40,40 @@ concept Writable = requires(T t) {
 };
 
 /**
+ * @brief Concept for types that can be shutdown, performing any necessary cleanup.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept Shuttable = requires(T t) {
+    t.shutdown();
+};
+
+/**
+ * @brief Concept for types that can be connected to an endpoint.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept Connectable = requires(T t) {
+    t.connect(std::declval<const IPEndpoint &>());
+};
+
+/**
  * @brief Concept for types that can be read and written to a byte span.
  * 
  * @tparam T 
  */
 template <typename T>
 concept Stream = Readable<T> && Writable<T>;
+
+/**
+ * @brief Concept for types that can be read, written to a byte span and shutdown.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept StreamClient = Stream<T> && Shuttable<T>;
+
 
 ILIAS_NS_END
