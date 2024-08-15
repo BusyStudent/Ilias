@@ -21,7 +21,7 @@ ILIAS_NS_BEGIN
 class IPEndpoint;
 
 /**
- * @brief The IoDescriptor class, user should only take the pointer to this class
+ * @brief The IoDescriptor class, user should only take the pointer to this class, it is opaque to the user
  * 
  */
 class IoDescriptor {
@@ -30,7 +30,7 @@ public:
      * @brief The type of the descriptor, used on addDescriptor
      * 
      */
-    enum class Type {
+    enum Type {
         Socket, //< Socket descriptor
         File,   //< Generic file descriptor
         Pipe,   //< Pipe descriptor
@@ -115,20 +115,22 @@ public:
      * 
      * @param fd The fd must be a socket
      * @param buffer The buffer to send
+     * @param flags The flags to use, like MSG_DONTWAIT
      * @param endpoint The endpoint to send to, if nullptr, the fd must be connected
      * @return Task<size_t> 
      */
-    virtual auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, const IPEndpoint *endpoint) -> Task<size_t> = 0;
+    virtual auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, const IPEndpoint *endpoint) -> Task<size_t> = 0;
 
     /**
      * @brief Receive data from a remote endpoint
      * 
      * @param fd The fd must be a socket
      * @param buffer The buffer to receive into
+     * @param flags The flags to use, like MSG_DONTWAIT
      * @param endpoint The endpoint to receive from
      * @return Task<size_t> 
      */
-    virtual auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, IPEndpoint *endpoint) -> Task<size_t> = 0;
+    virtual auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, IPEndpoint *endpoint) -> Task<size_t> = 0;
 
     /**
      * @brief Poll a descriptor for events

@@ -18,7 +18,6 @@
 
 ILIAS_NS_BEGIN
 
-// TODO:
 // NOTE: in windows recv and send 's buffer argument is char type and linux is void type
 // so we cast it to char type, char * will be casted to void * automatically in linux
 

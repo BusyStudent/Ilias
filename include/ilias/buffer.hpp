@@ -15,12 +15,51 @@
 
 ILIAS_NS_BEGIN
 
-// --- Utils for std::span<std::byte>
+// --- Concepts
+
+/**
+ * @brief Concept for types that can be converted to std::span
+ * 
+ * @tparam T 
+ */
 template <typename T>
 concept CanToSpan = requires(T &t) {
     std::span(t);
 };
 
+/**
+ * @brief Concept for types that can be resized
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept MemExpendable = requires(T &t) {
+    t.resize(size_t {0});  
+};
+
+/**
+ * @brief Concept for types that can be written to memory
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept MemWritable = requires(T &t) {
+    { std::span(t).data() } -> std::convertible_to<void *>;
+    { std::span(t).size_bytes() } -> std::convertible_to<size_t>;
+};
+
+/**
+ * @brief Concept for types that can be read from memory
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept MemReadable = requires(T &t) {
+    { std::span(t).data() } -> std::convertible_to<const void *>;
+    { std::span(t).size_bytes() } -> std::convertible_to<size_t>;
+};
+
+// --- Utils for std::span<std::byte>
 /**
  * @brief Convert object to std::span<const std::byte>
  * 

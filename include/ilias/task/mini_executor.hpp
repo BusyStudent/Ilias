@@ -11,6 +11,8 @@
 #pragma once
 
 #include <ilias/task/executor.hpp>
+#include <ilias/task/task.hpp>
+#include <ilias/detail/timer.hpp>
 #include <ilias/cancellation_token.hpp>
 #include <condition_variable>
 #include <mutex>
@@ -38,17 +40,31 @@ public:
         });
         while (!token.isCancelled()) {
             std::unique_lock locker(mMutex);
-            mCond.wait(locker, [&]() {
+            auto timepoint = mService.nextTimepoint();
+            if (!timepoint) {
+                timepoint = std::chrono::steady_clock::now() + std::chrono::hours(60);
+            }
+            mCond.wait_until(locker, timepoint.value(), [&]() {
                 return !mQueue.empty() || token.isCancelled();
             });
             if (token.isCancelled()) {
                 return;
             }
-            auto fn = mQueue.front();
-            mQueue.pop();
-            locker.unlock();
-            fn.first(fn.second);
+            if (!mQueue.empty()) {
+                auto fn = mQueue.front();
+                mQueue.pop();
+                locker.unlock();
+                fn.first(fn.second);
+            }
+            if (locker.owns_lock()) {
+                locker.unlock();
+            }
+            mService.updateTimers();
         }
+    }
+
+    auto sleep(uint64_t ms) -> Task<> {
+        return mService.sleep(ms);
     }
 private:
     std::queue<
@@ -56,6 +72,7 @@ private:
     > mQueue;
     std::condition_variable mCond;
     std::mutex mMutex;
+    detail::TimerService mService {*this}; //< For impl timer
 };
 
 ILIAS_NS_END
