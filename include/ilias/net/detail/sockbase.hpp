@@ -96,6 +96,10 @@ public:
         return mCtxt->connect(mFd, endpoint);
     }
 
+    auto poll(uint32_t events) -> Task<uint32_t> {
+        return mCtxt->poll(mFd, events);
+    }
+
     auto bind(const IPEndpoint &endpoint) {
         return mSock.bind(endpoint);
     }
@@ -198,6 +202,6 @@ private:
     Socket        mSock;
 };
 
-}
+} // namespace detail
 
 ILIAS_NS_END

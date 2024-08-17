@@ -88,7 +88,7 @@ inline auto SystemCategory::message(int64_t code) const -> std::string {
         reinterpret_cast<wchar_t*>(&args), 0, nullptr
     );
     auto len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, nullptr, 0, nullptr, nullptr);
-    std::string buf(len, '\0');
+    std::string buf(len - 1, '\0'); //< This len includes the null terminator
     len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, &buf[0], len, nullptr, nullptr);
     ::LocalFree(args);
     return buf;

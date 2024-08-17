@@ -68,7 +68,7 @@ private:
     MoveOnlyFunction<void()> mCallback;
 };
 
-}
+} // namespace detail
 
 
 /**

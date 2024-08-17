@@ -54,7 +54,7 @@ private:
     TaskView<T> mTask; //< The task we want to await
 };
 
-}
+} // namespace detail
 
 
 /**

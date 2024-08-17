@@ -160,7 +160,7 @@ auto Log(FILE *stream, LogLevel level, std::string_view mod, std::format_string<
     EndLog(stream, level);
 }
 
-}
+} // namespace detail
 
 ILIAS_NS_END
 

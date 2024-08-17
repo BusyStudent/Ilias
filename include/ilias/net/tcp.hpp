@@ -16,7 +16,6 @@
 
 ILIAS_NS_BEGIN
 
-// TODO: Finish implementation.
 /**
  * @brief The tcp client class.
  * 
@@ -114,7 +113,34 @@ public:
 
     auto close() { return mBase.close(); }
 
-    auto accept() -> Task<std::pair<TcpClient, IPEndpoint> >;
+    /**
+     * @brief Bind the listener to a local endpoint.
+     * 
+     * @param endpoint The local endpoint to bind to.
+     * @param backlog The maximum length to which the queue of pending connections may grow.
+     * @return Result<void> 
+     */
+    auto bind(const IPEndpoint &endpoint, int backlog = 0) -> Result<void> {
+        if (auto ret = mBase.bind(endpoint); !ret) {
+            return Unexpected(ret.error());
+        }
+        return mBase.listen(backlog);
+    }
+
+    /**
+     * @brief Accept a connection from a remote endpoint.
+     * 
+     * @return Task<std::pair<TcpClient, IPEndpoint> > 
+     */
+    auto accept() -> Task<std::pair<TcpClient, IPEndpoint> > {
+        IPEndpoint endpoint;
+        auto sock = co_await mBase.accept(&endpoint);
+        if (!sock) {
+            co_return Unexpected(sock.error());
+        }
+        TcpClient client(*(mBase.context()), Socket(sock.value()));
+        co_return std::make_pair(std::move(client), endpoint);
+    }
 private:
     detail::SocketBase mBase;
 };

@@ -6,7 +6,6 @@
 
 ILIAS_NS_BEGIN
 
-// TODO: Finish this
 namespace detail {
 
 struct SpawnData {
@@ -141,7 +140,7 @@ concept TaskGenerator = requires(Callable &&callable, Args &&...args) {
     std::invoke(callable, args...)._leak();
 };
 
-}
+} // namespace detail
 
 /**
  * @brief The handle for a spawned task. used to cancel the task. copyable.
@@ -181,6 +180,12 @@ public:
 
     auto done() const -> bool { return mData->mTask.done(); }
     auto cancel() const -> void { return mData->mTask.cancel(); }
+
+    /**
+     * @brief Wait for the task to complete. and return the result.
+     * 
+     * @return Result<T> 
+     */
     auto wait() -> Result<T> {
         if (!done()) {
             // Wait until done

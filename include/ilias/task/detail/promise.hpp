@@ -211,6 +211,6 @@ private:
 #endif
 };
 
-}
+} // namespace detail
 
 ILIAS_NS_END

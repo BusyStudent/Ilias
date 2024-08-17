@@ -33,6 +33,7 @@ public:
     enum Type {
         Socket, //< Socket descriptor
         File,   //< Generic file descriptor
+        Tty,    //< TTY descriptor
         Pipe,   //< Pipe descriptor
         Unknown //< Unknown type, let the backend decide by os api
     };
