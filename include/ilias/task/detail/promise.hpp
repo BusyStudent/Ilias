@@ -31,6 +31,17 @@ private:
     std::coroutine_handle<> mHandle;
 };
 
+class StartCoroutine {
+public:
+    StartCoroutine(bool &started) : mStarted(started) { }
+
+    auto await_ready() noexcept { return false; }
+    auto await_suspend(std::coroutine_handle<>) noexcept { }
+    auto await_resume() noexcept { mStarted = true; }
+private:
+    bool &mStarted;
+};
+
 class TaskPromiseBase {
 public:
     TaskPromiseBase() = default;
@@ -41,8 +52,8 @@ public:
      * 
      * @return std::suspend_always 
      */
-    auto initial_suspend() const noexcept -> std::suspend_always {
-        return {};
+    auto initial_suspend() noexcept -> StartCoroutine {
+        return {mStarted};
     }
 
     /**
@@ -87,6 +98,16 @@ public:
     }
 
     /**
+     * @brief Check the coroutine is started
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isStarted() const -> bool {
+        return mStarted;
+    }
+
+    /**
      * @brief Set the Awaiting Coroutine object
      * 
      * @param handle The coroutine handle that is waiting for us
@@ -105,6 +126,7 @@ public:
         mCallbacks.emplace_back(callback, arg);
     }
 protected:  
+    bool mStarted = false;
     Executor *mExecutor = Executor::currentThread(); //< The executor, doing the 
     CancellationToken mToken; //< The cancellation token
     std::coroutine_handle<> mAwaitingCoroutine; //< The coroutine handle that is waiting for us, we will resume it when done 
@@ -112,7 +134,7 @@ protected:
 };
 
 /**
- * @brief .
+ * @brief The promise of the Task<T>, hold the return value and exception
  * 
  * @tparam T 
  */

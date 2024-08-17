@@ -20,7 +20,7 @@ ILIAS_NS_BEGIN
 
 namespace detail {
 
-inline auto CancelTheToken(void *token) -> void {
+inline auto CancelTheTokenHelper(void *token) -> void {
     static_cast<CancellationToken*>(token)->cancel();
 }
 
@@ -42,7 +42,7 @@ public:
     auto await_suspend(TaskView<> caller) -> void {
         mTask.setAwaitingCoroutine(caller); //< When the task is done, resume the caller
         mReg = caller.cancellationToken().register_( //< Let the caller's cancel request cancel the current task
-            &CancelTheToken, &mTask.cancellationToken()
+            &CancelTheTokenHelper, &mTask.cancellationToken()
         );
     }
 
@@ -67,6 +67,7 @@ class Task {
 public:
     using promise_type = detail::TaskPromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
+    using value_type = T;
 
     /**
      * @brief Construct a new empty Task object
@@ -100,55 +101,11 @@ public:
      * 
      */
     ~Task() { 
-        if (mHandle) {
-            mHandle.destroy(); 
+        if (!mHandle) {
+            return;
         }
-    }
-
-    /**
-     * @brief Check the task is done
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto done() const noexcept -> bool {
-        return mHandle.done();
-    }
-
-    /**
-     * @brief Get the task's cancellation token
-     * 
-     * @return CancellationToken& 
-     */
-    auto cancellationToken() const -> CancellationToken & {
-        return mHandle.promise().cancellationToken();
-    }
-
-    /**
-     * @brief Cancel current task
-     * 
-     */
-    auto cancel() const -> void {
-        return cancellationToken().cancel();
-    }
-
-    /**
-     * @brief Check the task is canceled?
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto isCanceled() const -> bool {
-        return cancellationToken().isCanceled();
-    }
-
-    /**
-     * @brief Get the coroutine handle
-     * 
-     * @return handle_type 
-     */
-    auto handle() const -> handle_type {
-        return mHandle;
+        ILIAS_ASSERT(_view().isSafeToDestroy());
+        mHandle.destroy();
     }
 
     /**
@@ -159,23 +116,38 @@ public:
     auto wait() const -> Result<T> {
         auto &promise = mHandle.promise();
         auto executor = promise.executor();
-        mHandle.resume(); //< Run it
+        ILIAS_ASSERT(!promise.isStarted());
+        mHandle.resume(); //< Start it
         if (!mHandle.done()) {
             CancellationToken token;
-            promise.registerCallback(detail::CancelTheToken, &token);
+            promise.registerCallback(detail::CancelTheTokenHelper, &token);
             executor->run(token);
         }
         return promise.value();
     }
 
     /**
-     * @brief Get the task's view, it provides a super set api of the task
+     * @brief Get the task's internal view, it provides a super set api of the coroutine handle and task
      * 
+     * @internal not recommend to use it at the outside
      * @return TaskView<T> 
      */
-    auto view() const -> TaskView<T> {
+    auto _view() const -> TaskView<T> {
         return TaskView<T>(mHandle);
     }
+
+    /**
+     * @brief Release the ownership of the task, return the coroutine handle
+     * 
+     * @internal not recommend to use it at the outside
+     * @return handle_type 
+     */
+    auto _leak() -> handle_type {
+        auto h = mHandle;
+        mHandle = nullptr;
+        return h;
+    }
+
 
     /**
      * @brief Assign the task by move
@@ -183,11 +155,12 @@ public:
      * @param other 
      * @return Task& 
      */
-    auto operator = (Task<T> &&other) -> Task & {
+    auto operator =(Task<T> &&other) -> Task & {
         if (&other == this) {
             return *this;
         }
         if (mHandle) {
+            ILIAS_ASSERT(_view().isSafeToDestroy());
             mHandle.destroy();
         }
         mHandle = other.mHandle;
@@ -203,15 +176,6 @@ public:
      */
     explicit operator bool() const noexcept {
         return mHandle;
-    }
-
-    /**
-     * @brief Cast the task to TaskView
-     * 
-     * @return TaskView<T> 
-     */
-    operator TaskView<T>() const noexcept {
-        return view();
     }
 private:
     Task(handle_type handle) : mHandle(handle) { }
@@ -229,7 +193,7 @@ friend class detail::TaskPromise<T>;
  */
 template <typename T>
 auto operator co_await(Task<T> &&task) -> detail::TaskAwaiter<T> {
-    return detail::TaskAwaiter(task.view());
+    return detail::TaskAwaiter(task._view());
 }
 
 ILIAS_NS_END

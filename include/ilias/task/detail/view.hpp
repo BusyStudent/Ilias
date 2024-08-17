@@ -19,7 +19,7 @@ namespace detail {
     struct TaskViewNull { };
 
     template <typename T>
-    concept IsTaskPromise = std::is_base_of_v<TaskPromiseBase, T>;
+    concept IsTaskPromise = std::is_base_of_v<TaskPromiseBase, T>;    
 }
 
 template <typename T = detail::TaskViewNull>
@@ -59,6 +59,13 @@ public:
     auto resume() const noexcept { return mHandle.resume(); }
 
     /**
+     * @brief Destroy the task
+     * 
+     * @return auto 
+     */
+    auto destroy() const noexcept { ILIAS_ASSERT(isSafeToDestroy()); return mHandle.destroy(); }
+
+    /**
      * @brief Send a cancel request to the task
      * 
      */
@@ -76,7 +83,29 @@ public:
      * 
      * @return bool
      */
-    auto isCancelled() const noexcept { return cancellationToken().isCancelled(); }
+    auto isCancelled() const noexcept -> bool { return cancellationToken().isCancelled(); }
+
+    /**
+     * @brief Check if the task is started
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isStarted() const noexcept -> bool { return mPromise->isStarted(); }
+
+    /**
+     * @brief Check the coroutine is safe to destroy
+     * 
+     * @return bool 
+     */
+    auto isSafeToDestroy() const noexcept -> bool { return !isStarted() || done(); }
+
+    /**
+     * @brief Get the executor of the task
+     * 
+     * @return Executor* 
+     */
+    auto executor() const noexcept -> Executor * { return mPromise->executor(); }
 
     /**
      * @brief Set the Awaiting Coroutine object, the task will resume it when self is done
@@ -84,7 +113,7 @@ public:
      * @param handle 
      * @return auto 
      */
-    auto setAwaitingCoroutine(std::coroutine_handle<> handle) const noexcept { return mPromise->setAwaitingCoroutine(handle); }
+    auto setAwaitingCoroutine(std::coroutine_handle<> handle) const noexcept -> void { return mPromise->setAwaitingCoroutine(handle); }
 
     /**
      * @brief Register a callback function to be called when the task is done
@@ -93,7 +122,7 @@ public:
      * @param data 
      * @return auto 
      */
-    auto registerCallback(void (*fn)(void *), void *data) const noexcept { return mPromise->registerCallback(fn, data); }
+    auto registerCallback(void (*fn)(void *), void *data) const noexcept -> void { return mPromise->registerCallback(fn, data); }
 
     /**
      * @brief Cast to std::coroutine_handle<>
