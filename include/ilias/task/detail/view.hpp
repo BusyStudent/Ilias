@@ -17,9 +17,6 @@ ILIAS_NS_BEGIN
 
 namespace detail {
     struct TaskViewNull { };
-
-    template <typename T>
-    concept IsTaskPromise = std::is_base_of_v<TaskPromiseBase, T>;    
 }
 
 template <typename T = detail::TaskViewNull>
@@ -125,6 +122,19 @@ public:
     auto registerCallback(void (*fn)(void *), void *data) const noexcept -> void { return mPromise->registerCallback(fn, data); }
 
     /**
+     * @brief Register a callback function to be called when the task is done
+     * 
+     * @param fn 
+     */
+    auto registerCallback(detail::MoveOnlyFunction<void()> fn) const noexcept -> void { return mPromise->registerCallback(std::move(fn)); }
+
+    /**
+     * @brief Allow comparison with other TaskView<> objects
+     * 
+     */
+    auto operator <=>(const TaskView<> &other) const noexcept = default;
+
+    /**
      * @brief Cast to std::coroutine_handle<>
      * 
      * @return std::coroutine_handle<> 
@@ -132,6 +142,14 @@ public:
     operator std::coroutine_handle<>() const noexcept {
         return mHandle;
     }
+
+    /**
+     * @brief Check if the view is valid
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept { return bool(mHandle); }
 protected:
     detail::TaskPromiseBase *mPromise = nullptr;
     std::coroutine_handle<>  mHandle = nullptr;
@@ -187,3 +205,15 @@ public:
 };
 
 ILIAS_NS_END
+
+#if defined(__cpp_lib_format)
+template <>
+struct std::formatter<ILIAS_NAMESPACE::TaskView<> > {
+    constexpr auto parse(std::format_parse_context &ctxt) {
+        return ctxt.begin();
+    }
+    auto format(const ILIAS_NAMESPACE::TaskView<> &view, std::format_context &ctxt) const {
+        return std::format_to(ctxt.out(), "TaskView<{}>", std::coroutine_handle<>(view).address());
+    }
+};
+#endif

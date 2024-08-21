@@ -12,7 +12,9 @@
 
 #include <ilias/task/executor.hpp>
 #include <ilias/detail/expected.hpp>
+#include <ilias/detail/functional.hpp>
 #include <ilias/cancellation_token.hpp>
+#include <concepts>
 #include <optional>
 #include <vector>
 
@@ -62,8 +64,8 @@ public:
      * @return SwitchCoroutine 
      */
     auto final_suspend() noexcept -> SwitchCoroutine {
-        for (auto &[callback, arg] : mCallbacks) {
-            callback(arg);
+        for (auto &callback: mCallbacks) {
+            callback();
         }
         if (!mAwaitingCoroutine) {
             mAwaitingCoroutine = std::noop_coroutine();
@@ -123,14 +125,25 @@ public:
      * @param arg 
      */
     auto registerCallback(void (*callback)(void *), void *arg) -> void {
-        mCallbacks.emplace_back(callback, arg);
+        mCallbacks.emplace_back([=]() {
+            callback(arg);
+        });
+    }
+
+    /**
+     * @brief Register a callback that will be called when the coroutine is done
+     * 
+     * @param callback 
+     */
+    auto registerCallback(MoveOnlyFunction<void()> &&callback) -> void {
+        mCallbacks.emplace_back(std::move(callback));
     }
 protected:  
     bool mStarted = false;
     Executor *mExecutor = Executor::currentThread(); //< The executor, doing the 
     CancellationToken mToken; //< The cancellation token
     std::coroutine_handle<> mAwaitingCoroutine; //< The coroutine handle that is waiting for us, we will resume it when done 
-    std::vector<std::pair<void (*)(void *), void *> > mCallbacks; //< The callbacks that will be called when the coroutine is done
+    std::vector<MoveOnlyFunction<void()> > mCallbacks; //< The callbacks that will be called when the coroutine is done
 };
 
 /**
@@ -210,6 +223,10 @@ private:
     std::exception_ptr mException; //< The exception
 #endif
 };
+
+
+template <typename T>
+concept IsTaskPromise = std::is_base_of_v<TaskPromiseBase, T>;
 
 } // namespace detail
 

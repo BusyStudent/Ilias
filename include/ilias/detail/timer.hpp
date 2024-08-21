@@ -189,6 +189,7 @@ inline auto TimerAwaiter::onCancel() -> void {
     mService.cancelTimer(*mTimerId);
     mTimerId = std::nullopt;
     mResult = Unexpected(Error::Canceled);
+    mService.mExecutor.schedule(mCaller); //< Put the caller back to the executor
 }
 
 inline auto TimerAwaiter::onTimeout() -> void {

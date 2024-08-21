@@ -2,17 +2,18 @@
 #include <gtest/gtest.h>
 #include <chrono>
 
+using namespace std::chrono_literals;
 using namespace ILIAS_NAMESPACE;
 
 TEST(Timer, Sleep) {
     MiniExecutor executor;
 
     auto now = std::chrono::steady_clock::now();
-    executor.sleep(1000).wait();
+    sleep(1000ms).wait();
     auto diff = std::chrono::steady_clock::now() - now;
 
     now = std::chrono::steady_clock::now();
-    executor.sleep(10).wait();
+    sleep(10ms).wait();
     diff += std::chrono::steady_clock::now() - now;
 }
 

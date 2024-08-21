@@ -31,11 +31,12 @@ public:
      * 
      */
     enum Type {
-        Socket, //< Socket descriptor
-        File,   //< Generic file descriptor
-        Tty,    //< TTY descriptor
-        Pipe,   //< Pipe descriptor
-        Unknown //< Unknown type, let the backend decide by os api
+        Socket,  //< Socket descriptor
+        File,    //< Generic file descriptor
+        Tty,     //< TTY descriptor
+        Pipe,    //< Pipe descriptor
+        Unknown, //< Unknown type, let the backend decide by os api
+        User,    //< User defined type, used for custom more type for backend
     };
 protected:
     IoDescriptor() = default;
@@ -64,14 +65,6 @@ public:
      * @return Result<void> 
      */
     virtual auto removeDescriptor(IoDescriptor *fd) -> Result<void> = 0;
-
-    /**
-     * @brief Sleep for a specified amount of time
-     * 
-     * @param ms 
-     * @return Task<void> 
-     */
-    virtual auto sleep(uint64_t ms) -> Task<void> = 0;
 
     /**
      * @brief Read from a descriptor

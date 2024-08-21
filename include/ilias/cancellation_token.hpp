@@ -10,8 +10,8 @@
  */
 #pragma once
 
+#include <ilias/detail/functional.hpp> // for MoveOnlyFunction
 #include <ilias/ilias.hpp>
-#include <functional>
 #include <memory>
 #include <list>
 
@@ -21,14 +21,6 @@ class CancellationTokenRegistration;
 class CancellationToken;
 
 namespace detail {
-
-#if defined(__cpp_lib_move_only_function)
-template <typename T>
-using MoveOnlyFunction = std::move_only_function<T>;
-#else
-template <typename T>
-using MoveOnlyFunction = std::function<T>;
-#endif
 
 /**
  * @brief The cancellation callback, it is a wrapper of the user callback, and has the iter of the callback in the token

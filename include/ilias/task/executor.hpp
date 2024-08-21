@@ -38,6 +38,14 @@ public:
     virtual auto run(CancellationToken &token) -> void = 0;
 
     /**
+     * @brief Sleep for a specified amount of time
+     * 
+     * @param ms 
+     * @return Task<void> 
+     */
+    virtual auto sleep(uint64_t ms) -> Task<void> = 0;
+
+    /**
      * @brief Schedule a coroutine to the executor
      * 
      * @param handle The coroutine handle to schedule

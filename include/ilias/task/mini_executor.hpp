@@ -63,7 +63,7 @@ public:
         }
     }
 
-    auto sleep(uint64_t ms) -> Task<> {
+    auto sleep(uint64_t ms) -> Task<void> override {
         return mService.sleep(ms);
     }
 private:

@@ -15,6 +15,7 @@
 #include <ilias/task/executor.hpp>
 #include <ilias/log.hpp>
 #include <coroutine>
+#include <chrono>
 
 ILIAS_NS_BEGIN
 
@@ -192,8 +193,18 @@ friend class detail::TaskPromise<T>;
  * @return detail::TaskAwaiter<T> 
  */
 template <typename T>
-auto operator co_await(Task<T> &&task) -> detail::TaskAwaiter<T> {
+inline auto operator co_await(Task<T> &&task) -> detail::TaskAwaiter<T> {
     return detail::TaskAwaiter(task._view());
+}
+
+/**
+ * @brief Sleep the current task for a period of time
+ * 
+ * @param ms 
+ * @return Task<void> 
+ */
+inline auto sleep(std::chrono::milliseconds ms) -> Task<void> {
+    return Executor::currentThread()->sleep(ms.count());
 }
 
 ILIAS_NS_END
