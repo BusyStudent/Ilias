@@ -35,7 +35,7 @@ struct WhenAnyTuple {
      * 
      * @return std::tuple<std::optional<Result<Types> >...> 
      */
-    auto wait() -> std::tuple<std::optional<Result<Types> >...> {
+    auto wait() const {
         auto helper = [this]() -> Task<std::tuple<std::optional<Result<Types> >...> > {
             co_return co_await (*this);
         };
@@ -141,14 +141,14 @@ private:
 };
 
 /**
- * @brief Convert the request to a WhenAnyTuple
+ * @brief Convert the WhenAnyTuple to awaiter
  * 
  * @tparam Types 
  * @param tuple 
  * @return auto 
  */
 template <typename ...Types>
-inline auto operator co_await(WhenAnyTuple<Types...> tuple) {
+inline auto operator co_await(WhenAnyTuple<Types...> tuple) noexcept {
     return WhenAnyTupleAwaiter<Types...>(tuple.mTuple);
 }
 

@@ -205,12 +205,14 @@ inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resu
     }
 
     // Try add it to the completion port
-    if (::CreateIoCompletionPort(fd, mIocpFd, 0, 0) != mIocpFd) {
-        return Unexpected(SystemError::fromErrno());
-    }
+    if (type != IoDescriptor::Tty) {
+        if (::CreateIoCompletionPort(fd, mIocpFd, 0, 0) != mIocpFd) {
+            return Unexpected(SystemError::fromErrno());
+        }
 
-    if (!::SetFileCompletionNotificationModes(fd, FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE)) {
-        return Unexpected(SystemError::fromErrno());
+        if (!::SetFileCompletionNotificationModes(fd, FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE)) {
+            return Unexpected(SystemError::fromErrno());
+        }
     }
 
     auto nfd = std::make_unique<detail::IocpDescriptor>();
@@ -305,10 +307,10 @@ inline auto IocpContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer,
 }
 
 inline auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> Task<uint32_t> {
-    if (!mAfdDevice.isOpen()) {
+    auto nfd = static_cast<detail::IocpDescriptor*>(fd);
+    if (nfd->type != IoDescriptor::Socket || !mAfdDevice.isOpen()) {
         co_return Unexpected(Error::OperationNotSupported);
     }
-    auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     co_return co_await detail::AfdPollAwaiter(mAfdDevice, nfd->sockfd, events);
 }
 
