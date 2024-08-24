@@ -56,6 +56,13 @@ public:
     auto resume() const noexcept { return mHandle.resume(); }
 
     /**
+     * @brief Schedule the task in the executor
+     * 
+     * @return auto 
+     */
+    auto schedule() const noexcept { return executor()->schedule(mHandle); }
+
+    /**
      * @brief Destroy the task
      * 
      * @return auto 

@@ -23,11 +23,13 @@
 #include <ilias/net/sockfd.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/log.hpp>
+#include <array>
 
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #include <MSWSock.h>
 #include <Windows.h>
+#include <winternl.h>
 
 #if !defined(FILE_SKIP_COMPLETION_PORT_ON_SUCCESS)
     #error "ilias requires FILE_SKIP_COMPLETION_PORT_ON_SUCCESS support"
@@ -110,6 +112,9 @@ private:
     HANDLE mIocpFd = INVALID_HANDLE_VALUE;
     detail::TimerService mService {*this};
     detail::AfdDevice    mAfdDevice;
+
+    // NT Functions
+    decltype(::RtlNtStatusToDosError) *mRtlNtStatusToDosError = nullptr;
 };
 
 inline IocpContext::IocpContext() {
@@ -118,6 +123,10 @@ inline IocpContext::IocpContext() {
         if (::CreateIoCompletionPort(mAfdDevice.handle(), mIocpFd, 0, 0) != mIocpFd) {
             ILIAS_WARN("IOCP", "Failed to add afd device handle to iocp: {}", ::GetLastError());
         }
+        ::SetFileCompletionNotificationModes(mAfdDevice.handle(), FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE);
+    }
+    if (auto mod = ::GetModuleHandleW(L"ntdll.dll"); mod) {
+        mRtlNtStatusToDosError = reinterpret_cast<decltype(mRtlNtStatusToDosError)>(::GetProcAddress(mod, "RtlNtStatusToDosError"));
     }
 }
 
@@ -129,6 +138,7 @@ inline IocpContext::~IocpContext() {
     }
 }
 
+#pragma region Executor
 inline auto IocpContext::post(void (*fn)(void *), void *args) -> void {
     ::PostQueuedCompletionStatus(
         mIocpFd, 
@@ -145,7 +155,7 @@ inline auto IocpContext::run(CancellationToken &token) -> void {
         if (nextTimepoint) {
             auto diffRaw = *nextTimepoint - std::chrono::steady_clock::now();
             auto diffMs = std::chrono::duration_cast<std::chrono::milliseconds>(diffRaw).count();
-            timeout = std::clamp<int64_t>(diffMs, 0, INFINITE);
+            timeout = std::clamp<int64_t>(diffMs, 0, INFINITE - 1);
         }
         mService.updateTimers();
         processCompletion(timeout);
@@ -171,7 +181,7 @@ inline auto IocpContext::processCompletion(DWORD timeout) -> void {
     if (key) {
         // When key is not 0, it means it is a function pointer
         ILIAS_TRACE("IOCP", "Call callback function ({}, {})", (void*)key, (void*)overlapped);
-        ILIAS_ASSERT(key == 0x114514);
+        ILIAS_ASSERT(bytesTransferred == 0x114514);
         auto fn = reinterpret_cast<void (*)(void *)>(key);
         fn(overlapped);
         return;
@@ -186,10 +196,47 @@ inline auto IocpContext::processCompletion(DWORD timeout) -> void {
     }
 }
 
+inline auto IocpContext::processCompletionEx(DWORD timeout) -> void {
+    std::array<OVERLAPPED_ENTRY, 64> entries;
+    ULONG count = 0;
+    BOOL ok = ::GetQueuedCompletionStatusEx(mIocpFd, entries.data(), entries.size(), &count, timeout, TRUE);
+    if (!ok) {
+        auto error = ::GetLastError();
+        if (error == WAIT_TIMEOUT) {
+            return;
+        }
+        ILIAS_WARN("IOCP", "GetQueuedCompletionStatusEx failed, Error {}", error);
+        return;
+    }
+    for (ULONG i = 0; i < count; ++i) {
+        const auto &bytesTransferred = entries[i].dwNumberOfBytesTransferred;
+        const auto &overlapped = entries[i].lpOverlapped;
+        const auto &key = entries[i].lpCompletionKey;
+        if (key) {
+            // When key is not 0, it means it is a function pointer
+            ILIAS_TRACE("IOCP", "Call callback function ({}, {})", (void*)key, (void*)overlapped);
+            ILIAS_ASSERT(bytesTransferred == 0x114514);
+            auto fn = reinterpret_cast<void (*)(void *)>(key);
+            fn(overlapped);
+            continue;
+        }
+        if (overlapped) {
+            auto lap = static_cast<detail::IocpOverlapped*>(overlapped);
+            auto status = overlapped->Internal; //< Acroding to Microsoft, it stores the error code, BUT NTSTATUS
+            auto error = mRtlNtStatusToDosError(status);
+            lap->onCompleteCallback(lap, error, bytesTransferred);
+        }
+        else {
+            ILIAS_WARN("IOCP", "GetQueuedCompletionStatusEx returned nullptr overlapped, idx {}", i);
+        }
+    }
+}
+
 inline auto IocpContext::sleep(uint64_t ms) -> Task<void> {
     return mService.sleep(ms);
 }
 
+#pragma region Conttext
 inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> {
     if (fd == nullptr || fd == INVALID_HANDLE_VALUE) {
         return Unexpected(Error::InvalidArgument);
@@ -257,6 +304,7 @@ inline auto IocpContext::removeDescriptor(IoDescriptor *descriptor) -> Result<vo
     return {};
 }
 
+#pragma region Fs
 inline auto IocpContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     co_return co_await detail::IocpReadAwaiter(nfd->handle, buffer, offset);
@@ -268,6 +316,7 @@ inline auto IocpContext::write(IoDescriptor *fd, std::span<const std::byte> buff
     co_return co_await detail::IocpWriteAwaiter(nfd->handle, buffer, offset);
 }
 
+#pragma region Net
 inline auto IocpContext::accept(IoDescriptor *fd, IPEndpoint *endpoint) -> Task<socket_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket) {
@@ -306,6 +355,7 @@ inline auto IocpContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer,
     co_return co_await detail::IocpRecvfromAwaiter(nfd->sockfd, buffer, flags, endpoint);
 }
 
+#pragma region Poll
 inline auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> Task<uint32_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket || !mAfdDevice.isOpen()) {

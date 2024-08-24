@@ -41,6 +41,13 @@ public:
     auto isOk() const noexcept -> bool;
 
     /**
+     * @brief Convert to string
+     * 
+     * @return std::string 
+     */
+    auto toString() const -> std::string;
+
+    /**
      * @brief cast to int64_t
      * 
      * @return Error 
@@ -79,24 +86,8 @@ inline auto SystemCategory::name() const -> std::string_view {
     return "os";
 }
 inline auto SystemCategory::message(int64_t code) const -> std::string {
-
-#ifdef _WIN32
-    wchar_t *args = nullptr;
-    ::FormatMessageW(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        reinterpret_cast<wchar_t*>(&args), 0, nullptr
-    );
-    auto len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, nullptr, 0, nullptr, nullptr);
-    std::string buf(len - 1, '\0'); //< This len includes the null terminator
-    len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, &buf[0], len, nullptr, nullptr);
-    ::LocalFree(args);
-    return buf;
-#else
-    return ::strerror(code);
-#endif
-
-} 
+    return SystemError(code).toString();
+}
 inline auto SystemCategory::translate(error_t code) -> Error::Code {
 
 #ifdef _WIN32
@@ -180,5 +171,38 @@ inline auto SystemError::fromErrno() -> SystemError {
 inline auto SystemError::isOk() const noexcept -> bool {
     return mErr == 0;
 }
+inline auto SystemError::toString() const -> std::string {
+
+#ifdef _WIN32
+    wchar_t *args = nullptr;
+    ::FormatMessageW(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr, mErr, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        reinterpret_cast<wchar_t*>(&args), 0, nullptr
+    );
+    auto len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, nullptr, 0, nullptr, nullptr);
+    std::string buf(len - 1, '\0'); //< This len includes the null terminator
+    len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, &buf[0], len, nullptr, nullptr);
+    ::LocalFree(args);
+    return buf;
+#else
+    return ::strerror(mErr);
+#endif
+
+}
+
 
 ILIAS_NS_END
+
+// --- Formatter for SystemError
+#if defined(__cpp_lib_format)
+template <>
+struct std::formatter<ILIAS_NAMESPACE::SystemError> {
+    constexpr auto parse(std::format_parse_context &ctxt) {
+        return ctxt.begin();
+    }
+    auto format(const ILIAS_NAMESPACE::SystemError &err, std::format_context &ctxt) const {
+        return std::format_to(ctxt.out(), "{}", err.toString());
+    }
+};
+#endif

@@ -83,7 +83,7 @@ public:
     }
 
     auto onSubmit() -> bool {
-        ILIAS_TRACE("IOCP", "WSARecvFrom {} bytes on sockfd{}", mBuf.len, sockfd());
+        ILIAS_TRACE("IOCP", "WSARecvFrom {} bytes on sockfd {}", mBuf.len, sockfd());
         return ::WSARecvFrom(
             sockfd(),
             &mBuf,
