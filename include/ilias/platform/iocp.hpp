@@ -23,6 +23,7 @@
 #include <ilias/net/sockfd.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/log.hpp>
+#include <algorithm>
 #include <array>
 
 #include <WinSock2.h>

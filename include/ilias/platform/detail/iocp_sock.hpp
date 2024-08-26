@@ -42,6 +42,9 @@ public:
 
     auto onSubmit() -> bool {
         ILIAS_TRACE("IOCP", "WSASendTo {} bytes on sockfd {}", mBuf.len, sockfd());
+        if (!mAddr) { //< No endpoint provided, we don't need to fill it, use WSASend
+            return ::WSASend(sockfd(), &mBuf, 1, &bytesTransferred(), mFlags, overlapped(), nullptr) == 0;
+        }
         return ::WSASendTo(
             sockfd(),
             &mBuf,
@@ -84,6 +87,10 @@ public:
 
     auto onSubmit() -> bool {
         ILIAS_TRACE("IOCP", "WSARecvFrom {} bytes on sockfd {}", mBuf.len, sockfd());
+        if (!mAddr) { //< No endpoint provided, we don't need to fill it, use WSARecv
+            // Acrording to microsof's documentation, the sock returned by AcceptEx only can use WSARecv, not WSARecvFrom
+            return ::WSARecv(sockfd(), &mBuf, 1, &bytesTransferred(), &mFlags, overlapped(), nullptr) == 0;
+        }
         return ::WSARecvFrom(
             sockfd(),
             &mBuf,
@@ -158,7 +165,9 @@ public:
             return Unexpected(SystemError(error));
         }
         // Update Connection context
-        ::setsockopt(sockfd(), SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
+        if (::setsockopt(sockfd(), SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0) != 0) {
+            ILIAS_WARN("IOCP", "Failed to update connect context on sockfd {}", sockfd());
+        }
         return {};
     }
 private:
@@ -190,6 +199,8 @@ public:
         if (mAcceptedSock == INVALID_SOCKET) {
             return false;
         }
+        
+        ILIAS_TRACE("IOCP", "Accept on sockfd {}", sockfd());
 
         return mAcceptEx(
             sockfd(),
@@ -204,6 +215,7 @@ public:
     }
 
     auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<socket_t> {
+        ILIAS_TRACE("IOCP", "Accept on sockfd {} completed, acceptedSock {} Error {}", sockfd(), mAcceptedSock, error);
         if (error != ERROR_SUCCESS) {
             return Unexpected(SystemError(error));
         }
@@ -220,7 +232,10 @@ public:
         );
 
         // Update the accepted connection context
-        ::setsockopt(mAcceptedSock, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, nullptr, 0);
+        auto listener = sockfd();
+        if (::setsockopt(mAcceptedSock, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*) &listener, sizeof(listener)) != 0) {
+            ILIAS_WARN("IOCP", "Failed to update accept context for sockfd {}, Error {}", mAcceptedSock, ::GetLastError());
+        }
 
         if (mEndpoint) {
             *mEndpoint = IPEndpoint(*remoteAddr);

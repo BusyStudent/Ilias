@@ -1,0 +1,6 @@
+target("httpserver")
+    set_kind("binary")
+    set_default(false)
+    add_files("httpserver.cpp")
+    add_defines("ILIAS_ENABLE_LOG")
+target_end()

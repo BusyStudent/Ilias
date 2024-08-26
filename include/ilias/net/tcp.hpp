@@ -13,6 +13,7 @@
 #include <ilias/net/detail/sockbase.hpp>
 #include <ilias/net/endpoint.hpp>
 #include <ilias/io/context.hpp>
+#include <ilias/io/method.hpp>
 
 ILIAS_NS_BEGIN
 
@@ -20,7 +21,7 @@ ILIAS_NS_BEGIN
  * @brief The tcp client class.
  * 
  */
-class TcpClient {
+class TcpClient final : public StreamMethod<TcpClient> {
 public:
     TcpClient() = default;
     TcpClient(IoContext &ctxt, int family) : mBase(ctxt, Socket(family, SOCK_STREAM, IPPROTO_TCP)) { }
@@ -47,6 +48,39 @@ public:
      */
     auto read(std::span<std::byte> data) -> Task<size_t> {
         return mBase.recv(data);
+    }
+
+    // Extension Methods
+    /**
+     * @brief Send data to the socket. like write but with flags.
+     * 
+     * @param buffer 
+     * @param flags 
+     * @return Task<size_t> 
+     */
+    auto send(std::span<const std::byte> buffer, int flags = 0) -> Task<size_t> {
+        return mBase.send(buffer, flags);
+    }
+
+    /**
+     * @brief Receive data from the socket. like read but with flags.
+     * 
+     * @param data 
+     * @param flags 
+     * @return Task<size_t> 
+     */
+    auto recv(std::span<std::byte> data, int flags = 0) -> Task<size_t> {
+        return mBase.recv(data, flags);
+    }
+
+    /**
+     * @brief Peek at the data in the socket.
+     * 
+     * @param data 
+     * @return Result<size_t> 
+     */
+    auto peek(std::span<std::byte> data) -> Result<size_t> {
+        return mBase.socket().recv(data, MSG_PEEK);
     }
 
     /**
@@ -141,6 +175,23 @@ public:
         TcpClient client(*(mBase.context()), Socket(sock.value()));
         co_return std::make_pair(std::move(client), endpoint);
     }
+
+    /**
+     * @brief Get the local endpoint associated with the socket.
+     * 
+     * @return Result<IPEndpoint> 
+     */
+    auto localEndpoint() const -> Result<IPEndpoint> { 
+        return mBase.localEndpoint(); 
+    }
+
+    /**
+     * @brief Check if the socket is valid.
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const { return bool(mBase); }
 private:
     detail::SocketBase mBase;
 };

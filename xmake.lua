@@ -4,4 +4,5 @@ set_languages("c++latest")
 add_includedirs("./include")
 
 includes("./include")
+includes("./example")
 includes("./tests")

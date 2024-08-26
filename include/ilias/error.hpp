@@ -95,6 +95,9 @@ public:
         TooManyOpenFiles,            //< Too many open files
         WouldBlock,                  //< Socket is non-blocking, operation would block
 
+        // -- Misc
+        ZeroReturn,                  //< This operation failed because the unlaying interface returned zero
+
         // --- DNS
         HostNotFound,                //< Host not found
         NoDataRecord,                //< No data record of requested type

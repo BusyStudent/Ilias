@@ -73,6 +73,17 @@ inline auto as_buffer(const T &object) -> std::span<const std::byte> {
 }
 
 /**
+ * @brief Convert string literal to std::span<const std::byte> (does not include null terminator)
+ * 
+ * @tparam N 
+ * @return std::span<const std::byte> 
+ */
+template <size_t N>
+inline auto as_buffer(const char (&str)[N]) -> std::span<const std::byte> {
+    return std::as_bytes(std::span(str, N - 1));
+}
+
+/**
  * @brief Make a buffer from void pointer and size
  * 
  * @param buf 
