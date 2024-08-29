@@ -1,5 +1,5 @@
 // TODO: rewrite the test
-#include <ilias/platform/iocp.hpp>
+#include <ilias/platform/platform.hpp>
 #include <ilias/task/spawn.hpp>
 #include <ilias/net/addrinfo.hpp>
 #include <ilias/net/tcp.hpp>
@@ -11,11 +11,13 @@
 using namespace ILIAS_NAMESPACE;
 
 auto main() -> int {
-    IocpContext ctxt;
+    PlatformContext ctxt;
 
+#if defined(_WIN32)
     ::SetConsoleCP(65001);
     ::SetConsoleOutputCP(65001);
     std::setlocale(LC_ALL, ".utf-8");
+#endif
 
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
 
@@ -30,7 +32,7 @@ auto main() -> int {
         }
         std::string_view requestHeaders = 
             "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
-        auto val = co_await client.write(as_buffer(requestHeaders));
+        auto val = co_await client.write(makeBuffer(requestHeaders));
         if (!val) {
             std::cerr << "write failed: " << val.error().toString() << '\n';
             co_return {};
@@ -42,7 +44,7 @@ auto main() -> int {
 
         char buffer[1024];
         while (true) {
-            auto val = co_await client.read(as_writable_buffer(buffer));
+            auto val = co_await client.read(makeBuffer(buffer));
             if (!val) {
                 std::cerr << "read failed: " << val.error().toString() << '\n';
                 co_return {};

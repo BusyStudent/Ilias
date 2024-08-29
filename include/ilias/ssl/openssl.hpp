@@ -204,7 +204,7 @@ protected:
         auto current = tmpbuffer.get();
         while (dataLeft > 0) {
             // FIXME: if , it will lost data, we should add peek and discard method in ringbuffer
-            auto ret = co_await mBio->mFd.write(as_buffer(current, dataLeft));
+            auto ret = co_await mBio->mFd.write(makeBuffer(current, dataLeft));
             if (!ret) {
                 co_return Unexpected(ret.error()); //< Send Error
             }
@@ -224,7 +224,7 @@ protected:
 
         size_t ringLeft = mBio->mReadRing.capacity() - mBio->mReadRing.size();
         auto tmpbuffer = std::make_unique<std::byte[]>(ringLeft);
-        auto ret = co_await mBio->mFd.read(as_writable_buffer(tmpbuffer.get(), ringLeft));
+        auto ret = co_await mBio->mFd.read(makeBuffer(tmpbuffer.get(), ringLeft));
         if (!ret) {
             co_return Unexpected(ret.error()); //< Read Error
         }

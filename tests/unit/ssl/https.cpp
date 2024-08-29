@@ -33,7 +33,7 @@ auto main() -> int {
         sslClient.setHostname("www.baidu.com");
         std::string_view requestHeaders = 
             "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
-        auto val = co_await sslClient.write(as_buffer(requestHeaders));
+        auto val = co_await sslClient.write(makeBuffer(requestHeaders));
         if (!val) {
             std::cerr << "write failed: " << val.error().toString() << '\n';
             co_return {};
@@ -45,7 +45,7 @@ auto main() -> int {
 
         char buffer[1024];
         while (true) {
-            auto val = co_await sslClient.read(as_writable_buffer(buffer));
+            auto val = co_await sslClient.read(makeBuffer(buffer));
             if (!val) {
                 std::cerr << "read failed: " << val.error().toString() << '\n';
                 co_return {};

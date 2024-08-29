@@ -37,19 +37,19 @@ TEST(Tcp, Sending) {
     for (int i = 0; i < 1000; ++i) {
         // Client -> Server
         std::string content = randomGen();
-        ASSERT_TRUE(tcpClient.send(as_buffer(content)).value() == content.size());
+        ASSERT_TRUE(tcpClient.send(makeBuffer(content)).value() == content.size());
 
         char buffer[1024] {0};
-        auto num = peer.recv(as_writable_buffer(buffer)).value();
+        auto num = peer.recv(makeBuffer(buffer)).value();
 
         ASSERT_EQ(num, content.size());
         ASSERT_EQ(std::string_view(buffer, num), content);
 
         // Server -> Client
         content = randomGen();
-        ASSERT_TRUE(peer.send(as_buffer(content)).value() == content.size());
+        ASSERT_TRUE(peer.send(makeBuffer(content)).value() == content.size());
 
-        num = tcpClient.recv(as_writable_buffer(buffer)).value();
+        num = tcpClient.recv(makeBuffer(buffer)).value();
 
         ASSERT_EQ(num, content.size());
         ASSERT_EQ(std::string_view(buffer, num), content);
@@ -69,18 +69,18 @@ TEST(Udp, Sending) {
     for (int i = 0; i < 1000; ++i) {
         // Client -> Server
         std::string content = randomGen();
-        ASSERT_TRUE(udpClient.sendto(as_buffer(content), 0, udpServer.localEndpoint().value()).value() == content.size());
+        ASSERT_TRUE(udpClient.sendto(makeBuffer(content), 0, udpServer.localEndpoint().value()).value() == content.size());
         char buffer[1024] {0};
-        auto num = udpServer.recvfrom(as_writable_buffer(buffer), 0, nullptr).value();
+        auto num = udpServer.recvfrom(makeBuffer(buffer), 0, nullptr).value();
 
         ASSERT_EQ(num, content.size());
         ASSERT_EQ(std::string_view(buffer, num), content);
 
         // Server -> Client
         content = randomGen();
-        ASSERT_TRUE(udpServer.sendto(as_buffer(content), 0, udpClient.localEndpoint().value()).value() == content.size());
+        ASSERT_TRUE(udpServer.sendto(makeBuffer(content), 0, udpClient.localEndpoint().value()).value() == content.size());
 
-        num = udpClient.recvfrom(as_writable_buffer(buffer), 0, nullptr).value();
+        num = udpClient.recvfrom(makeBuffer(buffer), 0, nullptr).value();
         ASSERT_EQ(num, content.size());
         ASSERT_EQ(std::string_view(buffer, num), content);
     }

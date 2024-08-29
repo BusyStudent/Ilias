@@ -183,9 +183,8 @@ inline auto AddressInfo::fromHostname(const char *name, const char *service, std
     int err = 0;
 
 #if defined(_WIN32)
-    auto wname = win32::toWide(name);
     err = ::GetAddrInfoExW(
-        wname.c_str(), 
+        name ? win32::toWide(name).c_str() : nullptr, 
         service ? win32::toWide(service).c_str() : nullptr, 
         NS_ALL, 
         nullptr, 
@@ -224,9 +223,8 @@ inline auto AddressInfo::fromHostnameAsync(const char *name, const char *service
     }
     win32::EventOverlapped overlapped;
     HANDLE namedHandle = nullptr;
-    auto wname = win32::toWide(name);
     err = ::GetAddrInfoExW(
-        wname.c_str(), 
+        name ? win32::toWide(name).c_str() : nullptr, 
         service ? win32::toWide(service).c_str() : nullptr, 
         NS_ALL, 
         nullptr, 
@@ -283,6 +281,12 @@ inline auto GaiCategory::equivalent(int64_t code, const Error &other) const -> b
     if (other.category() == IliasCategory::instance()) {
         switch (code) {
             case EAI_NONAME: return other == Error::HostNotFound;
+
+            //< For async version, it is extension of the platform getaddrinfo
+#if defined(ERROR_OPERATION_ABORTED)
+            case ERROR_OPERATION_ABORTED: return other == Error::Canceled;
+#endif
+
             default: return other == Error::Unknown;
         }
     }

@@ -1,4 +1,4 @@
-if is_plat("windows") then
+if not is_plat("windows") then
     add_requires("openssl")
 end
 
@@ -13,7 +13,7 @@ if is_plat("windows") then
         add_packages("gtest")
         add_defines("ILIAS_ENABLE_LOG")
 
-        if is_plat("windows") then
+        if not is_plat("windows") then
             add_packages("openssl")
         end
     target_end()

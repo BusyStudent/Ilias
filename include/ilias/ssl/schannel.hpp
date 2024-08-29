@@ -234,7 +234,7 @@ protected:
                 std::unique_ptr<uint8_t, decltype(freeBuffer)> guard(buffer, freeBuffer);
 
                 while (size != 0) {
-                    auto n = co_await mFd.write(as_buffer(buffer, size));
+                    auto n = co_await mFd.write(makeBuffer(buffer, size));
                     if (!n) {
                         co_return Unexpected(n.error());
                     }
@@ -256,7 +256,7 @@ protected:
             }
 
             // Read new data here after this
-            auto n = co_await mFd.read(as_writable_buffer(incoming + received, incomingCapicity - received));
+            auto n = co_await mFd.read(makeBuffer(incoming + received, incomingCapicity - received));
             if (!n) {
                 ILIAS_WARN("Schannel", "Failed to handshake by recv failed {}", n.error());
                 co_return Unexpected(n.error());
@@ -318,7 +318,7 @@ protected:
             auto wbuffer = tmpbuf.get();
             auto total = inbuffers[0].cbBuffer + inbuffers[1].cbBuffer + inbuffers[2].cbBuffer;
             while (total > 0) {
-                auto num = co_await mFd.write(as_buffer(wbuffer, total));
+                auto num = co_await mFd.write(makeBuffer(wbuffer, total));
                 if (!num) {
                     co_return Unexpected(num.error());
                 }
@@ -410,7 +410,7 @@ protected:
             }
 
             // Try read data
-            auto num = co_await mFd.read(as_writable_buffer(incoming + incomingReceived, incomingCapicity - incomingReceived));
+            auto num = co_await mFd.read(makeBuffer(incoming + incomingReceived, incomingCapicity - incomingReceived));
             if (!num) {
                 co_return Unexpected(num.error());
             }
@@ -473,7 +473,7 @@ protected:
             std::unique_ptr<uint8_t, decltype(freeBuffer)> guard(buffer, freeBuffer);
 
             while (size) {
-                auto n = co_await mFd.write(as_buffer(buffer, size));
+                auto n = co_await mFd.write(makeBuffer(buffer, size));
                 if (!n || *n == 0) {
                     break;
                 }
