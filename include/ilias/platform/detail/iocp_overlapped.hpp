@@ -54,6 +54,16 @@ public:
     }
 
     /**
+     * @brief Check the magic number, for checking if this pointer is valid
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto checkMagic() const -> bool {
+        return magic == 0x0721;
+    }
+
+    /**
      * @brief The callback when the IOCP is completed
      * 
      * @param self The pointer to self
@@ -62,6 +72,12 @@ public:
      * 
      */
     void (*onCompleteCallback)(IocpOverlapped *self, DWORD dwError, DWORD dwBytesTransferred) = nullptr;
+
+    /**
+     * @brief The magic number to check if this is a valid IocpOverlapped
+     * 
+     */
+    uint32_t magic = 0x0721;
 };
 
 /**

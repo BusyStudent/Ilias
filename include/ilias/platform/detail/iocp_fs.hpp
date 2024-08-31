@@ -31,10 +31,12 @@ public:
     }
 
     auto onSubmit() -> bool {
-        return ::ReadFileEx(handle(), mBuffer.data(), mBuffer.size(), overlapped(), nullptr);
+        ILIAS_TRACE("IOCP", "ReadFile {} bytes on handle {}", mBuffer.size(), handle());
+        return ::ReadFile(handle(), mBuffer.data(), mBuffer.size(), &bytesTransferred(), overlapped());
     }
 
     auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+        ILIAS_TRACE("IOCP", "ReadFile {} bytes on handle {} completed, Error {}", bytesTransferred, handle(), error);
         if (error != ERROR_SUCCESS) {
             return Unexpected(SystemError(error));
         }
@@ -55,10 +57,12 @@ public:
     }
 
     auto onSubmit() -> bool {
-        return ::WriteFileEx(handle(), mBuffer.data(), mBuffer.size(), overlapped(), nullptr);
+        ILIAS_TRACE("IOCP", "WriteFile {} bytes on handle {}", mBuffer.size(), handle());
+        return ::WriteFile(handle(), mBuffer.data(), mBuffer.size(), &bytesTransferred(), overlapped());
     }
 
     auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+        ILIAS_TRACE("IOCP", "WriteFile {} bytes on handle {} completed, Error {}", bytesTransferred, handle(), error);
         if (error != ERROR_SUCCESS) {
             return Unexpected(SystemError(error));
         }

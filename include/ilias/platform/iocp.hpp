@@ -141,6 +141,9 @@ inline IocpContext::~IocpContext() {
 
 #pragma region Executor
 inline auto IocpContext::post(void (*fn)(void *), void *args) -> void {
+    if (!fn) [[unlikely]] {
+        return;
+    }
     ::PostQueuedCompletionStatus(
         mIocpFd, 
         0x114514, 
@@ -190,6 +193,7 @@ inline auto IocpContext::processCompletion(DWORD timeout) -> void {
 
     if (overlapped) {
         auto lap = static_cast<detail::IocpOverlapped*>(overlapped);
+        ILIAS_ASSERT(lap->checkMagic());                     
         lap->onCompleteCallback(lap, error, bytesTransferred);
     }
     else {
@@ -225,6 +229,7 @@ inline auto IocpContext::processCompletionEx(DWORD timeout) -> void {
             auto lap = static_cast<detail::IocpOverlapped*>(overlapped);
             auto status = overlapped->Internal; //< Acroding to Microsoft, it stores the error code, BUT NTSTATUS
             auto error = mRtlNtStatusToDosError(status);
+            ILIAS_ASSERT(lap->checkMagic());
             lap->onCompleteCallback(lap, error, bytesTransferred);
         }
         else {

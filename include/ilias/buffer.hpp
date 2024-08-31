@@ -185,6 +185,15 @@ public:
     }
 
 #if defined(__cpp_lib_format)
+    /**
+     * @brief Print formatted data into the buffer
+     * 
+     * @tparam Args 
+     * @param fmt 
+     * @param args 
+     * @return true 
+     * @return false 
+     */
     template <typename... Args>
     auto print(std::format_string<Args...> fmt, Args &&... args) -> bool {
         auto size = std::formatted_size(fmt, std::forward<Args>(args)...);
