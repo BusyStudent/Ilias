@@ -11,8 +11,10 @@
 #pragma once
 
 #include <ilias/ilias.hpp>
+#include <cstring> //< for memcpy
 #include <cstdarg>
-#include <cstdio>
+#include <cstdio>  //< for sprintf
+#include <string>  //< for std::string_view
 #include <span>
 
 ILIAS_NS_BEGIN
