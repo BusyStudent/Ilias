@@ -122,6 +122,15 @@ public:
         return mBase.remoteEndpoint();
     }
 
+    /**
+     * @brief Get the underlying socket.
+     * 
+     * @return SocketView 
+     */
+    auto socket() const -> SocketView {
+        return mBase.socket();
+    }
+
     auto operator <=>(const TcpClient &) const = default;
 
     /**

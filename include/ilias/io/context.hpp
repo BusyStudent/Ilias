@@ -59,7 +59,7 @@ public:
     virtual auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> = 0;
 
     /**
-     * @brief Remove a descriptor from the context
+     * @brief Remove a descriptor from the context, it will cancel all async operations on this descriptor
      * 
      * @param fd
      * @return Result<void> 

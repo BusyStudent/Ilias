@@ -13,7 +13,7 @@ TEST(PipeTest, Create) {
     ASSERT_TRUE(result);
     auto &[sender, receiver] = *result;
 
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 1000; ++i) {
         auto ret = sender.writeAll(makeBuffer("Hello world!"sv)).wait();
         ASSERT_TRUE(ret);
         ASSERT_EQ(*ret, "Hello world!"sv.size());

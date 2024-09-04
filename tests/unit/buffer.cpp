@@ -41,6 +41,28 @@ TEST(BufferTest, Printf) {
 
 }
 
+TEST(BufferTest, Read) {
+    std::string input = "Hello, world!";
+    MemReader reader(input);
+
+    char buf[2];
+    ASSERT_TRUE(reader.read(makeBuffer(buf)));
+    EXPECT_EQ(std::string(buf, 2), "He");
+    ASSERT_TRUE(reader.read(makeBuffer(buf)));
+    EXPECT_EQ(std::string(buf, 2), "ll");
+    ASSERT_TRUE(reader.read(makeBuffer(buf)));
+    EXPECT_EQ(std::string(buf, 2), "o,");
+    ASSERT_TRUE(reader.read(makeBuffer(buf)));
+    EXPECT_EQ(std::string(buf, 2), " w");
+    ASSERT_TRUE(reader.read(makeBuffer(buf)));
+    EXPECT_EQ(std::string(buf, 2), "or");
+    ASSERT_TRUE(reader.read(makeBuffer(buf)));
+    EXPECT_EQ(std::string(buf, 2), "ld");
+    ASSERT_FALSE(reader.read(makeBuffer(buf))); //< only one byte left
+
+    EXPECT_EQ(reader.bytesReaded(), 12);
+}
+
 auto main(int argc, char **argv) -> int {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

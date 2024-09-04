@@ -224,6 +224,7 @@ public:
         if (mPtr->suspendedTask) {
             mPtr->suspendedTask.schedule();
         }
+        mPtr = nullptr;
     }
 
     /**
