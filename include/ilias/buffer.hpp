@@ -117,9 +117,9 @@ public:
      * @tparam T 
      * @return std::optional<T> 
      */
-    template <typename T> requires (std::is_trivial_v<T>)
-    auto read() -> std::optional<T> {
-        T val;
+    template <typename U> requires (std::is_trivial_v<U>)
+    auto read() -> std::optional<U> {
+        U val;
         if (read(std::span(&val, 1))) {
             return val;
         }

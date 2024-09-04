@@ -133,7 +133,6 @@ inline EpollContext::EpollContext() {
         mTaskReceiver = fds[1];
         fcntl(mTaskSneder, F_SETFL, O_NONBLOCK);
         fcntl(mTaskReceiver, F_SETFL, O_NONBLOCK);
-        addDescriptor(mTaskReceiver, IoDescriptor::Socket);
         epoll_event event = {};
         event.events      = EPOLLIN;
         event.data.fd     = mTaskReceiver;
@@ -202,7 +201,7 @@ inline auto EpollContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Res
         }
     }
 
-    if (type == IoDescriptor::Pipe) {
+    if (type == IoDescriptor::Pipe || type == IoDescriptor::Tty) {
         nfd->isPollable = true;
     }
 
@@ -228,6 +227,7 @@ inline auto EpollContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
             }
         }
     }
+    delete descriptor;
     if (ret != 0) {
         return Unexpected<Error>(SystemError(EALREADY));
     }
@@ -428,7 +428,7 @@ inline auto EpollContext::poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_
     }
     auto &epollevent   = eventsIt->second.emplace_back(detail::EpollEvent {descriptor->fd, mEpollFd, event});
     auto  epolleventIt = eventsIt->second.end();
-    if (descriptor->events.size() > 1) {
+    if (descriptor->events.size() == 1 && eventsIt->second.size() == 1) {
         epoll_event event = {0};
         event.events      = EPOLLRDHUP;
         auto ret          = ::epoll_ctl(mEpollFd, EPOLL_CTL_ADD, descriptor->fd, &event);
