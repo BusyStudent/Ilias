@@ -19,6 +19,9 @@
     #define _WINSOCKAPI_ // Avoid windows.h to include winsock.h
     #define NOMINMAX
     #include <Windows.h>
+#elif defined(__unix__)
+    #include <errno.h>
+    #include <string.h>
 #endif
 
 ILIAS_NS_BEGIN

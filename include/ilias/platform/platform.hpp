@@ -14,7 +14,8 @@
     #include <ilias/platform/iocp.hpp>
     #define ILIAS_PLATFORM_CONTEXT IocpContext
 #else
-    #error "Unsupported platform"
+    #include <ilias/platform/epoll.hpp>
+    #define ILIAS_PLATFORM_CONTEXT EpollContext
 #endif
 
 ILIAS_NS_BEGIN
