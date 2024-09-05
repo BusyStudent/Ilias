@@ -245,13 +245,14 @@ inline auto IocpContext::sleep(uint64_t ms) -> Task<void> {
 #pragma region Conttext
 inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> {
     if (fd == nullptr || fd == INVALID_HANDLE_VALUE) {
+        ILIAS_ERROR("IOCP", "Invalid file descriptor in addDescriptor");
         return Unexpected(Error::InvalidArgument);
     }
     if (type == IoDescriptor::Unknown) {
         switch (::GetFileType(fd)) {
-            case FILE_TYPE_CHAR: type = IoDescriptor::Tty;
-            case FILE_TYPE_DISK: type = IoDescriptor::File;
-            case FILE_TYPE_PIPE: type = IoDescriptor::Socket;
+            case FILE_TYPE_CHAR: type = IoDescriptor::Tty; break;
+            case FILE_TYPE_DISK: type = IoDescriptor::File; break;
+            case FILE_TYPE_PIPE: type = IoDescriptor::Pipe; break;
             case FILE_TYPE_UNKNOWN: return Unexpected(SystemError::fromErrno());
             default: return Unexpected(Error::InvalidArgument);
         }
@@ -313,12 +314,18 @@ inline auto IocpContext::removeDescriptor(IoDescriptor *descriptor) -> Result<vo
 #pragma region Fs
 inline auto IocpContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
+    if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use thread pool to do it
+        co_return co_await detail::IocpThreadReadAwaiter(nfd->handle, buffer);
+    }
     co_return co_await detail::IocpReadAwaiter(nfd->handle, buffer, offset);
 }
 
 
 inline auto IocpContext::write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
+    if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use thread pool to do it
+        co_return co_await detail::IocpThreadWriteAwaiter(nfd->handle, buffer);
+    }
     co_return co_await detail::IocpWriteAwaiter(nfd->handle, buffer, offset);
 }
 
