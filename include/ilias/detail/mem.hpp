@@ -76,7 +76,7 @@ inline auto uppercase(std::string_view str) {
  * @brief Compare two strings in a case-insensitive manner.
  * 
  */
-struct Casecompare {
+struct CaseCompare {
     using is_transparent = void;
 
     auto operator()(std::string_view lhs, std::string_view rhs) const {
@@ -84,7 +84,6 @@ struct Casecompare {
     }
 };
 
-
-}
+} // namespace mem
 
 ILIAS_NS_END

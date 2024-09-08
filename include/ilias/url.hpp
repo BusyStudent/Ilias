@@ -413,5 +413,17 @@ inline auto Url::decodeComponent(std::string_view str) -> std::string {
     return out;
 }
 
-
 ILIAS_NS_END
+
+// --- Formatter for Url
+#if defined(__cpp_lib_format)
+template <>
+struct std::formatter<ILIAS_NAMESPACE::Url> {
+    constexpr auto parse(std::format_parse_context &ctxt) {
+        return ctxt.begin();
+    }
+    auto format(const ILIAS_NAMESPACE::Url &url, std::format_context &ctxt) {
+        return std::format_to(ctxt.out(), "{}", url.toString());
+    }
+};
+#endif

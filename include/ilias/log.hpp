@@ -57,8 +57,8 @@ enum class LogLevel {
 
 struct LogContext {
     LogLevel level = LogLevel::Info;
-    std::set<std::string, mem::Casecompare> whitelist;
-    std::set<std::string, mem::Casecompare> blacklist;
+    std::set<std::string, mem::CaseCompare> whitelist;
+    std::set<std::string, mem::CaseCompare> blacklist;
 };
 
 /**

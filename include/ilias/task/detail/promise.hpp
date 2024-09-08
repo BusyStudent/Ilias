@@ -184,6 +184,11 @@ public:
         mValue.emplace(std::move(value));
     }
 
+    template <typename U>
+    auto return_value(U &&value) -> void {
+        mValue.emplace(std::forward<U>(value));
+    }
+
 #if defined(__cpp_exceptions)
     /**
      * @brief Exception support, it will translate BadExpectedAccess<Error> to the Unexpected<Error>() and store it to value
