@@ -19,6 +19,9 @@
 #include <vector>
 #include <map>
 
+#undef min
+#undef max
+
 ILIAS_NS_BEGIN
 
 /**
@@ -356,7 +359,6 @@ inline auto HttpCookie::parse(std::string_view setCookie) -> std::vector<HttpCoo
         }
     }
     else if (!expires.empty()) {
-        // TODO : parse expires
         expireTime = parseTime(expires);
     }
     for (auto [name, value] : kvs) {

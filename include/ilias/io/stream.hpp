@@ -72,14 +72,14 @@ public:
             auto buf = readWindow();
             if (!buf.empty()) {
                 // Read data from the buffer
-                auto len = std::min(len, n);
+                auto len = std::min(buf.size(), n);
                 ::memcpy(buffer.data(), buf.data(), len);
                 mPosition += len;
                 co_return len;
             }
             // Try fill the buffer
             auto wbuf = allocWriteWindow(n);
-            auto ret = co_await mStream.recv(wbuf);
+            auto ret = co_await mStream.read(wbuf);
             if (!ret) {
                 co_return Unexpected(ret.error());
             }

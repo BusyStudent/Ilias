@@ -90,7 +90,7 @@ ILIAS_DECLARE_ERROR(ZError, ZCategory);
  * @param wbits The wbits parameter for zlib (use the ZFormat enum)
  * @return auto 
  */
-template <MemWritable T>
+template <MemWritable T = std::vector<std::byte> >
 inline auto decompress(std::span<const std::byte> input, int wbits) -> Result<T> {
     static_assert(sizeof(std::declval<T>().data()[0]) == sizeof(Bytef), "Output buffer type must be a byte buffer");
     
