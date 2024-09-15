@@ -9,7 +9,7 @@ if is_plat("windows") then
         set_default(false)
 
         add_files("raw_https.cpp")
-        add_tests("raw_https")
+        add_tests("raw_https", {run_timeout = 10000})
         add_packages("gtest")
         add_defines("ILIAS_ENABLE_LOG")
 

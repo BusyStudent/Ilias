@@ -22,6 +22,7 @@
     #include <ilias/detail/win32.hpp> //< EventOverlapped
     #include <VersionHelpers.h>
 #else
+    #include <csignal>
     #define ILIAS_ADDRINFO ::addrinfo
 #endif
 
@@ -247,6 +248,45 @@ inline auto AddressInfo::fromHostnameAsync(const char *name, const char *service
         co_return Unexpected(Error(err, GaiCategory::instance()));
     }
     co_return AddressInfo(info);
+#elif defined(__linux) && defined(__USE_GNU) //< GNU Linux, use getaddrinfo_a
+    ::gaicb request {
+        .ar_name = name,
+        .ar_service = service,
+        .ar_request = hints ? &hints.value() : nullptr
+    };
+    struct Awaiter {
+        auto await_ready() const noexcept { return false; }
+
+        auto await_suspend(TaskView<> caller) -> bool {
+            ::memset(&mEvent, 0, sizeof(mEvent));
+            mCaller = caller;
+            mEvent.sigev_notify = SIGEV_THREAD; //< Use callbacl
+            mEvent.sigev_value.sival_ptr = this;
+            mEvent.sigev_notify_function = [](::sigval val) {
+                auto self = static_cast<Awaiter *>(val.sival_ptr);
+                self->mCaller.schedule();
+            };
+            int ret = ::getaddrinfo_a(GAI_NOWAIT, &mRequest, 1, &mEvent);
+            mReg = caller.cancellationToken().register_([](void *request) {
+                auto ret = ::gai_cancel(static_cast<::gaicb*>(request));
+            }, mRequest);
+            return ret == 0;
+        }
+
+        auto await_resume() -> Result<AddressInfo> {
+            auto err = ::gai_error(mRequest);
+            if (err != 0) {
+                return Unexpected(Error(err, GaiCategory::instance()));
+            }
+            return AddressInfo(mRequest->ar_result);
+        }
+
+        TaskView<> mCaller;
+        ::gaicb *mRequest;
+        ::sigevent mEvent;
+        CancellationToken::Registration mReg;
+    };
+    co_return co_await Awaiter { .mRequest = &request };
 #else
     co_return fromHostname(name, service, hints); //< fallback to sync version
 #endif

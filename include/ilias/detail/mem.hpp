@@ -51,6 +51,7 @@ inline auto memcmp(const void *lhs, const void *rhs, size_t n) {
         case -1: return std::strong_ordering::less;
         case 0: return std::strong_ordering::equal;
         case 1: return std::strong_ordering::greater;
+        default: ::abort();
     }
 }
 

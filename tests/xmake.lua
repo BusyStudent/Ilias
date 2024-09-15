@@ -18,7 +18,7 @@ for _, file in ipairs(os.files("unit/**.cpp")) do
         set_default(false)
 
         add_files(file)
-        add_tests(name)
+        add_tests(name, {run_timeout = 10000})
         add_packages("gtest")
         add_defines("ILIAS_ENABLE_LOG")
     target_end()

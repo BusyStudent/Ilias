@@ -386,6 +386,7 @@ public:
         if (::getpeername(mFd, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
             return Unexpected(SystemError::fromErrno());
         }
+        return IPEndpoint::fromRaw(&addr, len).value();
     }
 
     /**

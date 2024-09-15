@@ -1,5 +1,3 @@
-#pragma once
-
 #include <ilias/net/endpoint.hpp>
 #include <gtest/gtest.h>
 
