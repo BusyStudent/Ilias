@@ -198,14 +198,10 @@ inline auto SystemError::toString() const -> std::string {
 ILIAS_NS_END
 
 // --- Formatter for SystemError
-#if defined(__cpp_lib_format)
-template <>
-struct std::formatter<ILIAS_NAMESPACE::SystemError> {
-    constexpr auto parse(std::format_parse_context &ctxt) {
-        return ctxt.begin();
-    }
-    auto format(const ILIAS_NAMESPACE::SystemError &err, std::format_context &ctxt) const {
-        return std::format_to(ctxt.out(), "{}", err.toString());
+#if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(SystemError) {
+    auto format(const auto &err, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", err.toString());
     }
 };
 #endif

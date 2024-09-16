@@ -213,14 +213,13 @@ public:
 
 ILIAS_NS_END
 
-#if defined(__cpp_lib_format)
-template <>
-struct std::formatter<ILIAS_NAMESPACE::TaskView<> > {
-    constexpr auto parse(std::format_parse_context &ctxt) {
+#if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(TaskView<>) {
+    constexpr auto parse(auto &ctxt) {
         return ctxt.begin();
     }
-    auto format(const ILIAS_NAMESPACE::TaskView<> &view, std::format_context &ctxt) const {
-        return std::format_to(ctxt.out(), "TaskView<{}>", std::coroutine_handle<>(view).address());
+    auto format(const auto &view, auto &ctxt) const {
+        return format_to(ctxt.out(), "TaskView<{}>", std::coroutine_handle<>(view).address());
     }
 };
 #endif

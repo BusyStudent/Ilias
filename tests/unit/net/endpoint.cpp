@@ -70,15 +70,15 @@ TEST(Endpoint, ToString) {
     IPEndpoint endpoint(IPAddress4::any(), 8080);
     EXPECT_EQ(endpoint.toString(), "0.0.0.0:8080");
 
-#if defined(__cpp_lib_format)
-    EXPECT_EQ(std::format("{}", endpoint), "0.0.0.0:8080");
+#if !defined(ILIAS_NO_FORMAT)
+    EXPECT_EQ(fmtlib::format("{}", endpoint), "0.0.0.0:8080");
 #endif
 
     IPEndpoint endpoint2(IPAddress6::none(), 8080);
     EXPECT_EQ(endpoint2.toString(), "[::]:8080");
 
-#if defined(__cpp_lib_format)
-    EXPECT_EQ(std::format("{}", endpoint2), "[::]:8080");
+#if !defined(ILIAS_NO_FORMAT)
+    EXPECT_EQ(fmtlib::format("{}", endpoint2), "[::]:8080");
 #endif
 }
 

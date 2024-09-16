@@ -311,7 +311,7 @@ public:
         return ret;
     }
 
-#if defined(__cpp_lib_format)
+#if !defined(ILIAS_NO_FORMAT)
     /**
      * @brief Print formatted data into the buffer
      * 
@@ -322,8 +322,8 @@ public:
      * @return false 
      */
     template <typename... Args>
-    auto print(std::format_string<Args...> fmt, Args &&... args) -> bool {
-        auto size = std::formatted_size(fmt, std::forward<Args>(args)...);
+    auto print(fmtlib::format_string<Args...> fmt, Args &&... args) -> bool {
+        auto size = fmtlib::formatted_size(fmt, std::forward<Args>(args)...);
         if (bytesLeft() < size) {
             if (!expandBuffer(size)) {
                 return false;
@@ -331,7 +331,7 @@ public:
         }
         auto buf = left();
         auto begin = reinterpret_cast<char *>(buf.data());
-        std::format_to_n(begin, buf.size(), fmt, std::forward<Args>(args)...);
+        fmtlib::format_to_n(begin, buf.size(), fmt, std::forward<Args>(args)...);
         mWritten += size;
         return true;
     }

@@ -522,34 +522,22 @@ ILIAS_NS_END
 
 
 // --- Formatter for IPAddress4, IPAddress6, IPAddress
-#if defined(__cpp_lib_format)
-template <>
-struct std::formatter<ILIAS_NAMESPACE::IPAddress4> {
-    constexpr auto parse(std::format_parse_context &ctxt) {
-        return ctxt.begin();
-    }
-    auto format(const ILIAS_NAMESPACE::IPAddress4 &addr, std::format_context &ctxt) const {
-        return std::format_to(ctxt.out(), "{}", addr.toString());
+#if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(IPAddress4) {
+    auto format(const auto &addr, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", addr.toString());
     }
 };
 
-template <>
-struct std::formatter<ILIAS_NAMESPACE::IPAddress6> {
-    constexpr auto parse(std::format_parse_context &ctxt) {
-        return ctxt.begin();
-    }
-    auto format(const ILIAS_NAMESPACE::IPAddress6 &addr, std::format_context &ctxt) const {
-        return std::format_to(ctxt.out(), "{}", addr.toString());
+ILIAS_FORMATTER(IPAddress6) {
+    auto format(const auto &addr, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", addr.toString());
     }
 };
 
-template <>
-struct std::formatter<ILIAS_NAMESPACE::IPAddress> {
-    constexpr auto parse(std::format_parse_context &ctxt) {
-        return ctxt.begin();
-    }
-    auto format(const ILIAS_NAMESPACE::IPAddress &addr, std::format_context &ctxt) const {
-        return std::format_to(ctxt.out(), "{}", addr.toString());
+ILIAS_FORMATTER(IPAddress) {
+    auto format(const auto &addr, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", addr.toString());
     }
 };
 #endif

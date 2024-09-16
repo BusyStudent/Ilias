@@ -10,8 +10,8 @@ TEST(Error, Basic) {
 
     std::cout << err.toString() << std::endl;
     
-#if defined(__cpp_lib_format)
-    std::cout << std::format("{}", err) << std::endl;
+#if !defined(ILIAS_NO_FORMAT)
+    std::cout << fmtlib::format("{}", err) << std::endl;
 
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
 

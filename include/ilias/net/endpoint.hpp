@@ -294,14 +294,10 @@ private:
 ILIAS_NS_END
 
 // --- Formatter for IPEndpoint
-#if defined(__cpp_lib_format)
-template <>
-struct std::formatter<ILIAS_NAMESPACE::IPEndpoint> {
-    constexpr auto parse(std::format_parse_context &ctxt) {
-        return ctxt.begin();
+#if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(IPEndpoint) {
+    auto format(const auto &addr, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", addr.toString());
     }
-    auto format(const ILIAS_NAMESPACE::IPEndpoint &addr, std::format_context &ctxt) const {
-        return std::format_to(ctxt.out(), "{}", addr.toString());
-    }
-};
+}; 
 #endif

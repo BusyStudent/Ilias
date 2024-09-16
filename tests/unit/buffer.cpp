@@ -35,7 +35,7 @@ TEST(BufferTest, Printf) {
 
     writer.printf("GET /%s HTTP/1.1\r\nHost: %s\r\n\r\n", "foo", "bar");
 
-#if defined(__cpp_lib_format)
+#if !defined(ILIAS_NO_FORMAT)
     writer.print("GET /{} HTTP/1.1\r\nHost: {}\r\n\r\n", "foo", "bar");
 #endif
 

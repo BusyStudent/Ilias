@@ -16,7 +16,7 @@
 #include <string>
 #include <array>
 
-// --- config
+// --- Config
 #if !defined(ILIAS_NAMESPACE)
     #define ILIAS_NAMESPACE ilias
 #endif
@@ -37,11 +37,19 @@
     #include <cstdlib>
 #endif
 
-// --- cpp version check 
-#if  defined(__cpp_lib_format)
+// --- Format library check 
+#if   defined(ILIAS_USE_FMT)
+    #define ILIAS_FMT_NAMESPACE fmt
+    #include <fmt/format.h>
+    #include <fmt/chrono.h>
+#elif defined(__cpp_lib_format)
+    #define ILIAS_FMT_NAMESPACE std
     #include <format>
+#else
+    #define ILIAS_NO_FORMAT
 #endif
 
+// --- Exception check
 #if !defined(__cpp_exceptions)
     #define ILIAS_THROW(x) ::abort()
 #else
@@ -68,6 +76,12 @@
 #define ILIAS_NS_BEGIN namespace ILIAS_NAMESPACE {
 #define ILIAS_NS_END }
 
+// --- Formatter macro
+#define ILIAS_FORMATTER(type)                                      \
+    template <>                                                    \
+    struct ILIAS_FMT_NAMESPACE::formatter<ILIAS_NAMESPACE::type> : \
+        ILIAS_NAMESPACE::detail::DefaultFormatter
+
 
 ILIAS_NS_BEGIN
 
@@ -79,5 +93,37 @@ using socket_t = ILIAS_SOCKET_T;
 // --- Forward declaration for Task<T>
 template <typename T = void>
 class Task;
+
+// --- Formatting namespace
+#if defined(ILIAS_FMT_NAMESPACE)
+namespace fmtlib = ILIAS_FMT_NAMESPACE;
+
+// --- Formatter with default parse and redirect some formatting function to the fmtlib namespace
+namespace detail {
+
+// --- The Helper class for formatting (compatible with fmtlib::formatter and std::formatter)
+struct DefaultFormatter {
+    using format_parse_context = fmtlib::format_parse_context;
+    using format_context = fmtlib::format_context;
+
+    constexpr auto parse(auto &ctxt) {
+        return ctxt.begin();
+    }
+
+    // Redirect the format_to
+    template <typename It, typename ...Args>
+    static auto format_to(It &&it, fmtlib::format_string<Args...> fmt, Args &&...args) {
+        return fmtlib::format_to(it, fmt, std::forward<Args>(args)...);
+    }
+
+    // Redirect the format
+    template <typename ...Args>
+    static auto format(fmtlib::format_string<Args...> fmt, Args &&...args) {
+        return fmtlib::format(fmt, std::forward<Args>(args)...);
+    }
+};
+
+} // namespace detail
+#endif // ILIAS_FMT_NAMESPACE
 
 ILIAS_NS_END

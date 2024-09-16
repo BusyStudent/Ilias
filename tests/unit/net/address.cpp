@@ -25,10 +25,10 @@ TEST(Address4, ToString) {
     EXPECT_EQ(IPAddress4::broadcast().toString(), "255.255.255.255");
     EXPECT_EQ(IPAddress4::loopback().toString(), "127.0.0.1");
 
-#if defined(__cpp_lib_format)
-    EXPECT_EQ(std::format("{}", IPAddress4::any()), "0.0.0.0");
-    EXPECT_EQ(std::format("{}", IPAddress4::broadcast()), "255.255.255.255");
-    EXPECT_EQ(std::format("{}", IPAddress4::loopback()), "127.0.0.1");
+#if !defined(ILIAS_NO_FORMAT)
+    EXPECT_EQ(fmtlib::format("{}", IPAddress4::any()), "0.0.0.0");
+    EXPECT_EQ(fmtlib::format("{}", IPAddress4::broadcast()), "255.255.255.255");
+    EXPECT_EQ(fmtlib::format("{}", IPAddress4::loopback()), "127.0.0.1");
 #endif
 }
 

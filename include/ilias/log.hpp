@@ -13,18 +13,13 @@
 #include <ilias/ilias.hpp>
 
 // --- Check headers
-#if !defined(__cpp_lib_format)
+#if defined(ILIAS_NO_FORMAT)
     #undef ILIAS_ENABLE_LOG
 #endif
 
 
 // --- Begin declaration
 #if defined(ILIAS_ENABLE_LOG)
-
-// --- Prefer print over format
-#if defined(__cpp_lib_print)
-    #include <print>
-#endif
 
 #include <ilias/detail/mem.hpp>
 #include <format>
@@ -99,12 +94,8 @@ inline auto GetLevelColor(LogLevel level) -> const char * {
  * @param args 
  */
 template <typename ...Args>
-inline auto Print(FILE *stream, std::format_string<Args...> fmt, Args &&...args) -> void {
-#if defined(__cpp_lib_print)
-    std::print(stream, fmt, std::forward<Args>(args)...);
-#else
-    std::fputs(std::format(fmt, std::forward<Args>(args)...).c_str(), stream);
-#endif
+inline auto Print(FILE *stream, fmtlib::format_string<Args...> fmt, Args &&...args) -> void {
+    std::fputs(fmtlib::format(fmt, std::forward<Args>(args)...).c_str(), stream);
 }
 
 /**
@@ -152,7 +143,7 @@ inline auto EndLog(FILE *stream, LogLevel level) -> void {
  * @param args 
  */
 template <typename ...Args>
-auto Log(FILE *stream, LogLevel level, std::string_view mod, std::format_string<Args...> fmt, Args &&...args) -> void {
+auto Log(FILE *stream, LogLevel level, std::string_view mod, fmtlib::format_string<Args...> fmt, Args &&...args) -> void {
     if (!BeginLog(stream, level, mod)) {
         return;
     }

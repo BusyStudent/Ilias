@@ -524,16 +524,11 @@ inline auto HttpCookieJar::allCookies() const -> std::vector<HttpCookie> {
 ILIAS_NS_END
 
 // --- Formatter for HttpCookie 
-#if defined(__cpp_lib_format)
-template <>
-struct std::formatter<ILIAS_NAMESPACE::HttpCookie::SameSite> {
+#if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(HttpCookie::SameSite) {
     using SameSite = ILIAS_NAMESPACE::HttpCookie::SameSite;
 
-    constexpr auto parse(std::format_parse_context &ctx) {
-        return ctx.begin();
-    }
-    template <typename FormatContext>
-    auto format(const SameSite &ss, FormatContext &ctx) {    
+    auto format(const SameSite &ss, auto &ctx) {    
         std::string_view content;
         switch (ss) {
             case SameSite::Strict: content = "Strict"; break;
@@ -541,7 +536,7 @@ struct std::formatter<ILIAS_NAMESPACE::HttpCookie::SameSite> {
             case SameSite::None:    content = "None"; break;
             default: ::abort();
         }
-        return std::format_to(ctx.out(), "{}", content);
+        return format_to(ctx.out(), "{}", content);
     }
 };
 #endif

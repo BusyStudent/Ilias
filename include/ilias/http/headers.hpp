@@ -238,25 +238,17 @@ inline auto HttpHeaders::empty() const -> bool {
 ILIAS_NS_END
 
 // --- Formatter for HttpHeaders
-#if defined(__cpp_lib_format)
-template <>
-struct std::formatter<ILIAS_NAMESPACE::HttpHeaders::WellKnownHeader> {
-    constexpr auto parse(std::format_parse_context &ctxt) {
-        return ctxt.begin();
-    }
-    auto format(const ILIAS_NAMESPACE::HttpHeaders::WellKnownHeader &header, std::format_context &ctxt) const {
-        return std::format_to(ctxt.out(), "{}", ILIAS_NAMESPACE::HttpHeaders::stringOf(header));
+#if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(HttpHeaders::WellKnownHeader) {
+    auto format(const auto &header, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", ILIAS_NAMESPACE::HttpHeaders::stringOf(header));
     }
 };
 
-template <>
-struct std::formatter<ILIAS_NAMESPACE::HttpHeaders> {
-    constexpr auto parse(std::format_parse_context &ctxt) {
-        return ctxt.begin();
-    }
-    auto format(const ILIAS_NAMESPACE::HttpHeaders &headers, std::format_context &ctxt) const {
+ILIAS_FORMATTER(HttpHeaders) {
+    auto format(const auto &headers, auto &ctxt) const {
         for (auto &[key, value] : headers) {
-            std::format_to(ctxt.out(), "{}: {}\r\n", key, value);
+            format_to(ctxt.out(), "{}: {}\r\n", key, value);
         }
     }
 };

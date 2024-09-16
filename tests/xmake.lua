@@ -1,5 +1,17 @@
 add_requires("gtest")
 
+option("use_fmt")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Use fmt for logging")
+option_end()
+
+if has_config("use_fmt") then
+    add_requires("fmt")
+    add_packages("fmt")
+    add_defines("ILIAS_USE_FMT")
+end
+
 -- Make all files in the unit directory into targets
 for _, file in ipairs(os.files("unit/**.cpp")) do
     local name = path.basename(file)
