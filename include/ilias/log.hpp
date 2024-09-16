@@ -22,7 +22,6 @@
 #if defined(ILIAS_ENABLE_LOG)
 
 #include <ilias/detail/mem.hpp>
-#include <format>
 #include <string>
 #include <chrono>
 #include <cstdio>

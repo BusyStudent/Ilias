@@ -21,16 +21,14 @@
 #include <ilias/log.hpp>
 
 ILIAS_NS_BEGIN
-
 namespace detail {
 class EpollAwaiter;
 
 struct EpollEvent {
-    int      fd        = 0;
-    int      epollfd   = 0;
-    uint32_t events    = 0;
-    void    *data      = nullptr;
-    bool     isResumed = false;
+    int   fd        = 0;
+    int   epollfd   = 0;
+    void *data      = nullptr;
+    bool  isResumed = false;
 };
 /**
  * @brief poll for Epoll Awatier.
@@ -38,12 +36,13 @@ struct EpollEvent {
  */
 class EpollAwaiter {
 public:
-    EpollAwaiter(EpollEvent &epollEvent) : mEpollEvent(epollEvent) {}
+    EpollAwaiter(EpollEvent &epollEvent, uint32_t events) : mEpollEvent(epollEvent), mEvents(events) {}
 
     auto await_ready() -> bool {
         epoll_event event;
         ::std::memset(&event, 0, sizeof(event));
         event.data.fd    = mEpollEvent.fd;
+        event.events     = mEvents;
         mEpollEvent.data = this;
         auto ret         = 0;
         ret              = ::epoll_ctl(mEpollEvent.epollfd, EPOLL_CTL_MOD, mEpollEvent.fd, &event);
@@ -52,6 +51,7 @@ public:
             mEpollError = errno;
             return true;
         }
+        ILIAS_TRACE("Epoll", "epoll_ctl success: {}", (uint32_t)event.events);
         return false; //< Wating Epoll
     }
     auto await_suspend(TaskView<> caller) -> void {
@@ -61,11 +61,14 @@ public:
 
     auto await_resume() -> Result<uint32_t> {
         if (mIsCancelled) {
+            ILIAS_TRACE("Epoll", "{} Cancelled a event", mEpollEvent.fd);
             return Unexpected<Error>(Error::Canceled);
         }
         if (mEpollError != 0) {
+            ILIAS_ERROR("Epoll", "epoll_ctl error: {}", strerror(errno));
             return Unexpected<Error>(SystemError(mEpollError));
         }
+        ILIAS_TRACE("Epoll", "{} Completed a event", mEpollEvent.fd);
         return mRevents;
     }
 
@@ -86,14 +89,14 @@ public:
             ILIAS_ERROR("Epoll", "Epoll event already resumed");
             return;
         }
-        self->mEpollEvent.isResumed = true;
         self->mIsCancelled          = true;
-        self->mCaller.resume();
+        self->mCaller.schedule();
     }
 
 private:
     int                             mEpollError  = 0; //< Does we got any error from add the fd
     uint32_t                        mRevents     = 0; //< Received events
+    uint32_t                        mEvents      = 0; //< Events to wait for
     bool                            mIsCancelled = false;
     TaskView<>                      mCaller;
     CancellationToken::Registration mRegistration;

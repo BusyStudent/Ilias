@@ -106,6 +106,7 @@ private:
     auto processCompletion(int timeout) -> void;
     auto processTaskByPost() -> void;
     auto processEvents(int fd, uint32_t events) -> void;
+    auto readTty(IoDescriptor *fd, ::std::span<::std::byte> buffer) -> Task<size_t>;
 
     ///> @brief The epoll file descriptor
     SockInitializer                                      mInit;
@@ -129,8 +130,8 @@ inline EpollContext::EpollContext() {
         ILIAS_ASSERT(false);
     }
     else {
-        mTaskSneder   = fds[0];
-        mTaskReceiver = fds[1];
+        mTaskReceiver = fds[0];
+        mTaskSneder   = fds[1];
         fcntl(mTaskSneder, F_SETFL, O_NONBLOCK);
         fcntl(mTaskReceiver, F_SETFL, O_NONBLOCK);
         epoll_event event = {};
@@ -162,7 +163,7 @@ inline auto EpollContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Res
         }
         else {
             if (fstat(fd, &statbuf) == -1) {
-                ILIAS_WARN("Epoll", "Failed to fstat file descriptor. error: {}", errno);
+                ILIAS_WARN("Epoll", "Failed to fstat file descriptor. error: {}", SystemError::fromErrno());
                 return Unexpected(Error::InvalidArgument);
             }
             if (S_ISFIFO(statbuf.st_mode)) {
@@ -189,23 +190,30 @@ inline auto EpollContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Res
     if (type == IoDescriptor::Socket) {
         nfd->isPollable = true;
         // 获取socket的协议族
-        socklen_t len;
+        socklen_t len = sizeof(nfd->family);
         if (getsockopt(fd, SOL_SOCKET, SO_DOMAIN, &nfd->family, &len) == -1) {
-            ILIAS_WARN("Epoll", "Failed to get socket domain. error: {}", errno);
+            ILIAS_WARN("Epoll", "Failed to get socket domain. error: {}", SystemError::fromErrno());
         }
+        len = sizeof(nfd->stype);
         if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &nfd->stype, &len) == -1) {
-            ILIAS_WARN("Epoll", "Failed to get socket type. error: {}", errno);
+            ILIAS_WARN("Epoll", "Failed to get socket type. error: {}", SystemError::fromErrno());
         }
+        len = sizeof(nfd->protocol);
         if (getsockopt(fd, SOL_SOCKET, SO_PROTOCOL, &nfd->protocol, &len) == -1) {
-            ILIAS_WARN("Epoll", "Failed to get socket protocol. error: {}", errno);
+            ILIAS_WARN("Epoll", "Failed to get socket protocol. error: {}", SystemError::fromErrno());
         }
     }
+    ILIAS_TRACE("Epoll", "Created new fd descriptor: {}, type: {}", fd, (int)type);
 
     if (type == IoDescriptor::Pipe || type == IoDescriptor::Tty) {
         nfd->isPollable = true;
     }
 
-    fcntl(fd, F_SETFD, O_NONBLOCK);
+    auto ret = fcntl(fd, F_SETFD, O_NONBLOCK);
+    if (ret == -1) {
+        ILIAS_WARN("Epoll", "Failed to set descriptor to non-blocking. error: {}", SystemError::fromErrno());
+    }
+    mDescriptors.insert(std::make_pair(fd, nfd.get()));
 
     return nfd.release();
 }
@@ -243,6 +251,9 @@ inline auto EpollContext::read(IoDescriptor *fd, ::std::span<::std::byte> buffer
         co_return Unexpected(Error::OperationNotSupported);
     }
     ILIAS_ASSERT(descriptor->type != detail::EpollDescriptor::Unknown);
+    if (descriptor->type == detail::EpollDescriptor::Tty) {
+        co_return co_await readTty(descriptor, buffer);
+    }
     while (true) {
         int ret = 0;
         if (descriptor->type == detail::EpollDescriptor::Socket) {
@@ -307,14 +318,19 @@ inline auto EpollContext::connect(IoDescriptor *fd, const IPEndpoint &endpoint) 
     ILIAS_ASSERT(descriptor != nullptr);
     ILIAS_ASSERT(descriptor->type == IoDescriptor::Socket);
     ILIAS_ASSERT(descriptor->fd != -1);
-    auto ret = ::connect(descriptor->fd, endpoint.address().cast<sockaddr *>(), endpoint.address().length());
+    ILIAS_TRACE("Epoll", "{} connect to {}", descriptor->fd, endpoint);
+    auto ret = ::connect(descriptor->fd, &endpoint.cast<sockaddr>(), endpoint.length());
     if (ret == 0) {
+        ILIAS_TRACE("Epoll", "{} connect to {} successful", descriptor->fd, endpoint);
         co_return Result<void>();
     }
     else if (errno != EINPROGRESS && errno != EAGAIN) {
+        ILIAS_TRACE("Epoll", "{} connect to {} failed with {}", descriptor->fd, endpoint, SystemError::fromErrno());
         co_return Unexpected(SystemError::fromErrno());
     }
     auto pollRet = co_await poll(descriptor, EPOLLOUT);
+    ILIAS_TRACE("Epoll", "{} connect {} {}", descriptor->fd, endpoint,
+                pollRet.has_value() ? std::string("successful") : pollRet.error().message());
     if (!pollRet) {
         co_return Unexpected(pollRet.error());
     }
@@ -410,24 +426,36 @@ inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> bu
         else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
             co_return Unexpected(SystemError::fromErrno());
         }
-        auto pollRet = co_await poll(descriptor, EPOLLOUT);
+        auto pollRet = co_await poll(descriptor, EPOLLIN);
         if (!pollRet && pollRet.error() != SystemError(EINTR) && pollRet.error() != SystemError(EAGAIN)) {
             co_return Unexpected(pollRet.error());
         }
     }
     co_return Unexpected(Error::Unknown);
 }
-
+// ----------------------------------------------------------------------------------------------------------------------
+/**
+ * @brief wait a event for a descriptor
+ * All events supported by epoll are suspended via this function.
+ * if the descriptor is no event, the function will add the fd in the epoll, and remove it when all the event in this
+ * descript is triggered. please not make a fd to construct multiple descriptor
+ * @param fd
+ * @param event
+ * @return Task<uint32_t>
+ */
 inline auto EpollContext::poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
+    ILIAS_TRACE("Epoll", "fd {} poll event {}", descriptor->fd, event);
+    // Build event queues based on different events
     ::std::unordered_map<uint32_t, ::std::list<detail::EpollEvent>>::iterator eventsIt = descriptor->events.find(event);
     if (eventsIt == descriptor->events.end()) {
-        eventsIt = descriptor->events.emplace_hint(descriptor->events.begin(), descriptor->fd,
-                                                   std::list<detail::EpollEvent> {});
+        eventsIt = descriptor->events.emplace_hint(descriptor->events.begin(), event, std::list<detail::EpollEvent> {});
     }
-    auto &epollevent   = eventsIt->second.emplace_back(detail::EpollEvent {descriptor->fd, mEpollFd, event});
-    auto  epolleventIt = eventsIt->second.end();
+    // Add event to descriptor's event queue
+    auto &epollevent   = eventsIt->second.emplace_back(detail::EpollEvent {descriptor->fd, mEpollFd});
+    auto  epolleventIt = --eventsIt->second.end();
+    // if this is the first event, add the fd to the epoll
     if (descriptor->events.size() == 1 && eventsIt->second.size() == 1) {
         epoll_event event = {0};
         event.events      = EPOLLRDHUP;
@@ -436,11 +464,21 @@ inline auto EpollContext::poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_
             co_return Unexpected<Error>(SystemError::fromErrno());
         }
     }
-    auto ret = co_await detail::EpollAwaiter(epollevent);
+    // Build epoll listener event tags based on existing events
+    uint32_t listenings_events = 0;
+    for (auto &[key, value] : descriptor->events) {
+        listenings_events |= key;
+    }
+    // Wait for events
+    auto ret = co_await detail::EpollAwaiter(epollevent, listenings_events);
+    ILIAS_TRACE("Epoll", "epoll_wait returned {}",
+                ret.has_value() ? std::to_string(ret.value()) : ret.error().message());
+    // remove event from descriptor's event queue
     eventsIt->second.erase(epolleventIt);
     if (eventsIt->second.empty()) {
         descriptor->events.erase(eventsIt);
     }
+    // remove fd from epoll if no more events are listening
     if (descriptor->events.empty()) {
         auto ret = ::epoll_ctl(mEpollFd, EPOLL_CTL_DEL, descriptor->fd, nullptr);
         if (ret != 0) {
@@ -453,7 +491,7 @@ inline auto EpollContext::poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_
 inline auto EpollContext::post(void (*fn)(void *), void *args) -> void {
     ILIAS_ASSERT(fn != nullptr);
     PostTask task {fn, args};
-    char    *buf[sizeof(PostTask)] = {0};
+    char     buf[sizeof(PostTask)] = {0};
     memcpy(buf, &task, sizeof(task));
     // FIXME: this is a block call, if buffer is full and block main thread will be blocked
     auto ret = ::write(mTaskSneder, buf, sizeof(buf));
@@ -510,6 +548,7 @@ inline auto EpollContext::processTaskByPost() -> void {
 }
 
 inline auto EpollContext::processEvents(int fd, uint32_t events) -> void {
+    ILIAS_TRACE("Epoll", "Process events for fd: {}, events: {}", fd, events);
     auto descriptorItem = mDescriptors.find(fd);
     if (descriptorItem == mDescriptors.end()) {
         ILIAS_ERROR("Epoll", "Descriptor not found: {}", fd);
@@ -525,12 +564,12 @@ inline auto EpollContext::processEvents(int fd, uint32_t events) -> void {
                 detail::EpollAwaiter::onCompletion(events, epolleventawaiter.data);
             }
         }
-        if (events & EPOLLIN) {
-            auto epolleventawaiters = epollevents.find(EPOLLIN);
-            if (epolleventawaiters != epollevents.end()) {
-                if (epolleventawaiters->second.size() > 0) {
-                    detail::EpollAwaiter::onCompletion(events, epolleventawaiters->second.begin()->data);
-                }
+    }
+    if (events & EPOLLIN) {
+        auto epolleventawaiters = epollevents.find(EPOLLIN);
+        if (epolleventawaiters != epollevents.end()) {
+            if (epolleventawaiters->second.size() > 0) {
+                detail::EpollAwaiter::onCompletion(events, epolleventawaiters->second.begin()->data);
             }
         }
     }
@@ -542,6 +581,32 @@ inline auto EpollContext::processEvents(int fd, uint32_t events) -> void {
             }
         }
     }
+}
+
+inline auto EpollContext::readTty(IoDescriptor *fd, ::std::span<::std::byte> buffer) -> Task<size_t> {
+    auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
+    ILIAS_ASSERT(descriptor != nullptr);
+    ILIAS_ASSERT(descriptor->type == detail::EpollDescriptor::Tty);
+    if (!descriptor->isPollable) {
+        // not supported operation
+        co_return Unexpected(Error::OperationNotSupported);
+    }
+    ILIAS_ASSERT(descriptor->type != detail::EpollDescriptor::Unknown);
+    while (true) {
+        auto pollRet = co_await poll(descriptor, EPOLLIN);
+        if (!pollRet && pollRet.error() != SystemError(EINTR) && pollRet.error() != SystemError(EAGAIN)) {
+            co_return Unexpected(pollRet.error());
+        }
+        int ret = 0;
+        ret = ::read(descriptor->fd, buffer.data(), buffer.size());
+        if (ret >= 0) {
+            co_return ret;
+        }
+        else if (ret < 0 && errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
+            co_return Unexpected(SystemError::fromErrno());
+        }
+    }
+    co_return Unexpected(Error::Unknown);
 }
 
 ILIAS_NS_END
