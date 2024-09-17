@@ -22,6 +22,7 @@
 #if defined(ILIAS_ENABLE_LOG)
 
 #include <ilias/detail/mem.hpp>
+#include <source_location>
 #include <string>
 #include <chrono>
 #include <cstdio>
@@ -32,7 +33,7 @@
 #define ILIAS_LOG_SET_LEVEL(level_) ::ILIAS_NAMESPACE::detail::GetLogContext().level = level_
 #define ILIAS_LOG_ADD_WHITELIST(mod) ::ILIAS_NAMESPACE::detail::GetLogContext().whitelist.insert(mod)
 #define ILIAS_LOG_ADD_BLACKLIST(mod) ::ILIAS_NAMESPACE::detail::GetLogContext().blacklist.insert(mod)
-#define ILIAS_LOG(level, mod, ...) ::ILIAS_NAMESPACE::detail::Log(stderr, level, mod, __VA_ARGS__)
+#define ILIAS_LOG(level, mod, ...) ::ILIAS_NAMESPACE::detail::Log(stderr, level, mod, std::source_location::current(), __VA_ARGS__)
 
 ILIAS_NS_BEGIN
 
@@ -53,6 +54,8 @@ struct LogContext {
     LogLevel level = LogLevel::Info;
     std::set<std::string, mem::CaseCompare> whitelist;
     std::set<std::string, mem::CaseCompare> blacklist;
+    bool notime = ::getenv("ILIAS_LOG_NOTIME");    //< Disable the show time in the log
+    bool nolocation = ::getenv("ILIAS_LOG_NOLOC"); //< Disable the show location in the log
 };
 
 /**
@@ -86,27 +89,16 @@ inline auto GetLevelColor(LogLevel level) -> const char * {
 }
 
 /**
- * @brief Format and write to the stream
- * 
- * @tparam Args 
- * @param stream 
- * @param args 
- */
-template <typename ...Args>
-inline auto Print(FILE *stream, fmtlib::format_string<Args...> fmt, Args &&...args) -> void {
-    std::fputs(fmtlib::format(fmt, std::forward<Args>(args)...).c_str(), stream);
-}
-
-/**
  * @brief Begin the Logging
  * 
- * @param stream 
+ * @param buf 
  * @param level 
  * @param mod 
+ * @param loc
  * @return true 
  * @return false On this log is flitered
  */
-inline auto BeginLog(FILE *stream, LogLevel level, std::string_view mod) -> bool {
+inline auto BeginLog(std::string &buf, LogLevel level, std::string_view mod, std::source_location loc) -> bool {
     auto &ctxt = GetLogContext();
     if (int(level) < int(ctxt.level)) {
         return false;
@@ -119,17 +111,34 @@ inline auto BeginLog(FILE *stream, LogLevel level, std::string_view mod) -> bool
     }
 
     // Set the color
-    std::fputs(GetLevelColor(level), stream);
+    buf += GetLevelColor(level);
 
     // Print the body
     auto now = std::chrono::system_clock::now();
-    Print(stream, "[{}] [{}/{}]: ", now, mod, GetLevelString(level));
+    auto file = std::string_view(loc.file_name());
+    auto func = std::string_view(loc.function_name());
+    auto line = loc.line();
+
+    // Remove the path, only keep the file name
+    if (auto pos = file.find_last_of('/'); pos != std::string_view::npos) {
+        file = file.substr(pos + 1);
+    }
+    if (auto pos = file.find_last_of('\\'); pos != std::string_view::npos) {
+        file = file.substr(pos + 1);
+    }
+    if (!ctxt.notime) {
+        fmtlib::format_to(std::back_inserter(buf), "[{}] ", now);
+    }
+    if (!ctxt.nolocation) {
+        fmtlib::format_to(std::back_inserter(buf), "[{}:{}] ", file, line);
+    }
+    fmtlib::format_to(std::back_inserter(buf), "[{}/{}]: ", mod, GetLevelString(level));
     return true;
 }
 
-inline auto EndLog(FILE *stream, LogLevel level) -> void {
+inline auto EndLog(std::string &buf, LogLevel level) -> void {
     // Clear the color
-    std::fputs("\033[0m\n", stream);
+    buf += "\033[0m\n";
 }
 
 /**
@@ -139,15 +148,19 @@ inline auto EndLog(FILE *stream, LogLevel level) -> void {
  * @param stream 
  * @param level
  * @param mod The module name
+ * @param loc The source location
  * @param args 
  */
 template <typename ...Args>
-auto Log(FILE *stream, LogLevel level, std::string_view mod, fmtlib::format_string<Args...> fmt, Args &&...args) -> void {
-    if (!BeginLog(stream, level, mod)) {
+auto Log(FILE *stream, LogLevel level, std::string_view mod, std::source_location loc, fmtlib::format_string<Args...> fmt, Args &&...args) -> void {
+    std::string buf;
+    if (!BeginLog(buf, level, mod, loc)) {
         return;
     }
-    Print(stream, fmt, std::forward<Args>(args)...);
-    EndLog(stream, level);
+    fmtlib::format_to(std::back_inserter(buf), fmt, std::forward<Args>(args)...);
+    EndLog(buf, level);
+    ::fputs(buf.c_str(), stream);
+    ::fflush(stream);
 }
 
 } // namespace detail

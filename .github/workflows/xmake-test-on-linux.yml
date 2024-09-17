@@ -22,7 +22,7 @@ jobs:
     - name: Install dependencies
       run: sudo apt install -y lcov
     - name: Configure
-      run: xmake f -m coverage -y
+      run: xmake f -m coverage --use_fmt==n -y
     - name: Build
       run: xmake -y
     - name: Run Test and collect coverage
