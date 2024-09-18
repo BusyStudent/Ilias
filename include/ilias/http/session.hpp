@@ -6,6 +6,7 @@
 #include <ilias/http/cookie.hpp>
 #include <ilias/http/reply.hpp>
 #include <ilias/net/addrinfo.hpp>
+#include <ilias/net/socks5.hpp>
 #include <ilias/net/tcp.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/ssl.hpp>
@@ -92,6 +93,12 @@ public:
      */
     auto setCookieJar(HttpCookieJar *jar) -> void { mCookieJar = jar; }
 
+    /**
+     * @brief Set the Proxy object
+     * 
+     * @param proxy 
+     */
+    auto setProxy(const Url &proxy) -> void { mProxy = proxy; }
 private:
     /**
      * @brief The sendRequest implementation, only do the connection handling
@@ -185,7 +192,7 @@ inline auto HttpSession::sendRequest(std::string_view method, const HttpRequest 
             if (location.empty()) {
                 co_return Unexpected(Error::HttpBadReply);
             }
-            ILIAS_TRACE("Http", "Redirecting to {} ({} of maximum {})", location, idx + 1, maximumRedirects);
+            ILIAS_INFO("Http", "Redirecting to {} ({} of maximum {})", location, idx + 1, maximumRedirects);
             // Do redirect
             url     = location;
             headers = request.headers();
@@ -313,27 +320,54 @@ inline auto HttpSession::connect(const Url &url, bool &fromPool) -> Task<std::un
     }
 
     // No connection found, create a new one
-    auto addrinfo = co_await AddressInfo::fromHostnameAsync(host.c_str());
-    if (!addrinfo) {
-        co_return Unexpected(addrinfo.error());
-    }
-    auto endpoints = addrinfo->addresses();
-    ILIAS_ASSERT(!endpoints.empty());
-
-    // Try connect to all addresses
     IStreamClient cur;
-    for (size_t idx = 0; idx < endpoints.size(); ++idx) {
-        auto     &addr = endpoints[idx];
-        TcpClient client(mCtxt, addr.family());
-        ILIAS_TRACE("Http", "Trying to connect to {}:{} ({} of {})", addr, port, idx + 1, endpoints.size());
-        if (auto ret = co_await client.connect(IPEndpoint {addr, port}); !ret && idx == endpoints.size() - 1) {
-            continue;
+
+    if (!mProxy.empty()) {
+        // Proxy
+        auto proxyPort = mProxy.port();
+        if (!proxyPort || (mProxy.scheme() != "socks5" && mProxy.scheme() != "socks5h")) {
+            ILIAS_ERROR("Http", "Invalid proxy: {}", mProxy);
+            co_return Unexpected(Error::HttpBadRequest);
         }
-        else if (!ret) {
+        auto endpoint = IPEndpoint(std::string(mProxy.host()).c_str(), *proxyPort);
+        if (!endpoint.isValid()) {
+            ILIAS_ERROR("Http", "Invalid proxy: {}", mProxy);
+            co_return Unexpected(Error::HttpBadRequest);
+        }
+        ILIAS_TRACE("Http", "Connecting to the {}:{} by proxy: {}", host, port, mProxy);
+        TcpClient client(mCtxt, endpoint.family());
+        if (auto ret = co_await client.connect(endpoint); !ret) {
+            co_return Unexpected(ret.error());
+        }
+        // Do Socks5 handshake
+        Socks5Connector socks5(client);
+        if (auto ret = co_await socks5.connect(host, port); !ret) {
             co_return Unexpected(ret.error());
         }
         cur = std::move(client);
-        break;
+    }
+    else { //< No proxy
+        auto addrinfo = co_await AddressInfo::fromHostnameAsync(host.c_str());
+        if (!addrinfo) {
+            co_return Unexpected(addrinfo.error());
+        }
+        auto endpoints = addrinfo->addresses();
+        ILIAS_ASSERT(!endpoints.empty());
+
+        // Try connect to all addresses
+        for (size_t idx = 0; idx < endpoints.size(); ++idx) {
+            auto     &addr = endpoints[idx];
+            TcpClient client(mCtxt, addr.family());
+            ILIAS_TRACE("Http", "Trying to connect to {} ({} of {})", IPEndpoint(addr, port), idx + 1, endpoints.size());
+            if (auto ret = co_await client.connect(IPEndpoint {addr, port}); !ret && idx == endpoints.size() - 1) {
+                continue;
+            }
+            else if (!ret) {
+                co_return Unexpected(ret.error());
+            }
+            cur = std::move(client);
+            break;
+        }
     }
 
     // Try adding a ssl if needed

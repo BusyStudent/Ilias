@@ -145,6 +145,7 @@ public:
             }
         }
         mHeaderSent = true;
+        mMethodHead = (method == "HEAD");
         ILIAS_TRACE("Http1.1", "Send Request Successfully");
         co_return {};
     }
@@ -285,6 +286,11 @@ public:
             co_return returnError(Error::HttpBadReply);
         }
 
+        // Check if the method is HEAD
+        if (mMethodHead) {
+            mContentEnd = true;
+        }
+
         // Done
         mHeaderReceived = true;
         co_return {};
@@ -294,6 +300,7 @@ private:
     auto sprintf(std::string &buf, const char *fmt, ...) -> void;
 
     Http1Connection *mCon;
+    bool mMethodHead = false; //< If the method is HEAD, we should not recv the body
     bool mHeaderSent = false;
     bool mHeaderReceived = false;
     bool mContentEnd = false;

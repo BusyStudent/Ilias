@@ -333,6 +333,17 @@ public:
     }
 
     /**
+     * @brief Copy data from buffer to create ipv6 address
+     * 
+     * @param mem pointer to network-format ipv6 address
+     * @param n must be sizeof(::in6_addr)
+     * @return IPAddress6 
+     */
+    static auto fromRaw(const void *mem, size_t n) -> IPAddress6 {
+        return *reinterpret_cast<const ::in6_addr *>(mem);
+    }
+
+    /**
      * @brief Parse the ipv6 address from string
      * 
      * @param value 
