@@ -97,6 +97,29 @@ public:
     }
 
     /**
+     * @brief Set the socket option.
+     * 
+     * @tparam T 
+     * @param opt 
+     * @return Result<void> 
+     */
+    template <SetSockOption T>
+    auto setOption(const T &opt) -> Result<void> {
+        return socket().setOption(opt);
+    }
+
+    /**
+     * @brief Get the socket option.
+     * 
+     * @tparam T 
+     * @return Result<T> 
+     */
+    template <GetSockOption T>
+    auto getOption() -> Result<T> {
+        return socket().getOption<T>();
+    }
+
+    /**
      * @brief Get the local endpoint associated with the socket.
      * 
      * @return Result<IPEndpoint> 

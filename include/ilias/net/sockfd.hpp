@@ -13,6 +13,7 @@
 
 #include <ilias/net/system.hpp>
 #include <ilias/net/endpoint.hpp>
+#include <ilias/net/sockopt.hpp>
 #include <ilias/log.hpp>
 #include <span>
 
@@ -239,6 +240,18 @@ public:
     }
 
     /**
+     * @brief Set socket option by option object
+     * 
+     * @tparam T 
+     * @param opt 
+     * @return Result<void> 
+     */
+    template <SetSockOption T>
+    auto setOption(const T &opt) const -> Result<void> {
+        return opt.setopt(mFd);
+    }
+
+    /**
      * @brief Get socket option
      * 
      * @param level 
@@ -253,6 +266,17 @@ public:
             return Unexpected(SystemError::fromErrno());
         }
         return {};
+    }
+
+    /**
+     * @brief Get the socket option by option object type
+     * 
+     * @tparam T 
+     * @return Result<T> 
+     */
+    template <GetSockOption T>
+    auto getOption() const -> Result<T> {
+        return T::getopt(mFd);
     }
 
 #if defined(_WIN32)

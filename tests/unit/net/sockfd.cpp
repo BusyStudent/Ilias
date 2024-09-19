@@ -1,6 +1,7 @@
 #include <ilias/net/sockfd.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/buffer.hpp>
+#include <ilias/log.hpp>
 #include <gtest/gtest.h>
 #include <random>
 
@@ -56,6 +57,27 @@ TEST(Tcp, Sending) {
     }
 }
 
+TEST(Tcp, Sockopt) {
+    Socket tcpClient(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+    ASSERT_TRUE(tcpClient.isValid());
+    ASSERT_TRUE(tcpClient.setOption(sockopt::ReuseAddress(true)));
+    ASSERT_TRUE(tcpClient.getOption<sockopt::ReuseAddress>().value());
+
+#if !defined(ILIAS_NO_FORMAT)
+    ILIAS_INFO("Test", "{}", tcpClient.getOption<sockopt::RecvBufSize>().value());
+    ILIAS_INFO("Test", "{}", tcpClient.getOption<sockopt::SendBufSize>().value());
+    ILIAS_INFO("Test", "{}", tcpClient.getOption<sockopt::ReuseAddress>().value());
+    ILIAS_INFO("Test", "{}", tcpClient.getOption<sockopt::KeepAlive>().value());
+    ILIAS_INFO("Test", "{}", tcpClient.getOption<sockopt::Linger>().value());
+
+    ILIAS_INFO("Test", "{}", tcpClient.getOption<sockopt::TcpKeepCnt>().value());
+    ILIAS_INFO("Test", "{}", tcpClient.getOption<sockopt::TcpKeepIdle>().value());
+    ILIAS_INFO("Test", "{}", tcpClient.getOption<sockopt::TcpKeepIntvl>().value());
+#endif
+
+}
+
 TEST(Udp, Sending) {
     Socket udpClient(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     Socket udpServer(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -84,6 +106,16 @@ TEST(Udp, Sending) {
         ASSERT_EQ(num, content.size());
         ASSERT_EQ(std::string_view(buffer, num), content);
     }
+}
+
+TEST(Udp, Sockopt) {
+    Socket udpClient(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+
+    ASSERT_TRUE(udpClient.isValid());
+    ASSERT_TRUE(udpClient.setOption<sockopt::ReuseAddress>(true));
+    ASSERT_TRUE(udpClient.getOption<sockopt::ReuseAddress>().value());
+
+    std::cout << udpClient.getOption<sockopt::RecvBufSize>().value_or(0) << std::endl;
 }
 
 auto main(int argc, char **argv) -> int {
