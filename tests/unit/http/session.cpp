@@ -20,6 +20,19 @@ TEST(Session, GET) {
     std::cout << text2.value() << std::endl;
 }
 
+TEST(Session, HEAD) {
+    auto reply = session->head("https://www.baidu.com").wait();
+    ASSERT_TRUE(reply);
+    auto text = reply->text().wait();
+    ASSERT_TRUE(text);
+    ASSERT_TRUE(text.value().empty());
+
+    auto reply2 = session->head("http://www.bilibili.com").wait();
+    ASSERT_TRUE(reply2);
+    auto text2 = reply2->text().wait();
+    ASSERT_TRUE(text2);
+}
+
 auto main(int argc, char **argv) -> int {
 
 #if defined(_WIN32)

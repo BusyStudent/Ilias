@@ -92,9 +92,10 @@ public:
      * 
      * @param stream 
      * @param streamMode 
+     * @param noContent if true, the content will not be read
      * @return Task<HttpReply> 
      */
-    static auto make(std::unique_ptr<HttpStream> stream, bool streamMode) -> Task<HttpReply>;
+    static auto make(std::unique_ptr<HttpStream> stream, bool streamMode, bool noContent) -> Task<HttpReply>;
 private:
     Url mUrl; 
     int mStatusCode = 0;
@@ -104,10 +105,15 @@ private:
     std::optional<Error> mLastError; //< The last error that occurred while reading the reply
     std::vector<std::byte> mContent; //< The received content of the reply (not in stream mode)
     std::unique_ptr<HttpStream> mStream; //< The stream used to read the whole reply
+
+#if !defined(ILIAS_NO_ZLIB)
+    std::unique_ptr<zlib::Decompressor> mDecompressor; //< Used to decompress the content
+#endif // !defined(ILIAS_NO_ZLIB)
+
 friend class HttpSession;
 };
 
-inline auto HttpReply::make(std::unique_ptr<HttpStream> stream, bool streamMode) -> Task<HttpReply> {
+inline auto HttpReply::make(std::unique_ptr<HttpStream> stream, bool streamMode, bool noContent) -> Task<HttpReply> {
     ILIAS_ASSERT(stream);
 
     HttpReply reply;
@@ -116,32 +122,34 @@ inline auto HttpReply::make(std::unique_ptr<HttpStream> stream, bool streamMode)
     }
     reply.mStream = std::move(stream);
     reply.mUrl = reply.mRequest.url();
+
+#if !defined(ILIAS_NO_ZLIB)
+    auto contentEncoding = reply.mHeaders.value("Content-Encoding");
+    std::optional<zlib::ZFormat> format;
+    if (contentEncoding == "gzip") {
+        format = zlib::GzipFormat;
+    }
+    else if (contentEncoding == "deflate") {
+        format = zlib::DeflateFormat;
+    }
+    if (format) {
+        reply.mDecompressor = std::make_unique<zlib::Decompressor>(*format);
+        if (!*reply.mDecompressor) {
+            co_return Unexpected(Error::Unknown);
+        }
+    }
+#endif // !defined(ILIAS_NO_ZLIB)
+
+    if (noContent) {
+        reply.mStream.reset();
+    }
+
     if (!streamMode) {
         auto ret = co_await reply.readAll<std::vector<std::byte> >();
         if (!ret) { 
             co_return Unexpected(ret.error()); 
         }
         reply.mContent = std::move(*ret);
-
-#if !defined(ILIAS_NO_ZLIB)
-        auto contentEncoding = reply.mHeaders.value("Content-Encoding");
-        std::optional<zlib::ZFormat> format;
-        if (contentEncoding == "gzip") {
-            format = zlib::GzipFormat;
-        }
-        else if (contentEncoding == "deflate") {
-            format = zlib::DeflateFormat;
-        }
-        if (format) {
-            ILIAS_TRACE("Http", "Decompressing content by format: {}", contentEncoding);
-            auto ret = zlib::decompress(makeBuffer(reply.mContent), *format);
-            if (!ret) {
-                co_return Unexpected(ret.error());
-            }
-            reply.mContent = std::move(*ret);
-        }
-#endif
-
     }
     co_return reply;
 }
@@ -153,16 +161,27 @@ inline auto HttpReply::read(std::span<std::byte> buffer) -> Task<size_t> {
         }
         co_return 0;
     }
-    auto ret = co_await mStream->read(buffer);
-    // TODO: Handle decompression here, not in the make function
-
-
-
+    Result<size_t> ret;
+#if !defined(ILIAS_NO_ZLIB)
+    if (mDecompressor) {
+        ret = co_await mDecompressor->decompressTo(buffer, *mStream);
+    }
+#else
+    if (false) { }
+#endif // !defined(ILIAS_NO_ZLIB)
+    else { // No compression
+        ret = co_await mStream->read(buffer);
+    }
     if (!ret) {
         mLastError = ret.error();
     }
     if (!ret || *ret == 0) { //< Error or EOF
         mStream.reset();
+
+#if !defined(ILIAS_NO_ZLIB)
+        mDecompressor.reset();
+#endif // !defined(ILIAS_NO_ZLIB)
+
     }
     co_return ret;
 }

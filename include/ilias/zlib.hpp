@@ -14,9 +14,11 @@
 #if __has_include(<zlib.h>) && !defined(ILIAS_NO_ZLIB)
 
 #include <ilias/detail/expected.hpp>
+#include <ilias/io/traits.hpp>
 #include <ilias/buffer.hpp>
 #include <ilias/error.hpp>
-#include <ilias/ilias.hpp>
+#include <ilias/log.hpp>
+#include <vector>
 #include <zlib.h>
 #include <span>
 
@@ -81,6 +83,96 @@ public:
 
 ILIAS_DECLARE_ERROR(ZError, ZCategory);
 
+/**
+ * @brief The zlib decompressor
+ * 
+ */
+class Decompressor {
+public:
+    /**
+     * @brief Construct a new Decompressor object by format
+     * 
+     * @param wbits The wbits parameter for zlib (use the ZFormat enum)
+     */
+    Decompressor(int wbits) {
+        ::memset(&mStream, 0, sizeof(mStream));
+        mInitialized = (::inflateInit2(&mStream, wbits) == Z_OK);
+    }
+
+    Decompressor(const Decompressor&) = delete;
+
+    ~Decompressor() {
+        if (mInitialized) {
+            ::inflateEnd(&mStream);
+        }
+    }
+
+    /**
+     * @brief Doing the decompression on an async stream
+     * 
+     * @tparam T rquires Readable
+     * @param output The output buffer for writing the decompressed data
+     * @param source The source stream for reading the data, which need to be decompressed
+     * @return Task<size_t> (The number of bytes written to the output buffer, 0 on EOF)
+     */
+    template <Readable T>
+    auto decompressTo(std::span<std::byte> output, T &source) -> Task<size_t> {
+        if (mStreamEnd) {
+            co_return 0; //< EOF
+        }
+        mStream.next_out = (Bytef*) output.data();
+        mStream.avail_out = output.size_bytes();
+
+        if (mStream.avail_in == 0) {
+            // We need to fill the source buffer
+            if (mBuffer.empty()) {
+                mBuffer.resize(1024);
+            }
+            if (mBufferFullFilled) { //< Trying to increase the buffer size, improve the performance
+                mBufferFullFilled = false;
+                mBuffer.resize(mBuffer.size() * 2);
+            }
+            auto n = co_await source.read(makeBuffer(mBuffer));
+            if (!n || *n == 0) { //< Error from lower layer or lower layer return 0, We can not continue
+                ILIAS_ERROR("Zlib", "Failed to read data from source stream");
+                co_return Unexpected(n.error_or(Error::ZeroReturn));
+            }
+            mStream.next_in = (Bytef*) mBuffer.data();
+            mStream.avail_in = *n;
+            mBufferFullFilled = (*n == mBuffer.size());
+        }
+        do {
+            auto ret = ::inflate(&mStream, Z_NO_FLUSH);
+            if (ret == Z_STREAM_ERROR || ret == Z_NEED_DICT || ret == Z_DATA_ERROR || ret == Z_MEM_ERROR) {
+                ILIAS_ERROR("Zlib", "inflate error: {}", mStream.msg);
+                co_return Unexpected(ZError(ret));
+            }
+            if (ret == Z_STREAM_END) {
+                mStreamEnd = true;
+                break;
+            }
+        } // Output buffer is full or source buffer is empty or end of stream
+        while (mStream.avail_out != 0 && mStream.avail_in != 0);
+        auto readed = mStream.next_out - (Bytef*) output.data(); //< Calculate the number of bytes readed
+        co_return readed;
+    }
+
+    /**
+     * @brief Check the decompressor is initialized
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept {
+        return mInitialized;
+    }
+private:
+    ::z_stream mStream {};
+    bool mInitialized = false;
+    std::vector<std::byte> mBuffer {}; //< Buffer for the source, waiting to be decompressed
+    bool mBufferFullFilled = false; //< Does the previous action make the buffer full filled ?
+    bool mStreamEnd = false; //< Does the stream end ?
+};
 
 /**
  * @brief decompress a byte buffer using zlib
@@ -152,4 +244,4 @@ ILIAS_NS_END
 
 #else
     #define ILIAS_NO_ZLIB
-#endif
+#endif 

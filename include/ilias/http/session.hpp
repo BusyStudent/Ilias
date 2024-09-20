@@ -62,7 +62,9 @@ public:
      * @param request
      * @return Task<HttpReply>
      */
-    auto head(const HttpRequest &request) -> Task<HttpReply> { return sendRequest("HEAD", request); }
+    auto head(const HttpRequest &request) -> Task<HttpReply> { 
+        return sendRequest("HEAD", request); 
+    }
 
     /**
      * @brief Send a PUT request to the server
@@ -161,7 +163,7 @@ private:
         nullptr; //< The cookie jar to use for this session (if null, no cookies will be accepted)
 
     // State ...
-    std::multimap<Endpoint, std::unique_ptr<HttpConnection>> mConnections; //< Conenction Pool
+    std::multimap<Endpoint, std::unique_ptr<HttpConnection> > mConnections; //< Conenction Pool
 };
 
 inline HttpSession::HttpSession(IoContext &ctxt) : mCtxt(ctxt) {
@@ -222,7 +224,7 @@ inline auto HttpSession::sendRequestImpl(std::string_view method, const Url &url
             co_return Unexpected(ret.error());
         }
         // Build the reply
-        auto reply = co_await HttpReply::make(std::move(streamPtr), streamMode);
+        auto reply = co_await HttpReply::make(std::move(streamPtr), streamMode, method == "HEAD");
         if (!reply) {
             if (fromPool) {
                 continue;

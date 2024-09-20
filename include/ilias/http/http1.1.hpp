@@ -12,7 +12,6 @@
 #include <ilias/log.hpp>
 #include <source_location>
 
-
 #undef min
 #undef max
 
@@ -98,7 +97,7 @@ public:
         mCon->markBroken();
         return Unexpected(err);
     }
-#endif
+#endif // !defined(NDEBUG)
 
     auto send(std::string_view method, const Url &url, const HttpHeaders &hheaders, std::span<const std::byte> payload) -> Task<void> override {
         auto &client = mCon->mClient;
@@ -176,20 +175,11 @@ public:
             co_return num;
         }
         // Chunked
-        if (!mChunkSize) {
-            // Oh, we did not receive the chunk size
-            auto line = co_await mCon->mClient.getline("\r\n");
-            if (!line || line->empty()) {
-                co_return returnError(line.error_or(Error::HttpBadReply));
+        if (!mChunkSize) [[unlikely]] { //< We didn't get the first chunk size
+            ILIAS_TRACE("Http1.1", "Try Get the first chunk size");
+            if (auto ret = co_await readChunkSize(); !ret) {
+                co_return returnError(ret.error());
             }
-            size_t size = 0;
-            auto [ptr, ec] = std::from_chars(line->data(), line->data() + line->size(), size, 16);
-            if (ec != std::errc{}) {
-                co_return returnError(Error::HttpBadReply);
-            }
-            ILIAS_TRACE("Http1.1", "Reach new chunk, size = {}", size);
-            mChunkSize = size;
-            mChunkRemain = size;
         }
         // Read the chunk
         auto num = co_await mCon->mClient.readAll(buffer.subspan(0, std::min(buffer.size(), mChunkRemain)));
@@ -200,13 +190,39 @@ public:
             ILIAS_TRACE("Http1.1", "Current chunk was all read = {}", *mChunkSize);
             // Drop the \r\n, Every chunk end is \r\n
             auto str = co_await mCon->mClient.getline("\r\n");
-            if (mChunkSize == 0 && str) {
+            if (!str || !str->empty()) {
+                co_return returnError(str.error_or(Error::HttpBadReply));
+            }
+            // Try Get the next chunk size
+            if (auto ret = co_await readChunkSize(); !ret) {
+                co_return returnError(ret.error());
+            }
+            if (mChunkSize == 0) { //< Discard last chunk \r\n
+                str = co_await mCon->mClient.getline("\r\n");
+                if (!str || !str->empty()) {
+                    co_return returnError(str.error_or(Error::HttpBadReply));
+                }
                 ILIAS_TRACE("Http1.1", "All chunks were read");
                 mContentEnd = true;
             }
-            mChunkSize = std::nullopt;
         }
         co_return num;
+    }
+
+    auto readChunkSize() -> Task<void> {
+        auto line = co_await mCon->mClient.getline("\r\n");
+        if (!line || line->empty()) {
+            co_return returnError(line.error_or(Error::HttpBadReply));
+        }
+        size_t size = 0;
+        auto [ptr, ec] = std::from_chars(line->data(), line->data() + line->size(), size, 16);
+        if (ec != std::errc{}) {
+            co_return returnError(Error::HttpBadReply);
+        }
+        ILIAS_TRACE("Http1.1", "Reach new chunk, size = {}", size);
+        mChunkSize = size;
+        mChunkRemain = size;
+        co_return {};
     }
 
     auto readHeaders(int &statusCode, std::string &statusMessage, HttpHeaders &headers) -> Task<void> override {
@@ -282,7 +298,7 @@ public:
         else if (transferEncoding == "chunked") {
             mChunked = true;
         }
-        else if (mKeepAlive) { //< If keep alive and also no content length, ill-formed
+        else if (mKeepAlive && !mMethodHead) { //< If keep alive and also no content length, and not head, ill-formed
             co_return returnError(Error::HttpBadReply);
         }
 
@@ -323,7 +339,7 @@ inline auto Http1Stream::sprintf(std::string &buf, const char *fmt, ...) -> void
     s = ::_vscprintf(fmt, varg);
 #else
     s = ::vsnprintf(nullptr, 0, fmt, varg);
-#endif
+#endif // define _WIN32
     va_end(varg);
 
     int len = buf.length();
