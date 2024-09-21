@@ -15,6 +15,9 @@
 #include <ilias/net/system.hpp>
 #include <concepts>
 
+#if !defined(_WIN32)
+    #include <netinet/tcp.h>
+#endif
 
 ILIAS_NS_BEGIN
 

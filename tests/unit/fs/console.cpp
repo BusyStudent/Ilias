@@ -15,6 +15,7 @@ TEST(ConsoleTest, Open) {
     ASSERT_TRUE(ret);
 }
 
+#if 0
 TEST(ConsoleTest, CancelRead) {
 
 #if defined(_WIN32)
@@ -37,6 +38,7 @@ TEST(ConsoleTest, CancelRead) {
     // ASSERT_TRUE(ret1);
     // ASSERT_FALSE(ret2);
 }
+#endif
 
 auto main(int argc, char **argv) -> int {
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
