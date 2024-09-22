@@ -173,7 +173,7 @@ inline auto detail::MutexAwaiter::onCancel() -> void {
 
 inline auto detail::MutexAwaiter::wait() -> Result<void> {
     return [this]() -> Task<void> {
-        co_return co_await (*this);
+        co_return co_await std::move(*this);
     }().wait();
 }
 

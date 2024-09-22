@@ -68,11 +68,11 @@ public:
     auto removeDescriptor(IoDescriptor *fd) -> Result<void> override;
 
     ///> @brief Read from a descriptor
-    auto read(IoDescriptor *fd, ::std::span<::std::byte> buffer, ::std::optional<size_t> offset)
-        -> Task<size_t> override;
+    auto read(IoDescriptor *fd, ::std::span<::std::byte> buffer,
+              ::std::optional<size_t> offset) -> Task<size_t> override;
     ///> @brief Write to a descriptor
-    auto write(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, ::std::optional<size_t> offset)
-        -> Task<size_t> override;
+    auto write(IoDescriptor *fd, ::std::span<const ::std::byte> buffer,
+               ::std::optional<size_t> offset) -> Task<size_t> override;
 
     ///> @brief Connect to a remote endpoint
     auto connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> override;
@@ -80,11 +80,11 @@ public:
     auto accept(IoDescriptor *fd, IPEndpoint *remoteEndpoint) -> Task<socket_t> override;
 
     ///> @brief Send data to a remote endpoint
-    auto sendto(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, int flags, const IPEndpoint *endpoint)
-        -> Task<size_t> override;
+    auto sendto(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, int flags,
+                const IPEndpoint *endpoint) -> Task<size_t> override;
     ///> @brief Receive data from a remote endpoint
-    auto recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags, IPEndpoint *endpoint)
-        -> Task<size_t> override;
+    auto recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags,
+                  IPEndpoint *endpoint) -> Task<size_t> override;
 
     ///> @brief Poll a descriptor for events
     auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> override;
@@ -235,6 +235,7 @@ inline auto EpollContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
             }
         }
     }
+    mDescriptors.erase(descriptor->fd);
     delete descriptor;
     if (ret != 0) {
         return Unexpected<Error>(SystemError(EALREADY));
@@ -242,8 +243,8 @@ inline auto EpollContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
     return Result<void>();
 }
 
-inline auto EpollContext::read(IoDescriptor *fd, ::std::span<::std::byte> buffer, ::std::optional<size_t> offset)
-    -> Task<size_t> {
+inline auto EpollContext::read(IoDescriptor *fd, ::std::span<::std::byte> buffer,
+                               ::std::optional<size_t> offset) -> Task<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
     if (!descriptor->isPollable) {
@@ -279,8 +280,8 @@ inline auto EpollContext::read(IoDescriptor *fd, ::std::span<::std::byte> buffer
     co_return Unexpected(Error::Unknown);
 }
 
-inline auto EpollContext::write(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, ::std::optional<size_t> offset)
-    -> Task<size_t> {
+inline auto EpollContext::write(IoDescriptor *fd, ::std::span<const ::std::byte> buffer,
+                                ::std::optional<size_t> offset) -> Task<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
     if (!descriptor->isPollable) {
@@ -400,8 +401,8 @@ inline auto EpollContext::sendto(IoDescriptor *fd, ::std::span<const ::std::byte
     co_return Unexpected(Error::Unknown);
 }
 
-inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags, IPEndpoint *endpoint)
-    -> Task<size_t> {
+inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags,
+                                   IPEndpoint *endpoint) -> Task<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
     ILIAS_ASSERT(descriptor->type == IoDescriptor::Socket);
@@ -557,16 +558,29 @@ inline auto EpollContext::processEvents(int fd, uint32_t events) -> void {
             ::epoll_ctl(mEpollFd, EPOLL_CTL_DEL, fd, &event);
         return;
     }
-    auto &epollevents = descriptorItem->second->events;
     if ((events & EPOLLERR) || (events & EPOLLHUP)) {
+        auto descriptorItem = mDescriptors.find(fd);
+        if (descriptorItem == mDescriptors.end()) {
+            return;
+        }
+        auto               &epollevents = descriptorItem->second->events;
+        std::vector<void *> datas;
         for (auto &[event, epolleventawaiters] : epollevents) {
             for (auto &epolleventawaiter : epolleventawaiters) {
-                detail::EpollAwaiter::onCompletion(events, epolleventawaiter.data);
+                datas.push_back(epolleventawaiter.data);
             }
+        }
+        for (auto data : datas) {
+            detail::EpollAwaiter::onCompletion(events, data);
         }
     }
     if (events & EPOLLIN) {
-        auto epolleventawaiters = epollevents.find(EPOLLIN);
+        auto descriptorItem = mDescriptors.find(fd);
+        if (descriptorItem == mDescriptors.end()) {
+            return;
+        }
+        auto &epollevents        = descriptorItem->second->events;
+        auto  epolleventawaiters = epollevents.find(EPOLLIN);
         if (epolleventawaiters != epollevents.end()) {
             if (epolleventawaiters->second.size() > 0) {
                 detail::EpollAwaiter::onCompletion(events, epolleventawaiters->second.begin()->data);
@@ -574,7 +588,12 @@ inline auto EpollContext::processEvents(int fd, uint32_t events) -> void {
         }
     }
     if (events & EPOLLOUT) {
-        auto epolleventawaiters = epollevents.find(EPOLLOUT);
+        auto descriptorItem = mDescriptors.find(fd);
+        if (descriptorItem == mDescriptors.end()) {
+            return;
+        }
+        auto &epollevents        = descriptorItem->second->events;
+        auto  epolleventawaiters = epollevents.find(EPOLLOUT);
         if (epolleventawaiters != epollevents.end()) {
             if (epolleventawaiters->second.size() > 0) {
                 detail::EpollAwaiter::onCompletion(events, epolleventawaiters->second.begin()->data);
@@ -598,7 +617,7 @@ inline auto EpollContext::readTty(IoDescriptor *fd, ::std::span<::std::byte> buf
             co_return Unexpected(pollRet.error());
         }
         int ret = 0;
-        ret = ::read(descriptor->fd, buffer.data(), buffer.size());
+        ret     = ::read(descriptor->fd, buffer.data(), buffer.size());
         if (ret >= 0) {
             co_return ret;
         }
