@@ -4,6 +4,7 @@
 #include <ilias/http/headers.hpp>
 #include <ilias/url.hpp>
 #include <span>
+#include <memory>
 
 ILIAS_NS_BEGIN
 

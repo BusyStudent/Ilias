@@ -10,10 +10,14 @@
 using namespace ILIAS_NAMESPACE;
 
 TEST(Net, TcpTransfer) {
+    ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
     auto ctxt = IoContext::currentThread();
+    ILIAS_TRACE("test", "create io context");
     TcpListener listener(*ctxt, AF_INET);
+    ILIAS_TRACE("test", "create listener");
 
     ASSERT_TRUE(listener.bind("127.0.0.1:0"));
+    ILIAS_TRACE("test", "listener to 127.0.0.1");
     auto endpoint = listener.localEndpoint().value();
     std::cout << endpoint.toString() << std::endl;
 

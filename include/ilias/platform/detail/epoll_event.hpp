@@ -47,11 +47,11 @@ public:
         auto ret         = 0;
         ret              = ::epoll_ctl(mEpollEvent.epollfd, EPOLL_CTL_MOD, mEpollEvent.fd, &event);
         if (ret == -1) {
-            ILIAS_ERROR("Epoll", "epoll_ctl error: {}", strerror(errno));
+            ILIAS_ERROR("Epoll", "epoll_ctl {} error: {}", mEpollEvent.fd, strerror(errno));
             mEpollError = errno;
             return true;
         }
-        ILIAS_TRACE("Epoll", "epoll_ctl success: {}", (uint32_t)event.events);
+        ILIAS_TRACE("Epoll", "epoll_ctl : {}, fd: {}", (uint32_t)event.events, mEpollEvent.fd);
         return false; //< Wating Epoll
     }
     auto await_suspend(TaskView<> caller) -> void {
