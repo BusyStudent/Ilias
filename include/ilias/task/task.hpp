@@ -12,6 +12,7 @@
 
 #include <ilias/task/detail/promise.hpp>
 #include <ilias/task/detail/view.hpp>
+#include <ilias/task/detail/wait.hpp>
 #include <ilias/task/executor.hpp>
 #include <ilias/log.hpp>
 #include <coroutine>

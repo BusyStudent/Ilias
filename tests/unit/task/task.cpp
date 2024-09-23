@@ -33,7 +33,7 @@ TEST(Task, Exception2) {
         result.value(); //< this will throw
         co_return {};
     };
-    EXPECT_NO_THROW(value().wait());
+    EXPECT_NO_THROW(ilias_wait value());
 }
 
 auto main(int argc, char **argv) -> int {

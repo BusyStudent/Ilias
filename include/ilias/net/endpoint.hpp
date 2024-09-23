@@ -236,6 +236,15 @@ public:
     }
 
     /**
+     * @brief Get the maximum buffer size of the endpoint (the max sizeof address you can store in it)
+     * 
+     * @return size_t 
+     */
+    auto bufsize() const -> size_t {
+        return sizeof(mData);
+    }
+
+    /**
      * @brief Parse endpoint from string
      * 
      * @param str The endpoint in string format (address4:port) or ([address6]:port)

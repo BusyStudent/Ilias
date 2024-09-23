@@ -82,7 +82,7 @@ public:
         mBuf.len = buffer.size();
         mFlags = flags;
         mAddr = endpoint ? &endpoint->cast<::sockaddr>() : nullptr;
-        mAddrLen = endpoint ? endpoint->length() : 0;
+        mAddrLen = endpoint ? endpoint->bufsize() : 0;
     }
 
     auto onSubmit() -> bool {

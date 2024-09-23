@@ -24,8 +24,6 @@ public:
     auto await_resume() -> Result<void>;
 
     auto onGotLock() -> void;
-
-    auto wait() -> Result<void>;
 protected:
     auto onCancel() -> void;
 
@@ -169,12 +167,6 @@ inline auto detail::MutexAwaiter::onCancel() -> void {
     mCanceled = true;
     mCaller.schedule();
     ILIAS_TRACE("Mutex", "Canceled Mutex: {} Awaiter: {}", (void*) &mMutex, (void*) this);
-}
-
-inline auto detail::MutexAwaiter::wait() -> Result<void> {
-    return [this]() -> Task<void> {
-        co_return co_await std::move(*this);
-    }().wait();
 }
 
 inline auto detail::MutexAwaiterEx::await_resume() -> Result<std::unique_lock<Mutex> > {
