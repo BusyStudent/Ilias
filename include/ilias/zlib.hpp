@@ -52,7 +52,7 @@ enum ZError : int {
  * @brief Error category for zlib
  * 
  */
-class ZCategory : public ErrorCategory {
+class ZCategory final : public ErrorCategory {
 public:
     auto name() const -> std::string_view override {
         return "zlib";

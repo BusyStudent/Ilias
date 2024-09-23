@@ -1,9 +1,8 @@
 // TODO: rewrite the test
-#include <ilias/platform/platform.hpp>
 #include <ilias/task/spawn.hpp>
-#include <ilias/net/addrinfo.hpp>
-#include <ilias/net/tcp.hpp>
+#include <ilias/platform.hpp>
 #include <ilias/buffer.hpp>
+#include <ilias/net.hpp>
 #include <iostream>
 
 #include <gtest/gtest.h>

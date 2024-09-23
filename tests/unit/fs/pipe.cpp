@@ -1,4 +1,4 @@
-#include <ilias/platform/platform.hpp>
+#include <ilias/platform.hpp>
 #include <ilias/fs/pipe.hpp>
 #include <ilias/buffer.hpp>
 #include <gtest/gtest.h>

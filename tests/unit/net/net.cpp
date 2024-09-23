@@ -1,8 +1,7 @@
-#include <ilias/platform/platform.hpp>
-#include <ilias/net/tcp.hpp>
-#include <ilias/net/udp.hpp>
+#include <ilias/platform.hpp>
 #include <ilias/buffer.hpp>
 #include <ilias/task.hpp>
+#include <ilias/net.hpp>
 #include <gtest/gtest.h>
 #include <random>
 

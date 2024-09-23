@@ -29,11 +29,11 @@ with minimal dependencies, only pay for what you need.
 - Http client
 
 ``` cpp
-#include <ilias/networking.hpp>
+#include <ilias/platform.hpp>
 #include <ilias/http.hpp>
 using namespace ILIAS_NAMESPACE;
 int main() {
-    PlatformIoContext ctxt; //< Default select io context or you can select another one
+    PlatformContext ctxt; //< Default Platform Io Context (iocp on windows, epoll on linux), Or you can use your own
     HttpSession session(ctxt);
 
     //< Result<T> is an alias for std::expect<T, Error>
@@ -52,7 +52,7 @@ int main() {
         std::cout << text.value() << std::endl;
         co_return {};
     };
-    ctxt.runTask(task()); //< Blocking wait the task done
+    task().wait(); //< Blocking wait the task done
 }
 ```
 
@@ -65,7 +65,7 @@ auto listener = [&]() -> Task<> {
     while (auto value = co_await listener.accept()) {
         auto &[client, addr] = *value;
         // Handle it...
-        ctxt.spawn(handleIt, std::move(client), std::move(addr));
+        spawn(handleIt, std::move(client), std::move(addr));
     }
     co_return {};
 };
@@ -75,7 +75,7 @@ auto client = [&]() -> Task<> {
         std::cout << "Connect failed by " << ok.error().toString() << std::endl;
         co_return Unexpected(ok.error());
     }
-    auto bytes = co_await client.recvAll(buffer, len);
+    auto bytes = co_await client.readAll(makeBuffer(buffer, len));
     // ...
     co_return {};
 };
@@ -84,7 +84,7 @@ auto clientWithExcpetions = [&]() -> Task<> {
     TcpClient client(ctxt, AF_INET);
     try {
         (co_await client.connect("127.0.0.1:8080")).value();
-        (co_await client.recvAll(buffer, len)).value();
+        (co_await client.readAll(makeBuffer(buffer, len))).value();
         // ...
     }
     catch (const BadExpectedAccess<Error> &e) {
