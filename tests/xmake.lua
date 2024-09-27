@@ -6,10 +6,22 @@ option("use_fmt")
     set_description("Use fmt for logging")
 option_end()
 
+option("use_io_uring")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Use io uring as platform context")
+option_end()
+
 if has_config("use_fmt") then
     add_requires("fmt")
     add_packages("fmt")
     add_defines("ILIAS_USE_FMT")
+end
+
+if has_config("use_io_uring") then
+    add_requires("liburing");
+    add_packages("liburing");
+    add_defines("ILIAS_USE_IO_URING")
 end
 
 -- Make all files in the unit directory into targets

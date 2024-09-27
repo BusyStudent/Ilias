@@ -3,6 +3,7 @@
 #include <ilias/io/dyn_traits.hpp>
 #include <ilias/io/method.hpp>
 #include <ilias/io/traits.hpp>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <span>

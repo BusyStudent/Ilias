@@ -139,6 +139,10 @@ inline auto SystemCategory::translate(error_t code) -> Error::Code {
         case ERROR_OPERATION_ABORTED: return Error::Canceled;
 #endif
 
+#if defined(ECANCELED) && !defined(_WIN32) // For POSIX Cancelation
+        case ECANCELED: return Error::Canceled;
+#endif
+
         default: return Error::Unknown;
     }
 #undef MAP

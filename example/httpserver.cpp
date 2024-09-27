@@ -1,7 +1,7 @@
-#include <ilias/platform/platform.hpp>
 #include <ilias/task/spawn.hpp>
 #include <ilias/io/stream.hpp>
 #include <ilias/net/tcp.hpp>
+#include <ilias/platform.hpp>
 #include <ilias/buffer.hpp>
 #include <iostream>
 
@@ -51,10 +51,10 @@ auto sendReply(BufferedStream<TcpClient> &client, int statusCode, std::string_vi
         int(content.size())
     );
     auto buffer = std::string_view(headers);
-    if (auto ret = co_await client.writeAll(as_buffer(buffer)); !ret || *ret != buffer.size()) {
+    if (auto ret = co_await client.writeAll(makeBuffer(buffer)); !ret || *ret != buffer.size()) {
         co_return Unexpected(ret.error_or(Error::Unknown));
     }
-    if (auto ret = co_await client.writeAll(as_buffer(content)); !ret || *ret != content.size()) {
+    if (auto ret = co_await client.writeAll(makeBuffer(content)); !ret || *ret != content.size()) {
         co_return Unexpected(ret.error_or(Error::Unknown));
     }
     co_return {};

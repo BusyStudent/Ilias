@@ -327,6 +327,9 @@ inline auto GaiCategory::equivalent(int64_t code, const Error &other) const -> b
             case ERROR_OPERATION_ABORTED: return other == Error::Canceled;
 #endif
 
+#if defined(ECANCELED) && !defined(_WIN32) // For POSIX Cancelation
+            case ECANCELED: return other == Error::Canceled;
+#endif
             default: return other == Error::Unknown;
         }
     }
