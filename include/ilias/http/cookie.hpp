@@ -480,7 +480,7 @@ inline auto HttpCookieJar::cookiesForUrl(const Url &url) -> std::vector<HttpCook
     }
     auto host = url.host();
     auto cur = std::string_view(host);
-    while (!cur.empty() && cur.contains('.')) { //for each level of the domain, www.google.com -> google.com
+    while (!cur.empty()) { //for each level of the domain, www.google.com -> .google.com -> google.com
         auto iter = mCookies.find(cur);
         if (iter != mCookies.end()) {
             // Add all items in current domain to it
@@ -499,14 +499,18 @@ inline auto HttpCookieJar::cookiesForUrl(const Url &url) -> std::vector<HttpCook
             }
         }
         // Find the next domain by dot
-        auto pos = cur.find('.', 1);
+        if (cur.starts_with('.')) {
+            cur.remove_prefix(1);
+            continue;
+        }
+        auto pos = cur.find('.');
         if (pos == std::string::npos) {
             break;
         }
         if (pos + 1 == cur.size()) { //< xxx. (dot on the last)
             break;
         }
-        cur = cur.substr(pos + 1);
+        cur = cur.substr(pos);
     }
     return ret;
 }

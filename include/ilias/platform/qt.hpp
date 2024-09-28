@@ -20,6 +20,7 @@
 #include <QMetaObject>
 #include <QTimerEvent>
 #include <QEventLoop>
+#include <QMetaEnum>
 #include <QObject>
 #include <map>
 
@@ -148,6 +149,7 @@ private:
     auto submitTimer(uint64_t ms, detail::QTimerAwaiter *awaiter) -> int;
     auto cancelTimer(int timerId) -> void;
 
+    SockInitializer mInit;
     size_t mNumOfDescriptors = 0; //< How many descriptors are added
     std::map<int, detail::QTimerAwaiter *> mTimers; //< Timer map
 friend class detail::QTimerAwaiter;
@@ -196,12 +198,18 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resul
     // Prepare env for Socket
     if (nfd->pollable) {
         nfd->sockfd = qintptr(fd);
-        nfd->readNotifier = new QSocketNotifier(QSocketNotifier::Read, nfd.get());
-        nfd->writeNotifier = new QSocketNotifier(QSocketNotifier::Write, nfd.get());
-        nfd->exceptNotifier = new QSocketNotifier(QSocketNotifier::Exception, nfd.get());
+        nfd->readNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Read, nfd.get());
+        nfd->writeNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Write, nfd.get());
+        nfd->exceptNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Exception, nfd.get());
         nfd->readNotifier->setEnabled(false);
         nfd->writeNotifier->setEnabled(false);
         nfd->exceptNotifier->setEnabled(false);
+
+        // Set nonblock
+        SocketView sockfd(nfd->sockfd);
+        if (auto ret = sockfd.setBlocking(false); !ret) {
+            return Unexpected(ret.error());
+        }
     }
 
     ++mNumOfDescriptors;
@@ -332,6 +340,7 @@ inline auto QIoContext::poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t>
 inline auto QIoContext::timerEvent(QTimerEvent *event) -> void {
     auto iter = mTimers.find(event->timerId());
     if (iter == mTimers.end()) {
+        ILIAS_WARN("QIo", "Timer {} not found", event->timerId());
         return;
     }
     auto [id, awaiter] = *iter;
@@ -346,6 +355,7 @@ inline auto QIoContext::submitTimer(uint64_t timeout, detail::QTimerAwaiter *awa
         return 0;
     }
     mTimers.emplace(id, awaiter);
+    return id;
 }
 
 inline auto QIoContext::cancelTimer(int id) -> void {
@@ -387,6 +397,7 @@ inline auto detail::QTimerAwaiter::onTimeout() -> void {
 
 // Poll
 inline auto detail::QPollAwaiter::await_suspend(TaskView<> caller) -> void {
+    ILIAS_TRACE("QIo", "poll fd {}", mFd->sockfd);
     mCaller = caller;
     doConnect(); //< Connect the signal
     mRegistration = caller.cancellationToken().register_(std::bind(&QPollAwaiter::onCancel, this));
@@ -398,17 +409,21 @@ inline auto detail::QPollAwaiter::await_resume() -> Result<uint32_t> {
 }
 
 inline auto detail::QPollAwaiter::onCancel() -> void {
+    ILIAS_TRACE("QIo", "poll fd {} was canceled", mFd->sockfd);
     doDisconnect();
+    mResult = Unexpected(Error::Canceled);
     mCaller.schedule();
 }
 
 inline auto detail::QPollAwaiter::onFdDestroyed() -> void {
+    ILIAS_TRACE("QIo", "fd {} was destroyed", mFd->sockfd);
     doDisconnect();
     mResult = Unexpected(Error::Canceled);
     mCaller.schedule();
 }
 
 inline auto detail::QPollAwaiter::onNotifierActivated(QSocketDescriptor, QSocketNotifier::Type type) -> void {
+    ILIAS_TRACE("QIo", "fd {} was activated", mFd->sockfd);
     doDisconnect();
     if (type == QSocketNotifier::Read) {
         mResult = PollEvent::In;

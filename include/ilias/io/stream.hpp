@@ -71,7 +71,7 @@ public:
         const auto n = buffer.size();
         while (true) {
             auto buf = readWindow();
-            if (!buf.empty()) {
+            if (!buf.empty() || n == 0) {
                 // Read data from the buffer
                 auto len = std::min(buf.size(), n);
                 ::memcpy(buffer.data(), buf.data(), len);

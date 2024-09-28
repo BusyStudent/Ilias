@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>944</width>
+    <height>865</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Test Qt Platform</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QHBoxLayout" name="horizontalLayout">
+    <property name="leftMargin">
+     <number>0</number>
+    </property>
+    <property name="topMargin">
+     <number>0</number>
+    </property>
+    <property name="rightMargin">
+     <number>0</number>
+    </property>
+    <property name="bottomMargin">
+     <number>0</number>
+    </property>
+    <item>
+     <widget class="QTabWidget" name="tabWidget">
+      <property name="currentIndex">
+       <number>1</number>
+      </property>
+      <widget class="QWidget" name="tab">
+       <attribute name="title">
+        <string>Addrinfo</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout">
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_2">
+          <item>
+           <widget class="QLabel" name="label">
+            <property name="text">
+             <string>Hostname:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="addrinfoEdit"/>
+          </item>
+          <item>
+           <widget class="QPushButton" name="addrinfoButton">
+            <property name="text">
+             <string>getaddrinfo</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QListWidget" name="addrinfoListWidget"/>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tab_2">
+       <attribute name="title">
+        <string>Http</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_2">
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_3">
+          <item>
+           <widget class="QLabel" name="label_2">
+            <property name="text">
+             <string>Method:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="httpMethodBox">
+            <property name="frame">
+             <bool>true</bool>
+            </property>
+            <item>
+             <property name="text">
+              <string>GET</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>POST</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>HEAD</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>DELETE</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_3">
+            <property name="text">
+             <string>Url:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="httpUrlEdit">
+            <property name="text">
+             <string>https://httpbin.org/get</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QToolButton" name="httpPayloadButton">
+            <property name="text">
+             <string>payload...</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="httpSendButton">
+            <property name="text">
+             <string>Send</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QLabel" name="label_4">
+          <property name="text">
+           <string>Request header:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QListWidget" name="httpRequestHeadersWidget"/>
+        </item>
+        <item>
+         <widget class="QLabel" name="label_5">
+          <property name="text">
+           <string>Reply headers:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QListWidget" name="httpReplyHeadersWidget"/>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="1,0,0">
+          <item>
+           <widget class="QLabel" name="label_6">
+            <property name="text">
+             <string>Content:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="httpProxyButton">
+            <property name="text">
+             <string>Proxy</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="httpSaveButton">
+            <property name="text">
+             <string>Save</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QTextBrowser" name="httpContentBroswer"/>
+        </item>
+        <item>
+         <widget class="QLabel" name="httpImageLabel">
+          <property name="text">
+           <string/>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tab_3">
+       <attribute name="title">
+        <string>CookieJar</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_3">
+        <item>
+         <widget class="QTreeWidget" name="cookieWidget">
+          <property name="autoExpandDelay">
+           <number>-1</number>
+          </property>
+          <property name="indentation">
+           <number>25</number>
+          </property>
+          <column>
+           <property name="text">
+            <string>Domain</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Path</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Key</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Value</string>
+           </property>
+          </column>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>944</width>
+     <height>26</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>addrinfoEdit</sender>
+   <signal>returnPressed()</signal>
+   <receiver>addrinfoButton</receiver>
+   <slot>click()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>306</x>
+     <y>75</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>575</x>
+     <y>75</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>httpUrlEdit</sender>
+   <signal>returnPressed()</signal>
+   <receiver>httpSendButton</receiver>
+   <slot>click()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>459</x>
+     <y>75</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>881</x>
+     <y>75</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>

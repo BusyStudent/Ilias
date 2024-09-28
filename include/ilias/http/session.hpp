@@ -9,6 +9,7 @@
 #include <ilias/net/socks5.hpp>
 #include <ilias/net/tcp.hpp>
 #include <ilias/io/context.hpp>
+#include <ilias/task.hpp>
 #include <ilias/ssl.hpp>
 #include <ilias/log.hpp>
 #include <span>
@@ -101,6 +102,20 @@ public:
      * @param proxy 
      */
     auto setProxy(const Url &proxy) -> void { mProxy = proxy; }
+
+    /**
+     * @brief Get the Cookie Jar object
+     * 
+     * @return HttpCookieJar* 
+     */
+    auto cookieJar() const -> HttpCookieJar * { return mCookieJar; }
+
+    /**
+     * @brief Get the proxy
+     * 
+     * @return const Url& 
+     */
+    auto proxy() const -> const Url & { return mProxy; }
 private:
     /**
      * @brief The sendRequest implementation, only do the connection handling
@@ -126,8 +141,9 @@ private:
      * @brief Collect cookies from the reply and add them to the cookie jar
      *
      * @param reply
+     * @param url Current request url
      */
-    auto parseReply(HttpReply &reply) -> void;
+    auto parseReply(HttpReply &reply, const Url &url) -> void;
 
     /**
      * @brief Connect to the server by url and return the HttpStream for transfer
@@ -183,20 +199,37 @@ inline auto HttpSession::sendRequest(std::string_view method, const HttpRequest 
     }
     int idx = 0; // The number of redirects
     while (true) {
+#if 1
+        auto [reply_, timeout] = co_await whenAny(
+            sendRequestImpl(method, url, headers, payload, request.streamMode()),
+            sleep(request.transferTimeout())
+        );
+        if (timeout) { //< Timed out
+            co_return Unexpected(Error::TimedOut);
+        }
+        if (!reply_) { //< No reply, canceled
+            co_return Unexpected(Error::Canceled);
+        }
+        if (!reply_->has_value()) { //< Failed to get 
+            co_return Unexpected(reply_->error());
+        }
+        auto &reply = reply_.value();
+#else
         auto reply = co_await sendRequestImpl(method, url, headers, payload, request.streamMode());
         if (!reply) {
             co_return Unexpected(reply.error());
         }
+#endif
         const std::array redirectCodes = {301, 302, 303, 307, 308};
         if (std::find(redirectCodes.begin(), redirectCodes.end(), reply->statusCode()) != redirectCodes.end() &&
             idx < maximumRedirects) {
-            auto location = reply->headers().value(HttpHeaders::Location);
+            Url location = reply->headers().value(HttpHeaders::Location);
             if (location.empty()) {
                 co_return Unexpected(Error::HttpBadReply);
             }
             ILIAS_INFO("Http", "Redirecting to {} ({} of maximum {})", location, idx + 1, maximumRedirects);
             // Do redirect
-            url     = location;
+            url     = url.resolved(location);
             headers = request.headers();
             ++idx;
             continue;
@@ -209,8 +242,8 @@ inline auto HttpSession::sendRequest(std::string_view method, const HttpRequest 
 
 inline auto HttpSession::sendRequestImpl(std::string_view method, const Url &url, HttpHeaders &headers,
                                          std::span<const std::byte> payload, bool streamMode) -> Task<HttpReply> {
+    normalizeRequest(url, headers);
     while (true) {
-        normalizeRequest(url, headers);
         bool fromPool = false;
         auto stream = co_await connect(url, fromPool);
         if (!stream) {
@@ -231,7 +264,7 @@ inline auto HttpSession::sendRequestImpl(std::string_view method, const Url &url
             }
             co_return Unexpected(reply.error());
         }
-        parseReply(reply.value());
+        parseReply(reply.value(), url);
         co_return std::move(*reply);
     }
 }
@@ -270,7 +303,7 @@ inline auto HttpSession::normalizeRequest(const Url &url, HttpHeaders &headers) 
     }
 }
 
-inline auto HttpSession::parseReply(HttpReply &reply) -> void {
+inline auto HttpSession::parseReply(HttpReply &reply, const Url &url) -> void {
     // Update cookie here
     if (!mCookieJar) {
         return;
@@ -278,7 +311,7 @@ inline auto HttpSession::parseReply(HttpReply &reply) -> void {
     const auto cookies = reply.headers().values(HttpHeaders::SetCookie);
     for (const auto &setCookie : cookies) {
         for (auto &cookie : HttpCookie::parse(setCookie)) {
-            cookie.normalize(reply.url());
+            cookie.normalize(url);
             mCookieJar->insertCookie(cookie);
         }
     }
@@ -296,7 +329,7 @@ inline auto HttpSession::connect(const Url &url, bool &fromPool) -> Task<std::un
         auto ent = ::getservbyname(scheme.c_str(), "tcp");
         if (!ent) {
             ILIAS_ERROR("Http", "Failed to get port for scheme: {}", scheme);
-            co_return Unexpected(Error::HttpBadRequest);
+            co_return Unexpected(SystemError::fromErrno());
         }
         port = ::ntohs(ent->s_port);
     }
@@ -381,6 +414,10 @@ inline auto HttpSession::connect(const Url &url, bool &fromPool) -> Task<std::un
             co_return Unexpected(ret.error());
         }
         cur = std::move(sslClient);
+    }
+#else
+    if (scheme == "https") {
+        co_return Unexpected(Error::ProtocolNotSupported);
     }
 #endif
 

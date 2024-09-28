@@ -10,7 +10,7 @@
 using namespace ILIAS_NAMESPACE;
 
 TEST(Net, TcpTransfer) {
-    ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
+    // ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
     auto ctxt = IoContext::currentThread();
     ILIAS_TRACE("test", "create io context");
     TcpListener listener(*ctxt, AF_INET);
@@ -21,12 +21,9 @@ TEST(Net, TcpTransfer) {
     auto endpoint = listener.localEndpoint().value();
     std::cout << endpoint.toString() << std::endl;
 
-    for (int i = 0; i < 3; i++) {
-        std::mt19937_64 rng;
-        rng.seed(std::random_device()());
-        std::uniform_int_distribution<size_t> dist(1024 * 1024, 1024 * 1024 * 1024);
-        //< Test from 1MB to 1GB.
-        size_t bytesToTransfer = dist(rng);
+    const std::array<size_t, 3> capacities = { 1024, 1024 * 1024, 1024 * 1024 * 1024 };
+    for (auto bytesToTransfer : capacities) {
+        //< Test from 1MB up to 1GB.
         size_t senderSent = 0;
         size_t receiverReceived = 0;
 
@@ -82,6 +79,7 @@ TEST(Net, TcpTransfer) {
 }
 
 TEST(Net, CloseCancel) {
+    ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
     auto ctxt = IoContext::currentThread();
     UdpClient client(*ctxt, AF_INET);
     ASSERT_TRUE(client.bind("127.0.0.1:0"));

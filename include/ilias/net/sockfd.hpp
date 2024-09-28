@@ -292,6 +292,7 @@ public:
         if (ret < 0) {
             return Unexpected(SystemError::fromErrno());
         }
+        return {};
     }
 #endif
 

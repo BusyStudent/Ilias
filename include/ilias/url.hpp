@@ -55,6 +55,14 @@ public:
      * @return false 
      */
     auto isValid() const -> bool;
+
+    /**
+     * @brief Check the url is relative
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isRelative() const -> bool;
     
     /**
      * @brief Get the scheme of the url
@@ -90,6 +98,14 @@ public:
      * @return std::optional<uint16_t> (nullopt if not set)
      */
     auto port() const -> std::optional<uint16_t>;
+
+    /**
+     * @brief Resolve the relative url to the absolute url (if arg is not relative, just return it)
+     * 
+     * @param relative 
+     * @return Url 
+     */
+    auto resolved(const Url &relative) const -> Url;
 
     /**
      * @brief Make the url to the string (encoded)
@@ -203,6 +219,10 @@ inline auto Url::isValid() const -> bool {
     return isSafeString(p);
 }
 
+inline auto Url::isRelative() const -> bool {
+    return mScheme.empty();
+}
+
 inline auto Url::scheme() const -> std::string_view {
     return mScheme;
 }
@@ -224,6 +244,18 @@ inline auto Url::path() const -> std::string_view {
         return "/";
     }
     return mPath;
+}
+
+// Resolved
+inline auto Url::resolved(const Url &rel) const -> Url {
+    if (!rel.isRelative()) {
+        return rel;
+    }
+    Url copy(rel);
+    copy.setScheme(mScheme);
+    copy.setHost(mHost);
+    copy.setPort(mPort);
+    return copy;
 }
 
 // Set

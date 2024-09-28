@@ -180,6 +180,29 @@ public:
     auto close() { return mBase.close(); }
 
     /**
+     * @brief Set the socket option.
+     * 
+     * @tparam T 
+     * @param opt 
+     * @return Result<void> 
+     */
+    template <SetSockOption T>
+    auto setOption(const T &opt) -> Result<void> {
+        return socket().setOption(opt);
+    }
+
+    /**
+     * @brief Get the socket option.
+     * 
+     * @tparam T 
+     * @return Result<T> 
+     */
+    template <GetSockOption T>
+    auto getOption() -> Result<T> {
+        return socket().getOption<T>();
+    }
+
+    /**
      * @brief Bind the listener to a local endpoint.
      * 
      * @param endpoint The local endpoint to bind to.
@@ -215,6 +238,15 @@ public:
      */
     auto localEndpoint() const -> Result<IPEndpoint> { 
         return mBase.localEndpoint(); 
+    }
+
+    /**
+     * @brief Get the underlying socket.
+     * 
+     * @return SocketView 
+     */
+    auto socket() const -> SocketView {
+        return mBase.socket();
     }
 
     /**

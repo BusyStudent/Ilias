@@ -21,7 +21,7 @@
 #include <ilias/error.hpp>
 
 #if defined(__cpp_lib_expected)
-#if __cpp_lib_expected > 202211L
+#if __cpp_lib_expected >= 202211L
 #include <expected>
 #define ILIAS_STD_EXPECTED_HPP
 #endif
