@@ -179,24 +179,23 @@ public:
     explicit operator bool() const noexcept {
         return mHandle;
     }
+
+    /**
+     * @brief Get the awaiter of the task
+     * 
+     * @tparam T 
+     * @param task 
+     * @return detail::TaskAwaiter<T> 
+     */
+    auto operator co_await() && -> detail::TaskAwaiter<T> {
+        return detail::TaskAwaiter<T>(mHandle);
+    }
 private:
     Task(handle_type handle) : mHandle(handle) { }
 
     handle_type mHandle;
 friend class detail::TaskPromise<T>;
 };
-
-/**
- * @brief Get the awaiter of the task
- * 
- * @tparam T 
- * @param task 
- * @return detail::TaskAwaiter<T> 
- */
-template <typename T>
-inline auto operator co_await(Task<T> &&task) -> detail::TaskAwaiter<T> {
-    return detail::TaskAwaiter(task._view());
-}
 
 /**
  * @brief Sleep the current task for a period of time

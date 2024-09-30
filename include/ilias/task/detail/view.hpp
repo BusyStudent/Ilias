@@ -56,7 +56,8 @@ public:
     auto resume() const noexcept { return mHandle.resume(); }
 
     /**
-     * @brief Schedule the task in the executor
+     * @brief Schedule the task in the executor (thread safe)
+     * @note Do not call this function if the task is already scheduled
      * 
      * @return auto 
      */
@@ -208,6 +209,17 @@ public:
      */
     operator handle_type() const {
         return handle();
+    }
+
+    /**
+     * @brief Cast from TaskView<> (note it is dangerous)
+     * 
+     * @param view 
+     * @return TaskView<T> 
+     */
+    static auto cast(TaskView<detail::TaskViewNull> view) {
+        auto handle = std::coroutine_handle<>(view);
+        return TaskView<T>(handle_type::from_address(handle.address()));
     }
 };
 

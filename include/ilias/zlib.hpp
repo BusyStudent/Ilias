@@ -14,6 +14,7 @@
 #if __has_include(<zlib.h>) && !defined(ILIAS_NO_ZLIB)
 
 #include <ilias/detail/expected.hpp>
+#include <ilias/task/task.hpp>
 #include <ilias/io/traits.hpp>
 #include <ilias/buffer.hpp>
 #include <ilias/error.hpp>

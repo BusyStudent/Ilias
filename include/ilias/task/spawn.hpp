@@ -1,8 +1,21 @@
+/**
+ * @file spawn.hpp
+ * @author BusyStudent (fyw90mc@gmail.com)
+ * @brief Task spawn, wait, and cancel.
+ * @version 0.1
+ * @date 2024-09-30
+ * 
+ * @copyright Copyright (c) 2024
+ * 
+ */
 #pragma once
 
 #include <ilias/task/detail/view.hpp>
 #include <ilias/task/task.hpp>
 #include <concepts>
+
+#define ilias_go    ILIAS_NS::detail::SpawnTags{ } << 
+#define ilias_spawn ILIAS_NS::detail::SpawnTags{ } <<
 
 ILIAS_NS_BEGIN
 
@@ -113,6 +126,8 @@ public:
     auto operator ->() const noexcept { return mPtr; }
 
     auto operator <=>(const SpawnDataRef &other) const noexcept = default;
+
+    operator bool() const noexcept { return mPtr != nullptr; }
 private:
     auto ref() noexcept -> void {
         if (mPtr) {
@@ -129,6 +144,33 @@ private:
 };
 
 /**
+ * @brief Awaiter for Wait Handle
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class WaitHandleAwaiter {
+public:
+    WaitHandleAwaiter(TaskView<T> task) : mTask(task) { }
+
+    auto await_ready() const -> bool { return mTask.done(); }
+
+    auto await_suspend(TaskView<> caller) -> void {
+        mTask.setAwaitingCoroutine(caller); //< When the task is done, resume the caller
+        mReg = caller.cancellationToken().register_( //< Let the caller's cancel request cancel the current task
+            &CancelTheTokenHelper, &mTask.cancellationToken()
+        );
+    }
+
+    auto await_resume() const -> Result<T> {
+        return mTask.value();
+    }
+private:
+    CancellationToken::Registration mReg; //< The reg of we wait for cancel
+    TaskView<T> mTask;
+};
+
+/**
  * @brief Check if callable and args can be used to create a task.
  * 
  * @tparam Callable 
@@ -140,6 +182,8 @@ concept TaskGenerator = requires(Callable &&callable, Args &&...args) {
     std::invoke(callable, args...)._leak();
 };
 
+struct SpawnTags { };
+
 } // namespace detail
 
 /**
@@ -148,6 +192,9 @@ concept TaskGenerator = requires(Callable &&callable, Args &&...args) {
  */
 class CancelHandle {
 public:
+    explicit CancelHandle(const detail::SpawnDataRef &data) : 
+        mData(data) { }
+
     CancelHandle() = default;
     CancelHandle(std::nullptr_t) { }
     CancelHandle(const CancelHandle &) = default;
@@ -157,6 +204,14 @@ public:
     auto cancel() const -> void { return mData->mTask.cancel(); }
     auto operator =(const CancelHandle &) -> CancelHandle & = default;
     auto operator <=>(const CancelHandle &) const noexcept = default;
+
+    /**
+     * @brief Check the CancelHandle is valid.
+     * 
+     * @return true 
+     * @return false 
+     */
+    operator bool() const { return bool(mData); }
 private:
     detail::SpawnDataRef mData;
 template <typename T>
@@ -182,24 +237,51 @@ public:
     auto cancel() const -> void { return mData->mTask.cancel(); }
 
     /**
-     * @brief Wait for the task to complete. and return the result.
+     * @brief Blocking Wait for the task to complete. and return the result.
      * 
      * @return Result<T> 
      */
     auto wait() -> Result<T> {
+        ILIAS_ASSERT_MSG(mData, "Can not wait for an invalid handle");
         if (!done()) {
             // Wait until done
             CancellationToken token;
             mData->mTask.registerCallback(detail::CancelTheTokenHelper, &token);
             mData->mTask.executor()->run(token);
         }
-        auto value = static_cast<TaskView<T> &>(mData->mTask).value();
+        auto value = TaskView<T>::cast(mData->mTask).value();
         mData = nullptr;
         return value;
     }
 
     auto operator =(const WaitHandle &) = delete;
     auto operator =(WaitHandle &&) -> WaitHandle & = default;
+    auto operator <=>(const WaitHandle &) const noexcept = default;
+
+    /**
+     * @brief co-await the handle to complete. and return the result.
+     * 
+     * @return co_await 
+     */
+    auto operator co_await() && {
+        ILIAS_ASSERT_MSG(mData, "Can not await an invalid handle");
+        return detail::WaitHandleAwaiter<T>{TaskView<T>::cast(mData->mTask)};
+    }
+
+    /**
+     * @brief Check if the handle is valid.
+     * 
+     * @return true 
+     * @return false 
+     */
+    operator bool() const { return bool(mData); }
+
+    /**
+     * @brief implicitly convert to CancelHandle
+     * 
+     * @return CancelHandle 
+     */
+    operator CancelHandle() const { return CancelHandle(mData); }
 private:
     detail::SpawnDataRef mData;
 };
@@ -215,7 +297,7 @@ template <typename T>
 inline auto spawn(Task<T> &&task) -> WaitHandle<T> {
     auto ref = detail::SpawnDataRef(new detail::SpawnData);
     ref->mTask = task._leak();
-    ref->mTask.executor()->schedule(ref->mTask); //< Start it on the event loop
+    ref->mTask.schedule(); //< Start it on the event loop
     return WaitHandle<T>(ref);
 }
 
@@ -247,9 +329,21 @@ inline auto spawn(Callable callable, Args &&...args) {
                 std::forward<Args>(args)...
             )
         );
-        ref->mTask.executor()->schedule(ref->mTask); //< Start it on the event loop
+        ref->mTask.schedule(); //< Start it on the event loop
         return WaitHandle<typename std::invoke_result_t<Callable, Args...>::value_type>(ref);
     }
+}
+
+/**
+ * @brief Helper for ilias_go macro and ilias_spawn macro
+ * 
+ * @tparam Args 
+ * @param args 
+ * @return auto 
+ */
+template <typename ...Args>
+inline auto operator <<(detail::SpawnTags, Args &&...args) {
+    return spawn(std::forward<Args>(args)...);
 }
 
 ILIAS_NS_END

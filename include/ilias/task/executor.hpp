@@ -23,10 +23,10 @@ ILIAS_NS_BEGIN
 class Executor {
 public:
     /**
-     * @brief Post a callable to the executor
+     * @brief Post a callable to the executor (thread safe)
      * 
-     * @param fn 
-     * @param args 
+     * @param fn The function to post (can not be null)
+     * @param args The arguments of the function
      */
     virtual auto post(void (*fn)(void *), void *args) -> void = 0;
 
