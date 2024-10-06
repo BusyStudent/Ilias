@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/detail/refptr.hpp>
 #include <ilias/task/detail/view.hpp>
 #include <ilias/task/task.hpp>
 #include <concepts>
@@ -88,60 +89,7 @@ struct SpawnDataWithCallable : SpawnData {
     T mCallable;
 };
 
-struct SpawnDataRef {
-public:
-    SpawnDataRef() = default;
-    SpawnDataRef(std::nullptr_t) { }
-    SpawnDataRef(const SpawnDataRef &other) : mPtr(other.mPtr) {
-        ref();
-    }
-    SpawnDataRef(SpawnDataRef &&other) : mPtr(other.mPtr) {
-        other.mPtr = nullptr;
-    }
-    SpawnDataRef(SpawnData *ptr) : mPtr(ptr) {
-        ref();
-    }
-    ~SpawnDataRef() {
-        deref();
-    }
-
-    auto operator =(const SpawnDataRef &other) -> SpawnDataRef & {
-        deref();
-        mPtr = other.mPtr;
-        ref();
-        return *this;
-    }
-    auto operator =(SpawnDataRef &&other) -> SpawnDataRef & {
-        deref();
-        mPtr = other.mPtr;
-        other.mPtr = nullptr;
-        return *this;
-    }
-    auto operator =(const std::nullptr_t) -> SpawnDataRef & {
-        deref();
-        mPtr = nullptr;
-        return *this;
-    }
-
-    auto operator ->() const noexcept { return mPtr; }
-
-    auto operator <=>(const SpawnDataRef &other) const noexcept = default;
-
-    operator bool() const noexcept { return mPtr != nullptr; }
-private:
-    auto ref() noexcept -> void {
-        if (mPtr) {
-            mPtr->ref();
-        }
-    }
-    auto deref() noexcept -> void {
-        if (mPtr) {
-            mPtr->deref();
-        }
-    }
-
-    SpawnData *mPtr = nullptr;
-};
+using SpawnDataRef = RefPtr<SpawnData>;
 
 /**
  * @brief Awaiter for Wait Handle
@@ -171,17 +119,9 @@ private:
 };
 
 /**
- * @brief Check if callable and args can be used to create a task.
+ * @brief Helper tags for ilias_go and ilias_spawn macro
  * 
- * @tparam Callable 
- * @tparam Args 
  */
-template <typename Callable, typename ...Args>
-concept TaskGenerator = requires(Callable &&callable, Args &&...args) {
-    std::invoke(callable, args...)._view();
-    std::invoke(callable, args...)._leak();
-};
-
 struct SpawnTags { };
 
 } // namespace detail
@@ -223,7 +163,7 @@ friend class WaitHandle;
  * 
  * @tparam T 
  */
-template <typename T>
+template <typename T = void>
 class WaitHandle {
 public:
     explicit WaitHandle(const detail::SpawnDataRef &data) : 

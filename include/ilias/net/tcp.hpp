@@ -146,6 +146,16 @@ public:
     }
 
     /**
+     * @brief Poll the socket for events.
+     * 
+     * @param events 
+     * @return Task<uint32_t> 
+     */
+    auto poll(uint32_t events) -> Task<uint32_t> {
+        return mBase.poll(events);
+    }
+
+    /**
      * @brief Get the underlying socket.
      * 
      * @return SocketView 
@@ -229,6 +239,40 @@ public:
         }
         TcpClient client(*(mBase.context()), Socket(sock.value()));
         co_return std::make_pair(std::move(client), endpoint);
+    }
+
+    /**
+     * @brief Accept a connection from a remote endpoint.
+     * 
+     * @param endpoint The address to receive the connection from. (can be nullptr)
+     * @return Task<TcpClient> 
+     */
+    auto accept(IPEndpoint *endpoint) -> Task<TcpClient> {
+        auto sock = co_await mBase.accept(endpoint);
+        if (!sock) {
+            co_return Unexpected(sock.error());
+        }
+        co_return TcpClient(*(mBase.context()), Socket(sock.value()));
+    }
+
+    /**
+     * @brief Accept a connection from a remote endpoint.
+     * 
+     * @param endpoint The reference to the address to receive the connection from.
+     * @return Task<TcpClient> 
+     */
+    auto accept(IPEndpoint &endpoint) -> Task<TcpClient> {
+        return accept(&endpoint);
+    }
+
+    /**
+     * @brief Poll the socket for events.
+     * 
+     * @param events 
+     * @return Task<uint32_t> 
+     */
+    auto poll(uint32_t events) -> Task<uint32_t> {
+        return mBase.poll(events);
     }
 
     /**

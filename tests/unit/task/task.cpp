@@ -36,6 +36,25 @@ TEST(Task, Exception2) {
     EXPECT_NO_THROW(ilias_wait value());
 }
 
+TEST(Task, Create) {
+    auto fn = []() -> Task<void> {
+        co_return {};  
+    };
+    auto task = fn(); //< Just create    
+}
+
+TEST(TaskDeathTest, Liftime) {
+    auto fn = []() -> Task<void> {
+        co_await std::suspend_always();
+        co_return {};
+    };
+    EXPECT_DEATH_IF_SUPPORTED({
+        auto task = fn();
+        auto view = task._view();
+        view.resume(); //< When task destroys, this will cause a crash, destroy a started and not finished task
+    }, "");
+}
+
 auto main(int argc, char **argv) -> int {
     ::testing::InitGoogleTest(&argc, argv);
     MiniExecutor executor;

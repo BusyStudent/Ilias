@@ -881,4 +881,16 @@ public:
     using Expected<T, Error>::operator=;
 };
 
+/**
+ * @brief Create a Unexpected object, function version
+ * 
+ * @tparam T 
+ * @param value 
+ * @return auto 
+ */
+template <typename T>
+inline auto unexpected(T &&value) {
+    return Unexpected(std::forward<T>(value));
+}
+
 ILIAS_NS_END

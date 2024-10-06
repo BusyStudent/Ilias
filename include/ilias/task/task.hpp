@@ -56,6 +56,18 @@ private:
     TaskView<T> mTask; //< The task we want to await
 };
 
+/**
+ * @brief Check if callable and args can be used to create a task.
+ * 
+ * @tparam Callable 
+ * @tparam Args 
+ */
+template <typename Callable, typename ...Args>
+concept TaskGenerator = requires(Callable &&callable, Args &&...args) {
+    std::invoke(callable, args...)._view();
+    std::invoke(callable, args...)._leak();
+};
+
 } // namespace detail
 
 
@@ -177,7 +189,7 @@ public:
      * @return false 
      */
     explicit operator bool() const noexcept {
-        return mHandle;
+        return bool(mHandle);
     }
 
     /**

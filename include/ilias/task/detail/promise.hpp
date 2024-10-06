@@ -110,6 +110,16 @@ public:
     }
 
     /**
+     * @brief Default, no exception, so always return false
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto hasException() const -> bool {
+        return false;
+    }
+
+    /**
      * @brief Set the Awaiting Coroutine object
      * 
      * @param handle The coroutine handle that is waiting for us
@@ -204,6 +214,16 @@ public:
         catch (...) {
             mException = std::current_exception();
         }
+    }
+
+    /**
+     * @brief Exception support, override the default hasException() to return true if there is an exception
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto hasException() const -> bool {
+        return mException != nullptr;
     }
 #endif
 

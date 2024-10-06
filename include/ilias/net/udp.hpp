@@ -129,12 +129,13 @@ public:
     }
 
     /**
-     * @brief Get the remote endpoint associated with the socket.
+     * @brief Poll the socket for events.
      * 
-     * @return Result<IPEndpoint> 
+     * @param events 
+     * @return Task<uint32_t> 
      */
-    auto remoteEndpoint() const -> Result<IPEndpoint> {
-        return mBase.remoteEndpoint();
+    auto poll(uint32_t events) -> Task<uint32_t> {
+        return mBase.poll(events);
     }
 
     /**
