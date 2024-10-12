@@ -54,7 +54,30 @@ public:
             auto proxy = QInputDialog::getText(this, "Proxy", "Proxy URL:", QLineEdit::Normal, QString::fromUtf8(prevProxy.toString()));
             mSession.setProxy(proxy.toUtf8().data());
         });
+
+        connect(ui.tcpEchoButton, &QPushButton::clicked, this, [this]() {
+            if (mEchoServerHandle) {
+                mEchoServerHandle.cancel();
+                mEchoServerHandle.wait();
+                ui.tcpEchoButton->setText("Start");
+            }
+            else {
+                mEchoServerHandle = spawn(echoServer());
+                ui.tcpEchoButton->setText("Stop");
+            }
+        });
+
+        connect(ui.tcpTestButton, &QPushButton::clicked, this, [this]() {
+            spawn(echoTest());
+        });
     } 
+
+    ~App() {
+        if (mEchoServerHandle) {
+            mEchoServerHandle.cancel();            
+            mEchoServerHandle.wait();
+        }
+    }
 
     auto sendHttpRequest() -> Task<void> {
         auto url = ui.httpUrlEdit->text();
@@ -138,12 +161,130 @@ public:
             item->setText(3, QString::fromUtf8(cookie.path()));
         }
     }
+
+    // Tcp Test Here
+    /**
+     * @brief The packet for the echo server
+     * 
+     */
+    struct EchoPacket {
+        uint64_t len; //< The data size
+        uint64_t sendedTime; //< The time the client sended
+        uint64_t receivedTime; //< The time the echo server was received
+    };
+
+    auto echoServer() -> Task<void> {
+        auto handle = [](TcpClient client) -> Task<void> {
+            EchoPacket packet;
+            while (true) {
+                auto ret = co_await client.readAll(makeBuffer(&packet, sizeof(packet)));
+                if (!ret || *ret != sizeof(packet)) {
+                    co_return {};
+                }
+                // Update the packet with the current time and send back
+                packet.receivedTime = ::time(nullptr);
+
+                // Drop the data after the packet
+                std::vector<std::byte> buffer;
+                buffer.resize(packet.len);
+                ret = co_await client.readAll(buffer);
+                if (!ret || *ret != packet.len) {
+                    co_return {};
+                }
+
+                // Do Send back the packet here
+                ret = co_await client.writeAll(makeBuffer(&packet, sizeof(packet)));
+                if (!ret || *ret != sizeof(packet)) {
+                    co_return {};
+                }
+                // Send back the data after the packet
+                ret = co_await client.writeAll(buffer);
+                if (!ret || *ret != buffer.size()) {
+                    co_return {};
+                }
+            }
+        };
+        IPEndpoint endpoint(ui.tcpEchoEdit->text().toUtf8().data());
+        TcpListener listener {mCtxt, endpoint.family()};
+        if (auto ret = listener.bind(endpoint); !ret) {
+            ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
+            co_return {};
+        }
+        while (auto ret = co_await listener.accept()) {
+            auto &[client, endpoint] = ret.value();
+            spawn(handle(std::move(client)));
+        }
+        co_return {};
+    }
+
+    auto echoTest() -> Task<void> {
+        ui.tcpLogWidget->clear();
+        auto endpoint = IPEndpoint(ui.tcpTestEdit->text().toUtf8().data());
+        TcpClient client {mCtxt, endpoint.family()};
+        ui.tcpLogWidget->addItem(QString::fromUtf8("Connecting to " + endpoint.toString()));
+        if (auto ret = co_await client.connect(endpoint); !ret) {
+            ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
+            co_return {};
+        }
+        ui.tcpLogWidget->addItem("Connected");
+        
+        // Sending the data
+        for (int i = 0; i < ui.tcpCountBox->value(); ++i) {
+            EchoPacket packet {};
+            packet.len = ui.tcpDataSizeBox->value();
+            packet.sendedTime = ::time(nullptr);
+            ui.tcpLogWidget->addItem(QString::fromUtf8("idx: " + std::to_string(i) + " Sending " + std::to_string(packet.len) + " bytes"));
+            auto ret = co_await client.writeAll(makeBuffer(&packet, sizeof(packet)));
+            if (!ret || *ret != sizeof(packet)) {
+                ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
+                co_return {};
+            }
+            // Send back the data after the packet
+            std::vector<std::byte> buffer;
+            buffer.resize(packet.len);
+            ret = co_await client.writeAll(buffer);
+            if (!ret || *ret != buffer.size()) {
+                ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
+            }
+            ui.tcpLogWidget->addItem("Sent");
+        }
+
+        // Receiving the data
+        for (int i = 0; i < ui.tcpCountBox->value(); ++i) {
+            EchoPacket packet {};
+            auto ret = co_await client.readAll(makeBuffer(&packet, sizeof(packet)));
+            if (!ret || *ret != sizeof(packet)) {
+                ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
+                co_return {};
+            }
+            ui.tcpLogWidget->addItem(QString::fromUtf8("idx: " + std::to_string(i) + " Received " + std::to_string(packet.len) + " bytes"));
+            // Receive the data after the packet
+            std::vector<std::byte> buffer;
+            buffer.resize(packet.len);
+            ret = co_await client.readAll(buffer);
+            if (!ret || *ret != buffer.size()) {
+                ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
+            }
+            // Print the diff
+            auto now = ::time(nullptr);
+            ui.tcpLogWidget->addItem(
+                QString::fromUtf8(
+                    "Received in " + std::to_string(now - packet.sendedTime) + " ms" +
+                    " with " + std::to_string(packet.len) + " bytes data"
+                )
+            );
+        }
+
+        co_return {};
+    }
 private:
     QIoContext mCtxt;
     HttpCookieJar mCookieJar;
     HttpSession mSession {mCtxt};
     Ui::MainWindow ui;
     std::vector<std::byte> mContent;
+
+    WaitHandle<void> mEchoServerHandle;
 };
 
 auto main(int argc, char **argv) -> int {

@@ -12,6 +12,7 @@
 
 #include <ilias/io/system_error.hpp>
 #include <ilias/detail/expected.hpp>
+#include <string>
 
 #if defined(_WIN32)
     #include <ilias/detail/win32.hpp>
@@ -47,7 +48,7 @@ inline auto close(fd_t fd) -> Result<void> {
     if (::close(fd) == 0) {
         return {};
     }
-#endif
+#endif // defined(_WIN32)
 
     return Unexpected(SystemError::fromErrno());
 }
@@ -119,7 +120,7 @@ inline auto pipe() -> Result<PipePair> {
     }
 
     return Unexpected(SystemError::fromErrno());
-#endif
+#endif // defined(_WIN32)
 
 }
 
@@ -136,7 +137,7 @@ inline auto isatty(fd_t fd) -> bool {
     return ::GetFileType(fd) == FILE_TYPE_CHAR;
 #else
     return ::isatty(fd) != 0;
-#endif
+#endif // defined(_WIN32)
 
 }
 
@@ -168,7 +169,65 @@ inline auto dup(fd_t fd) -> Result<fd_t> {
     if (newFd != -1) {
         return newFd;
     }
-#endif
+#endif // defined(_WIN32)
+
+    return Unexpected(SystemError::fromErrno());
+}
+
+/**
+ * @brief Open a file.
+ * 
+ * @param path the utf-8 encoded path to the file.
+ * @param mode the mode to open the file. (c style mode string like fopen "r", "w", "a" etc.)
+ * @return Result<fd_t> 
+ */
+inline auto open(const char *path, std::string_view mode) -> Result<fd_t> {
+    // TODO:
+#if defined(_WIN32)
+    ::DWORD access = 0;
+    ::DWORD shareMode = 0;
+    ::DWORD creationDisposition = 0;
+    ::DWORD flagsAndAttributes = FILE_FLAG_OVERLAPPED;
+    bool append = false;
+
+    if (mode.find('r') != std::string_view::npos) {
+        creationDisposition = OPEN_EXISTING;
+        access |= GENERIC_READ;
+    }
+
+    if (mode.find('w') != std::string_view::npos) {
+        creationDisposition = CREATE_ALWAYS;
+        access |= GENERIC_WRITE;
+    }
+
+    if (mode.find('a') != std::string_view::npos) {
+        creationDisposition = OPEN_ALWAYS;
+        access |= GENERIC_WRITE;
+        append = true;
+    }
+
+    if (mode.find('+' != std::string_view::npos)) {
+        access |= GENERIC_READ | GENERIC_WRITE;
+    }
+
+    HANDLE fd = ::CreateFileW(
+        win32::toWide(path).c_str(),
+        access,
+        shareMode,
+        nullptr,
+        creationDisposition,
+        flagsAndAttributes,
+        nullptr
+    );
+    if (fd != INVALID_HANDLE_VALUE) {
+        if (append) {
+            ::SetFilePointer(fd, 0, nullptr, FILE_END);
+        }
+        return fd;
+    }
+#else
+    return Unexpected(Error::OperationNotSupported); //< Not implemented
+#endif // defined(_WIN32)
 
     return Unexpected(SystemError::fromErrno());
 }

@@ -279,6 +279,7 @@ public:
         mPtr = other.mPtr;
         bind();
         other.mPtr = nullptr;
+        return *this;
     }
 
     auto operator <=>(const Sender &) const = default;

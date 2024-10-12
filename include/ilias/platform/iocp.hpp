@@ -61,15 +61,13 @@ public:
         LPFN_TRANSMITFILE TransmitFile = nullptr;
         LPFN_ACCEPTEX AcceptEx = nullptr;
         LPFN_GETACCEPTEXSOCKADDRS GetAcceptExSockaddrs = nullptr;
+        LPFN_TRANSMITPACKETS TransmitPackets = nullptr;
+        LPFN_WSASENDMSG WSASendMsg = nullptr;
+        LPFN_WSARECVMSG WSARecvMsg = nullptr;
 
         int family = 0;
         int stype = 0;
         int protocol = 0;
-    };
-
-    //< For console
-    struct {
-        HANDLE workThread = INVALID_HANDLE_VALUE;
     };
 };
 
@@ -288,6 +286,15 @@ inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resu
             return Unexpected(ret.error());
         }
         if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_GETACCEPTEXSOCKADDRS, &nfd->GetAcceptExSockaddrs); !ret) {
+            return Unexpected(ret.error());
+        }
+        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_TRANSMITPACKETS, &nfd->TransmitPackets); !ret) {
+            return Unexpected(ret.error());
+        }
+        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSARECVMSG, &nfd->WSARecvMsg); !ret) {
+            return Unexpected(ret.error());
+        }
+        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSASENDMSG, &nfd->WSASendMsg); !ret) {
             return Unexpected(ret.error());
         }
 
