@@ -69,11 +69,11 @@ public:
     auto removeDescriptor(IoDescriptor *fd) -> Result<void> override;
 
     ///> @brief Read from a descriptor
-    auto read(IoDescriptor *fd, ::std::span<::std::byte> buffer,
-              ::std::optional<size_t> offset) -> Task<size_t> override;
+    auto read(IoDescriptor *fd, ::std::span<::std::byte> buffer, ::std::optional<size_t> offset)
+        -> Task<size_t> override;
     ///> @brief Write to a descriptor
-    auto write(IoDescriptor *fd, ::std::span<const ::std::byte> buffer,
-               ::std::optional<size_t> offset) -> Task<size_t> override;
+    auto write(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, ::std::optional<size_t> offset)
+        -> Task<size_t> override;
 
     ///> @brief Connect to a remote endpoint
     auto connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> override;
@@ -81,11 +81,11 @@ public:
     auto accept(IoDescriptor *fd, IPEndpoint *remoteEndpoint) -> Task<socket_t> override;
 
     ///> @brief Send data to a remote endpoint
-    auto sendto(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, int flags,
-                const IPEndpoint *endpoint) -> Task<size_t> override;
+    auto sendto(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, int flags, const IPEndpoint *endpoint)
+        -> Task<size_t> override;
     ///> @brief Receive data from a remote endpoint
-    auto recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags,
-                  IPEndpoint *endpoint) -> Task<size_t> override;
+    auto recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags, IPEndpoint *endpoint)
+        -> Task<size_t> override;
 
     ///> @brief Poll a descriptor for events
     auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> override;
@@ -144,11 +144,16 @@ inline EpollContext::EpollContext() {
             ILIAS_ASSERT(false);
         }
     }
+    ILIAS_TRACE("Epoll", "Epoll context created, fd({}), make pipe({}, {})", mEpollFd, mTaskReceiver, mTaskSneder);
 }
 
 inline EpollContext::~EpollContext() {
     if (mEpollFd != -1) {
+        ILIAS_TRACE("Epoll", "Epoll context destroyed, fd({})", mEpollFd);
         close(mEpollFd);
+    }
+    else {
+        ILIAS_WARN("Epoll", "Epoll context destroyed, but fd is -1");
     }
 }
 
@@ -215,7 +220,6 @@ inline auto EpollContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Res
         ILIAS_WARN("Epoll", "Failed to set descriptor to non-blocking. error: {}", SystemError::fromErrno());
     }
     mDescriptors.insert(std::make_pair(fd, nfd.get()));
-
     return nfd.release();
 }
 
@@ -223,7 +227,7 @@ inline auto EpollContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
     int ret = 0;
-    if (descriptor->isPollable) {
+    if (descriptor->isPollable) { // if descriptor is pollable, cancel all pollable events
         auto &epollevents = descriptor->events;
         for (auto &[event, epolleventawaiters] : epollevents) {
             for (auto &epolleventawaiter : epolleventawaiters) {
@@ -246,7 +250,8 @@ inline auto EpollContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
         delete descriptor;
     }
     else {
-        post(+[](void *descriptor) { delete static_cast<detail::EpollDescriptor *>(descriptor); }, descriptor);
+        post(
+            +[](void *descriptor) { delete static_cast<detail::EpollDescriptor *>(descriptor); }, descriptor);
     }
     if (ret != 0) {
         return Unexpected<Error>(SystemError(EALREADY));
@@ -254,8 +259,8 @@ inline auto EpollContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
     return Result<void>();
 }
 
-inline auto EpollContext::read(IoDescriptor *fd, ::std::span<::std::byte> buffer,
-                               ::std::optional<size_t> offset) -> Task<size_t> {
+inline auto EpollContext::read(IoDescriptor *fd, ::std::span<::std::byte> buffer, ::std::optional<size_t> offset)
+    -> Task<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
     if (!descriptor->isPollable) {
@@ -289,10 +294,10 @@ inline auto EpollContext::read(IoDescriptor *fd, ::std::span<::std::byte> buffer
     co_return Unexpected(Error::Unknown);
 }
 
-inline auto EpollContext::write(IoDescriptor *fd, ::std::span<const ::std::byte> buffer,
-                                ::std::optional<size_t> offset) -> Task<size_t> {
+inline auto EpollContext::write(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, ::std::optional<size_t> offset)
+    -> Task<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
-    ILIAS_TRACE("Epoll", "fd {} write {} bytes", descriptor->fd, buffer.size());
+    ILIAS_TRACE("Epoll", "start write {} bytes on fd {}", buffer.size(), descriptor->fd);
     ILIAS_ASSERT(descriptor != nullptr);
     if (!descriptor->isPollable) {
         // not supported operation
@@ -327,7 +332,7 @@ inline auto EpollContext::connect(IoDescriptor *fd, const IPEndpoint &endpoint) 
     ILIAS_ASSERT(descriptor != nullptr);
     ILIAS_ASSERT(descriptor->type == IoDescriptor::Socket);
     ILIAS_ASSERT(descriptor->fd != -1);
-    ILIAS_TRACE("Epoll", "{} connect to {}", descriptor->fd, endpoint);
+    ILIAS_TRACE("Epoll", "start connect to {} on fd {}", endpoint, descriptor->fd);
     auto ret = ::connect(descriptor->fd, &endpoint.cast<sockaddr>(), endpoint.length());
     if (ret == 0) {
         ILIAS_TRACE("Epoll", "{} connect to {} successful", descriptor->fd, endpoint);
@@ -356,7 +361,7 @@ inline auto EpollContext::connect(IoDescriptor *fd, const IPEndpoint &endpoint) 
 
 inline auto EpollContext::accept(IoDescriptor *fd, IPEndpoint *remoteEndpoint) -> Task<socket_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
-    ILIAS_TRACE("Epoll", "fd {} accept", descriptor->fd);
+    ILIAS_TRACE("Epoll", "start accept on fd {}", descriptor->fd);
     ILIAS_ASSERT(descriptor != nullptr);
     ILIAS_ASSERT(descriptor->type == IoDescriptor::Socket);
     ILIAS_ASSERT(descriptor->fd != -1);
@@ -383,7 +388,7 @@ inline auto EpollContext::accept(IoDescriptor *fd, IPEndpoint *remoteEndpoint) -
 inline auto EpollContext::sendto(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, int flags,
                                  const IPEndpoint *endpoint) -> Task<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
-    ILIAS_TRACE("Epoll", "fd {} sendto", descriptor->fd);
+    ILIAS_TRACE("Epoll", "start sendto on fd {}", descriptor->fd);
     ILIAS_ASSERT(descriptor != nullptr);
     ILIAS_ASSERT(descriptor->type == IoDescriptor::Socket);
     ILIAS_ASSERT(descriptor->fd != -1);
@@ -411,10 +416,10 @@ inline auto EpollContext::sendto(IoDescriptor *fd, ::std::span<const ::std::byte
     co_return Unexpected(Error::Unknown);
 }
 
-inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags,
-                                   IPEndpoint *endpoint) -> Task<size_t> {
+inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags, IPEndpoint *endpoint)
+    -> Task<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
-    ILIAS_TRACE("Epoll", "fd {} recvfrom", descriptor->fd);
+    ILIAS_TRACE("Epoll", "start recvfrom on fd {}", descriptor->fd);
     ILIAS_ASSERT(descriptor != nullptr);
     ILIAS_ASSERT(descriptor->type == IoDescriptor::Socket);
     ILIAS_ASSERT(descriptor->fd != -1);
@@ -449,7 +454,7 @@ inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> bu
 inline auto EpollContext::poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
-    ILIAS_TRACE("Epoll", "fd {} poll event {}", descriptor->fd, event);
+    ILIAS_TRACE("Epoll", "fd {} poll events {}", descriptor->fd, detail::toString(event));
     // Build event queues based on different events
     ::std::unordered_map<uint32_t, ::std::list<detail::EpollEvent>>::iterator eventsIt = descriptor->events.find(event);
     if (eventsIt == descriptor->events.end()) {
@@ -474,8 +479,8 @@ inline auto EpollContext::poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_
     }
     // Wait for events
     auto ret = co_await detail::EpollAwaiter(epollevent, listenings_events);
-    ILIAS_TRACE("Epoll", "epoll_wait returned {}",
-                ret.has_value() ? std::to_string(ret.value()) : ret.error().message());
+    ILIAS_TRACE("Epoll", "awaiter finished, return {}",
+                ret.has_value() ? detail::toString(ret.value()) : ret.error().message());
     if (descriptor->isRemoved) {
         co_return ret; // descriptor has been removed, this descriptor while deleted by next event.
     }
@@ -496,7 +501,7 @@ inline auto EpollContext::poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_
 
 inline auto EpollContext::post(void (*fn)(void *), void *args) -> void {
     ILIAS_ASSERT(fn != nullptr);
-    ILIAS_TRACE("Epoll", "Posting task {}, args: {}", (void *)fn, args);
+    ILIAS_TRACE("Epoll", "post task<{}> whit args<{}>", (void *)fn, args);
     PostTask task {fn, args};
     char     buf[sizeof(PostTask)] = {0};
     memcpy(buf, &task, sizeof(task));
@@ -549,13 +554,13 @@ inline auto EpollContext::processTaskByPost() -> void {
         if (readLen != sizeof(task)) {
             break;
         }
-        ILIAS_TRACE("Epoll", "Call callback function ({}, {})", (void *)task.fn, (void *)task.args);
+        ILIAS_TRACE("Epoll", "run post task<{}> whit args<{}>", (void *)task.fn, (void *)task.args);
         task.fn(task.args);
     }
 }
 
 inline auto EpollContext::processEvents(int fd, uint32_t events) -> void {
-    ILIAS_TRACE("Epoll", "Process events for fd: {}, events: {}", fd, events);
+    ILIAS_TRACE("Epoll", "Process events for fd: {}, events: {}", fd, detail::toString(events));
     auto descriptorItem = mDescriptors.find(fd);
     if (descriptorItem == mDescriptors.end()) {
         ILIAS_ERROR("Epoll", "Descriptor not found: {}", fd);
