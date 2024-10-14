@@ -15,9 +15,11 @@
 #include <ilias/net/system.hpp>
 #include <concepts>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+    #include <MSWSock.h>
+#else
     #include <netinet/tcp.h>
-#endif
+#endif // defined(_WIN32)
 
 ILIAS_NS_BEGIN
 
@@ -57,13 +59,24 @@ concept SockOption = SetSockOption<T> || GetSockOption<T>;
 namespace sockopt {
 
 /**
+ * @brief Helper enum to limit the access of socket options
+ * 
+ */
+enum OptionAccess {
+    Read = 1 << 0,
+    Write = 1 << 1,
+    ReadWrite = Read | Write
+};
+
+/**
  * @brief Socket option base helper class
  * 
  * @tparam Level 
  * @tparam Optname 
- * @tparam T 
+ * @tparam T
+ * @tparam Access The access of the option
  */
-template <int Level, int Optname, typename T>
+template <int Level, int Optname, typename T, OptionAccess Access = OptionAccess::ReadWrite>
 class OptionT {
 public:
     constexpr OptionT() = default;
@@ -71,6 +84,7 @@ public:
     constexpr OptionT(T value) : mValue(value) { }
 
     auto setopt(socket_t sock) const -> Result<void> {
+        static_assert(Access & OptionAccess::Write);
         auto ret = ::setsockopt(sock, Level, Optname, reinterpret_cast<const char *>(&mValue), sizeof(T));
         if (ret != 0) {
             return Unexpected(SystemError::fromErrno());
@@ -79,6 +93,7 @@ public:
     }
 
     static auto getopt(socket_t sock) -> Result<OptionT> {
+        static_assert(Access & OptionAccess::Read);
         ::socklen_t optlen = sizeof(T);
         T value;
         auto ret = ::getsockopt(sock, Level, Optname, reinterpret_cast<char *>(&value), &optlen);
@@ -87,6 +102,12 @@ public:
         }
         return OptionT {value};
     }
+
+    /**
+     * @brief Get the value of the option
+     * 
+     */
+    constexpr auto value() const noexcept { return mValue; }
 
     /**
      * @brief Directly get the value of the option
@@ -99,7 +120,62 @@ private:
 };
 
 // For Some options, the value type is not int
+// Add platform specific options here
 #if defined(_WIN32)
+
+/**
+ * @brief The option using WSAIoctl
+ * 
+ * @tparam Opcode 
+ * @tparam T 
+ * @tparam Access 
+ */
+template <DWORD Opcode, typename T, OptionAccess Access = OptionAccess::ReadWrite>
+class WSAOptionT {
+public:
+    constexpr WSAOptionT() = default;
+
+    constexpr WSAOptionT(T value) : mValue(value) { }
+
+    auto setopt(socket_t sock) const -> Result<void> {
+        static_assert(Access & OptionAccess::Write);
+        DWORD bytes = 0;
+        auto in = mValue;
+        auto out = mValue;
+        auto ret = ::WSAIoctl(sock, Opcode, &in, sizeof(in), &out, sizeof(out), &bytes, nullptr, nullptr);
+        if (ret != 0) {
+            return Unexpected(SystemError::fromErrno());
+        }
+        return {};
+    }
+
+    static auto getopt(socket_t sock) -> Result<WSAOptionT> {
+        static_assert(Access & OptionAccess::Read);
+        DWORD bytes = 0;
+        auto out = T { };
+        auto ret = ::WSAIoctl(sock, Opcode, nullptr, 0, &out, sizeof(out), &bytes, nullptr, nullptr);
+        if (ret != 0) {
+            return Unexpected(SystemError::fromErrno());
+        }
+        return out;
+    }
+
+    /**
+     * @brief Get the value of the option
+     * 
+     */
+    constexpr auto value() const noexcept { return mValue; }
+
+    /**
+     * @brief Directly get the value of the option
+     * 
+     * @return T 
+     */
+    constexpr operator T() const noexcept { return mValue; }
+private:
+    T mValue { };
+};
+
 using dword_t = ::DWORD;
 #else
 using dword_t = int;
@@ -190,6 +266,35 @@ using TcpKeepCnt = OptionT<IPPROTO_TCP, TCP_KEEPCNT, dword_t>;
  */
 using TcpUserTimeout = OptionT<IPPROTO_TCP, TCP_USER_TIMEOUT, int>;
 #endif // defined(TCP_USER_TIMEOUT)
+
+
+
+// Platform specific
+#if defined(_WIN32)
+/**
+ * @brief Set the udp socket option SIO_UDP_CONNRESET (true or false)
+ * 
+ */
+using UdpConnReset = WSAOptionT<SIO_UDP_CONNRESET, ::DWORD, OptionAccess::Write>;
+
+/**
+ * @brief Set the udp socket option SIO_UDP_NETRESET (true or false)
+ *
+ */
+using UdpNetReset = WSAOptionT<SIO_UDP_NETRESET, ::DWORD, OptionAccess::Write>;
+
+/**
+ * @brief Get the base handle of the socket
+ * 
+ */
+using BaseHandle = WSAOptionT<SIO_BASE_HANDLE, ::DWORD, OptionAccess::Read>;
+
+/**
+ * @brief Get the protocol information of the socket
+ * 
+ */
+using ProtocolInfo = OptionT<SOL_SOCKET, SO_PROTOCOL_INFO, ::WSAPROTOCOL_INFO, OptionAccess::Read>;
+#endif // defined(WIN32)
 
 
 } // namespace sockopt

@@ -91,7 +91,7 @@ private:
         ILIAS_TRACE("WhenAll", "[{}] Task {} completed, {} Left", sizeof ...(Types), task, mTaskLeft - 1);
         mTaskLeft -= 1;
         if (mTaskLeft == 0) {
-            mCaller.executor()->schedule(mCaller); // Resume the caller
+            mCaller.schedule(); // Resume the caller
         }
     }
 

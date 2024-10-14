@@ -224,11 +224,26 @@ inline auto sleep(std::chrono::milliseconds ms) -> Task<void> {
  * 
  * @return Awaiter 
  */
-inline auto yield() {
+inline auto yield() noexcept {
     struct Awaiter {
         auto await_ready() { return false; }
         auto await_suspend(TaskView<> task) { task.schedule(); }
         auto await_resume() { }
+    };
+    return Awaiter {};
+}
+
+/**
+ * @brief Get the current task view
+ * 
+ * @return auto 
+ */
+inline auto currentTask() noexcept {
+    struct Awaiter {
+        auto await_ready() { return false; }
+        auto await_suspend(TaskView<> task) { mTask = task; }
+        auto await_resume() -> TaskView<> { return mTask; }
+        TaskView<> mTask;
     };
     return Awaiter {};
 }

@@ -46,12 +46,14 @@ public:
     virtual auto sleep(uint64_t ms) -> Task<void> = 0;
 
     /**
-     * @brief Schedule a coroutine to the executor
+     * @brief Schedule a function to be executed in the executor
      * 
-     * @param handle The coroutine handle to schedule
+     * @param fn The function to schedule (can not be null)
      */
-    auto schedule(std::coroutine_handle<> handle) -> void {
-        post(scheduleImpl, handle.address());
+    auto schedule(detail::MoveOnlyFunction<void()> &&fn) -> void {
+        ILIAS_ASSERT_MSG(fn, "fn can not be null");
+        auto ptr = new detail::MoveOnlyFunction<void()>(std::move(fn));
+        post(scheduleImpl, ptr);
     }
 
     /**
@@ -92,12 +94,14 @@ private:
     }
 
     /**
-     * @brief The callback function to schedule a coroutine
+     * @brief The callback to invoke the scheduled function
      * 
      * @param ptr 
      */
     static auto scheduleImpl(void *ptr) -> void {
-        std::coroutine_handle<>::from_address(ptr).resume();
+        auto fn = static_cast<detail::MoveOnlyFunction<void()> *>(ptr);
+        (*fn)();
+        delete fn;
     }
 };
 

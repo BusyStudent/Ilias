@@ -182,7 +182,7 @@ public:
                     co_return {};
                 }
                 // Update the packet with the current time and send back
-                packet.receivedTime = ::time(nullptr);
+                packet.receivedTime = std::chrono::system_clock::now().time_since_epoch().count();
 
                 // Drop the data after the packet
                 std::vector<std::byte> buffer;
@@ -221,6 +221,7 @@ public:
         ui.tcpLogWidget->clear();
         auto endpoint = IPEndpoint(ui.tcpTestEdit->text().toUtf8().data());
         TcpClient client {mCtxt, endpoint.family()};
+        client.setOption(sockopt::TcpNoDelay(true));
         ui.tcpLogWidget->addItem(QString::fromUtf8("Connecting to " + endpoint.toString()));
         if (auto ret = co_await client.connect(endpoint); !ret) {
             ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
@@ -232,7 +233,7 @@ public:
         for (int i = 0; i < ui.tcpCountBox->value(); ++i) {
             EchoPacket packet {};
             packet.len = ui.tcpDataSizeBox->value();
-            packet.sendedTime = ::time(nullptr);
+            packet.sendedTime = std::chrono::system_clock::now().time_since_epoch().count();
             ui.tcpLogWidget->addItem(QString::fromUtf8("idx: " + std::to_string(i) + " Sending " + std::to_string(packet.len) + " bytes"));
             auto ret = co_await client.writeAll(makeBuffer(&packet, sizeof(packet)));
             if (!ret || *ret != sizeof(packet)) {
@@ -266,10 +267,12 @@ public:
                 ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
             }
             // Print the diff
-            auto now = ::time(nullptr);
+            auto now = std::chrono::system_clock::now().time_since_epoch().count();
+            auto diff = std::chrono::system_clock::duration(now - packet.sendedTime);
+            auto diffMs = std::chrono::duration_cast<std::chrono::milliseconds>(diff).count();
             ui.tcpLogWidget->addItem(
                 QString::fromUtf8(
-                    "Received in " + std::to_string(now - packet.sendedTime) + " ms" +
+                    "Received in " + std::to_string(diffMs) + " ms" +
                     " with " + std::to_string(packet.len) + " bytes data"
                 )
             );

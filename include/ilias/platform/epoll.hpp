@@ -112,7 +112,7 @@ private:
     ///> @brief The epoll file descriptor
     SockInitializer                                      mInit;
     int                                                  mEpollFd = -1;
-    detail::TimerService                                 mService {*this};
+    detail::TimerService                                 mService;
     int                                                  mTaskSneder   = -1;
     int                                                  mTaskReceiver = -1;
     ::std::array<epoll_event, 64>                        mEvents;

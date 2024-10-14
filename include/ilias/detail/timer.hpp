@@ -34,7 +34,7 @@ public:
     using TimePoint = std::chrono::steady_clock::time_point;
     using TimerId = std::multimap<TimePoint, TimerAwaiter *>::iterator;
 
-    TimerService(Executor &executor) : mExecutor(executor) { }
+    TimerService() { }
     TimerService(const TimerService &) = delete;
 
     ~TimerService() {
@@ -82,7 +82,6 @@ private:
      */
     auto cancelTimer(TimerId timerId) -> void;
 
-    Executor &mExecutor; //< The executor used to submit tasks
     std::multimap<
         TimePoint, 
         TimerAwaiter *
@@ -189,12 +188,12 @@ inline auto TimerAwaiter::onCancel() -> void {
     mService.cancelTimer(*mTimerId);
     mTimerId = std::nullopt;
     mResult = Unexpected(Error::Canceled);
-    mService.mExecutor.schedule(mCaller); //< Put the caller back to the executor
+    mCaller.schedule(); //< Put the caller back to the executor
 }
 
 inline auto TimerAwaiter::onTimeout() -> void {
     mTimerId = std::nullopt;
-    mService.mExecutor.schedule(mCaller); //< Put the caller back to the executor
+    mCaller.schedule(); //< Put the caller back to the executor
 }
 
 }

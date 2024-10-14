@@ -109,7 +109,7 @@ private:
 
     SockInitializer mInit;
     HANDLE mIocpFd = INVALID_HANDLE_VALUE;
-    detail::TimerService mService {*this};
+    detail::TimerService mService;
     detail::AfdDevice    mAfdDevice;
 
     // NT Functions
@@ -240,7 +240,7 @@ inline auto IocpContext::sleep(uint64_t ms) -> Task<void> {
     return mService.sleep(ms);
 }
 
-#pragma region Conttext
+#pragma region Context
 inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> {
     if (fd == nullptr || fd == INVALID_HANDLE_VALUE) {
         ILIAS_ERROR("IOCP", "Invalid file descriptor in addDescriptor");
@@ -306,6 +306,18 @@ inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resu
         nfd->family = info.iAddressFamily;
         nfd->stype = info.iSocketType;
         nfd->protocol = info.iProtocol;
+
+        // Disable UDP NetReset and ConnReset
+        if (nfd->stype == SOCK_DGRAM) {
+            ::DWORD flag = 0;
+            ::DWORD bytesReturn = 0;
+            if (::WSAIoctl(nfd->sockfd, SIO_UDP_NETRESET, &flag, sizeof(flag), nullptr, 0, &bytesReturn, nullptr, nullptr) == SOCKET_ERROR) {
+                ILIAS_WARN("IOCP", "Failed to disable UDP NetReset, error: {}", SystemError::fromErrno());
+            }
+            if (::WSAIoctl(nfd->sockfd, SIO_UDP_CONNRESET, &flag, sizeof(flag), nullptr, 0, &bytesReturn, nullptr, nullptr) == SOCKET_ERROR) {
+                ILIAS_WARN("IOCP", "Failed to disable UDP ConnReset, error: {}", SystemError::fromErrno());
+            }
+        }
     }
     ILIAS_TRACE("IOCP", "Adding fd: {} to completion port", fd);
     return nfd.release();

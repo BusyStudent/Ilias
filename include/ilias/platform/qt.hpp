@@ -41,8 +41,8 @@ public:
     ~QIoDescriptor() { Q_EMIT destroyed(); }
 
     union {
-        fd_t    fd;          //< Platform's fd
-        qintptr sockfd = -1; //< Platform's socket fd
+        fd_t     fd;                    //< Platform's fd
+        socket_t sockfd = socket_t(-1); //< Platform's socket fd
     };
 
     IoDescriptor::Type type = Unknown;
@@ -162,6 +162,10 @@ inline QIoContext::QIoContext(QObject *parent) : QObject(parent) {
 inline QIoContext::~QIoContext() {
     if (mNumOfDescriptors > 0) {
         ILIAS_ERROR("QIo", "QIoContext::~QIoContext(): descriptors are not removed, {} exist", mNumOfDescriptors);
+#if !defined(NDEBUG)
+        ILIAS_WARN("QIo", "QIoContext::~QIoContext(): dump object tree");
+        dumpObjectTree();
+#endif
     }
 }
 
@@ -197,7 +201,7 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resul
     }
     // Prepare env for Socket
     if (nfd->pollable) {
-        nfd->sockfd = qintptr(fd);
+        nfd->sockfd = socket_t(fd);
         nfd->readNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Read, nfd.get());
         nfd->writeNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Write, nfd.get());
         nfd->exceptNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Exception, nfd.get());
@@ -210,7 +214,25 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resul
         if (auto ret = sockfd.setBlocking(false); !ret) {
             return Unexpected(ret.error());
         }
+
+#if defined(_WIN32)
+        // Disable UDP NetReset and ConnReset
+        if (auto info = sockfd.getOption<sockopt::ProtocolInfo>(); info && info->value().iSocketType == SOCK_DGRAM) {
+            if (auto ret = sockfd.setOption(sockopt::UdpConnReset(false)); !ret) {
+                ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to disable UDP NetReset, {}", ret.error());
+            }
+            if (auto ret = sockfd.setOption(sockopt::UdpNetReset(false)); !ret) {
+                ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to disable UDP ConnReset, {}", ret.error());
+            }
+        }
+#endif
+
     }
+
+    // Set the debug name
+#if !defined(NDEBUG)
+    nfd->setObjectName(QString("IliasQIoDescriptor_%1").arg(nfd->sockfd));
+#endif
 
     ++mNumOfDescriptors;
     return nfd.release();
@@ -233,7 +255,7 @@ inline auto QIoContext::sleep(uint64_t ms) -> Task<void> {
 inline auto QIoContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
     if (nfd->type == IoDescriptor::Socket) {
-        co_return co_await sendto(fd, buffer, 0, nullptr);
+        co_return co_await recvfrom(fd, buffer, 0, nullptr);
     }
     co_return Unexpected(Error::OperationNotSupported);
 }
@@ -423,7 +445,16 @@ inline auto detail::QPollAwaiter::onFdDestroyed() -> void {
 }
 
 inline auto detail::QPollAwaiter::onNotifierActivated(QSocketDescriptor, QSocketNotifier::Type type) -> void {
-    ILIAS_TRACE("QIo", "fd {} was activated", mFd->sockfd);
+    auto type2str = [](QSocketNotifier::Type type) {
+        switch (type) {
+            case QSocketNotifier::Read: return "Read";
+            case QSocketNotifier::Write: return "Write";
+            case QSocketNotifier::Exception: return "Exception";
+            default: return "Unknown";
+        }
+    };
+
+    ILIAS_TRACE("QIo", "fd {} was activated by {}", mFd->sockfd, type2str(type));
     doDisconnect();
     if (type == QSocketNotifier::Read) {
         mResult = PollEvent::In;

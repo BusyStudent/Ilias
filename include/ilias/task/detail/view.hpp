@@ -61,7 +61,7 @@ public:
      * 
      * @return auto 
      */
-    auto schedule() const noexcept { return executor()->schedule(mHandle); }
+    auto schedule() const noexcept { return executor()->post(scheduleImpl, mHandle.address()); }
 
     /**
      * @brief Destroy the task
@@ -159,6 +159,15 @@ public:
      */
     explicit operator bool() const noexcept { return bool(mHandle); }
 protected:
+    /**
+     * @brief The callback function to schedule a coroutine
+     * 
+     * @param ptr 
+     */
+    static auto scheduleImpl(void *ptr) -> void {
+        std::coroutine_handle<>::from_address(ptr).resume();
+    }
+
     detail::TaskPromiseBase *mPromise = nullptr;
     std::coroutine_handle<>  mHandle = nullptr;
 };

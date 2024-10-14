@@ -72,7 +72,7 @@ private:
     > mQueue;
     std::condition_variable mCond;
     std::mutex mMutex;
-    detail::TimerService mService {*this}; //< For impl timer
+    detail::TimerService mService; //< For impl timer
 };
 
 ILIAS_NS_END
