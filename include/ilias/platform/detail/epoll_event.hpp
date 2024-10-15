@@ -24,7 +24,7 @@ ILIAS_NS_BEGIN
 namespace detail {
 class EpollAwaiter;
 
-std::string toString(uint32_t events) {
+inline std::string toString(uint32_t events) {
     std::string ret = "";
     if (events & EPOLLIN) {
         ret += ret.empty() ? "" : " | ";
@@ -88,7 +88,7 @@ public:
         auto ret         = 0;
         ret              = ::epoll_ctl(mEpollEvent.epollfd, EPOLL_CTL_MOD, mEpollEvent.fd, &event);
         if (ret == -1) {
-            ILIAS_ERROR("Epoll", "epoll_ctl {} error: {}", mEpollEvent.fd, strerror(errno));
+            ILIAS_ERROR("Epoll", "awaiter<{}> epoll_ctl {} error: {}", (void *)this, mEpollEvent.fd, strerror(errno));
             mEpollError = errno;
             return true;
         }
