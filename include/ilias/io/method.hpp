@@ -50,6 +50,8 @@ public:
         }
         co_return written;
     }
+
+    auto operator <=>(const WritableMethod &rhs) const noexcept = default;
 };
 
 /**
@@ -85,6 +87,8 @@ public:
         }
         co_return read;
     }
+
+    auto operator <=>(const ReadableMethod &rhs) const noexcept = default;
 };
 
 /**
@@ -93,6 +97,9 @@ public:
  * @tparam T 
  */
 template <typename T>
-class StreamMethod : public WritableMethod<T>, public ReadableMethod<T> { };
+class StreamMethod : public WritableMethod<T>, public ReadableMethod<T> {
+public:
+    auto operator <=>(const StreamMethod &rhs) const noexcept = default;
+};
 
 ILIAS_NS_END

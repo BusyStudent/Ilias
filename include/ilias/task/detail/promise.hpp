@@ -46,8 +46,8 @@ private:
 
 class TaskPromiseBase {
 public:
-    TaskPromiseBase() = default;
-    TaskPromiseBase(const TaskPromiseBase&) = delete;
+    TaskPromiseBase() { mToken.setAutoReset(true); } //< The default cancel policy is CancelPolicy::Once
+    TaskPromiseBase(const TaskPromiseBase &) = delete;
 
     /**
      * @brief On the coroutine start, we are lazy, so we suspend it

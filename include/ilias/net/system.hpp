@@ -28,6 +28,7 @@
 
     #include <WinSock2.h>
     #include <WS2tcpip.h>
+    #include <afunix.h>
 
     #ifdef _MSC_VER
         #pragma comment(lib, "Ws2_32.lib")
@@ -43,6 +44,7 @@
 
     #include <sys/socket.h>
     #include <sys/poll.h>
+    #include <sys/un.h>
     #include <netinet/in.h>
     #include <arpa/inet.h>
     #include <unistd.h>
@@ -124,6 +126,23 @@ inline auto SockInitializer::uninitialize() -> Result<void> {
     }
 #endif
     return {};
+}
+
+// --- Endianess
+inline auto hostToNetwork(uint16_t value) -> uint16_t {
+    return ::htons(value);
+}
+
+inline auto hostToNetwork(uint32_t value) -> uint32_t {
+    return ::htonl(value);
+}
+
+inline auto networkToHost(uint16_t value) -> uint16_t {
+    return ::ntohs(value);
+}
+
+inline auto networkToHost(uint32_t value) -> uint32_t {
+    return ::ntohl(value);
 }
 
 ILIAS_NS_END

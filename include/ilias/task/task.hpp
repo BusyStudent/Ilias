@@ -114,7 +114,7 @@ public:
      * @brief Destroy the Task object, destroy the coroutine
      * 
      */
-    ~Task() { 
+    ~Task() noexcept { 
         if (!mHandle) {
             return;
         }
@@ -138,6 +138,15 @@ public:
             executor->run(token);
         }
         return promise.value();
+    }
+
+    /**
+     * @brief Set the task's cancel policy
+     * 
+     * @param policy 
+     */
+    auto setCancelPolicy(CancelPolicy policy) -> void {
+        return _view().setCancelPolicy(policy);
     }
 
     /**
@@ -241,9 +250,24 @@ inline auto yield() noexcept {
 inline auto currentTask() noexcept {
     struct Awaiter {
         auto await_ready() { return false; }
-        auto await_suspend(TaskView<> task) { mTask = task; }
+        auto await_suspend(TaskView<> task) -> bool { mTask = task; return false; }
         auto await_resume() -> TaskView<> { return mTask; }
         TaskView<> mTask;
+    };
+    return Awaiter {};
+}
+
+/**
+ * @brief Get the current executor in the task
+ * 
+ * @return auto 
+ */
+inline auto currentExecutor() noexcept {
+    struct Awaiter {
+        auto await_ready() { return false; }
+        auto await_suspend(TaskView<> task) -> bool { mExecutor = task.executor(); return false; }
+        auto await_resume() -> Executor* { return mExecutor; }
+        Executor *mExecutor;
     };
     return Awaiter {};
 }

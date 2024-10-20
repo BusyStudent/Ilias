@@ -386,16 +386,23 @@ inline auto HttpSession::connect(const Url &url, bool &fromPool) -> Task<std::un
         if (!addrinfo) {
             co_return Unexpected(addrinfo.error());
         }
-        auto endpoints = addrinfo->addresses();
-        ILIAS_ASSERT(!endpoints.empty());
+        auto addresses = addrinfo->addresses();
+        if (addresses.empty()) {
+            co_return Unexpected(Error::HostNotFound);
+        }
 
         // Try connect to all addresses
-        for (size_t idx = 0; idx < endpoints.size(); ++idx) {
-            auto     &addr = endpoints[idx];
+        for (size_t idx = 0; idx < addresses.size(); ++idx) {
+            auto     &addr = addresses[idx];
             TcpClient client(mCtxt, addr.family());
-            ILIAS_TRACE("Http", "Trying to connect to {} ({} of {})", IPEndpoint(addr, port), idx + 1, endpoints.size());
-            if (auto ret = co_await client.connect(IPEndpoint {addr, port}); !ret && idx == endpoints.size() - 1) {
-                continue;
+            ILIAS_TRACE("Http", "Trying to connect to {} ({} of {})", IPEndpoint(addr, port), idx + 1, addresses.size());
+            if (auto ret = co_await client.connect(IPEndpoint {addr, port}); !ret && idx != addresses.size() - 1) {
+                // Try another address
+                if (ret.error() != Error::Canceled) {
+                    continue;
+                }
+                ILIAS_TRACE("Http", "Got Cancel, Exiting");
+                co_return Unexpected(ret.error());
             }
             else if (!ret) {
                 co_return Unexpected(ret.error());

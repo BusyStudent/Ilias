@@ -19,6 +19,15 @@ namespace detail {
     struct TaskViewNull { };
 }
 
+/**
+ * @brief The cancellation policy for the task
+ * 
+ */
+enum class CancelPolicy {
+    Once,         // Cancels only the current await point; subsequent co_await operations proceed normally (default)
+    Persistent,   // Cancellation persists; all subsequent co_await operations will receive cancellation notifications
+};
+
 template <typename T = detail::TaskViewNull>
 class TaskView;
 
@@ -121,6 +130,13 @@ public:
     auto setAwaitingCoroutine(std::coroutine_handle<> handle) const noexcept -> void { return mPromise->setAwaitingCoroutine(handle); }
 
     /**
+     * @brief Set the Cancel Policy object, the task will follow this policy when self is cancelled
+     * 
+     * @param policy 
+     */
+    auto setCancelPolicy(CancelPolicy policy) const noexcept -> void { return cancellationToken().setAutoReset(policy == CancelPolicy::Once); }
+
+    /**
      * @brief Register a callback function to be called when the task is done
      * 
      * @param fn 
@@ -199,7 +215,7 @@ public:
      * @return handle_type 
      */
     auto handle() const -> handle_type {
-        return handle_type::from_address(this->mHandle.address());
+        return handle_type::from_address(mHandle.address());
     }
 
     /**
@@ -236,9 +252,6 @@ ILIAS_NS_END
 
 #if !defined(ILIAS_NO_FORMAT)
 ILIAS_FORMATTER(TaskView<>) {
-    constexpr auto parse(auto &ctxt) {
-        return ctxt.begin();
-    }
     auto format(const auto &view, auto &ctxt) const {
         return format_to(ctxt.out(), "TaskView<{}>", std::coroutine_handle<>(view).address());
     }

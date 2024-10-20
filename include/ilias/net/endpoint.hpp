@@ -18,6 +18,99 @@
 
 ILIAS_NS_BEGIN
 
+/**
+ * @brief The endpoint of a unix domain socket
+ * 
+ */
+class UnixEndpoint : public ::sockaddr_un {
+public:
+    UnixEndpoint() = default;
+
+    /**
+     * @brief Construct a new Unix Endpoint object by raw ::sockaddr_un
+     * 
+     * @param addr The network-format unix endpoint address
+     */
+    UnixEndpoint(::sockaddr_un addr) : ::sockaddr_un(addr) { }
+
+    /**
+     * @brief Construct a new Unix Endpoint object based on path
+     * 
+     * @param path The path of the unix endpoint (must be shorter than sizeof(sun_path) - 1)
+     */
+    UnixEndpoint(std::string_view path) {
+        auto maxlen = sizeof(sun_path) - 1;
+        auto len = path.size() >= maxlen ? maxlen : path.size();
+        ::memcpy(sun_path, path.data(), len);
+        sun_path[len] = '\0';
+        sun_family = AF_UNIX;
+    }
+
+    /**
+     * @brief Get the family of the endpoint
+     * 
+     * @return int 
+     */
+    auto family() const -> int {
+        return AF_UNIX;
+    }
+
+    /**
+     * @brief Get the length of the endpoint
+     * 
+     * @return size_t 
+     */
+    auto length() const -> size_t {
+        return sizeof(::sockaddr_un);
+    }
+
+    /**
+     * @brief Convert the endpoint to string
+     * 
+     * @return std::string 
+     */
+    auto toString() const -> std::string {
+        return sun_path;
+    }
+
+    /**
+     * @brief Check if the endpoint is valid
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isValid() const -> bool {
+        return sun_family == AF_UNIX;
+    }
+
+    /**
+     * @brief Check if the endpoint is abstract path
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isAbstract() const -> bool {
+        return sun_path[0] == '\0';
+    }
+
+    /**
+     * @brief Parse a string to unix endpoint
+     * 
+     * @param path 
+     * @return Result<UnixEndpoint> 
+     */
+    static auto fromString(std::string_view path) -> Result<UnixEndpoint> {
+        if (path.size() >= sizeof(sun_path)) {
+            return Unexpected(Error::InvalidArgument);
+        }
+        return UnixEndpoint(path);
+    }
+};
+
+/**
+ * @brief The endpoint of a internet socket
+ * 
+ */
 class IPEndpoint {
 public:
     IPEndpoint() = default;
@@ -302,8 +395,14 @@ private:
 
 ILIAS_NS_END
 
-// --- Formatter for IPEndpoint
+// --- Formatter for Endpoint
 #if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(UnixEndpoint) {
+    auto format(const auto &addr, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", addr.toString());
+    }
+};
+
 ILIAS_FORMATTER(IPEndpoint) {
     auto format(const auto &addr, auto &ctxt) const {
         return format_to(ctxt.out(), "{}", addr.toString());

@@ -134,6 +134,15 @@ public:
     }
 
     /**
+     * @brief Set the token auto reset, let the token be reset after invoke the callbacks
+     * 
+     * @param autoReset 
+     */
+    auto setAutoReset(bool autoReset) -> void {
+        mAutoReset = autoReset;
+    }
+
+    /**
      * @brief Check if the token is cancelled
      * 
      * @return true 
@@ -161,10 +170,23 @@ public:
         
         mIsInCancelling = false;
         mCallbacks.clear();
+
+        if (mAutoReset) {
+            mIsCancelled = false;
+        }
+    }
+
+    /**
+     * @brief Reset the token, back to the initial state
+     * 
+     */
+    auto reset() -> void {
+        mIsCancelled = false;
     }
 private:
     bool mIsCancelled = false;
     bool mIsInCancelling = false;
+    bool mAutoReset = false;
     std::list<detail::CancellationCallback*> mCallbacks; //< Invoke when token is cancelled
 };
 
