@@ -503,7 +503,8 @@ template <StreamClient T = IStreamClient>
 class SslClient final : public SslSocket<T>, public StreamMethod<SslClient<T> > {    
 public:
     SslClient() = default;
-    SslClient(SslContext &ctxt, T &&fd) : SslSocket<T>(ctxt, std::move(fd)) {}
+    SslClient(SslClient &&other) = default;
+    SslClient(SslContext &ctxt, T &&fd) : SslSocket<T>(ctxt, std::move(fd)) { }
 
     auto handshake() -> Task<> {
         return this->handshakeAsClient();

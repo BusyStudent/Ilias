@@ -88,8 +88,8 @@ inline auto pipe() -> Result<PipePair> {
         PIPE_ACCESS_INBOUND | FILE_FLAG_OVERLAPPED,
         PIPE_TYPE_BYTE | PIPE_WAIT,
         1, // < Only one instance of the pipe, for our write pipe
-        4096,
-        4096,
+        65535, //< 64KB buffer size, as same as linux
+        65535,
         NMPWAIT_USE_DEFAULT_WAIT,
         nullptr
     );

@@ -27,33 +27,53 @@ inline auto CancelTheTokenHelper(void *token) -> void {
 }
 
 /**
- * @brief The awaiter of the task
+ * @brief The common part of the task awaiter
  * 
- * @tparam T 
  */
-template <typename T>
-class TaskAwaiter {
+class TaskAwaiterBase {
 public:
-    TaskAwaiter(TaskView<T> task) : mTask(task) { }
-
+    /**
+     * @brief Try to start the task and check if it is done
+     * 
+     * @return true 
+     * @return false 
+     */
     auto await_ready() const noexcept -> bool {
         mTask.resume();
         return mTask.done();
     }
 
-    auto await_suspend(TaskView<> caller) -> void {
+    auto await_suspend(TaskView<> caller) noexcept -> void {
         mTask.setAwaitingCoroutine(caller); //< When the task is done, resume the caller
-        mReg = caller.cancellationToken().register_( //< Let the caller's cancel request cancel the current task
+        mReg = caller.cancellationToken().register_( //< Forward the caller's cancel request cancel to the current task
             &CancelTheTokenHelper, &mTask.cancellationToken()
         );
     }
+protected:
+    TaskAwaiterBase(TaskView<> task) : mTask(task) { }
 
-    auto await_resume() const -> Result<T> {
-        return mTask.value();
-    }
-private:
     CancellationToken::Registration mReg; //< The reg of we wait for cancel
-    TaskView<T> mTask; //< The task we want to await
+    TaskView<> mTask; //< The task we wait for
+};
+
+/**
+ * @brief The awaiter of the task
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class TaskAwaiter final : public TaskAwaiterBase {
+public:
+    TaskAwaiter(TaskView<T> task) : TaskAwaiterBase(task) { }
+
+    /**
+     * @brief Get the result of the task
+     * 
+     * @return Result<T> 
+     */
+    auto await_resume() const -> Result<T> {
+        return TaskView<T>::cast(mTask).value();
+    }
 };
 
 /**

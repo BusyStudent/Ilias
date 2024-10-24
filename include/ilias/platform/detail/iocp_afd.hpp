@@ -12,6 +12,7 @@
 
 #include <ilias/platform/detail/iocp_overlapped.hpp>
 #include <ilias/io/system_error.hpp>
+#include <ilias/net/system.hpp>
 #include <ilias/log.hpp>
 #include <winternl.h>
 
@@ -91,7 +92,7 @@ public:
         if (events & PollEvent::Out) {
             mInfo.Handles[0].Events |= (AFD_POLL_SEND | AFD_POLL_CONNECT_FAIL);
         }
-        if (events & PollEvent::Err) {
+        if (events & PollEvent::Pri) {
             mInfo.Handles[0].Events |= (AFD_POLL_ABORT | AFD_POLL_CONNECT_FAIL);
         }
     }

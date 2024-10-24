@@ -55,14 +55,23 @@
 
 ILIAS_NS_BEGIN
 
-// --- Enums
+/**
+ * @brief The poll event enum. It is the same as in poll.h and can be combined with bitwise operations.
+ * 
+ */
 enum PollEvent : uint32_t {
-    In  = POLLIN,
-    Out = POLLOUT,
-    Err = POLLERR,
-    Hup = POLLHUP,
+    In  = POLLIN,  //< When fd can be read (similar to readfds in select)
+    Out = POLLOUT, //< When fd can be written (similar to writefds in select)
+    Pri = POLLPRI, //< When fd has urgent data (similar to exceptfds in select)
+
+    Err = POLLERR, //< When fd has an error condition (not passed to poll, only in revents)
+    Hup = POLLHUP, //< When fd is hung up (not passed to poll, only in revents)
 };
 
+/**
+ * @brief The socket shutdown mode enum
+ * 
+ */
 enum Shutdown : int {
     Read  = ILIAS_SHUT_RD,
     Write = ILIAS_SHUT_WR,
