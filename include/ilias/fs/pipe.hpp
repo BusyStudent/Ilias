@@ -143,6 +143,32 @@ public:
         co_return {};
     }
 
+#if defined(_WIN32) // Windows named pipe spec
+    /**
+     * @brief Wait for the named pipe to be connected (wrapping ConnectNamedPipe)
+     * 
+     * @return Task<void> 
+     */
+    auto connect() -> Task<void> {
+        return mCtxt->connectNamedPipe(mDesc);
+    }
+
+    /**
+     * 
+     * @brief Disconnect the named pipe (wrapping DisconnectNamedPipe)
+     * 
+     * @return Result<void> 
+     */
+    auto disconnect() -> Result<void> {
+        if (::DisconnectNamedPipe(mFd)) {
+            return {};
+        }
+        return Unexpected(SystemError::fromErrno());
+    }
+#endif // defined(_WIN32)
+
+
+    // Move only
     auto operator =(const Pipe &) = delete;
 
     auto operator =(Pipe &&other) -> Pipe & {

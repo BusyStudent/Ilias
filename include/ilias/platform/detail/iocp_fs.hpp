@@ -82,6 +82,28 @@ private:
     std::span<const std::byte> mBuffer;
 };
 
+/**
+ * @brief Wrapping the ConnectNamedPipe async operations
+ * 
+ */
+class IocpConnectPipeAwaiter final : public IocpAwaiter<IocpConnectPipeAwaiter> {
+public:
+    IocpConnectPipeAwaiter(HANDLE handle) : IocpAwaiter(handle) { }
+
+    auto onSubmit() -> bool {
+        ILIAS_TRACE("IOCP", "ConnectNamedPipe on handle {}", handle());
+        return ::ConnectNamedPipe(handle(), overlapped());
+    }
+
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<void> {
+        ILIAS_TRACE("IOCP", "ConnectNamedPipe on handle {} completed, Error {}", handle(), error);
+        if (error != ERROR_SUCCESS) {
+            return Unexpected(SystemError(error));
+        }
+        return {};
+    }
+};
+
 
 /**
  * @brief Wrapping the Thread async operations, based on thread pool

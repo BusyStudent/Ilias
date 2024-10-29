@@ -103,6 +103,7 @@ public:
     auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, IPEndpoint *endpoint) -> Task<size_t> override;
 
     auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> override;
+    auto connectNamedPipe(IoDescriptor *fd) -> Task<void> override;
 private:
     auto processCompletion(DWORD timeout) -> void;
     auto processCompletionEx(DWORD timeout) -> void;
@@ -400,6 +401,15 @@ inline auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> Task<uint32_
         co_return Unexpected(Error::OperationNotSupported);
     }
     co_return co_await detail::AfdPollAwaiter(mAfdDevice, nfd->sockfd, events);
+}
+
+#pragma region NamedPipe
+inline auto IocpContext::connectNamedPipe(IoDescriptor *fd) -> Task<void> {
+    auto nfd = static_cast<detail::IocpDescriptor*>(fd);
+    if (nfd->type != IoDescriptor::Pipe) {
+        co_return Unexpected(Error::OperationNotSupported);
+    }
+    co_return co_await detail::IocpConnectPipeAwaiter(nfd->handle);
 }
 
 ILIAS_NS_END

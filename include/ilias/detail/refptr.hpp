@@ -19,11 +19,28 @@ concept RefCounted = requires(T& t) {
 };
 
 /**
+ * @brief The default reference counting trait, using the ref and deref method
+ * 
+ */
+class RefCountedTrait {
+public:
+    template <RefCounted T>
+    static auto ref(T *ptr) -> void {
+        ptr->ref();
+    }
+    template <RefCounted T>
+    static auto deref(T *ptr) -> void {
+        ptr->deref();
+    }
+};
+
+/**
  * @brief The reference counting pointer, use instrusive reference counting
  * 
- * @tparam T 
+ * @tparam T The type of the pointer
+ * @tparam Trait The reference counting trait to add reference counting and dereference
  */
-template <RefCounted T>
+template <typename T, typename Trait = RefCountedTrait>
 struct RefPtr {
 public:
     RefPtr() = default;
@@ -39,6 +56,10 @@ public:
     }
     ~RefPtr() {
         deref();
+    }
+    
+    auto get() const noexcept {
+        return mPtr;
     }
 
     auto operator =(const RefPtr &other) -> RefPtr & {
@@ -67,12 +88,12 @@ public:
 private:
     auto ref() -> void {
         if (mPtr) {
-            mPtr->ref();
+            Trait::ref(mPtr);
         }
     }
     auto deref() -> void {
         if (mPtr) {
-            mPtr->deref();
+            Trait::deref(mPtr);
         }
     }
 

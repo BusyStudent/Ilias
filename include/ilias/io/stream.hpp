@@ -1,3 +1,13 @@
+/**
+ * @file stream.hpp
+ * @author BusyStudent (fyw90mc@gmail.com)
+ * @brief Stream Buffer & Stream Wrapper classes
+ * @version 0.1
+ * @date 2024-10-24
+ * 
+ * @copyright Copyright (c) 2024
+ * 
+ */
 #pragma once
 
 #include <ilias/io/dyn_traits.hpp>

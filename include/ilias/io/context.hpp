@@ -143,6 +143,19 @@ public:
     static auto currentThread() -> IoContext * {
         return static_cast<IoContext*>(Executor::currentThread());
     }
+
+#if defined(_WIN32)
+    /**
+     * @brief Wrapping Win32 ConnectNamedPipe, The named pipe server wait for a client to connect
+     * 
+     * @param fd The fd must be a named pipe
+     * @return Task<void> 
+     */
+    virtual auto connectNamedPipe(IoDescriptor *fd) -> Task<void> {
+        co_return Unexpected(Error::OperationNotSupported); //< Default Not implemented
+    }
+#endif // defined(_WIN32)
+
 };
 
 

@@ -14,11 +14,16 @@
 #include <ilias/task/executor.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/log.hpp>
+#include <atomic>
 
 ILIAS_NS_BEGIN
 
 namespace win32 {
 
+/**
+ * @brief Waiting for a object to be signaled (wrapping RegisterWaitForSingleObject)
+ * 
+ */
 class WaitObject {
 public:
     WaitObject(HANDLE handle, ULONG timeout = INFINITE) : mHandle(handle), mMillseconds(timeout) { }
@@ -41,11 +46,14 @@ public:
             mWaitHandle = nullptr;
             return false;
         }
-        mRegistration = caller.cancellationToken().register_(&WaitObject::cancelCallback, mWaitHandle);
+        mRegistration = caller.cancellationToken().register_(&WaitObject::cancelCallback, this);
         return true;
     }
 
     auto await_resume() -> Result<void> {
+        if (mCanceled) {
+            return Unexpected(Error::Canceled);
+        }
         if (!mWaitHandle) { //< FAiled to register
             return Unexpected(SystemError::fromErrno());
         }
@@ -60,20 +68,32 @@ public:
 private:
     static auto CALLBACK completeCallback(void *_self, BOOLEAN waitOrTimeout) -> void {
         auto self = static_cast<WaitObject*>(_self);
+        if (self->mFlag.test_and_set()) {
+            return; //< Cancel already
+        }
         self->mTimedout = waitOrTimeout;
         self->mCaller.schedule();
     }
-    static auto cancelCallback(void *handle) -> void {
-        if (!::UnregisterWaitEx(static_cast<HANDLE>(handle), nullptr)) {
+    static auto cancelCallback(void *_self) -> void {
+        auto self = static_cast<WaitObject*>(_self);
+        if (self->mFlag.test_and_set()) {
+            return; //< Completed already
+        }
+        if (!::UnregisterWaitEx(self->mWaitHandle, nullptr)) {
             ILIAS_ERROR("Win32", "Failed to unregister wait handle {}", ::GetLastError());
         }
+        self->mWaitHandle = nullptr;
+        self->mCanceled = true;
+        self->mCaller.schedule();
     }
 
     HANDLE mHandle;     //< The handle we want to wait on
     HANDLE mWaitHandle = nullptr; // The handle returned by RegisterWaitForSingleObject
     ULONG  mMillseconds = INFINITE; // The timeout for the wait
     BOOLEAN mTimedout = FALSE; // Whether the wait timed out
+    BOOLEAN mCanceled = FALSE; // Whether the wait was canceled
     TaskView<> mCaller;
+    std::atomic_flag mFlag = ATOMIC_FLAG_INIT; //< Does the operation complete?
     CancellationToken::Registration mRegistration;
 };
 
