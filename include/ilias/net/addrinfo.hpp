@@ -260,7 +260,7 @@ inline auto AddressInfo::fromHostnameAsync(const char *name, const char *service
         auto await_suspend(TaskView<> caller) -> bool {
             ::memset(&mEvent, 0, sizeof(mEvent));
             mCaller = caller;
-            mEvent.sigev_notify = SIGEV_THREAD; //< Use callbacl
+            mEvent.sigev_notify = SIGEV_THREAD; //< Use callback
             mEvent.sigev_value.sival_ptr = this;
             mEvent.sigev_notify_function = [](::sigval val) {
                 auto self = static_cast<Awaiter *>(val.sival_ptr);

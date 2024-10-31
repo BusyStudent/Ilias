@@ -281,8 +281,8 @@ public:
 #endif
         va_end(varg);
 
-        if (bytesLeft() < n) {
-            if (!expandBuffer(n)) {
+        if (bytesLeft() < n + 1) { //< 1 for '\0'
+            if (!expandBuffer(n + 1)) {
                 return false;
             }
         }

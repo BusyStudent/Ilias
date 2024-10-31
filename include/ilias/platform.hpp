@@ -23,6 +23,10 @@
 
 ILIAS_NS_BEGIN
 
+/**
+ * @brief The Automatically selected platform context, IOCP on windows, epoll on linux
+ * 
+ */
 using PlatformContext = ILIAS_PLATFORM_CONTEXT;
 
 ILIAS_NS_END

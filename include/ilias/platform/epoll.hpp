@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <ilias/platform/detail/epoll_event.hpp>
+#include <ilias/platform/detail/aio_core.hpp> //< For normal file
 #include <ilias/cancellation_token.hpp>
 #include <ilias/detail/timer.hpp>
 #include <ilias/task/executor.hpp>
@@ -275,7 +276,7 @@ inline auto EpollContext::read(IoDescriptor *fd, ::std::span<::std::byte> buffer
         int ret = 0;
         if (offset.has_value()) {
             ILIAS_ASSERT(descriptor->type == detail::EpollDescriptor::File);
-            ret = ::pread(descriptor->fd, buffer.data(), buffer.size(), offset.value());
+            co_return co_await detail::AioReadAwaiter(descriptor->fd, buffer, offset);
         }
         else {
             ret = ::read(descriptor->fd, buffer.data(), buffer.size());
@@ -308,7 +309,7 @@ inline auto EpollContext::write(IoDescriptor *fd, ::std::span<const ::std::byte>
         int ret = 0;
         if (offset.has_value()) {
             ILIAS_ASSERT(descriptor->type == detail::EpollDescriptor::File);
-            ret = ::pwrite(descriptor->fd, buffer.data(), buffer.size(), offset.value());
+            co_return co_await detail::AioWriteAwaiter(descriptor->fd, buffer, offset);
         }
         else {
             ret = ::write(descriptor->fd, buffer.data(), buffer.size());

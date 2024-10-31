@@ -19,9 +19,10 @@
     #include <Windows.h>
     #include <atomic>
 #else
+    #include <sys/stat.h>
     #include <unistd.h>
     #include <fcntl.h>
-#endif
+#endif // defined(_WIN32)
 
 
 ILIAS_NS_BEGIN
@@ -182,7 +183,7 @@ inline auto dup(fd_t fd) -> Result<fd_t> {
  * @return Result<fd_t> 
  */
 inline auto open(const char *path, std::string_view mode) -> Result<fd_t> {
-    // TODO:
+
 #if defined(_WIN32)
     ::DWORD access = 0;
     ::DWORD shareMode = 0;
@@ -226,7 +227,32 @@ inline auto open(const char *path, std::string_view mode) -> Result<fd_t> {
         return fd;
     }
 #else
-    return Unexpected(Error::OperationNotSupported); //< Not implemented
+    // Mapping by man fopen
+    // r  | O_RDONLY
+    // w  | O_WRONLY | O_CREAT | O_TRUNC 
+    // a  | O_WRONLY | O_CREAT | O_APPEND
+    // r+ | O_RDWR                       
+    // w+ | O_RDWR | O_CREAT | O_TRUNC   
+    // a+ | O_RDWR | O_CREAT | O_APPEND  
+    int flags = 0;
+
+    if (mode.find('r') != std::string_view::npos) {
+        flags |= O_RDONLY;
+    }
+    if (mode.find('w') != std::string_view::npos) {
+        flags |= O_WRONLY | O_CREAT | O_TRUNC; 
+    }
+    if (mode.find('a') != std::string_view::npos) {
+        flags |= O_WRONLY | O_CREAT | O_APPEND;
+    }
+    if (mode.find('+')) {
+        flags |= O_RDWR;
+    }
+
+    int fd = ::open(path, flags);
+    if (fd >= 0) {
+        return fd;
+    }
 #endif // defined(_WIN32)
 
     return Unexpected(SystemError::fromErrno());
