@@ -1,3 +1,13 @@
+/**
+ * @file mpsc.hpp
+ * @author BusyStudent (fyw90mc@gmail.com)
+ * @brief The multi producer single consumer channel.
+ * @version 0.1
+ * @date 2024-10-30
+ * 
+ * @copyright Copyright (c) 2024
+ * 
+ */
 #pragma once
 
 #include <ilias/sync/detail/channel.hpp>
@@ -24,9 +34,9 @@ class Channel final : public channel_impl::Channel<
  * @tparam T The item type to be sent.
  */
 template <typename T>
-class Sender final : public channel_impl::Sender<Channel<T>, true> {
+class Sender final : public channel_impl::Sender<Channel<T> > {
 public:
-    using channel_impl::Sender<Channel<T>, true>::Sender;
+    using channel_impl::Sender<Channel<T> >::Sender;
 };
 
 /**
@@ -35,8 +45,8 @@ public:
  * @tparam T The item type to be received.
  */
 template <typename T>
-class Receiver final : public channel_impl::Receiver<Channel<T>, false> {
-    using channel_impl::Receiver<Channel<T>, false>::Receiver;
+class Receiver final : public channel_impl::Receiver<Channel<T> > {
+    using channel_impl::Receiver<Channel<T> >::Receiver;
 };
 
 template <typename T>

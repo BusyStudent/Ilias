@@ -21,10 +21,12 @@
     #define ILIAS_STDIN_FILENO  ::GetStdHandle(STD_INPUT_HANDLE)
     #define ILIAS_STDOUT_FILENO ::GetStdHandle(STD_OUTPUT_HANDLE)
     #define ILIAS_STDERR_FILENO ::GetStdHandle(STD_ERROR_HANDLE)
+    #define ILIAS_CONSOLE_DELIMITER "\r\n"
 #else
     #define ILIAS_STDIN_FILENO  STDIN_FILENO
     #define ILIAS_STDOUT_FILENO STDOUT_FILENO
     #define ILIAS_STDERR_FILENO STDERR_FILENO
+    #define ILIAS_CONSOLE_DELIMITER "\n"
 #endif
 
 
@@ -37,6 +39,12 @@ ILIAS_NS_BEGIN
  */
 class Console final : public StreamMethod<Console> {
 public:
+    /**
+     * @brief The Platform specific console delimiter
+     * 
+     */
+    static constexpr auto LineDelimiter = std::string_view(ILIAS_CONSOLE_DELIMITER);
+
     Console() = default;
 
     /**
@@ -120,6 +128,25 @@ public:
      */
     auto puts(std::string_view str) -> Task<size_t> {
         return writeAll(makeBuffer(str));
+    }
+
+    /**
+     * @brief Try read a line from the console by delimiter
+     * 
+     * @param delimiter 
+     * @return Task<std::string> 
+     */
+    auto getline(std::string_view delimiter = LineDelimiter) -> Task<std::string> {
+        std::string buffer(1024, '\0');
+        auto n = co_await read(makeBuffer(buffer));
+        if (!n) {
+            co_return Unexpected(n.error());
+        }
+        buffer.resize(*n);
+        if (buffer.ends_with(delimiter)) {
+            buffer.resize(buffer.size() - delimiter.size());
+        }
+        co_return buffer;
     }
 
     /**

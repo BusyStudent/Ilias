@@ -1,4 +1,5 @@
 #include <ilias/sync/mpsc.hpp>
+#include <ilias/sync/mpmc.hpp>
 #include <ilias/task.hpp>
 #include <gtest/gtest.h>
 #include <chrono>
@@ -6,21 +7,24 @@
 using namespace ILIAS_NAMESPACE;
 using namespace std::chrono_literals;
 
+auto sendForN(auto &sender, size_t n) -> Task<void> {
+    for (size_t i = 0; i < n; ++i) {
+        auto ret = co_await sender.send(i);
+        if (!ret) co_return Unexpected(ret.error());
+    }
+    co_return {};
+}
+
+auto recvForN(auto &receiver, size_t n) -> Task<void> {
+    for (size_t i = 0; i < n; ++i) {
+        auto ret = co_await receiver.recv();
+        if (!ret) co_return Unexpected(ret.error());
+        ILIAS_ASSERT(*ret == i); //< Sender is guaranteed to send i
+    }
+    co_return {};
+};
+
 TEST(Mpsc, SendRecv) {
-    auto sendForN = [](mpsc::Sender<int> &sender, size_t n) -> Task<void> {
-        for (size_t i = 0; i < n; ++i) {
-            auto ret = co_await sender.send(i);
-            if (!ret) co_return Unexpected(ret.error());
-        }
-        co_return {};
-    };
-    auto recvForN = [](mpsc::Receiver<int> &receiver, size_t n) -> Task<void> {
-        for (size_t i = 0; i < n; ++i) {
-            auto ret = co_await receiver.recv();
-            if (!ret) co_return Unexpected(ret.error());
-        }
-        co_return {};
-    };
     auto sendAndRecv = [&](size_t capacity, size_t n) {
         auto [sender, receiver] = mpsc::channel<int>(capacity);
         return whenAll(
@@ -128,15 +132,30 @@ TEST(Mpsc, Close) { //< Test for recv and then close it
 }
 
 TEST(Mpsc, Cancel) {
-    auto [sender, receiver] = mpsc::channel<int>(1);
-    auto recvWithCancel = [](auto &receiver) -> Task<void> {
-        auto doRecv = [&]() -> Task<int> {
-            co_return co_await receiver.recv();
+    {
+        auto [sender, receiver] = mpsc::channel<int>(1);
+        auto recvWithCancel = [](auto &receiver) -> Task<void> {
+            auto doRecv = [&]() -> Task<int> {
+                co_return co_await receiver.recv();
+            };
+            auto [recv, _] = co_await whenAny(doRecv(), sleep(1ms));
+            co_return {};
         };
-        auto [recv, _] = co_await whenAny(doRecv(), sleep(1ms));
-        co_return {};
-    };
-    recvWithCancel(receiver).wait();
+        recvWithCancel(receiver).wait();
+    }
+
+    {
+        auto [sender, receiver] = mpsc::channel<int>(1);
+        sender.trySend(1); //< Make it to be full
+        auto sendWithCancel = [](auto &sender) -> Task<void> {
+            auto doSend = [&]() -> Task<void> {
+                co_return co_await sender.send(1);
+            };
+            auto [send, _] = co_await whenAny(doSend(), sleep(1ms));
+            co_return {};
+        };
+        sendWithCancel(sender).wait();
+    }
 }
 
 auto main(int argc, char** argv) -> int {

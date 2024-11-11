@@ -141,8 +141,17 @@ public:
     using SenderQueue = _SenderQueue;
     using ReceiverQueue = _ReceiverQueue;
 
-    Channel(size_t capacity = std::numeric_limits<size_t>::max()) : mCapacity(capacity) { }
+    /**
+     * @brief Multi Queue make it has multi users. so it copyable.
+     * 
+     */
+    static constexpr auto SenderCopyable = std::is_same_v<SenderQueue, MultiQueue>;
+    static constexpr auto ReceiverCopyable = std::is_same_v<ReceiverQueue, MultiQueue>;
+
+    Channel(size_t capacity) : mCapacity(capacity) { }
+    
     Channel(const Channel &) = delete;
+
     ~Channel() {
         ILIAS_ASSERT_MSG(mSenderCount == 0 && mReceiverCount == 0, "Reference count is not zero");
         ILIAS_ASSERT_MSG(mSenderQueue.empty() && mReceiverQueue.empty(), "Should no-one waiting on the channel");
@@ -324,10 +333,9 @@ private:
  * @brief For Sender
  * 
  * @tparam T The channel type
- * @tparam Copyable Should the sender be copyable ?
  */
-template <typename ChannelT, bool Copyable>
-class Sender : public std::conditional_t<Copyable, EmptyBase, NonCopyable> {
+template <typename ChannelT>
+class Sender : public std::conditional_t<ChannelT::SenderCopyable, EmptyBase, NonCopyable> {
 public:
     using ValueType = typename ChannelT::ValueType;
 
@@ -418,10 +426,9 @@ private:
  * @brief For Receiver
  * 
  * @tparam ChannelT The channel type
- * @tparam Cooyable Should the receiver class be copyable?
  */
-template <typename ChannelT, bool Cooyable>
-class Receiver : public std::conditional_t<Cooyable, EmptyBase, NonCopyable> {
+template <typename ChannelT>
+class Receiver : public std::conditional_t<ChannelT::ReceiverCopyable, EmptyBase, NonCopyable> {
 public:
     using ValueType = typename ChannelT::ValueType;
 
