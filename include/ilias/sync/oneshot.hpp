@@ -28,7 +28,7 @@ ILIAS_NS_BEGIN
 namespace oneshot {
 
 template <typename T>
-concept Sendable = std::movable<T> && (!std::is_reference_v<T>);
+concept Sendable = std::movable<Result<T> > && (!std::is_reference_v<T>);
 
 template <typename T>
 class Sender;
@@ -61,7 +61,7 @@ public:
 
     TaskView<> suspendedTask; //< The task that is suspended on the recv operation
     Sender<T> *sender = nullptr;
-    std::optional<T> value;
+    std::optional<Result<T> > value;
     bool sended = false; //< Does the sender has sended the value
 };
 

@@ -135,10 +135,7 @@ TEST(Mpsc, Cancel) {
     {
         auto [sender, receiver] = mpsc::channel<int>(1);
         auto recvWithCancel = [](auto &receiver) -> Task<void> {
-            auto doRecv = [&]() -> Task<int> {
-                co_return co_await receiver.recv();
-            };
-            auto [recv, _] = co_await whenAny(doRecv(), sleep(1ms));
+            auto [recv, _] = co_await whenAny(receiver.recv(), sleep(1ms));
             co_return {};
         };
         recvWithCancel(receiver).wait();
@@ -148,10 +145,7 @@ TEST(Mpsc, Cancel) {
         auto [sender, receiver] = mpsc::channel<int>(1);
         sender.trySend(1); //< Make it to be full
         auto sendWithCancel = [](auto &sender) -> Task<void> {
-            auto doSend = [&]() -> Task<void> {
-                co_return co_await sender.send(1);
-            };
-            auto [send, _] = co_await whenAny(doSend(), sleep(1ms));
+            auto [send, _] = co_await whenAny(sender.send(1), sleep(1ms));
             co_return {};
         };
         sendWithCancel(sender).wait();

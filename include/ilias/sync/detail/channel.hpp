@@ -138,6 +138,7 @@ template <typename T, AwaitQueue _SenderQueue, AwaitQueue _ReceiverQueue>
 class Channel {
 public:
     using ValueType = T;
+    using ResultType = Result<T>;
     using SenderQueue = _SenderQueue;
     using ReceiverQueue = _ReceiverQueue;
 
@@ -192,7 +193,7 @@ public:
         }
     }
 
-    std::queue<T> mQueue;
+    std::queue<ResultType> mQueue;
     SenderQueue   mSenderQueue;
     ReceiverQueue mReceiverQueue;
     size_t        mCapacity;
@@ -207,8 +208,9 @@ public:
     using Queue = typename ChannelT::SenderQueue;
     using Token = typename Queue::Token;
     using ValueType = typename ChannelT::ValueType;
+    using ResultType = typename ChannelT::ResultType;
 
-    SendAwaiter(ChannelT *channel, ValueType &&value) : mChannel(channel), mValue(std::move(value)) { }
+    SendAwaiter(ChannelT *channel, Result<ValueType> &&value) : mChannel(channel), mValue(std::move(value)) { }
 
     auto await_ready() const -> bool {
         return mChannel->mQueue.size() < mChannel->mCapacity ||   //< Has space to send
@@ -257,7 +259,7 @@ private:
     }
 
     ChannelT *mChannel;
-    ValueType &&mValue; //< The value we want to send
+    ResultType &&mValue; //< The value we want to send
     TaskView<> mCaller;
     Token      mToken;
     CancellationToken::Registration mReg;
@@ -373,11 +375,11 @@ public:
      * @brief Send an item to the channel
      * 
      * @param value 
-     * @return SendAwaiter<ChannelT> 
+     * @return Task<void>
      */
-    auto send(ValueType &&value) -> SendAwaiter<ChannelT> {
+    auto send(ValueType value) -> Task<void> {
         ILIAS_ASSERT(mPtr != nullptr);
-        return SendAwaiter<ChannelT>(mPtr.get(), std::move(value));  
+        co_return co_await SendAwaiter<ChannelT>(mPtr.get(), std::move(value));  
     }
 
     /**
@@ -465,10 +467,10 @@ public:
     /**
      * @brief Recieve an item from the channel
      * 
-     * @return auto 
+     * @return Task<ValueType> 
      */
-    auto recv() {
-        return RecvAwaiter<ChannelT>(mPtr.get());
+    auto recv() -> Task<ValueType> {
+        co_return co_await RecvAwaiter<ChannelT>(mPtr.get());
     }
 
     /**
