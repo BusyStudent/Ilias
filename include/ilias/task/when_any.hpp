@@ -85,6 +85,7 @@ public:
 
     auto await_resume() -> OutTuple {
         ILIAS_ASSERT(mTaskLeft == 0);
+        ILIAS_ASSERT(mGot);
         ILIAS_TRACE("WhenAny", "[{}] End", sizeof ...(Types));
         return makeResult(std::make_index_sequence<sizeof...(Types)>{});
     }

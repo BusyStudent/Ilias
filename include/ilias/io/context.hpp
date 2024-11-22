@@ -158,5 +158,30 @@ public:
 
 };
 
+/**
+ * @brief Get the current io context in the task
+ * 
+ * @return IoContext & 
+ */
+inline auto currentIoContext() {
+    struct Awaiter {
+        auto await_ready() const -> bool { 
+            return false; 
+        }
+        auto await_suspend(TaskView<> task) -> bool {
+            mCtxt = static_cast<IoContext*>(task.executor());
+#if defined(__cpp_rtti)
+            ILIAS_ASSERT(dynamic_cast<IoContext*>(task.executor())); //< Check that the executor impl the IoContext
+#endif // defined(__cpp_rtti)
+            return false;
+        }
+        auto await_resume() const -> IoContext & { 
+            return *mCtxt; 
+        }
+        IoContext *mCtxt;
+    };
+    return Awaiter {};
+}
+
 
 ILIAS_NS_END

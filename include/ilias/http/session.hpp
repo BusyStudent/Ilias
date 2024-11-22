@@ -207,9 +207,7 @@ inline auto HttpSession::sendRequest(std::string_view method, const HttpRequest 
         if (timeout) { //< Timed out
             co_return Unexpected(Error::TimedOut);
         }
-        if (!reply_) { //< No reply, canceled
-            co_return Unexpected(Error::Canceled);
-        }
+        // Has reply
         if (!reply_->has_value()) { //< Failed to get 
             co_return Unexpected(reply_->error());
         }

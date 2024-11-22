@@ -62,7 +62,10 @@ public:
      * @brief Resume the task
      * 
      */
-    auto resume() const noexcept { return mHandle.resume(); }
+    auto resume() const noexcept { 
+        ILIAS_ASSERT(executor()); 
+        return mHandle.resume();
+    }
 
     /**
      * @brief Schedule the task in the executor (thread safe)
@@ -70,14 +73,20 @@ public:
      * 
      * @return auto 
      */
-    auto schedule() const noexcept { return executor()->post(scheduleImpl, mHandle.address()); }
+    auto schedule() const noexcept { 
+        ILIAS_ASSERT(executor()); 
+        return executor()->post(scheduleImpl, mHandle.address());
+    }
 
     /**
      * @brief Destroy the task
      * 
      * @return auto 
      */
-    auto destroy() const noexcept { ILIAS_ASSERT(isSafeToDestroy()); return mHandle.destroy(); }
+    auto destroy() const noexcept { 
+        ILIAS_ASSERT(isSafeToDestroy()); 
+        return mHandle.destroy(); 
+    }
 
     /**
      * @brief Send a cancel request to the task
@@ -125,16 +134,28 @@ public:
      * @brief Set the Awaiting Coroutine object, the task will resume it when self is done
      * 
      * @param handle 
-     * @return auto 
      */
-    auto setAwaitingCoroutine(std::coroutine_handle<> handle) const noexcept -> void { return mPromise->setAwaitingCoroutine(handle); }
+    auto setAwaitingCoroutine(std::coroutine_handle<> handle) const noexcept -> void { 
+        return mPromise->setAwaitingCoroutine(handle); 
+    }
 
     /**
      * @brief Set the Cancel Policy object, the task will follow this policy when self is cancelled
      * 
      * @param policy 
      */
-    auto setCancelPolicy(CancelPolicy policy) const noexcept -> void { return cancellationToken().setAutoReset(policy == CancelPolicy::Once); }
+    auto setCancelPolicy(CancelPolicy policy) const noexcept -> void { 
+        return cancellationToken().setAutoReset(policy == CancelPolicy::Once); 
+    }
+
+    /**
+     * @brief Set the Executor object, the task will use this executor to schedule itself
+     * 
+     * @param executor 
+     */
+    auto setExecutor(Executor *executor) const noexcept -> void { 
+        return mPromise->setExecutor(executor); 
+    }
 
     /**
      * @brief Register a callback function to be called when the task is done
@@ -143,14 +164,18 @@ public:
      * @param data 
      * @return auto 
      */
-    auto registerCallback(void (*fn)(void *), void *data) const noexcept -> void { return mPromise->registerCallback(fn, data); }
+    auto registerCallback(void (*fn)(void *), void *data) const noexcept -> void { 
+        return mPromise->registerCallback(fn, data); 
+    }
 
     /**
      * @brief Register a callback function to be called when the task is done
      * 
      * @param fn 
      */
-    auto registerCallback(detail::MoveOnlyFunction<void()> fn) const noexcept -> void { return mPromise->registerCallback(std::move(fn)); }
+    auto registerCallback(detail::MoveOnlyFunction<void()> fn) const noexcept -> void { 
+        return mPromise->registerCallback(std::move(fn)); 
+    }
 
     /**
      * @brief Allow comparison with other TaskView<> objects

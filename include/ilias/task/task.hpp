@@ -265,7 +265,7 @@ inline auto yield() noexcept {
 /**
  * @brief Get the current task view
  * 
- * @return auto 
+ * @return TaskView<>
  */
 inline auto currentTask() noexcept {
     struct Awaiter {
@@ -280,13 +280,13 @@ inline auto currentTask() noexcept {
 /**
  * @brief Get the current executor in the task
  * 
- * @return auto 
+ * @return Executor &
  */
 inline auto currentExecutor() noexcept {
     struct Awaiter {
         auto await_ready() { return false; }
         auto await_suspend(TaskView<> task) -> bool { mExecutor = task.executor(); return false; }
-        auto await_resume() -> Executor* { return mExecutor; }
+        auto await_resume() -> Executor & { ILIAS_ASSERT(mExecutor); return *mExecutor; }
         Executor *mExecutor;
     };
     return Awaiter {};

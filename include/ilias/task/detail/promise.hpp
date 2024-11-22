@@ -44,6 +44,10 @@ private:
     bool &mStarted;
 };
 
+/**
+ * @brief The Task's promise common part
+ * 
+ */
 class TaskPromiseBase {
 public:
     TaskPromiseBase() { mToken.setAutoReset(true); } //< The default cancel policy is CancelPolicy::Once
@@ -120,6 +124,15 @@ public:
     }
 
     /**
+     * @brief Set the Executor object
+     * 
+     * @param executor The executor, executing the coroutine (can't be nullptr)
+     */
+    auto setExecutor(Executor *executor) -> void {
+        mExecutor = executor;
+    }
+
+    /**
      * @brief Set the Awaiting Coroutine object
      * 
      * @param handle The coroutine handle that is waiting for us
@@ -148,6 +161,28 @@ public:
     auto registerCallback(MoveOnlyFunction<void()> &&callback) -> void {
         mCallbacks.emplace_back(std::move(callback));
     }
+
+#if defined(ILIAS_TASK_MALLOC)
+    /**
+     * @brief Allocate memory for the promise
+     * 
+     * @param size 
+     * @return void* 
+     */
+    auto operator new(size_t size) -> void * {
+        return ILIAS_TASK_MALLOC(size);
+    }
+
+    /**
+     * @brief Free the memory of the promise
+     * 
+     * @param ptr 
+     */
+    auto operator delete(void *ptr) -> void {
+        ILIAS_TASK_FREE(ptr);
+    }
+#endif // defined(ILIAS_TASK_MALLOC)
+
 protected:  
     bool mStarted = false;
     Executor *mExecutor = Executor::currentThread(); //< The executor, doing the 

@@ -12,3 +12,5 @@
 
 #include <ilias/sync/oneshot.hpp>
 #include <ilias/sync/mutex.hpp>
+#include <ilias/sync/mpmc.hpp>
+#include <ilias/sync/mpsc.hpp>
