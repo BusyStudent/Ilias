@@ -24,6 +24,11 @@
 #include <QObject>
 #include <map>
 
+#if defined(_WIN32)
+    #include <QWinEventNotifier>
+#endif // defined(_WIN32)
+
+
 ILIAS_NS_BEGIN
 
 class QIoContext;
@@ -48,14 +53,22 @@ public:
     IoDescriptor::Type type = Unknown;
     bool pollable = false; //< true on we can use QSocketNotifier to poll
 
-    struct { //< For Socket
+    struct { //< For Pollable
         QSocketNotifier *readNotifier = nullptr;
         QSocketNotifier *writeNotifier = nullptr;
         QSocketNotifier *exceptNotifier = nullptr;
         size_t           numOfRead = 0;
         size_t           numOfWrite = 0;
         size_t           numOfExcept = 0;
-    };
+    } poll;
+
+#if defined(_WIN32)
+    struct {
+        QWinEventNotifier *readNotifier = nullptr;
+        QWinEventNotifier *writeNotifier = nullptr;
+    } win32;
+#endif
+
 };
 
 /**
@@ -184,10 +197,6 @@ inline auto QIoContext::run(CancellationToken &token) -> void {
 }
 
 inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> {
-    if (type != IoDescriptor::Socket) {
-        ILIAS_WARN("QIo", "QIoContext::addDescriptor(): currently only support Socket type");
-        return Unexpected(Error::OperationNotSupported);
-    }
     auto nfd = std::make_unique<detail::QIoDescriptor>(this);
     nfd->type = type;
 
@@ -197,26 +206,32 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resul
             nfd->pollable = true;
             break;
         default:
-            break;
+            ILIAS_WARN("QIo", "QIoContext::addDescriptor(): the descriptor type is not supported");
+            return Unexpected(Error::OperationNotSupported);
     }
-    // Prepare env for Socket
+    
+    // Prepare env for pollable (in windows only socket can be pollable)
     if (nfd->pollable) {
         nfd->sockfd = socket_t(fd);
-        nfd->readNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Read, nfd.get());
-        nfd->writeNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Write, nfd.get());
-        nfd->exceptNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Exception, nfd.get());
-        nfd->readNotifier->setEnabled(false);
-        nfd->writeNotifier->setEnabled(false);
-        nfd->exceptNotifier->setEnabled(false);
+        nfd->poll.readNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Read, nfd.get());
+        nfd->poll.writeNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Write, nfd.get());
+        nfd->poll.exceptNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Exception, nfd.get());
+        nfd->poll.readNotifier->setEnabled(false);
+        nfd->poll.writeNotifier->setEnabled(false);
+        nfd->poll.exceptNotifier->setEnabled(false);
 
-        // Set nonblock
+        // Set nonblock, linux pollable fd can also use this way to set nonblock
         SocketView sockfd(nfd->sockfd);
         if (auto ret = sockfd.setBlocking(false); !ret) {
             return Unexpected(ret.error());
         }
+    }
 
 #if defined(_WIN32)
+    // Setup option for windows specific socket
+    if (nfd->type == IoDescriptor::Socket) {
         // Disable UDP NetReset and ConnReset
+        SocketView sockfd(nfd->sockfd);
         if (auto info = sockfd.getOption<sockopt::ProtocolInfo>(); info && info->value().iSocketType == SOCK_DGRAM) {
             if (auto ret = sockfd.setOption(sockopt::UdpConnReset(false)); !ret) {
                 ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to disable UDP NetReset, {}", ret.error());
@@ -225,14 +240,13 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resul
                 ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to disable UDP ConnReset, {}", ret.error());
             }
         }
-#endif
-
     }
+#endif // defined(_WIN32)
 
     // Set the debug name
 #if !defined(NDEBUG)
     nfd->setObjectName(QString("IliasQIoDescriptor_%1").arg(nfd->sockfd));
-#endif
+#endif // !defined(NDEBUG)
 
     ++mNumOfDescriptors;
     return nfd.release();
@@ -470,30 +484,30 @@ inline auto detail::QPollAwaiter::onNotifierActivated(QSocketDescriptor, QSocket
 
 inline auto detail::QPollAwaiter::doDisconnect() -> void {
     if (mReadCon) {
-        mFd->readNotifier->disconnect(mReadCon);
-        mFd->numOfRead--;
+        mFd->poll.readNotifier->disconnect(mReadCon);
+        mFd->poll.numOfRead--;
     }
     if (mWriteCon) {
-        mFd->writeNotifier->disconnect(mWriteCon);
-        mFd->numOfWrite--;
+        mFd->poll.writeNotifier->disconnect(mWriteCon);
+        mFd->poll.numOfWrite--;
     }
     if (mExceptCon) {
-        mFd->exceptNotifier->disconnect(mExceptCon);
-        mFd->numOfExcept--;
+        mFd->poll.exceptNotifier->disconnect(mExceptCon);
+        mFd->poll.numOfExcept--;
     }
     if (mDestroyCon) {
         mFd->disconnect(mDestroyCon);
     }
 
     // Check the num of connections, and disable it if 0
-    if (mFd->numOfRead == 0) {
-        mFd->readNotifier->setEnabled(false);
+    if (mFd->poll.numOfRead == 0) {
+        mFd->poll.readNotifier->setEnabled(false);
     }
-    if (mFd->numOfWrite == 0) {
-        mFd->writeNotifier->setEnabled(false);
+    if (mFd->poll.numOfWrite == 0) {
+        mFd->poll.writeNotifier->setEnabled(false);
     }
-    if (mFd->numOfExcept == 0) {
-        mFd->exceptNotifier->setEnabled(false);
+    if (mFd->poll.numOfExcept == 0) {
+        mFd->poll.exceptNotifier->setEnabled(false);
     }
 }
 
@@ -501,19 +515,19 @@ inline auto detail::QPollAwaiter::doConnect() -> void {
     auto fn = std::bind(&QPollAwaiter::onNotifierActivated, this, std::placeholders::_1, std::placeholders::_2);
     auto destroyFn = std::bind(&QPollAwaiter::onFdDestroyed, this);
     if (mEvent & PollEvent::In) {
-        mReadCon = QObject::connect(mFd->readNotifier, &QSocketNotifier::activated, fn);
-        mFd->readNotifier->setEnabled(true);
-        mFd->numOfRead++;
+        mReadCon = QObject::connect(mFd->poll.readNotifier, &QSocketNotifier::activated, fn);
+        mFd->poll.readNotifier->setEnabled(true);
+        mFd->poll.numOfRead++;
     }
     if (mEvent & PollEvent::Out) {
-        mWriteCon = QObject::connect(mFd->writeNotifier, &QSocketNotifier::activated, fn);
-        mFd->writeNotifier->setEnabled(true);
-        mFd->numOfWrite++;
+        mWriteCon = QObject::connect(mFd->poll.writeNotifier, &QSocketNotifier::activated, fn);
+        mFd->poll.writeNotifier->setEnabled(true);
+        mFd->poll.numOfWrite++;
     }
     // Connect the except notifier
-    mExceptCon = QObject::connect(mFd->exceptNotifier, &QSocketNotifier::activated, fn);
-    mFd->exceptNotifier->setEnabled(true);
-    mFd->numOfExcept++;
+    mExceptCon = QObject::connect(mFd->poll.exceptNotifier, &QSocketNotifier::activated, fn);
+    mFd->poll.exceptNotifier->setEnabled(true);
+    mFd->poll.numOfExcept++;
 
     // Connect the destroy notifier
     mDestroyCon = QObject::connect(mFd, &QObject::destroyed, destroyFn);

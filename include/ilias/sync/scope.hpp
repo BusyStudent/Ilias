@@ -222,6 +222,7 @@ public:
         auto instance = new detail::ScopedTask(handle, mInstances);
         // Start and add the complete callback.
         instance->mTask.registerCallback(std::bind(&TaskScope::onTaskComplete, this, instance));
+        instance->mTask.setExecutor(mExecutor);
         instance->mTask.schedule();
         ILIAS_TRACE("TaskScope", "Spawn a task {} in the scope.", (void*) instance);
         return WaitHandle<T>(instance);

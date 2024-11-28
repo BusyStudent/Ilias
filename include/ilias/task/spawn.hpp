@@ -119,6 +119,65 @@ private:
 };
 
 /**
+ * @brief The common part of the task awaiter that will schedule the task on another executor
+ * 
+ */
+class ScheduleOnAwaiterBase {
+public:
+    auto await_ready() const noexcept -> bool { return false; }
+
+    auto await_suspend(TaskView<> caller) noexcept {
+        mCaller = caller;
+        mTask.registerCallback(onComplete, this);
+        mTask.schedule();
+        mReg = mCaller.cancellationToken().register_(onCancel, this);
+    }
+private:
+    static auto onComplete(void *_self) -> void { 
+        //< Because in this callback, the task is not completed done yet
+        //< We need to schedule the caller in the eventloop
+        auto self = static_cast<ScheduleOnAwaiterBase*>(_self);
+        auto executor = self->mTask.executor();
+        executor->post(doSchedule, self);
+    }
+    
+    static auto onCancel(void *_self) -> void {
+        auto self = static_cast<ScheduleOnAwaiterBase*>(_self);
+        auto executor = self->mTask.executor();
+        auto task = self->mTask;
+        executor->post(CancelTheTokenHelper, &task.cancellationToken());
+    }
+
+    static auto doSchedule(void *_self) -> void {
+        auto self = static_cast<ScheduleOnAwaiterBase*>(_self);
+        self->mCaller.schedule();
+    }
+protected:
+    ScheduleOnAwaiterBase(Executor &executor, TaskView<> task) : mTask(task) {
+        mTask.setExecutor(&executor);
+    }
+
+    CancellationToken::Registration mReg;
+    TaskView<> mTask; //< The target task want to executed on another executor
+    TaskView<> mCaller; //< The caller task
+};
+
+/**
+ * @brief The awaiter for await the task scheduled on a another executor
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class ScheduleOnAwaiter final : public ScheduleOnAwaiterBase {
+public:
+    ScheduleOnAwaiter(Executor &executor, TaskView<T> task) : ScheduleOnAwaiterBase(executor, task) { }
+
+    auto await_resume() const -> Result<T> {
+        return TaskView<T>::cast(mTask).value();
+    }
+};
+
+/**
  * @brief Helper tags for ilias_go and ilias_spawn macro
  * 
  */
@@ -237,6 +296,7 @@ template <typename T>
 inline auto spawn(Task<T> &&task) -> WaitHandle<T> {
     auto ref = detail::SpawnDataRef(new detail::SpawnData);
     ref->mTask = task._leak();
+    ref->mTask.setExecutor(Executor::currentThread());
     ref->mTask.schedule(); //< Start it on the event loop
     return WaitHandle<T>(ref);
 }
@@ -269,9 +329,23 @@ inline auto spawn(Callable callable, Args &&...args) {
                 std::forward<Args>(args)...
             )
         );
+        ref->mTask.setExecutor(Executor::currentThread());
         ref->mTask.schedule(); //< Start it on the event loop
         return WaitHandle<typename std::invoke_result_t<Callable, Args...>::value_type>(ref);
     }
+}
+
+/**
+ * @brief Let the task schedule on another executor
+ * 
+ * @tparam T 
+ * @param executor 
+ * @param task 
+ * @return auto 
+ */
+template <typename T>
+inline auto scheduleOn(Executor &executor, Task<T> &&task) noexcept {
+    return detail::ScheduleOnAwaiter<T>(executor, task._view());
 }
 
 /**

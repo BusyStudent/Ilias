@@ -43,6 +43,7 @@ struct WhenAnyTuple {
     }
 };
 
+// TODO: May bug here, need to check
 /**
  * @brief Awaiter for when any on a tuple
  * 
@@ -67,7 +68,8 @@ public:
         auto register_ = [&](auto ...tasks) {
             (tasks.registerCallback(
                 std::bind(&WhenAnyTupleAwaiter::completeCallback, this, tasks)
-            ), ...);
+            )
+            , ...);
         };
         std::apply(register_, mTasks);
 
@@ -77,8 +79,8 @@ public:
         );
 
         // Start all tasks
-        auto start = [](auto ...tasks) {
-            (tasks.resume(), ...);
+        auto start = [&](auto ...tasks) {
+            (startTask(tasks), ...);
         };
         std::apply(start, mTasks);
     }
@@ -132,6 +134,14 @@ private:
     template <size_t ...Idx>
     auto makeResult(std::index_sequence<Idx...>) -> OutTuple {
         return {makeResult<Idx>()...};
+    }
+
+    auto startTask(TaskView<> task) -> void {
+        task.setExecutor(mCaller.executor());
+        task.resume();
+        if (mGot && mGot != task) { //< Another task has already got the result, send a cancel
+            task.cancel();
+        }
     }
 
     InTuple mTasks;

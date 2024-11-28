@@ -45,10 +45,15 @@ public:
     WhenAllTupleAwaiter(InTuple tasks) : mTasks(tasks) { }
 
     auto await_ready() noexcept -> bool { 
+        return false;
+    }
+
+    auto await_suspend(TaskView<> caller) noexcept -> bool {
         ILIAS_TRACE("WhenAll", "[{}] Begin", sizeof ...(Types));
         // Start all tasks
-        auto start = [](auto ...tasks) {
-            (tasks.resume(), ...);
+        auto executor = caller.executor();
+        auto start = [&](auto ...tasks) {
+            ((tasks.setExecutor(executor), tasks.resume()), ...);
         };
         std::apply(start, mTasks);
 
@@ -57,11 +62,11 @@ public:
             ((tasks.done() ? mTaskLeft-- : 0), ...);
         };
         std::apply(check, mTasks);
-        return mTaskLeft == 0;
-    }
+        if (mTaskLeft == 0) {
+            return false; //< All tasks are done, resume the caller
+        }
 
-    auto await_suspend(TaskView<> caller) noexcept {
-        ILIAS_ASSERT(mTaskLeft > 0);
+        // Save the status for cancel and resume
         mCaller = caller;
         mRegistration = caller.cancellationToken().register_(
             std::bind(&WhenAllTupleAwaiter::cancelAll, this)
@@ -74,6 +79,7 @@ public:
             ), ...);
         };
         std::apply(register_, mTasks);
+        return true;
     }
 
     auto await_resume() -> OutTuple {

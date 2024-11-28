@@ -43,7 +43,7 @@ TEST(Task, Create) {
     auto task = fn(); //< Just create    
 }
 
-TEST(TaskDeathTest, Liftime) {
+TEST(TaskDeathTest, Crash) {
     auto fn = []() -> Task<void> {
         co_await std::suspend_always();
         co_return {};
@@ -51,7 +51,20 @@ TEST(TaskDeathTest, Liftime) {
     EXPECT_DEATH_IF_SUPPORTED({
         auto task = fn();
         auto view = task._view();
-        view.resume(); //< When task destroys, this will cause a crash, destroy a started and not finished task
+        view.resume(); //< Resume the task, but the executor is not set, it will crash
+    }, "");
+
+    EXPECT_DEATH_IF_SUPPORTED({
+        auto task = fn();
+        auto view = task._view();
+        view.schedule();
+    }, "");
+
+    EXPECT_DEATH_IF_SUPPORTED({
+        auto task = fn();
+        auto view = task._view();
+        view.setExecutor(Executor::currentThread());
+        view.resume();  //< When task destroys, this will cause a crash, destroy a started and not finished task
     }, "");
 }
 

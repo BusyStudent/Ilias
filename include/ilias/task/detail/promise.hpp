@@ -185,7 +185,7 @@ public:
 
 protected:  
     bool mStarted = false;
-    Executor *mExecutor = Executor::currentThread(); //< The executor, doing the 
+    Executor *mExecutor = nullptr; //< The executor, doing the 
     CancellationToken mToken; //< The cancellation token
     std::coroutine_handle<> mAwaitingCoroutine; //< The coroutine handle that is waiting for us, we will resume it when done 
     std::vector<MoveOnlyFunction<void()> > mCallbacks; //< The callbacks that will be called when the coroutine is done

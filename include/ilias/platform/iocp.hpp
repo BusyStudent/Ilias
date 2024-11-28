@@ -66,9 +66,9 @@ public:
         LPFN_WSARECVMSG WSARecvMsg = nullptr;
 
         int family = 0;
-        int stype = 0;
+        int type = 0;
         int protocol = 0;
-    };
+    } sock;
 };
 
 } // namespace detail
@@ -274,28 +274,28 @@ inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resu
 
     if (nfd->type == IoDescriptor::Socket) {
         // Get The ext function ptr
-        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_CONNECTEX, &nfd->ConnectEx); !ret) {
+        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_CONNECTEX, &nfd->sock.ConnectEx); !ret) {
             return Unexpected(ret.error());
         }
-        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_ACCEPTEX, &nfd->AcceptEx); !ret) {
+        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_ACCEPTEX, &nfd->sock.AcceptEx); !ret) {
             return Unexpected(ret.error());
         }
-        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_DISCONNECTEX, &nfd->DisconnectEx); !ret) {
+        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_DISCONNECTEX, &nfd->sock.DisconnectEx); !ret) {
             return Unexpected(ret.error());
         }
-        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_TRANSMITFILE, &nfd->TransmitFile); !ret) {
+        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_TRANSMITFILE, &nfd->sock.TransmitFile); !ret) {
             return Unexpected(ret.error());
         }
-        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_GETACCEPTEXSOCKADDRS, &nfd->GetAcceptExSockaddrs); !ret) {
+        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_GETACCEPTEXSOCKADDRS, &nfd->sock.GetAcceptExSockaddrs); !ret) {
             return Unexpected(ret.error());
         }
-        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_TRANSMITPACKETS, &nfd->TransmitPackets); !ret) {
+        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_TRANSMITPACKETS,&nfd->sock.TransmitPackets); !ret) {
             return Unexpected(ret.error());
         }
-        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSARECVMSG, &nfd->WSARecvMsg); !ret) {
+        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSARECVMSG, &nfd->sock.WSARecvMsg); !ret) {
             return Unexpected(ret.error());
         }
-        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSASENDMSG, &nfd->WSASendMsg); !ret) {
+        if (auto ret = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSASENDMSG, &nfd->sock.WSASendMsg); !ret) {
             return Unexpected(ret.error());
         }
 
@@ -304,12 +304,12 @@ inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resu
         if (::getsockopt(nfd->sockfd, SOL_SOCKET, SO_PROTOCOL_INFOW, reinterpret_cast<char*>(&info), &infoSize) == SOCKET_ERROR) {
             return Unexpected(SystemError::fromErrno());
         }
-        nfd->family = info.iAddressFamily;
-        nfd->stype = info.iSocketType;
-        nfd->protocol = info.iProtocol;
+        nfd->sock.family = info.iAddressFamily;
+        nfd->sock.type = info.iSocketType;
+        nfd->sock.protocol = info.iProtocol;
 
         // Disable UDP NetReset and ConnReset
-        if (nfd->stype == SOCK_DGRAM) {
+        if (nfd->sock.type == SOCK_DGRAM) {
             ::DWORD flag = 0;
             ::DWORD bytesReturn = 0;
             if (::WSAIoctl(nfd->sockfd, SIO_UDP_NETRESET, &flag, sizeof(flag), nullptr, 0, &bytesReturn, nullptr, nullptr) == SOCKET_ERROR) {
@@ -361,7 +361,7 @@ inline auto IocpContext::accept(IoDescriptor *fd, IPEndpoint *endpoint) -> Task<
     if (nfd->type != IoDescriptor::Socket) {
         co_return Unexpected(Error::OperationNotSupported);
     }
-    co_return co_await detail::IocpAcceptAwaiter(nfd->sockfd, endpoint, nfd->AcceptEx, nfd->GetAcceptExSockaddrs);
+    co_return co_await detail::IocpAcceptAwaiter(nfd->sockfd, endpoint, nfd->sock.AcceptEx, nfd->sock.GetAcceptExSockaddrs);
 }
 
 inline auto IocpContext::connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> {
@@ -372,7 +372,7 @@ inline auto IocpContext::connect(IoDescriptor *fd, const IPEndpoint &endpoint) -
     if (!endpoint.isValid()) {
         co_return Unexpected(Error::InvalidArgument);
     }
-    co_return co_await detail::IocpConnectAwaiter(nfd->sockfd, endpoint, nfd->ConnectEx);
+    co_return co_await detail::IocpConnectAwaiter(nfd->sockfd, endpoint, nfd->sock.ConnectEx);
 }
 
 inline auto IocpContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, const IPEndpoint *endpoint) -> Task<size_t> {

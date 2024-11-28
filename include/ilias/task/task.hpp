@@ -32,22 +32,26 @@ inline auto CancelTheTokenHelper(void *token) -> void {
  */
 class TaskAwaiterBase {
 public:
+    auto await_ready() const noexcept -> bool { return false; }
+
     /**
      * @brief Try to start the task and check if it is done
      * 
      * @return true 
      * @return false 
      */
-    auto await_ready() const noexcept -> bool {
+    auto await_suspend(TaskView<> caller) noexcept -> bool {
+        mTask.setExecutor(caller.executor());
         mTask.resume();
-        return mTask.done();
-    }
+        if (mTask.done()) { //< Done, resume the caller
+            return false;
+        }
 
-    auto await_suspend(TaskView<> caller) noexcept -> void {
         mTask.setAwaitingCoroutine(caller); //< When the task is done, resume the caller
         mReg = caller.cancellationToken().register_( //< Forward the caller's cancel request cancel to the current task
             &CancelTheTokenHelper, &mTask.cancellationToken()
         );
+        return true;
     }
 protected:
     TaskAwaiterBase(TaskView<> task) : mTask(task) { }
@@ -148,9 +152,10 @@ public:
      * @return Result<T> 
      */
     auto wait() const -> Result<T> {
+        auto executor = Executor::currentThread();
         auto &promise = mHandle.promise();
-        auto executor = promise.executor();
         ILIAS_ASSERT(!promise.isStarted());
+        promise.setExecutor(executor);
         mHandle.resume(); //< Start it
         if (!mHandle.done()) {
             CancellationToken token;
