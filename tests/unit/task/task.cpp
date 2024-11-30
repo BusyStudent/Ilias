@@ -44,6 +44,11 @@ TEST(Task, Create) {
 }
 
 TEST(TaskDeathTest, Crash) {
+
+#if defined(NDEBUG)
+    GTEST_SKIP(); //< This task below will trigger assert, so it won't crash on release
+#endif // defined(NDEBUG)
+
     auto fn = []() -> Task<void> {
         co_await std::suspend_always();
         co_return {};

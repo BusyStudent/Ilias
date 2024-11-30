@@ -20,7 +20,6 @@
 #include <unistd.h>
 
 #include <ilias/platform/detail/epoll_event.hpp>
-#include <ilias/platform/detail/aio_core.hpp> //< For normal file
 #include <ilias/cancellation_token.hpp>
 #include <ilias/detail/timer.hpp>
 #include <ilias/task/executor.hpp>
@@ -30,6 +29,10 @@
 #include <ilias/net/sockfd.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/log.hpp>
+
+#if __has_include(<aio.h>)
+    #include <ilias/platform/detail/aio_core.hpp> //< For normal file
+#endif
 
 ILIAS_NS_BEGIN
 
@@ -276,7 +279,11 @@ inline auto EpollContext::read(IoDescriptor *fd, ::std::span<::std::byte> buffer
         int ret = 0;
         if (offset.has_value()) {
             ILIAS_ASSERT(descriptor->type == detail::EpollDescriptor::File);
+#if __has_include(<aio.h>)
             co_return co_await detail::AioReadAwaiter(descriptor->fd, buffer, offset);
+#else
+            ret = ::pread(descriptor->fd, buffer.data(), buffer.size(), offset.value_or(0));
+#endif
         }
         else {
             ret = ::read(descriptor->fd, buffer.data(), buffer.size());
@@ -309,7 +316,11 @@ inline auto EpollContext::write(IoDescriptor *fd, ::std::span<const ::std::byte>
         int ret = 0;
         if (offset.has_value()) {
             ILIAS_ASSERT(descriptor->type == detail::EpollDescriptor::File);
+#if __has_include(<aio.h>)
             co_return co_await detail::AioWriteAwaiter(descriptor->fd, buffer, offset);
+#else
+            ret = ::pwrite(descriptor->fd, buffer.data(), buffer.size(), offset.value_or(0));
+#endif
         }
         else {
             ret = ::write(descriptor->fd, buffer.data(), buffer.size());

@@ -20,12 +20,15 @@ ILIAS_NS_BEGIN
 namespace mpsc {
 
 template <typename T>
-class Channel final : public channel_impl::Channel<
-    T, 
-    channel_impl::MultiQueue, 
-    channel_impl::SingleQueue> 
-{
-    
+using ChannelBase = channel_impl::Channel<
+    T,
+    channel_impl::MultiQueue,
+    channel_impl::SingleQueue
+>;
+
+template <typename T>
+class Channel final : public ChannelBase<T> {
+    using ChannelBase<T>::Channel;
 };
 
 /**
