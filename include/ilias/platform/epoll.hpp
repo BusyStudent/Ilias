@@ -80,15 +80,15 @@ public:
         -> Task<size_t> override;
 
     ///> @brief Connect to a remote endpoint
-    auto connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> override;
+    auto connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> override;
     ///> @brief Accept a connection
-    auto accept(IoDescriptor *fd, IPEndpoint *remoteEndpoint) -> Task<socket_t> override;
+    auto accept(IoDescriptor *fd, MutableEndpointView remoteEndpoint) -> Task<socket_t> override;
 
     ///> @brief Send data to a remote endpoint
-    auto sendto(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, int flags, const IPEndpoint *endpoint)
+    auto sendto(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, int flags, EndpointView endpoint)
         -> Task<size_t> override;
     ///> @brief Receive data from a remote endpoint
-    auto recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags, IPEndpoint *endpoint)
+    auto recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags, MutableEndpointView endpoint)
         -> Task<size_t> override;
 
     ///> @brief Poll a descriptor for events
@@ -339,7 +339,7 @@ inline auto EpollContext::write(IoDescriptor *fd, ::std::span<const ::std::byte>
     co_return Unexpected(Error::Unknown);
 }
 
-inline auto EpollContext::connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> {
+inline auto EpollContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
     ILIAS_ASSERT(descriptor->type == IoDescriptor::Socket);
@@ -371,7 +371,7 @@ inline auto EpollContext::connect(IoDescriptor *fd, const IPEndpoint &endpoint) 
     co_return Result<void>();
 }
 
-inline auto EpollContext::accept(IoDescriptor *fd, IPEndpoint *remoteEndpoint) -> Task<socket_t> {
+inline auto EpollContext::accept(IoDescriptor *fd, MutableEndpointView remoteEndpoint) -> Task<socket_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_TRACE("Epoll", "start accept on fd {}", descriptor->fd);
     ILIAS_ASSERT(descriptor != nullptr);
@@ -398,7 +398,7 @@ inline auto EpollContext::accept(IoDescriptor *fd, IPEndpoint *remoteEndpoint) -
 }
 
 inline auto EpollContext::sendto(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, int flags,
-                                 const IPEndpoint *endpoint) -> Task<size_t> {
+                                 EndpointView endpoint) -> Task<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_TRACE("Epoll", "start sendto on fd {}", descriptor->fd);
     ILIAS_ASSERT(descriptor != nullptr);
@@ -428,7 +428,7 @@ inline auto EpollContext::sendto(IoDescriptor *fd, ::std::span<const ::std::byte
     co_return Unexpected(Error::Unknown);
 }
 
-inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags, IPEndpoint *endpoint)
+inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags, MutableEndpointView endpoint)
     -> Task<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_TRACE("Epoll", "start recvfrom on fd {}", descriptor->fd);

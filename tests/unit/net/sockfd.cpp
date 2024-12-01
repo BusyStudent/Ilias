@@ -88,12 +88,13 @@ TEST(Udp, Sending) {
     ASSERT_TRUE(udpServer.bind("127.0.0.1:0").has_value());
     ASSERT_TRUE(udpClient.bind("127.0.0.1:0").has_value());
 
+    IPEndpoint endpoint;
     for (int i = 0; i < 1000; ++i) {
         // Client -> Server
         std::string content = randomGen();
         ASSERT_TRUE(udpClient.sendto(makeBuffer(content), 0, udpServer.localEndpoint().value()).value() == content.size());
         char buffer[1024] {0};
-        auto num = udpServer.recvfrom(makeBuffer(buffer), 0, nullptr).value();
+        auto num = udpServer.recvfrom(makeBuffer(buffer), 0, &endpoint).value();
 
         ASSERT_EQ(num, content.size());
         ASSERT_EQ(std::string_view(buffer, num), content);
@@ -102,7 +103,7 @@ TEST(Udp, Sending) {
         content = randomGen();
         ASSERT_TRUE(udpServer.sendto(makeBuffer(content), 0, udpClient.localEndpoint().value()).value() == content.size());
 
-        num = udpClient.recvfrom(makeBuffer(buffer), 0, nullptr).value();
+        num = udpClient.recvfrom(makeBuffer(buffer), 0, &endpoint).value();
         ASSERT_EQ(num, content.size());
         ASSERT_EQ(std::string_view(buffer, num), content);
     }

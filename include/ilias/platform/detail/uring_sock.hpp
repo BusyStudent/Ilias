@@ -26,13 +26,13 @@ namespace detail {
  */
 class UringSendtoAwaiter final : public UringAwaiter<UringSendtoAwaiter> {
 public:
-    UringSendtoAwaiter(::io_uring &ring, int fd, std::span<const std::byte> buffer, int flags, const IPEndpoint *endpoint) : 
+    UringSendtoAwaiter(::io_uring &ring, int fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) : 
         UringAwaiter(ring), mFd(fd), mFlags(flags)
     {
         mBuffer.iov_base = (void*) buffer.data();
         mBuffer.iov_len = buffer.size();
-        mMsg.msg_name = endpoint ? (::sockaddr*) &endpoint->cast<::sockaddr>() : nullptr;
-        mMsg.msg_namelen = endpoint ? endpoint->length() : 0;
+        mMsg.msg_name = (::sockaddr*) endpoint.data();
+        mMsg.msg_namelen = endpoint.length();
         mMsg.msg_iov = &mBuffer;
         mMsg.msg_iovlen = 1;
     }
@@ -61,13 +61,13 @@ private:
  */
 class UringRecvfromAwaiter final : public UringAwaiter<UringRecvfromAwaiter> {
 public:
-    UringRecvfromAwaiter(::io_uring &ring, int fd, std::span<std::byte> buffer, int flags, IPEndpoint *endpoint) :
+    UringRecvfromAwaiter(::io_uring &ring, int fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) :
         UringAwaiter(ring), mFd(fd), mFlags(flags)
     {
         mBuffer.iov_base = buffer.data();
         mBuffer.iov_len = buffer.size();
-        mMsg.msg_name = endpoint ? &endpoint->cast<::sockaddr>() : nullptr;
-        mMsg.msg_namelen = endpoint ? endpoint->bufsize() : 0;
+        mMsg.msg_name = endpoint.data();
+        mMsg.msg_namelen = endpoint.bufsize();
         mMsg.msg_iov = &mBuffer;
         mMsg.msg_iovlen = 1;
     }
@@ -96,7 +96,7 @@ private:
  */
 class UringConnectAwaiter final : public UringAwaiter<UringConnectAwaiter> {
 public:
-    UringConnectAwaiter(::io_uring &ring, int fd, const IPEndpoint &endpoint) : 
+    UringConnectAwaiter(::io_uring &ring, int fd, EndpointView endpoint) : 
         UringAwaiter(ring), mFd(fd), mEndpoint(endpoint) 
     {
         
@@ -104,7 +104,7 @@ public:
 
     auto onSubmit() {
         ILIAS_TRACE("Uring", "Prep connect {} for fd {}", mEndpoint, mFd);
-        ::io_uring_prep_connect(sqe(), mFd, &mEndpoint.cast<::sockaddr>(), mEndpoint.length());
+        ::io_uring_prep_connect(sqe(), mFd, mEndpoint.data(), mEndpoint.length());
     }
 
     auto onComplete(int64_t ret) -> Result<void> {
@@ -115,7 +115,7 @@ public:
     }
 private:
     int mFd;
-    const IPEndpoint &mEndpoint;
+    EndpointView mEndpoint;
 };
 
 /**
@@ -124,11 +124,11 @@ private:
  */
 class UringAcceptAwaiter final : public UringAwaiter<UringAcceptAwaiter> {
 public:
-    UringAcceptAwaiter(::io_uring &ring, int fd, IPEndpoint *endpoint) : 
+    UringAcceptAwaiter(::io_uring &ring, int fd, MutableEndpointView endpoint) : 
         UringAwaiter(ring), mFd(fd)
     {
-        mAddr = endpoint ? &endpoint->cast<::sockaddr>() : nullptr;
-        mLen = endpoint ? endpoint->bufsize() : 0;
+        mAddr = endpoint.data();
+        mLen = endpoint.bufsize();
     }
 
     auto onSubmit() {

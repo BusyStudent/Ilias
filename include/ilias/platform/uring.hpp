@@ -79,11 +79,11 @@ public:
     auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
     auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
 
-    auto accept(IoDescriptor *fd, IPEndpoint *endpoint) -> Task<socket_t> override;
-    auto connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> override;
+    auto accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> override;
+    auto connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> override;
 
-    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, const IPEndpoint *endpoint) -> Task<size_t> override;
-    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, IPEndpoint *endpoint) -> Task<size_t> override;
+    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> override;
+    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> override;
 
     auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> override;
 private:
@@ -241,22 +241,22 @@ inline auto UringContext::write(IoDescriptor *fd, std::span<const std::byte> buf
     co_return co_await detail::UringWriteAwaiter {mRing, nfd->fd, buffer, offset};
 }
 
-inline auto UringContext::accept(IoDescriptor *fd, IPEndpoint *endpoint) -> Task<socket_t> {
+inline auto UringContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     co_return co_await detail::UringAcceptAwaiter {mRing, nfd->fd, endpoint};
 }
 
-inline auto UringContext::connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> {
+inline auto UringContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     co_return co_await detail::UringConnectAwaiter {mRing, nfd->fd, endpoint};
 }
 
-inline auto UringContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, const IPEndpoint *endpoint) -> Task<size_t> {
+inline auto UringContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     co_return co_await detail::UringSendtoAwaiter {mRing, nfd->fd, buffer, flags, endpoint};
 }
 
-inline auto UringContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, IPEndpoint *endpoint) -> Task<size_t> {
+inline auto UringContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     co_return co_await detail::UringRecvfromAwaiter {mRing, nfd->fd, buffer, flags, endpoint};
 }

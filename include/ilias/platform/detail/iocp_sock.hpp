@@ -28,15 +28,15 @@ namespace detail {
  */
 class IocpSendtoAwaiter final : public IocpAwaiter<IocpSendtoAwaiter> {
 public:
-    IocpSendtoAwaiter(SOCKET sock, std::span<const std::byte> buffer, int flags, const IPEndpoint *endpoint) :
+    IocpSendtoAwaiter(SOCKET sock, std::span<const std::byte> buffer, int flags, EndpointView endpoint) :
         IocpAwaiter(sock)
     {
         mBuf.buf = (char*) buffer.data();
         mBuf.len = buffer.size();
         mFlags = flags;
         if (endpoint) {
-            mAddr = &endpoint->cast<::sockaddr>();
-            mAddrLen = endpoint->length();
+            mAddr = endpoint.data();
+            mAddrLen = endpoint.length();
         }
     }
 
@@ -75,14 +75,14 @@ private:
 
 class IocpRecvfromAwaiter final : public IocpAwaiter<IocpRecvfromAwaiter> {
 public:
-    IocpRecvfromAwaiter(SOCKET sock, std::span<std::byte> buffer, int flags, IPEndpoint *endpoint) :
+    IocpRecvfromAwaiter(SOCKET sock, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) :
         IocpAwaiter(sock) 
     {
         mBuf.buf = (char*) buffer.data();
         mBuf.len = buffer.size();
         mFlags = flags;
-        mAddr = endpoint ? &endpoint->cast<::sockaddr>() : nullptr;
-        mAddrLen = endpoint ? endpoint->bufsize() : 0;
+        mAddr = endpoint.data();
+        mAddrLen = endpoint.bufsize();
     }
 
     auto onSubmit() -> bool {
@@ -121,7 +121,7 @@ private:
 
 class IocpConnectAwaiter final : public IocpAwaiter<IocpConnectAwaiter> {
 public:
-    IocpConnectAwaiter(SOCKET sock, const IPEndpoint &endpoint, LPFN_CONNECTEX connectEx) :
+    IocpConnectAwaiter(SOCKET sock, EndpointView endpoint, LPFN_CONNECTEX connectEx) :
         IocpAwaiter(sock), mEndpoint(endpoint), mConnectEx(connectEx)
     {
 
@@ -146,11 +146,11 @@ public:
             }
         }
 
-        ILIAS_TRACE("IOCP", "Connect To {} on sockfd {}", mEndpoint, sockfd());
+        ILIAS_TRACE("IOCP", "Connect To on sockfd {}", sockfd());
 
         return mConnectEx(
             sockfd(), 
-            &mEndpoint.cast<::sockaddr>(), 
+            mEndpoint.data(), 
             mEndpoint.length(),
             nullptr,
             0,
@@ -160,7 +160,7 @@ public:
     }
 
     auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<void> {
-        ILIAS_TRACE("IOCP", "Connect To {} on sockfd {} completed, Error {}", mEndpoint, sockfd(), error);
+        ILIAS_TRACE("IOCP", "Connect To on sockfd {} completed, Error {}", sockfd(), error);
         if (error != ERROR_SUCCESS) {
             return Unexpected(SystemError(error));
         }
@@ -171,13 +171,13 @@ public:
         return {};
     }
 private:
-    const IPEndpoint &mEndpoint;
+    EndpointView mEndpoint;
     LPFN_CONNECTEX mConnectEx = nullptr;
 };
 
 class IocpAcceptAwaiter final : public IocpAwaiter<IocpAcceptAwaiter> {
 public:
-    IocpAcceptAwaiter(SOCKET sock, IPEndpoint *endpoint, LPFN_ACCEPTEX acceptEx, LPFN_GETACCEPTEXSOCKADDRS getAcceptExSockaddrs) :
+    IocpAcceptAwaiter(SOCKET sock, MutableEndpointView endpoint, LPFN_ACCEPTEX acceptEx, LPFN_GETACCEPTEXSOCKADDRS getAcceptExSockaddrs) :
         IocpAwaiter(sock), mEndpoint(endpoint), mAcceptEx(acceptEx), mGetAcceptExSockaddrs(getAcceptExSockaddrs)
     {
 
@@ -238,14 +238,17 @@ public:
         }
 
         if (mEndpoint) {
-            *mEndpoint = IPEndpoint(*remoteAddr);
+            if (remoteAddrLen > mEndpoint.bufsize()) { //< Endpoint buffer is too small
+                return Unexpected(Error::InvalidArgument);
+            }
+            ::memcpy(mEndpoint.data(), remoteAddr, remoteAddrLen);
         }
         auto sock = mAcceptedSock;
         mAcceptedSock = INVALID_SOCKET;
         return sock;
     }
 private:
-    IPEndpoint *mEndpoint = nullptr;
+    MutableEndpointView mEndpoint = nullptr;
     SOCKET mAcceptedSock = INVALID_SOCKET;
     std::byte mAddressBuf[(sizeof(::sockaddr_storage) + 16) * 2];
 

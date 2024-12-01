@@ -133,7 +133,7 @@ public:
      * @return Result<IPEndpoint> 
      */
     auto localEndpoint() const -> Result<IPEndpoint> { 
-        return mBase.localEndpoint(); 
+        return mBase.localEndpoint<IPEndpoint>(); 
     }
 
     /**
@@ -142,7 +142,7 @@ public:
      * @return Result<IPEndpoint> 
      */
     auto remoteEndpoint() const -> Result<IPEndpoint> {
-        return mBase.remoteEndpoint();
+        return mBase.remoteEndpoint<IPEndpoint>();
     }
 
     /**
@@ -281,7 +281,7 @@ public:
      * @return Result<IPEndpoint> 
      */
     auto localEndpoint() const -> Result<IPEndpoint> { 
-        return mBase.localEndpoint(); 
+        return mBase.localEndpoint<IPEndpoint>(); 
     }
 
     /**

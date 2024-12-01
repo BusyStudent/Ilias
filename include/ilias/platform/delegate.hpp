@@ -28,11 +28,11 @@ public:
     auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
     auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
 
-    auto accept(IoDescriptor *fd, IPEndpoint *endpoint) -> Task<socket_t> override;
-    auto connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> override;
+    auto accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> override;
+    auto connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> override;
 
-    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, const IPEndpoint *endpoint) -> Task<size_t> override;
-    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, IPEndpoint *endpoint) -> Task<size_t> override;
+    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> override;
+    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> override;
 
     auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> override;
 
@@ -121,22 +121,22 @@ inline auto DelegateContext<T>::write(IoDescriptor *fd, std::span<const std::byt
 }
 
 template <typename T>
-inline auto DelegateContext<T>::accept(IoDescriptor *fd, IPEndpoint *endpoint) -> Task<socket_t> {
+inline auto DelegateContext<T>::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> {
     co_return co_await scheduleOn(*mContext, mContext->accept(fd, endpoint));
 }
 
 template <typename T>
-inline auto DelegateContext<T>::connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> {
+inline auto DelegateContext<T>::connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> {
     co_return co_await scheduleOn(*mContext, mContext->connect(fd, endpoint));
 }
 
 template <typename T>
-inline auto DelegateContext<T>::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, const IPEndpoint *endpoint) -> Task<size_t> {
+inline auto DelegateContext<T>::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> {
     co_return co_await scheduleOn(*mContext, mContext->sendto(fd, buffer, flags, endpoint));
 }
 
 template <typename T>
-inline auto DelegateContext<T>::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, IPEndpoint *endpoint) -> Task<size_t> {
+inline auto DelegateContext<T>::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> {
     co_return co_await scheduleOn(*mContext, mContext->recvfrom(fd, buffer, flags, endpoint));
 }
 

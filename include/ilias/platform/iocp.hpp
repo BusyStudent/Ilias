@@ -96,11 +96,11 @@ public:
     auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
     auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
 
-    auto accept(IoDescriptor *fd, IPEndpoint *endpoint) -> Task<socket_t> override;
-    auto connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> override;
+    auto accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> override;
+    auto connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> override;
 
-    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, const IPEndpoint *endpoint) -> Task<size_t> override;
-    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, IPEndpoint *endpoint) -> Task<size_t> override;
+    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> override;
+    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> override;
 
     auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> override;
     auto connectNamedPipe(IoDescriptor *fd) -> Task<void> override;
@@ -356,7 +356,7 @@ inline auto IocpContext::write(IoDescriptor *fd, std::span<const std::byte> buff
 }
 
 #pragma region Net
-inline auto IocpContext::accept(IoDescriptor *fd, IPEndpoint *endpoint) -> Task<socket_t> {
+inline auto IocpContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket) {
         co_return Unexpected(Error::OperationNotSupported);
@@ -364,29 +364,26 @@ inline auto IocpContext::accept(IoDescriptor *fd, IPEndpoint *endpoint) -> Task<
     co_return co_await detail::IocpAcceptAwaiter(nfd->sockfd, endpoint, nfd->sock.AcceptEx, nfd->sock.GetAcceptExSockaddrs);
 }
 
-inline auto IocpContext::connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> {
+inline auto IocpContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket) {
         co_return Unexpected(Error::OperationNotSupported);
     }
-    if (!endpoint.isValid()) {
+    if (!endpoint) {
         co_return Unexpected(Error::InvalidArgument);
     }
     co_return co_await detail::IocpConnectAwaiter(nfd->sockfd, endpoint, nfd->sock.ConnectEx);
 }
 
-inline auto IocpContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, const IPEndpoint *endpoint) -> Task<size_t> {
+inline auto IocpContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket) {
         co_return Unexpected(Error::OperationNotSupported);
     }
-    if (endpoint && !endpoint->isValid()) {
-        co_return Unexpected(Error::InvalidArgument);
-    }
     co_return co_await detail::IocpSendtoAwaiter(nfd->sockfd, buffer, flags, endpoint);
 }
 
-inline auto IocpContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, IPEndpoint *endpoint) -> Task<size_t> {
+inline auto IocpContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket) {
         co_return Unexpected(Error::OperationNotSupported);

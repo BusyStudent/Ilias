@@ -70,9 +70,9 @@ public:
      * @param endpoint 
      * @return Result<size_t> 
      */
-    auto sendto(std::span<const std::byte> buf, int flags, const IPEndpoint *endpoint) const -> Result<size_t> {
-        const ::sockaddr *addr = endpoint ? &endpoint->cast<::sockaddr>() : nullptr;
-        const ::socklen_t addrLen = endpoint ? endpoint->length() : 0;
+    auto sendto(std::span<const std::byte> buf, int flags, EndpointView endpoint) const -> Result<size_t> {
+        const ::sockaddr *addr = endpoint.data();
+        const ::socklen_t addrLen = endpoint.length();
         auto ret = ::sendto(mFd, reinterpret_cast<const char*>(buf.data()), buf.size_bytes(), flags, addr, addrLen);
         if (ret < 0) {
             return Unexpected(SystemError::fromErrno());
@@ -81,18 +81,6 @@ public:
     }
 
     /**
-     * @brief Sendto num of bytes to target endpoint
-     * 
-     * @param buf 
-     * @param flags 
-     * @param endpoint 
-     * @return Result<size_t> 
-     */
-    auto sendto(std::span<const std::byte> buf, int flags, const IPEndpoint &endpoint) const -> Result<size_t> {
-        return sendto(buf, flags, &endpoint);
-    }
-
-    /**
      * @brief Recvfrom num of bytes from , it can get the remote endpoint 
      * 
      * @param buf 
@@ -100,29 +88,14 @@ public:
      * @param endpoint 
      * @return Result<size_t> 
      */
-    auto recvfrom(std::span<std::byte> buf, int flags, IPEndpoint *endpoint) const -> Result<size_t> {
-        ::sockaddr_storage addr {};
-        ::socklen_t size = sizeof(addr);
-        auto ret = ::recvfrom(mFd, reinterpret_cast<char*>(buf.data()), buf.size_bytes(), flags, reinterpret_cast<::sockaddr*>(&addr), &size);
+    auto recvfrom(std::span<std::byte> buf, int flags, MutableEndpointView endpoint) const -> Result<size_t> {
+        ::sockaddr *addr = endpoint.data();
+        ::socklen_t addrLen = endpoint.bufsize();
+        auto ret = ::recvfrom(mFd, reinterpret_cast<char*>(buf.data()), buf.size_bytes(), flags, addr, &addrLen);
         if (ret < 0) {
             return Unexpected(SystemError::fromErrno());
         }
-        if (endpoint) {
-            *endpoint = IPEndpoint::fromRaw(&addr, size).value();
-        }
         return ret;
-    }
-
-    /**
-     * @brief Recvfrom num of bytes from , it can get the remote endpoint 
-     * 
-     * @param buf 
-     * @param flags 
-     * @param endpoint 
-     * @return Result<size_t> 
-     */
-    auto recvfrom(std::span<std::byte> buf, int flags, IPEndpoint &endpoint) const -> Result<size_t> {
-        return recvfrom(buf, flags, &endpoint);
     }
 
     /**
@@ -159,8 +132,8 @@ public:
      * @param endpoint 
      * @return Result<void> 
      */
-    auto connect(const IPEndpoint &endpoint) const -> Result<void> {
-        auto ret = ::connect(mFd, &endpoint.cast<::sockaddr>(), endpoint.length());
+    auto connect(EndpointView endpoint) const -> Result<void> {
+        auto ret = ::connect(mFd, endpoint.data(), endpoint.length());
         if (ret < 0) {
             return Unexpected(SystemError::fromErrno());
         }
@@ -168,17 +141,37 @@ public:
     }
 
     /**
-     * @brief Bind the socket to the specified endpoint
+     * @brief Connect to the specified ip endpoint
      * 
      * @param endpoint 
      * @return Result<void> 
      */
-    auto bind(const IPEndpoint &endpoint) const -> Result<void> {
-        auto ret = ::bind(mFd, &endpoint.cast<::sockaddr>(), endpoint.length());
+    auto connect(const IPEndpoint &endpoint) const -> Result<void> {
+        return connect(EndpointView(endpoint));
+    }
+
+    /**
+     * @brief Bind the socket to the specified endpoint
+     * 
+     * @param endpoint The endpoint view to bind to
+     * @return Result<void> 
+     */
+    auto bind(EndpointView endpoint) const -> Result<void> {
+        auto ret = ::bind(mFd, endpoint.data(), endpoint.length());
         if (ret < 0) {
             return Unexpected(SystemError::fromErrno());
         }
         return {};
+    }
+
+    /**
+     * @brief Bind the socket to the specified ip endpoint
+     * 
+     * @param endpoint The const IPEndpoint to bind to
+     * @return Result<void> 
+     */
+    auto bind(const IPEndpoint &endpoint) const -> Result<void> {
+        return bind(EndpointView(endpoint));
     }
 
     /**
@@ -373,45 +366,69 @@ public:
      * @brief Accept a connection on the socket
      * 
      * @tparam T 
-     * @return Result<std::pair<T, IPEndpoint> > 
+     * @param endpoint The endpoint of the remote peer (optional, can be nullptr)
+     * @return Result<T> 
      */
     template <typename T>
-    auto accept() const -> Result<std::pair<T, IPEndpoint> > {
-        ::sockaddr_storage addr;
-        ::socklen_t len = sizeof(addr);
-        auto fd = ::accept(mFd, reinterpret_cast<sockaddr*>(&addr), &len);
+    auto accept(MutableEndpointView endpoint) const -> Result<T> {
+        ::sockaddr *addr = endpoint.data();
+        ::socklen_t len = endpoint.bufsize();
+        auto fd = ::accept(mFd, addr, &len);
         if (fd == Invalid) {
             return Unexpected(SystemError::fromErrno());
         }
-        return std::make_pair(T(fd), IPEndpoint::fromRaw(&addr, len).value());
+        return T(fd);
+    }
+
+    /**
+     * @brief Accept a connection on the socket
+     * 
+     * @tparam T 
+     * @tparam Endpoint must has MutableEndpoint concept like IPEndpoint
+     * @return Result<std::pair<T, IPEndpoint> > 
+     */
+    template <typename T, MutableEndpoint Endpoint = IPEndpoint>
+    auto accept() const -> Result<std::pair<T, Endpoint> > {
+        Endpoint endpoint;
+        auto fd = accept<T>(&endpoint);
+        if (!fd) {
+            return Unexpected(fd.error());
+        }
+        return std::make_pair(T(std::move(*fd)), endpoint);
     }
 
     /**
      * @brief Get the local endpoint of the socket
      * 
+     * @tparam T must has MutableEndpoint concept like IPEndpoint
      * @return Result<IPEndpoint> 
      */
-    auto localEndpoint() const -> Result<IPEndpoint> {
-        ::sockaddr_storage addr;
-        ::socklen_t len = sizeof(addr);
-        if (::getsockname(mFd, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
+    template <MutableEndpoint T = IPEndpoint>
+    auto localEndpoint() const -> Result<T> {
+        T endpoint;
+        ::sockaddr *addr = reinterpret_cast<::sockaddr*>(endpoint.data());
+        ::socklen_t len = endpoint.bufsize();
+        if (::getsockname(mFd, addr, &len) < 0) {
             return Unexpected(SystemError::fromErrno());
         }
-        return IPEndpoint::fromRaw(&addr, len).value();
+        return endpoint;
     }
 
     /**
      * @brief Get the remote endpoint of the socket
      * 
+     * @tparam T must has MutableEndpoint concept like IPEndpoint
      * @return Result<IPEndpoint> 
      */
-    auto remoteEndpoint() const -> Result<IPEndpoint> {
-        ::sockaddr_storage addr;
-        ::socklen_t len = sizeof(addr);
-        if (::getpeername(mFd, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
+    template <MutableEndpoint T = IPEndpoint>
+    auto remoteEndpoint() const -> Result<T> {
+        T endpoint;
+        ::sockaddr *addr = reinterpret_cast<::sockaddr*>(endpoint.data());
+        ::socklen_t len = endpoint.bufsize();
+        if (::getpeername(mFd, addr, &len) < 0) {
             return Unexpected(SystemError::fromErrno());
         }
-        return IPEndpoint::fromRaw(&addr, len).value();
+        return endpoint;
     }
 
     /**
@@ -534,11 +551,12 @@ public:
      * @brief Accept a new connection on the socket
      * 
      * @tparam T 
+     * @tparam Endpoint
      * @return Result<std::pair<T, IPEndpoint> > 
      */
-    template <typename T = Socket>
-    auto accept() -> Result<std::pair<T, IPEndpoint> > {
-        return SocketView::accept<T>();
+    template <typename T = Socket, MutableEndpoint Endpoint = IPEndpoint>
+    auto accept() -> Result<std::pair<T, Endpoint> > {
+        return SocketView::accept<T, Endpoint>();
     }
 
     auto operator =(const Socket &) = delete;

@@ -18,7 +18,8 @@
 
 ILIAS_NS_BEGIN
 
-class IPEndpoint;
+class EndpointView;
+class MutableEndpointView;
 
 /**
  * @brief The IoDescriptor class, user should only take the pointer to this class, it is opaque to the user
@@ -93,7 +94,7 @@ public:
      * @param endpoint 
      * @return Task<void> 
      */
-    virtual auto connect(IoDescriptor *fd, const IPEndpoint &endpoint) -> Task<void> = 0;
+    virtual auto connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> = 0;
 
     /**
      * @brief Accept a connection
@@ -102,7 +103,7 @@ public:
      * @param remoteEndpoint The endpoint of the remote, if nullptr, the endpoint will be ignored
      * @return Task<socket_t> 
      */
-    virtual auto accept(IoDescriptor *fd, IPEndpoint *remoteEndpoint) -> Task<socket_t> = 0;
+    virtual auto accept(IoDescriptor *fd, MutableEndpointView remoteEndpoint) -> Task<socket_t> = 0;
 
     /**
      * @brief Send data to a remote endpoint
@@ -113,7 +114,7 @@ public:
      * @param endpoint The endpoint to send to, if nullptr, the fd must be connected
      * @return Task<size_t> 
      */
-    virtual auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, const IPEndpoint *endpoint) -> Task<size_t> = 0;
+    virtual auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> = 0;
 
     /**
      * @brief Receive data from a remote endpoint
@@ -124,7 +125,7 @@ public:
      * @param endpoint The endpoint to receive from
      * @return Task<size_t> 
      */
-    virtual auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, IPEndpoint *endpoint) -> Task<size_t> = 0;
+    virtual auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> = 0;
 
     /**
      * @brief Poll a descriptor for events

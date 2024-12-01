@@ -125,7 +125,7 @@ public:
      * @return Result<IPEndpoint> 
      */
     auto localEndpoint() const -> Result<IPEndpoint> { 
-        return mBase.localEndpoint(); 
+        return mBase.localEndpoint<IPEndpoint>(); 
     }
 
     /**

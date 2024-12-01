@@ -84,15 +84,15 @@ public:
         return mCtxt->recvfrom(mFd, data, flags, nullptr);
     }
 
-    auto sendto(std::span<const std::byte> data, int flags, const IPEndpoint *endpoint) -> Task<size_t> {
+    auto sendto(std::span<const std::byte> data, int flags, EndpointView endpoint) -> Task<size_t> {
         return mCtxt->sendto(mFd, data, flags, endpoint);
     }
 
-    auto recvfrom(std::span<std::byte> data, int flags, IPEndpoint *endpoint) -> Task<size_t> {
+    auto recvfrom(std::span<std::byte> data, int flags, MutableEndpointView endpoint) -> Task<size_t> {
         return mCtxt->recvfrom(mFd, data, flags, endpoint);
     }
 
-    auto connect(const IPEndpoint &endpoint) -> Task<void> {
+    auto connect(EndpointView endpoint) -> Task<void> {
         return mCtxt->connect(mFd, endpoint);
     }
 
@@ -100,7 +100,7 @@ public:
         return mCtxt->poll(mFd, events);
     }
 
-    auto bind(const IPEndpoint &endpoint) {
+    auto bind(EndpointView endpoint) {
         return mSock.bind(endpoint);
     }
 
@@ -108,15 +108,17 @@ public:
         return mSock.listen(backlog);
     }
 
-    auto localEndpoint() const -> Result<IPEndpoint> {
-        return mSock.localEndpoint();
+    template <MutableEndpoint T = IPEndpoint>
+    auto localEndpoint() const -> Result<T> {
+        return mSock.localEndpoint<T>();
     }
 
-    auto remoteEndpoint() const -> Result<IPEndpoint> {
-        return mSock.remoteEndpoint();
+    template <MutableEndpoint T = IPEndpoint>
+    auto remoteEndpoint() const -> Result<T> {
+        return mSock.remoteEndpoint<T>();
     }
 
-    auto accept(IPEndpoint *endpoint) -> Task<socket_t> {
+    auto accept(MutableEndpointView endpoint) -> Task<socket_t> {
         return mCtxt->accept(mFd, endpoint);
     }
 

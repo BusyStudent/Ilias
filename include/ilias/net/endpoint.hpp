@@ -19,6 +19,23 @@
 ILIAS_NS_BEGIN
 
 /**
+ * @brief The concept of endpoint
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept Endpoint = requires(T t) {
+    t.data();
+    t.length();
+};
+
+template <typename T>
+concept MutableEndpoint = requires(T t) {
+    t.data();
+    t.bufsize();
+};
+
+/**
  * @brief The endpoint of a unix domain socket
  * 
  */
@@ -44,6 +61,24 @@ public:
         ::memcpy(sun_path, path.data(), len);
         sun_path[len] = '\0';
         sun_family = AF_UNIX;
+    }
+
+    /**
+     * @brief Get the data of the endpoint
+     * 
+     * @return void* 
+     */
+    auto data() -> void * {
+        return this;
+    }
+
+    /**
+     * @brief Get the data of the endpoint
+     * 
+     * @return const void* 
+     */
+    auto data() const -> const void * {
+        return this;
     }
 
     /**
@@ -392,6 +427,164 @@ private:
         .ss_family = AF_UNSPEC
     };
 };
+
+/**
+ * @brief A const view of an endpoint
+ * 
+ */
+class EndpointView {
+public:
+    /**
+     * @brief Construct a new empty Endpoint View object
+     * 
+     */
+    EndpointView() = default;
+
+    /**
+     * @brief Construct a new empty Endpoint View object
+     * 
+     */
+    EndpointView(std::nullptr_t) : mAddr(nullptr), mLength(0) { }
+
+    /**
+     * @brief Construct a new Endpoint View object from any endpoint like object
+     * 
+     * @tparam T must has Endpoint concept
+     * @param ep The const reference to the endpoint
+     */
+    template <Endpoint T>
+    EndpointView(const T &ep) : mAddr(reinterpret_cast<const ::sockaddr*>(ep.data())), mLength(ep.length()) { }
+
+    /**
+     * @brief Construct a new Endpoint View object from any endpoint like object's ptr
+     * 
+     * @tparam T must has Endpoint concept
+     * @param ep The const pointer to the endpoint (can be nullptr)
+     */
+    template <Endpoint T>
+    EndpointView(T *ep) {
+        if (ep) {
+            mAddr = reinterpret_cast<const ::sockaddr*>(ep->data());
+            mLength = ep->length();
+        }
+    }
+
+    /**
+     * @brief Construct a new Endpoint View object by copying from another view
+     * 
+     */
+    EndpointView(const EndpointView &) = default;
+
+    /**
+     * @brief Get the data pointer to the endpoint
+     * 
+     * @return const ::sockaddr* 
+     */
+    auto data() const -> const ::sockaddr * {
+        return mAddr;
+    }
+
+    /**
+     * @brief Get the length of the endpoint
+     * 
+     * @return ::socklen_t 
+     */
+    auto length() const -> ::socklen_t {
+        return mLength;
+    }
+
+    /**
+     * @brief Check if the view is not empty
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept {
+        return mAddr != nullptr;
+    }
+private:
+    const ::sockaddr *mAddr = nullptr;
+    ::socklen_t       mLength = 0;
+};
+
+/**
+ * @brief A view for receiving endpoint's data
+ * 
+ */
+class MutableEndpointView {
+public:
+    /**
+     * @brief Construct a new empty Mutable Endpoint View object
+     * 
+     */
+    MutableEndpointView() = default;
+
+    /**
+     * @brief Construct a new empty Mutable Endpoint View object
+     * 
+     */
+    MutableEndpointView(std::nullptr_t) : mAddr(nullptr), mBufSize(0) { }
+
+    /**
+     * @brief Construct a new Endpoint View object from any endpoint like object
+     * 
+     * @tparam T must has Endpoint concept
+     * @param ep The mutable reference to the endpoint
+     */
+    template <MutableEndpoint T>
+    MutableEndpointView(T &ep) : mAddr(reinterpret_cast<::sockaddr*>(ep.data())), mBufSize(ep.bufsize()) { }
+
+    /**
+     * @brief Construct a new Endpoint View object from any endpoint like object's ptr
+     * 
+     * @tparam T must has Endpoint concept
+     * @param ep The mutable pointer to the endpoint (can be nullptr)
+     */
+    template <MutableEndpoint T>
+    MutableEndpointView(T *ep) {
+        if (ep) {
+            mAddr = reinterpret_cast<::sockaddr*>(ep->data());
+            mBufSize = ep->bufsize();
+        }
+    }
+
+    /**
+     * @brief Construct a new Mutable Endpoint View object by copying from another view
+     * 
+     */
+    MutableEndpointView(const MutableEndpointView &) = default;
+
+    /**
+     * @brief Get the data pointer to the endpoint
+     * 
+     */
+    auto data() const -> ::sockaddr * {
+        return mAddr;
+    }
+
+    /**
+     * @brief Get the bufsize of the endpoint
+     * 
+     * @return ::socklen_t 
+     */
+    auto bufsize() const -> ::socklen_t {
+        return mBufSize;
+    }
+
+    /**
+     * @brief Check if the view is not empty
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept {
+        return mAddr != nullptr;
+    }
+private:
+    ::sockaddr *mAddr = nullptr;
+    ::socklen_t mBufSize = 0;
+};
+
 
 ILIAS_NS_END
 
