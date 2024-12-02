@@ -82,6 +82,16 @@ TEST(Endpoint, ToString) {
 #endif
 }
 
+TEST(Unix, Basic) {
+    UnixEndpoint endpoint("/tmp/test.sock");
+    EXPECT_TRUE(endpoint.isValid());
+    EXPECT_FALSE(endpoint.isAbstract());
+
+    UnixEndpoint endpoint2("\0AAAAA"); //< Abstract namespace
+    EXPECT_TRUE(endpoint2.isValid());
+    EXPECT_TRUE(endpoint2.isAbstract());
+}
+
 auto main(int argc, char **argv) -> int {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

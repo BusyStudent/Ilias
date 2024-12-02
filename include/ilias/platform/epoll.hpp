@@ -345,7 +345,7 @@ inline auto EpollContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Ta
     ILIAS_ASSERT(descriptor->type == IoDescriptor::Socket);
     ILIAS_ASSERT(descriptor->fd != -1);
     ILIAS_TRACE("Epoll", "start connect to {} on fd {}", endpoint, descriptor->fd);
-    auto ret = ::connect(descriptor->fd, &endpoint.cast<sockaddr>(), endpoint.length());
+    auto ret = ::connect(descriptor->fd, endpoint.data(), endpoint.length());
     if (ret == 0) {
         ILIAS_TRACE("Epoll", "{} connect to {} successful", descriptor->fd, endpoint);
         co_return Result<void>();
@@ -379,12 +379,9 @@ inline auto EpollContext::accept(IoDescriptor *fd, MutableEndpointView remoteEnd
     ILIAS_ASSERT(descriptor->fd != -1);
     auto socket = SocketView(descriptor->fd);
     while (true) {
-        auto ret = socket.accept<socket_t>();
+        auto ret = socket.accept<socket_t>(remoteEndpoint);
         if (ret.has_value()) {
-            if (remoteEndpoint != nullptr) {
-                *remoteEndpoint = ret.value().second;
-            }
-            co_return ret.value().first;
+            co_return ret;
         }
         if (ret.error() != SystemError(EAGAIN) && ret.error() != SystemError(EWOULDBLOCK)) {
             co_return Unexpected(SystemError::fromErrno());
@@ -407,8 +404,8 @@ inline auto EpollContext::sendto(IoDescriptor *fd, ::std::span<const ::std::byte
     SocketView socket(descriptor->fd);
     while (true) {
         Result<size_t> ret;
-        if (endpoint != nullptr) {
-            ret = socket.sendto(buffer, flags | MSG_DONTWAIT, *endpoint);
+        if (endpoint) {
+            ret = socket.sendto(buffer, flags | MSG_DONTWAIT, endpoint);
         }
         else {
             ret = socket.send(buffer, flags | MSG_DONTWAIT);

@@ -15,6 +15,7 @@
 #include <ilias/net/address.hpp>
 #include <ilias/net/system.hpp>
 #include <charconv>
+#include <cstring>
 
 ILIAS_NS_BEGIN
 
@@ -58,8 +59,18 @@ public:
     UnixEndpoint(std::string_view path) {
         auto maxlen = sizeof(sun_path) - 1;
         auto len = path.size() >= maxlen ? maxlen : path.size();
+        ::memset(this, 0, sizeof(::sockaddr_un));
         ::memcpy(sun_path, path.data(), len);
         sun_path[len] = '\0';
+        sun_family = AF_UNIX;
+    }
+
+    template <size_t N>
+    UnixEndpoint(const char (&path)[N]) {
+        static_assert(N < sizeof(sun_path), "The path is too long!");
+        ::memset(this, 0, sizeof(::sockaddr_un));
+        ::memcpy(sun_path, path, N - 1);
+        sun_path[N] = '\0';
         sun_family = AF_UNIX;
     }
 
@@ -100,11 +111,38 @@ public:
     }
 
     /**
+     * @brief Get the maximum buffer size of the endpoint
+     * 
+     * @return size_t 
+     */
+    auto bufsize() const -> size_t {
+        return sizeof(::sockaddr_un);
+    }
+
+    /**
+     * @brief Get the path of the endpoint
+     * 
+     * @return std::string_view 
+     */
+    auto path() const -> std::string_view {
+        if (!isValid()) {
+            return {};
+        }
+        if (isAbstract()) {
+            return {sun_path, sizeof(sun_path)};
+        }
+        return {sun_path, ::strnlen(sun_path, sizeof(sun_path))};
+    }
+
+    /**
      * @brief Convert the endpoint to string
      * 
      * @return std::string 
      */
     auto toString() const -> std::string {
+        if (!isValid()) {
+            return {};
+        }
         return sun_path;
     }
 
@@ -447,6 +485,14 @@ public:
     EndpointView(std::nullptr_t) : mAddr(nullptr), mLength(0) { }
 
     /**
+     * @brief Construct a new Endpoint View object
+     * 
+     * @param addr The pointer to the endpoint
+     * @param len The length to the endpoint
+     */
+    EndpointView(const ::sockaddr *addr, ::socklen_t len) : mAddr(addr), mLength(len) { }
+
+    /**
      * @brief Construct a new Endpoint View object from any endpoint like object
      * 
      * @tparam T must has Endpoint concept
@@ -494,6 +540,26 @@ public:
     }
 
     /**
+     * @brief Convert endpoint view to human readable string (for debug use)
+     * 
+     * @return std::string 
+     */
+    auto toString() const -> std::string {
+        if (!mAddr) {
+            return "EndpointView(null)";
+        }
+        char buffer[256] {0};
+        ::snprintf(buffer, sizeof(buffer), "EndpointView(.family = %d, .len = %d)", int(mAddr->sa_family), int(mLength));
+        return buffer;
+    }
+
+    /**
+     * @brief Compare with another EndpointView
+     * 
+     */
+    auto operator <=>(const EndpointView &) const noexcept = default;
+
+    /**
      * @brief Check if the view is not empty
      * 
      * @return true 
@@ -524,6 +590,14 @@ public:
      * 
      */
     MutableEndpointView(std::nullptr_t) : mAddr(nullptr), mBufSize(0) { }
+
+    /**
+     * @brief Construct a new Mutable Endpoint View object
+     * 
+     * @param addr The pointer to the mutable endpoint
+     * @param bufsize The max buffer size of the endpoint to store
+     */
+    MutableEndpointView(::sockaddr *addr, ::socklen_t bufsize) : mAddr(addr), mBufSize(bufsize) { }
 
     /**
      * @brief Construct a new Endpoint View object from any endpoint like object
@@ -572,6 +646,26 @@ public:
     }
 
     /**
+     * @brief Convert the endpoint to human readable string (debug use)
+     * 
+     * @return std::string 
+     */
+    auto toString() const -> std::string {
+        if (!mAddr) {
+            return "MutableEndpointView(null)";
+        }
+        char buffer[256] {0};
+        ::snprintf(buffer, sizeof(buffer), "MutableEndpointView(.ptr = %p, .bufsize = %d)", mAddr, int(mBufSize));
+        return buffer;
+    }
+
+    /**
+     * @brief Compare with another MutableEndpointView
+     * 
+     */
+    auto operator <=>(const MutableEndpointView &) const noexcept = default;
+
+    /**
      * @brief Check if the view is not empty
      * 
      * @return true 
@@ -591,14 +685,20 @@ ILIAS_NS_END
 // --- Formatter for Endpoint
 #if !defined(ILIAS_NO_FORMAT)
 ILIAS_FORMATTER(UnixEndpoint) {
-    auto format(const auto &addr, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", addr.toString());
+    auto format(const auto &endpoint, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", endpoint.toString());
     }
 };
 
 ILIAS_FORMATTER(IPEndpoint) {
-    auto format(const auto &addr, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", addr.toString());
+    auto format(const auto &endpoint, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", endpoint.toString());
     }
-}; 
+};
+
+ILIAS_FORMATTER(EndpointView) {
+    auto format(const auto &endpoint, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", endpoint.toString());
+    }
+};
 #endif
