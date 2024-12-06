@@ -193,21 +193,14 @@ public:
      * 
      * @param addr The network-format ipv4 endpoint
      */
-    IPEndpoint(::sockaddr_in addr) { ::memcpy(&mData, &addr, sizeof(addr)); }
+    IPEndpoint(::sockaddr_in addr) { ::memcpy(&mAddr4, &addr, sizeof(addr)); }
 
     /**
      * @brief Construct a new IPEndpoint object
      * 
      * @param addr The network-format ipv6 endpoint
      */
-    IPEndpoint(::sockaddr_in6 addr) { ::memcpy(&mData, &addr, sizeof(addr)); }
-
-    /**
-     * @brief Construct a new IPEndpoint object
-     * 
-     * @param addr The network-format endpoint
-     */
-    IPEndpoint(::sockaddr_storage addr) : mData(addr) { }
+    IPEndpoint(::sockaddr_in6 addr) { ::memcpy(&mAddr6, &addr, sizeof(addr)); }
 
     /**
      * @brief Construct a new IPEndpoint object by string
@@ -237,7 +230,7 @@ public:
      * @param port The port number in host byte order
      */
     IPEndpoint(const IPAddress &addr, uint16_t port) {
-        mData.ss_family = addr.family();
+        mData.sa_family = addr.family();
         switch (addr.family()) {
             case AF_INET: {
                 auto &sockaddr = cast<::sockaddr_in>();
@@ -348,7 +341,7 @@ public:
      * @return int 
      */
     auto family() const -> int {
-        return mData.ss_family;
+        return mData.sa_family;
     }
 
     /**
@@ -461,8 +454,10 @@ public:
         }
     }
 private:
-    ::sockaddr_storage mData {
-        .ss_family = AF_UNSPEC
+    union {
+        ::sockaddr     mData { .sa_family = AF_UNSPEC };
+        ::sockaddr_in  mAddr4;
+        ::sockaddr_in6 mAddr6;
     };
 };
 

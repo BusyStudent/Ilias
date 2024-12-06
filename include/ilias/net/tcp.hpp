@@ -164,6 +164,15 @@ public:
         return mBase.socket();
     }
 
+    /**
+     * @brief Get the underlying io context.
+     * 
+     * @return IoContext* 
+     */
+    auto context() const -> IoContext * {
+        return mBase.context();
+    }
+
     auto operator <=>(const TcpClient &) const = default;
 
     /**
@@ -282,6 +291,15 @@ public:
      */
     auto localEndpoint() const -> Result<IPEndpoint> { 
         return mBase.localEndpoint<IPEndpoint>(); 
+    }
+
+    /**
+     * @brief Get the underlying io context.
+     * 
+     * @return IoContext* 
+     */
+    auto context() const -> IoContext * {
+        return mBase.context();
     }
 
     /**

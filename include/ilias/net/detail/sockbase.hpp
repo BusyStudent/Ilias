@@ -76,35 +76,35 @@ public:
     }
 
     // as same as sync system socket
-    auto send(std::span<const std::byte> data, int flags = 0) -> Task<size_t> {
+    auto send(std::span<const std::byte> data, int flags = 0) const -> Task<size_t> {
         return mCtxt->sendto(mFd, data, flags, nullptr);
     }
 
-    auto recv(std::span<std::byte> data, int flags = 0) -> Task<size_t> {
+    auto recv(std::span<std::byte> data, int flags = 0) const -> Task<size_t> {
         return mCtxt->recvfrom(mFd, data, flags, nullptr);
     }
 
-    auto sendto(std::span<const std::byte> data, int flags, EndpointView endpoint) -> Task<size_t> {
+    auto sendto(std::span<const std::byte> data, int flags, EndpointView endpoint) const -> Task<size_t> {
         return mCtxt->sendto(mFd, data, flags, endpoint);
     }
 
-    auto recvfrom(std::span<std::byte> data, int flags, MutableEndpointView endpoint) -> Task<size_t> {
+    auto recvfrom(std::span<std::byte> data, int flags, MutableEndpointView endpoint) const -> Task<size_t> {
         return mCtxt->recvfrom(mFd, data, flags, endpoint);
     }
 
-    auto connect(EndpointView endpoint) -> Task<void> {
+    auto connect(EndpointView endpoint) const -> Task<void> {
         return mCtxt->connect(mFd, endpoint);
     }
 
-    auto poll(uint32_t events) -> Task<uint32_t> {
+    auto poll(uint32_t events) const -> Task<uint32_t> {
         return mCtxt->poll(mFd, events);
     }
 
-    auto bind(EndpointView endpoint) {
+    auto bind(EndpointView endpoint) const {
         return mSock.bind(endpoint);
     }
 
-    auto listen(int backlog) {
+    auto listen(int backlog) const {
         return mSock.listen(backlog);
     }
 
@@ -118,11 +118,11 @@ public:
         return mSock.remoteEndpoint<T>();
     }
 
-    auto accept(MutableEndpointView endpoint) -> Task<socket_t> {
+    auto accept(MutableEndpointView endpoint) const -> Task<socket_t> {
         return mCtxt->accept(mFd, endpoint);
     }
 
-    auto shutdown(int how = Shutdown::Both) -> Task<void> {
+    auto shutdown(int how = Shutdown::Both) const -> Task<void> {
         co_return mSock.shutdown(how);
     }
 

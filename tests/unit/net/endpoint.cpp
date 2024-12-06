@@ -66,6 +66,11 @@ TEST(Endpoint, Parse6) {
     std::cout << endpoint5.toString() << std::endl;
 }
 
+TEST(Endpoint, Invalid) {
+    IPEndpoint endpoint7;
+    EXPECT_FALSE(endpoint7.isValid());
+}
+
 TEST(Endpoint, ToString) {
     IPEndpoint endpoint(IPAddress4::any(), 8080);
     EXPECT_EQ(endpoint.toString(), "0.0.0.0:8080");

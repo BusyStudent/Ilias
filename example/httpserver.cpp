@@ -115,8 +115,10 @@ auto main(int argc, char **argv) -> int {
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
     PlatformContext ctxt;
 
-    auto fn = [&]() -> Task<void> {
+    auto fn = []() -> Task<void> {
+        auto &&ctxt = co_await currentIoContext();
         TcpListener listener(ctxt, AF_INET);
+        listener.setOption(sockopt::ReuseAddress(true)).value();
         if (auto ret = listener.bind(IPEndpoint("127.0.0.1", 25565)); !ret) {
             std::cerr << "Failed to bind: " << ret.error().toString() << std::endl;
             co_return {};

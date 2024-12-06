@@ -103,6 +103,11 @@ TEST(Net, CloseCancel) {
     ASSERT_TRUE(val2);
 }
 
+TEST(Net, UnixTest) {
+    auto ctxt = IoContext::currentThread();
+    UnixClient client(*ctxt, SOCK_STREAM);
+}
+
 auto main(int argc, char **argv) -> int {
 
 #if defined(_WIN32)
