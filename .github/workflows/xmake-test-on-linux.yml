@@ -8,21 +8,28 @@ on:
 
 jobs:
   build:
-    name: Build standard
+    name: Build ${{ matrix.backend }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        backend: [epoll, io_uring]
+        include:
+          - backend: epoll
+            config_args: ""
+          - backend: io_uring
+            config_args: "--use_io_uring=y"
     steps:
     - uses: actions/checkout@v2
     - name: setup xmake
       uses: xmake-io/github-action-setup-xmake@v1
       with:
-      # The version to use. Should be a semver range or 'latest'. Or use branch@{branch_name} to select a branch.
         xmake-version: latest
     - name: Update apt
       run: sudo apt update -y
     - name: Install dependencies
       run: sudo apt install -y lcov
     - name: Configure
-      run: xmake f -m coverage --use_fmt=y -y
+      run: xmake f -m coverage --use_fmt=y ${{ matrix.config_args }} -y
     - name: Build
       run: xmake -y
     - name: Run Test and collect coverage

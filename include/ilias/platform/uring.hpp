@@ -253,12 +253,32 @@ inline auto UringContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Ta
 
 inline auto UringContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
-    co_return co_await detail::UringSendtoAwaiter {mRing, nfd->fd, buffer, flags, endpoint};
+    ::iovec vec {
+        .iov_base = (void*) buffer.data(),
+        .iov_len = buffer.size()
+    };
+    ::msghdr msg {
+        .msg_name = (::sockaddr*) endpoint.data(),
+        .msg_namelen = endpoint.length(),
+        .msg_iov = &vec,
+        .msg_iovlen = 1,
+    };
+    co_return co_await detail::UringSendmsgAwaiter {mRing, nfd->fd, msg, flags};
 }
 
 inline auto UringContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
-    co_return co_await detail::UringRecvfromAwaiter {mRing, nfd->fd, buffer, flags, endpoint};
+    ::iovec vec {
+        .iov_base = buffer.data(),
+        .iov_len = buffer.size()
+    };
+    ::msghdr msg {
+        .msg_name = endpoint.data(),
+        .msg_namelen = endpoint.bufsize(),
+        .msg_iov = &vec,
+        .msg_iovlen = 1,
+    };
+    co_return co_await detail::UringRecvmsgAwaiter {mRing, nfd->fd, msg, flags};
 }
 
 inline auto UringContext::poll(IoDescriptor *fd, uint32_t events) -> Task<uint32_t> {

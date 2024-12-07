@@ -21,24 +21,19 @@ ILIAS_NS_BEGIN
 namespace detail {
 
 /**
- * @brief Awaiter wrapping the sendto / sendmeg (by liburing version)
+ * @brief Awaiter wrapping the sendmsg
  * 
  */
-class UringSendtoAwaiter final : public UringAwaiter<UringSendtoAwaiter> {
+class UringSendmsgAwaiter final : public UringAwaiter<UringSendmsgAwaiter> {
 public:
-    UringSendtoAwaiter(::io_uring &ring, int fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) : 
-        UringAwaiter(ring), mFd(fd), mFlags(flags)
+    UringSendmsgAwaiter(::io_uring &ring, int fd, ::msghdr &msg, int flags) : 
+        UringAwaiter(ring), mMsg(msg), mFd(fd), mFlags(flags)
     {
-        mBuffer.iov_base = (void*) buffer.data();
-        mBuffer.iov_len = buffer.size();
-        mMsg.msg_name = (::sockaddr*) endpoint.data();
-        mMsg.msg_namelen = endpoint.length();
-        mMsg.msg_iov = &mBuffer;
-        mMsg.msg_iovlen = 1;
+        
     }
 
     auto onSubmit() {
-        ILIAS_TRACE("Uring", "Prep sendto for fd {}, {} bytes", mFd, mBuffer.iov_len);
+        ILIAS_TRACE("Uring", "Prep sendmsg for fd {}", mFd);
         ::io_uring_prep_sendmsg(sqe(), mFd, &mMsg, mFlags);
     }
 
@@ -49,31 +44,25 @@ public:
         return size_t(ret);
     }
 private:
-    ::iovec  mBuffer { };
-    ::msghdr mMsg  { };
-    int      mFd;
-    int      mFlags;
+    ::msghdr &mMsg;
+    int       mFd;
+    int       mFlags;
 };
 
 /**
- * @brief Wrapping the recvfrom / recvmsg (by liburing version)
+ * @brief Wrapping the recvmsg
  * 
  */
-class UringRecvfromAwaiter final : public UringAwaiter<UringRecvfromAwaiter> {
+class UringRecvmsgAwaiter final : public UringAwaiter<UringRecvmsgAwaiter> {
 public:
-    UringRecvfromAwaiter(::io_uring &ring, int fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) :
-        UringAwaiter(ring), mFd(fd), mFlags(flags)
+    UringRecvmsgAwaiter(::io_uring &ring, int fd, ::msghdr &msg, int flags) :
+        UringAwaiter(ring), mMsg(msg), mFd(fd), mFlags(flags)
     {
-        mBuffer.iov_base = buffer.data();
-        mBuffer.iov_len = buffer.size();
-        mMsg.msg_name = endpoint.data();
-        mMsg.msg_namelen = endpoint.bufsize();
-        mMsg.msg_iov = &mBuffer;
-        mMsg.msg_iovlen = 1;
+
     }
 
     auto onSubmit() {
-        ILIAS_TRACE("Uring", "Prep recvfrom for fd {}, {} bytes", mFd, mBuffer.iov_len);
+        ILIAS_TRACE("Uring", "Prep recvmsg for fd {}", mFd);
         ::io_uring_prep_recvmsg(sqe(), mFd, &mMsg, mFlags);
     }
 
@@ -84,10 +73,9 @@ public:
         return size_t(ret);
     }
 private:
-    ::iovec  mBuffer { };
-    ::msghdr mMsg  { };
-    int      mFd;
-    int      mFlags;
+    ::msghdr &mMsg;
+    int       mFd;
+    int       mFlags;
 };
 
 /**
