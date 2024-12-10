@@ -25,6 +25,7 @@ auto main() -> int {
         TcpClient client(ctxt, target.family());
         if (auto val = co_await client.connect(IPEndpoint(target, 443)); !val) {
             std::cerr << "connect failed: " << val.error().toString() << '\n';
+            std::cerr << "target: " << IPEndpoint(target, 443).toString() << '\n';
             co_return {};
         }
         SslClient<TcpClient> sslClient(sslCtxt, std::move(client));

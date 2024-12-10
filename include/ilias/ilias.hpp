@@ -17,6 +17,10 @@
 #include <array>
 
 // --- Config
+#if __has_include(<ilias/detail/config.hpp>)
+    #include <ilias/detail/config.hpp>
+#endif
+
 #if !defined(ILIAS_NAMESPACE)
     #define ILIAS_NAMESPACE ilias
 #endif
@@ -93,6 +97,14 @@ using socket_t = ILIAS_SOCKET_T;
 // --- Forward declaration for Task<T>
 template <typename T = void>
 class Task;
+
+// --- Forward declaration for Result<T>
+template <typename T = void>
+class Result;
+
+// --- Types for io operation task
+template <typename T = void>
+using IoTask = Task<Result<T> >;
 
 // --- Formatting namespace
 #if defined(ILIAS_FMT_NAMESPACE)

@@ -874,7 +874,7 @@ private:
  *
  * @tparam T
  */
-template <typename T = void>
+template <typename T>
 class Result final : public Expected<T, Error> {
 public:
     using Expected<T, Error>::Expected;

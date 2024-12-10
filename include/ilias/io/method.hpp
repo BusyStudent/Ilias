@@ -99,7 +99,7 @@ public:
 template <typename T>
 class StreamMethod : public WritableMethod<T>, public ReadableMethod<T> {
 public:
-    auto operator <=>(const StreamMethod &rhs) const noexcept = default;
+    auto operator <=>(const StreamMethod &rhs) const noexcept -> std::strong_ordering = default;
 };
 
 ILIAS_NS_END
