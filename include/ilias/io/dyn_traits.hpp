@@ -14,8 +14,8 @@ namespace detail {
  * 
  */
 struct StreamVtbl {
-    Task<size_t> (*read)(void *object, std::span<std::byte> buffer) = nullptr;
-    Task<size_t> (*write)(void *object, std::span<const std::byte> buffer) = nullptr;
+    IoTask<size_t> (*read)(void *object, std::span<std::byte> buffer) = nullptr;
+    IoTask<size_t> (*write)(void *object, std::span<const std::byte> buffer) = nullptr;
 };
 
 /**
@@ -23,7 +23,7 @@ struct StreamVtbl {
  * 
  */
 struct StreamClientVtbl : public StreamVtbl {
-    Task<void> (*shutdown)(void *object) = nullptr;
+    IoTask<void> (*shutdown)(void *object) = nullptr;
 };
 
 /**
@@ -100,9 +100,9 @@ public:
      * @brief Read data from the stream
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto read(std::span<std::byte> buffer) const -> Task<size_t> {
+    auto read(std::span<std::byte> buffer) const -> IoTask<size_t> {
         return mVtbl->read(mObject, buffer);
     }
 
@@ -110,9 +110,9 @@ public:
      * @brief Write data to the stream
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto write(std::span<const std::byte> buffer) const -> Task<size_t> {
+    auto write(std::span<const std::byte> buffer) const -> IoTask<size_t> {
         return mVtbl->write(mObject, buffer);
     }
 
@@ -165,9 +165,9 @@ public:
     /**
      * @brief Shutdown the stream, it gracefully close the connection
      * 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    auto shutdown() const -> Task<void> {
+    auto shutdown() const -> IoTask<void> {
         return static_cast<const detail::StreamClientVtbl*>(mVtbl)->shutdown(mObject);
     }
 friend class IStreamClient;
@@ -229,16 +229,14 @@ public:
      * 
      */
     ~IStreamClient() {
-        if (mDelete) {
-            mDelete(mObject);
-        }
+        close();
     }
 
     /**
      * @brief Close the stream, it forcefully close the stream
      * 
      */
-    auto close() -> void {
+    auto close() noexcept -> void {
         if (mDelete) {
             mDelete(mObject);
             mDelete = nullptr;

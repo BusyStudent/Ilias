@@ -85,9 +85,9 @@ public:
      * @brief Read from the console
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto read(std::span<std::byte> buffer) -> Task<size_t> {
+    auto read(std::span<std::byte> buffer) -> IoTask<size_t> {
         return mCtxt->read(mDesc, buffer, std::nullopt);
     }
 
@@ -95,9 +95,9 @@ public:
      * @brief Write to the console
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto write(std::span<const std::byte> buffer) -> Task<size_t> {
+    auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
         return mCtxt->write(mDesc, buffer, std::nullopt);
     }
 
@@ -106,9 +106,9 @@ public:
      * 
      * @param fmt 
      * @param ... 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto printf(const char *fmt, ...) -> Task<size_t> {
+    auto printf(const char *fmt, ...) -> IoTask<size_t> {
         std::string buffer;
         MemWriter writer(buffer);
 
@@ -124,9 +124,9 @@ public:
      * @brief Put String to the console
      * 
      * @param str 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto puts(std::string_view str) -> Task<size_t> {
+    auto puts(std::string_view str) -> IoTask<size_t> {
         return writeAll(makeBuffer(str));
     }
 
@@ -134,9 +134,9 @@ public:
      * @brief Try read a line from the console by delimiter
      * 
      * @param delimiter 
-     * @return Task<std::string> 
+     * @return IoTask<std::string> 
      */
-    auto getline(std::string_view delimiter = LineDelimiter) -> Task<std::string> {
+    auto getline(std::string_view delimiter = LineDelimiter) -> IoTask<std::string> {
         std::string buffer(1024, '\0');
         auto n = co_await read(makeBuffer(buffer));
         if (!n) {
@@ -240,7 +240,7 @@ public:
         return fromFileDescriptor(ctxt, ILIAS_STDERR_FILENO);
     }
 private:
-    auto writeString(std::string str) -> Task<size_t> {
+    auto writeString(std::string str) -> IoTask<size_t> {
         co_return co_await writeAll(makeBuffer(str));
     }
 

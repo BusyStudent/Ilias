@@ -140,22 +140,22 @@ public:
     //< For Executor
     auto post(void (*fn)(void *), void *args) -> void override;
     auto run(CancellationToken &token) -> void override;
-    auto sleep(uint64_t ms) -> Task<void> override;
+    auto sleep(uint64_t ms) -> IoTask<void> override;
 
     // < For IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> Result<void> override;
 
-    auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
-    auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
+    auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
+    auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
 
-    auto accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> override;
-    auto connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> override;
+    auto accept(IoDescriptor *fd, MutableEndpointView endpoint) -> IoTask<socket_t> override;
+    auto connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> override;
 
-    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> override;
-    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> override;
+    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> override;
+    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> override;
 
-    auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> override;
+    auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
 protected:
     auto timerEvent(QTimerEvent *event) -> void override;
 private:
@@ -262,11 +262,11 @@ inline auto QIoContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
     return {};
 }
 
-inline auto QIoContext::sleep(uint64_t ms) -> Task<void> {
+inline auto QIoContext::sleep(uint64_t ms) -> IoTask<void> {
     co_return co_await detail::QTimerAwaiter {this, ms};
 }
 
-inline auto QIoContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
+inline auto QIoContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
     if (nfd->type == IoDescriptor::Socket) {
         co_return co_await recvfrom(fd, buffer, 0, nullptr);
@@ -274,7 +274,7 @@ inline auto QIoContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std:
     co_return Unexpected(Error::OperationNotSupported);
 }
 
-inline auto QIoContext::write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
+inline auto QIoContext::write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
     if (nfd->type == IoDescriptor::Socket) {
         co_return co_await sendto(fd, buffer, 0, nullptr);
@@ -282,7 +282,7 @@ inline auto QIoContext::write(IoDescriptor *fd, std::span<const std::byte> buffe
     co_return Unexpected(Error::OperationNotSupported);
 }
 
-inline auto QIoContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> {
+inline auto QIoContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> IoTask<socket_t> {
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
     auto sock = SocketView(nfd->sockfd);
     while (true) {
@@ -300,7 +300,7 @@ inline auto QIoContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -
     }
 }
 
-inline auto QIoContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> {
+inline auto QIoContext::connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> {
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
     auto sock = SocketView(nfd->sockfd);
     while (true) {
@@ -324,7 +324,7 @@ inline auto QIoContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Task
     }
 }
 
-inline auto QIoContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> {
+inline auto QIoContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> {
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
     auto sock = SocketView(nfd->sockfd);
     while (true) {
@@ -342,7 +342,7 @@ inline auto QIoContext::sendto(IoDescriptor *fd, std::span<const std::byte> buff
     }
 }
 
-inline auto QIoContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> {
+inline auto QIoContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> {
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
     auto sock = SocketView(nfd->sockfd);
     while (true) {
@@ -360,7 +360,7 @@ inline auto QIoContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, 
     }
 }
 
-inline auto QIoContext::poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> {
+inline auto QIoContext::poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> {
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
     if (!nfd->pollable) {
         co_return Unexpected(Error::OperationNotSupported);

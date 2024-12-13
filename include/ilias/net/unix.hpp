@@ -35,9 +35,9 @@ public:
      * @brief Connect to a unix endpoint
      * 
      * @param endpoint The endpoint to connect to
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    auto connect(const UnixEndpoint &endpoint) const -> Task<void> { 
+    auto connect(const UnixEndpoint &endpoint) const -> IoTask<void> { 
         return mBase.connect(endpoint); 
     }
 
@@ -55,9 +55,9 @@ public:
      * @brief Write data to the socket
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto write(std::span<const std::byte> buffer) const -> Task<size_t> {
+    auto write(std::span<const std::byte> buffer) const -> IoTask<size_t> {
         return mBase.send(buffer);
     }
 
@@ -65,9 +65,9 @@ public:
      * @brief Read data from the socket
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto read(std::span<std::byte> buffer) const -> Task<size_t> {
+    auto read(std::span<std::byte> buffer) const -> IoTask<size_t> {
         return mBase.recv(buffer);
     }
 
@@ -116,9 +116,9 @@ public:
      * @brief Poll the socket for events.
      * 
      * @param events 
-     * @return Task<uint32_t> 
+     * @return IoTask<uint32_t> 
      */
-    auto poll(uint32_t events) const -> Task<uint32_t> {
+    auto poll(uint32_t events) const -> IoTask<uint32_t> {
         return mBase.poll(events);
     }
 
@@ -212,9 +212,9 @@ public:
     /**
      * @brief Accept a connection.
      * 
-     * @return Task<std::pair<UnixClient, UnixEndpoint> > 
+     * @return IoTask<std::pair<UnixClient, UnixEndpoint> > 
      */
-    auto accept() const -> Task<std::pair<UnixClient, UnixEndpoint> > {
+    auto accept() const -> IoTask<std::pair<UnixClient, UnixEndpoint> > {
         UnixEndpoint endpoint;
         auto ret = co_await mBase.accept(endpoint);
         if (!ret) {
@@ -227,9 +227,9 @@ public:
      * @brief Accept a connection.
      * 
      * @param endpoint The unix endpoint to recieve the connection's endpoint (optional, can be nullptr)
-     * @return Task<UnixClient> 
+     * @return IoTask<UnixClient> 
      */
-    auto accept(UnixEndpoint *endpoint) const -> Task<UnixClient> {
+    auto accept(UnixEndpoint *endpoint) const -> IoTask<UnixClient> {
         auto ret = co_await mBase.accept(endpoint);
         if (!ret) {
             co_return Unexpected(ret.error());
@@ -241,9 +241,9 @@ public:
      * @brief Accept a connection.
      * 
      * @param endpoint The unix endpoint to recieve the connection's endpoint
-     * @return Task<UnixClient> 
+     * @return IoTask<UnixClient> 
      */
-    auto accept(UnixEndpoint &endpoint) const -> Task<UnixClient> {
+    auto accept(UnixEndpoint &endpoint) const -> IoTask<UnixClient> {
         return accept(&endpoint);
     }
 
@@ -283,9 +283,9 @@ public:
      * @brief Poll the socket for events.
      * 
      * @param events 
-     * @return Task<uint32_t> 
+     * @return IoTask<uint32_t> 
      */
-    auto poll(uint32_t events) const -> Task<uint32_t> {
+    auto poll(uint32_t events) const -> IoTask<uint32_t> {
         return mBase.poll(events);
     }
 

@@ -893,4 +893,17 @@ inline auto unexpected(T &&value) {
     return Unexpected(std::forward<T>(value));
 }
 
+template <typename T>
+struct IsResultT : std::false_type { };
+
+template <typename T>
+struct IsResultT<Result<T> > : std::true_type { };
+
+/**
+ * @brief Check if T is a Result<Any>
+ * 
+ */
+template <typename T>
+concept IsResult = IsResultT<std::remove_cvref_t<T> >::value;
+
 ILIAS_NS_END

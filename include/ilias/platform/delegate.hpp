@@ -23,21 +23,21 @@ public:
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> Result<void> override;
 
-    auto sleep(uint64_t ms) -> Task<void> override;
+    auto sleep(uint64_t ms) -> IoTask<void> override;
 
-    auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
-    auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
+    auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
+    auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
 
-    auto accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> override;
-    auto connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> override;
+    auto accept(IoDescriptor *fd, MutableEndpointView endpoint) -> IoTask<socket_t> override;
+    auto connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> override;
 
-    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> override;
-    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> override;
+    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> override;
+    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> override;
 
-    auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> override;
+    auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
 
 #if defined(_WIN32)
-    auto connectNamedPipe(IoDescriptor *fd) -> Task<void> override;
+    auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void> override;
 #endif // defined(_WIN32)
 
 private:
@@ -106,48 +106,48 @@ inline auto DelegateContext<T>::run() -> void {
 }
 
 template <typename T>
-inline auto DelegateContext<T>::sleep(uint64_t ms) -> Task<void> {
+inline auto DelegateContext<T>::sleep(uint64_t ms) -> IoTask<void> {
     co_return co_await scheduleOn(*mContext, mContext->sleep(ms));
 }
 
 template <typename T>
-inline auto DelegateContext<T>::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
+inline auto DelegateContext<T>::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     co_return co_await scheduleOn(*mContext, mContext->read(fd, buffer, offset));
 }
 
 template <typename T>
-inline auto DelegateContext<T>::write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
+inline auto DelegateContext<T>::write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     co_return co_await scheduleOn(*mContext, mContext->write(fd, buffer, offset));
 }
 
 template <typename T>
-inline auto DelegateContext<T>::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> {
+inline auto DelegateContext<T>::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> IoTask<socket_t> {
     co_return co_await scheduleOn(*mContext, mContext->accept(fd, endpoint));
 }
 
 template <typename T>
-inline auto DelegateContext<T>::connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> {
+inline auto DelegateContext<T>::connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> {
     co_return co_await scheduleOn(*mContext, mContext->connect(fd, endpoint));
 }
 
 template <typename T>
-inline auto DelegateContext<T>::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> {
+inline auto DelegateContext<T>::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> {
     co_return co_await scheduleOn(*mContext, mContext->sendto(fd, buffer, flags, endpoint));
 }
 
 template <typename T>
-inline auto DelegateContext<T>::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> {
+inline auto DelegateContext<T>::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> {
     co_return co_await scheduleOn(*mContext, mContext->recvfrom(fd, buffer, flags, endpoint));
 }
 
 template <typename T>
-inline auto DelegateContext<T>::poll(IoDescriptor *fd, uint32_t events) -> Task<uint32_t> {
+inline auto DelegateContext<T>::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     co_return co_await scheduleOn(*mContext, mContext->poll(fd, events));
 }
 
 #if defined(_WIN32)
 template <typename T>
-inline auto DelegateContext<T>::connectNamedPipe(IoDescriptor *fd) -> Task<void> {
+inline auto DelegateContext<T>::connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
     co_return co_await scheduleOn(*mContext, mContext->connectNamedPipe(fd));
 }
 #endif // defined(_WIN32)

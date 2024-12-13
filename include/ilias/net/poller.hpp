@@ -72,9 +72,9 @@ public:
      * @brief Poll for events on the fd
      * 
      * @param events The events to poll for (like PollEvent::In | PollEvent::Out)
-     * @return Task<uint32_t> The reveived events
+     * @return IoTask<uint32_t> The reveived events
      */
-    auto poll(uint32_t events) const -> Task<uint32_t> {
+    auto poll(uint32_t events) const -> IoTask<uint32_t> {
         return mCtxt->poll(mDesc, events);
     }
 

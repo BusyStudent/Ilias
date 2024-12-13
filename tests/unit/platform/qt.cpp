@@ -79,7 +79,7 @@ public:
         }
     }
 
-    auto sendHttpRequest() -> Task<void> {
+    auto sendHttpRequest() -> IoTask<void> {
         auto url = ui.httpUrlEdit->text();
         if (url.isEmpty()) {
             co_return {};
@@ -136,7 +136,7 @@ public:
         co_return {};
     }
 
-    auto sendGetAddrInfo() -> Task<void> {
+    auto sendGetAddrInfo() -> IoTask<void> {
         ui.addrinfoListWidget->clear();
         ui.statusbar->clearMessage();
         auto addrinfo = co_await AddressInfo::fromHostnameAsync(ui.addrinfoEdit->text().toUtf8().data());
@@ -173,8 +173,8 @@ public:
         uint64_t receivedTime; //< The time the echo server was received
     };
 
-    auto echoServer() -> Task<void> {
-        auto handle = [](TcpClient client) -> Task<void> {
+    auto echoServer() -> IoTask<void> {
+        auto handle = [](TcpClient client) -> IoTask<void> {
             EchoPacket packet;
             while (true) {
                 auto ret = co_await client.readAll(makeBuffer(&packet, sizeof(packet)));
@@ -217,7 +217,7 @@ public:
         co_return {};
     }
 
-    auto echoTest() -> Task<void> {
+    auto echoTest() -> IoTask<void> {
         ui.tcpLogWidget->clear();
         auto endpoint = IPEndpoint(ui.tcpTestEdit->text().toUtf8().data());
         TcpClient client {mCtxt, endpoint.family()};
@@ -287,7 +287,7 @@ private:
     Ui::MainWindow ui;
     std::vector<std::byte> mContent;
 
-    WaitHandle<void> mEchoServerHandle;
+    WaitHandle<Result<void> > mEchoServerHandle;
 };
 
 auto main(int argc, char **argv) -> int {

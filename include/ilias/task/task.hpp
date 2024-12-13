@@ -73,9 +73,9 @@ public:
     /**
      * @brief Get the result of the task
      * 
-     * @return Result<T> 
+     * @return T>
      */
-    auto await_resume() const -> Result<T> {
+    auto await_resume() const -> T {
         return TaskView<T>::cast(mTask).value();
     }
 };
@@ -98,7 +98,7 @@ concept TaskGenerator = requires(Callable &&callable, Args &&...args) {
 /**
  * @brief The lazy task class, it take the ownership of the coroutine
  * 
- * @tparam T 
+ * @tparam T The return type of the task (default: void)
  */
 template <typename T>
 class Task {
@@ -149,9 +149,9 @@ public:
     /**
      * @brief Run the task and block until the task is done, return the value
      * 
-     * @return Result<T> 
+     * @return T 
      */
-    auto wait() const -> Result<T> {
+    auto wait() const -> T {
         auto executor = Executor::currentThread();
         auto &promise = mHandle.promise();
         ILIAS_ASSERT(!promise.isStarted());
@@ -247,9 +247,9 @@ friend class detail::TaskPromise<T>;
  * @brief Sleep the current task for a period of time
  * 
  * @param ms 
- * @return Task<void> 
+ * @return IoTask<void> 
  */
-inline auto sleep(std::chrono::milliseconds ms) -> Task<void> {
+inline auto sleep(std::chrono::milliseconds ms) -> IoTask<void> {
     return Executor::currentThread()->sleep(ms.count());
 }
 

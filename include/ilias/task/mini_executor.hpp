@@ -63,7 +63,7 @@ public:
         }
     }
 
-    auto sleep(uint64_t ms) -> Task<void> override {
+    auto sleep(uint64_t ms) -> IoTask<void> override {
         return mService.sleep(ms);
     }
 private:

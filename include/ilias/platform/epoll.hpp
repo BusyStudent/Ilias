@@ -74,25 +74,25 @@ public:
 
     ///> @brief Read from a descriptor
     auto read(IoDescriptor *fd, ::std::span<::std::byte> buffer, ::std::optional<size_t> offset)
-        -> Task<size_t> override;
+        -> IoTask<size_t> override;
     ///> @brief Write to a descriptor
     auto write(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, ::std::optional<size_t> offset)
-        -> Task<size_t> override;
+        -> IoTask<size_t> override;
 
     ///> @brief Connect to a remote endpoint
-    auto connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> override;
+    auto connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> override;
     ///> @brief Accept a connection
-    auto accept(IoDescriptor *fd, MutableEndpointView remoteEndpoint) -> Task<socket_t> override;
+    auto accept(IoDescriptor *fd, MutableEndpointView remoteEndpoint) -> IoTask<socket_t> override;
 
     ///> @brief Send data to a remote endpoint
     auto sendto(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, int flags, EndpointView endpoint)
-        -> Task<size_t> override;
+        -> IoTask<size_t> override;
     ///> @brief Receive data from a remote endpoint
     auto recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags, MutableEndpointView endpoint)
-        -> Task<size_t> override;
+        -> IoTask<size_t> override;
 
     ///> @brief Poll a descriptor for events
-    auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> override;
+    auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
 
     ///> @brief Post a callable to the executor
     auto post(void (*fn)(void *), void *args) -> void override;
@@ -101,7 +101,7 @@ public:
     auto run(CancellationToken &token) -> void override;
 
     ///> @brief Sleep for a specified amount of time
-    auto sleep(uint64_t ms) -> Task<void> override;
+    auto sleep(uint64_t ms) -> IoTask<void> override;
 
 private:
     struct PostTask {
@@ -111,7 +111,7 @@ private:
     auto processCompletion(int timeout) -> void;
     auto processTaskByPost() -> void;
     auto processEvents(int fd, uint32_t events) -> void;
-    auto readTty(IoDescriptor *fd, ::std::span<::std::byte> buffer) -> Task<size_t>;
+    auto readTty(IoDescriptor *fd, ::std::span<::std::byte> buffer) -> IoTask<size_t>;
 
     ///> @brief The epoll file descriptor
     SockInitializer                                      mInit;
@@ -264,7 +264,7 @@ inline auto EpollContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
 }
 
 inline auto EpollContext::read(IoDescriptor *fd, ::std::span<::std::byte> buffer, ::std::optional<size_t> offset)
-    -> Task<size_t> {
+    -> IoTask<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
     if (!descriptor->isPollable) {
@@ -303,7 +303,7 @@ inline auto EpollContext::read(IoDescriptor *fd, ::std::span<::std::byte> buffer
 }
 
 inline auto EpollContext::write(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, ::std::optional<size_t> offset)
-    -> Task<size_t> {
+    -> IoTask<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_TRACE("Epoll", "start write {} bytes on fd {}", buffer.size(), descriptor->fd);
     ILIAS_ASSERT(descriptor != nullptr);
@@ -339,7 +339,7 @@ inline auto EpollContext::write(IoDescriptor *fd, ::std::span<const ::std::byte>
     co_return Unexpected(Error::Unknown);
 }
 
-inline auto EpollContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> {
+inline auto EpollContext::connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
     ILIAS_ASSERT(descriptor->type == IoDescriptor::Socket);
@@ -371,7 +371,7 @@ inline auto EpollContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Ta
     co_return Result<void>();
 }
 
-inline auto EpollContext::accept(IoDescriptor *fd, MutableEndpointView remoteEndpoint) -> Task<socket_t> {
+inline auto EpollContext::accept(IoDescriptor *fd, MutableEndpointView remoteEndpoint) -> IoTask<socket_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_TRACE("Epoll", "start accept on fd {}", descriptor->fd);
     ILIAS_ASSERT(descriptor != nullptr);
@@ -395,7 +395,7 @@ inline auto EpollContext::accept(IoDescriptor *fd, MutableEndpointView remoteEnd
 }
 
 inline auto EpollContext::sendto(IoDescriptor *fd, ::std::span<const ::std::byte> buffer, int flags,
-                                 EndpointView endpoint) -> Task<size_t> {
+                                 EndpointView endpoint) -> IoTask<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_TRACE("Epoll", "start sendto on fd {}", descriptor->fd);
     ILIAS_ASSERT(descriptor != nullptr);
@@ -426,7 +426,7 @@ inline auto EpollContext::sendto(IoDescriptor *fd, ::std::span<const ::std::byte
 }
 
 inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags, MutableEndpointView endpoint)
-    -> Task<size_t> {
+    -> IoTask<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_TRACE("Epoll", "start recvfrom on fd {}", descriptor->fd);
     ILIAS_ASSERT(descriptor != nullptr);
@@ -458,9 +458,9 @@ inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> bu
  * descript is triggered. please not make a fd to construct multiple descriptor
  * @param fd
  * @param event
- * @return Task<uint32_t>
+ * @return IoTask<uint32_t>
  */
-inline auto EpollContext::poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> {
+inline auto EpollContext::poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
     ILIAS_TRACE("Epoll", "fd {} poll events {}", descriptor->fd, detail::toString(event));
@@ -536,7 +536,7 @@ inline auto EpollContext::run(CancellationToken &token) -> void {
     }
 }
 
-inline auto EpollContext::sleep(uint64_t ms) -> Task<void> {
+inline auto EpollContext::sleep(uint64_t ms) -> IoTask<void> {
     co_return co_await mService.sleep(ms);
 }
 
@@ -622,7 +622,7 @@ inline auto EpollContext::processEvents(int fd, uint32_t events) -> void {
     }
 }
 
-inline auto EpollContext::readTty(IoDescriptor *fd, ::std::span<::std::byte> buffer) -> Task<size_t> {
+inline auto EpollContext::readTty(IoDescriptor *fd, ::std::span<::std::byte> buffer) -> IoTask<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
     ILIAS_ASSERT(descriptor->type == detail::EpollDescriptor::Tty);

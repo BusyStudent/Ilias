@@ -33,13 +33,13 @@ struct WhenAnyTuple {
     /**
      * @brief Blocking wait until the when any complete
      * 
-     * @return std::tuple<std::optional<Result<Types> >...> 
+     * @return std::tuple<std::optional<Types>...>
      */
     auto wait() const {
-        auto helper = [this]() -> Task<std::tuple<std::optional<Result<Types> >...> > {
+        auto helper = [this]() -> Task<std::tuple<std::optional<Types>...> > {
             co_return co_await (*this);
         };
-        return helper().wait().value();
+        return helper().wait();
     }
 };
 
@@ -53,7 +53,7 @@ template <typename ...Types>
 class WhenAnyTupleAwaiter {
 public:
     using InTuple = std::tuple<TaskView<Types>...>;
-    using OutTuple = std::tuple<std::optional<Result<Types> >...>;
+    using OutTuple = std::tuple<std::optional<Types>...>;
 
     WhenAnyTupleAwaiter(InTuple tasks) : mTasks(tasks) { }
 

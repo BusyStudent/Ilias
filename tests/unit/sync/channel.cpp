@@ -7,7 +7,7 @@
 using namespace ILIAS_NAMESPACE;
 using namespace std::chrono_literals;
 
-auto sendForN(auto &sender, size_t n) -> Task<void> {
+auto sendForN(auto &sender, size_t n) -> IoTask<void> {
     for (size_t i = 0; i < n; ++i) {
         auto ret = co_await sender.send(i);
         if (!ret) co_return Unexpected(ret.error());
@@ -15,7 +15,7 @@ auto sendForN(auto &sender, size_t n) -> Task<void> {
     co_return {};
 }
 
-auto recvForN(auto &receiver, size_t n) -> Task<void> {
+auto recvForN(auto &receiver, size_t n) -> IoTask<void> {
     for (size_t i = 0; i < n; ++i) {
         auto ret = co_await receiver.recv();
         if (!ret) co_return Unexpected(ret.error());
@@ -92,12 +92,12 @@ TEST(Mpsc, SendRecv) {
 }
 
 TEST(Mpsc, Close) { //< Test for recv and then close it 
-    auto recv = [](mpsc::Receiver<int> &receiver) -> Task<void> {
+    auto recv = [](mpsc::Receiver<int> &receiver) -> IoTask<void> {
         auto ret = co_await receiver.recv();
         if (!ret) co_return Unexpected(ret.error());
         co_return {};
     };
-    auto close = [](auto &sender) -> Task<void> {
+    auto close = [](auto &sender) -> IoTask<void> {
         sender.close();
         co_return {};
     };
@@ -134,7 +134,7 @@ TEST(Mpsc, Close) { //< Test for recv and then close it
 TEST(Mpsc, Cancel) {
     {
         auto [sender, receiver] = mpsc::channel<int>(1);
-        auto recvWithCancel = [](auto &receiver) -> Task<void> {
+        auto recvWithCancel = [](auto &receiver) -> IoTask<void> {
             auto [recv, _] = co_await whenAny(receiver.recv(), sleep(1ms));
             co_return {};
         };
@@ -144,7 +144,7 @@ TEST(Mpsc, Cancel) {
     {
         auto [sender, receiver] = mpsc::channel<int>(1);
         sender.trySend(1); //< Make it to be full
-        auto sendWithCancel = [](auto &sender) -> Task<void> {
+        auto sendWithCancel = [](auto &sender) -> IoTask<void> {
             auto [send, _] = co_await whenAny(sender.send(1), sleep(1ms));
             co_return {};
         };

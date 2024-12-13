@@ -2,6 +2,7 @@
 
 #include <ilias/http/transfer.hpp>
 #include <ilias/http/headers.hpp>
+#include <ilias/http/request.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/io/traits.hpp>
 #include <ilias/io/method.hpp>
@@ -28,32 +29,32 @@ public:
      * @brief Read the reply body from the stream
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto read(std::span<std::byte> buffer) -> Task<size_t>;
+    auto read(std::span<std::byte> buffer) -> IoTask<size_t>;
 
     /**
      * @brief Read all the reply body from the stream (not recommended for large body, for large body, please use for + read until zero)
      * 
      * @tparam T 
-     * @return Task<T> 
+     * @return IoTask<T> 
      */
     template <typename T>
-    auto readAll() -> Task<T>;
+    auto readAll() -> IoTask<T>;
 
     /**
      * @brief Get the Reply's content (not recommended for large body, see readAll)
      * 
-     * @return Task<std::vector<std::byte> > 
+     * @return IoTask<std::vector<std::byte> > 
      */
-    auto content() -> Task<std::vector<std::byte> >;
+    auto content() -> IoTask<std::vector<std::byte> >;
 
     /**
      * @brief Get the Reply's content as a string (not recommended for large body, see readAll)
      * 
-     * @return Task<std::string> 
+     * @return IoTask<std::string> 
      */
-    auto text() -> Task<std::string>;
+    auto text() -> IoTask<std::string>;
 
     /**
      * @brief Get the Reply's url (may not same as the request's url because of redirects)
@@ -93,9 +94,9 @@ public:
      * @param stream 
      * @param streamMode 
      * @param noContent if true, the content will not be read
-     * @return Task<HttpReply> 
+     * @return IoTask<HttpReply> 
      */
-    static auto make(std::unique_ptr<HttpStream> stream, bool streamMode, bool noContent) -> Task<HttpReply>;
+    static auto make(std::unique_ptr<HttpStream> stream, bool streamMode, bool noContent) -> IoTask<HttpReply>;
 private:
     Url mUrl; 
     int mStatusCode = 0;
@@ -113,7 +114,7 @@ private:
 friend class HttpSession;
 };
 
-inline auto HttpReply::make(std::unique_ptr<HttpStream> stream, bool streamMode, bool noContent) -> Task<HttpReply> {
+inline auto HttpReply::make(std::unique_ptr<HttpStream> stream, bool streamMode, bool noContent) -> IoTask<HttpReply> {
     ILIAS_ASSERT(stream);
 
     HttpReply reply;
@@ -154,7 +155,7 @@ inline auto HttpReply::make(std::unique_ptr<HttpStream> stream, bool streamMode,
     co_return reply;
 }
 
-inline auto HttpReply::read(std::span<std::byte> buffer) -> Task<size_t> {
+inline auto HttpReply::read(std::span<std::byte> buffer) -> IoTask<size_t> {
     if (!mStream) { //< All content has been read
         if (mLastError) {
             co_return Unexpected(*mLastError);
@@ -186,14 +187,14 @@ inline auto HttpReply::read(std::span<std::byte> buffer) -> Task<size_t> {
     co_return ret;
 }
 
-inline auto HttpReply::content() -> Task<std::vector<std::byte> > {
+inline auto HttpReply::content() -> IoTask<std::vector<std::byte> > {
     if (!mContent.empty()) {
         co_return mContent;
     }
     co_return co_await readAll<std::vector<std::byte> >();
 }
 
-inline auto HttpReply::text() -> Task<std::string> {
+inline auto HttpReply::text() -> IoTask<std::string> {
     if (!mContent.empty()) {
         auto sv = std::string_view(
             reinterpret_cast<const char *>(mContent.data()),
@@ -205,7 +206,7 @@ inline auto HttpReply::text() -> Task<std::string> {
 }
 
 template <typename T>
-inline auto HttpReply::readAll() -> Task<T> {
+inline auto HttpReply::readAll() -> IoTask<T> {
     size_t readed = 0;
     T data;
     data.resize(1024);

@@ -95,9 +95,9 @@ public:
      * 
      * @param name The hostname string
      * @param family 
-     * @return Task<AddressInfo> 
+     * @return IoTask<AddressInfo> 
      */
-    static auto fromHostnameAsync(const char *name, int family = AF_UNSPEC) -> Task<AddressInfo>;
+    static auto fromHostnameAsync(const char *name, int family = AF_UNSPEC) -> IoTask<AddressInfo>;
 
     /**
      * @brief Wrapping the raw getaddrinfo
@@ -115,9 +115,9 @@ public:
      * @param name The hostname string
      * @param service 
      * @param hints 
-     * @return Task<AddressInfo> 
+     * @return IoTask<AddressInfo> 
      */
-    static auto fromHostnameAsync(const char *name, const char *service, std::optional<addrinfo_t> hints) -> Task<AddressInfo>;
+    static auto fromHostnameAsync(const char *name, const char *service, std::optional<addrinfo_t> hints) -> IoTask<AddressInfo>;
 private:
     AddressInfo(addrinfo_t *info) : mInfo(info) { }
 
@@ -172,7 +172,7 @@ inline auto AddressInfo::fromHostname(const char *hostname, int family) -> Resul
 }
 
 
-inline auto AddressInfo::fromHostnameAsync(const char *hostname, int family) -> Task<AddressInfo> {
+inline auto AddressInfo::fromHostnameAsync(const char *hostname, int family) -> IoTask<AddressInfo> {
     addrinfo_t hints {
         .ai_family = family,
     };
@@ -214,7 +214,7 @@ inline auto AddressInfo::fromHostname(const char *name, const char *service, std
 
 }
 
-inline auto AddressInfo::fromHostnameAsync(const char *name, const char *service, std::optional<addrinfo_t> hints) -> Task<AddressInfo> {
+inline auto AddressInfo::fromHostnameAsync(const char *name, const char *service, std::optional<addrinfo_t> hints) -> IoTask<AddressInfo> {
     addrinfo_t *info = nullptr;
     int err = 0;
 

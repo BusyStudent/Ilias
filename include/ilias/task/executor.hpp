@@ -41,9 +41,9 @@ public:
      * @brief Sleep for a specified amount of time
      * 
      * @param ms 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    virtual auto sleep(uint64_t ms) -> Task<void> = 0;
+    virtual auto sleep(uint64_t ms) -> IoTask<void> = 0;
 
     /**
      * @brief Schedule a function to be executed in the executor

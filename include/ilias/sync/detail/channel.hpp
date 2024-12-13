@@ -375,9 +375,9 @@ public:
      * @brief Send an item to the channel
      * 
      * @param value 
-     * @return Task<void>
+     * @return IoTask<void>
      */
-    auto send(ValueType value) -> Task<void> {
+    auto send(ValueType value) -> IoTask<void> {
         ILIAS_ASSERT(mPtr != nullptr);
         co_return co_await SendAwaiter<ChannelT>(mPtr.get(), std::move(value));  
     }
@@ -467,9 +467,9 @@ public:
     /**
      * @brief Recieve an item from the channel
      * 
-     * @return Task<ValueType> 
+     * @return IoTask<ValueType> 
      */
-    auto recv() -> Task<ValueType> {
+    auto recv() -> IoTask<ValueType> {
         co_return co_await RecvAwaiter<ChannelT>(mPtr.get());
     }
 

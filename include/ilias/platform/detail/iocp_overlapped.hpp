@@ -11,6 +11,7 @@
 #pragma once
 
 #include <ilias/cancellation_token.hpp>
+#include <ilias/io/system_error.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/log.hpp>
 #include <WinSock2.h>
@@ -126,7 +127,7 @@ public:
 private:
     static auto completeCallback(IocpOverlapped *_self, DWORD dwError, DWORD dwBytesTransferred) -> void {
         auto self = static_cast<T*>(_self);
-        ILIAS_TRACE("IOCP", "IOCP Compelete callbacked, Error: {}, Bytes Transferred: {}", dwError, dwBytesTransferred);
+        ILIAS_TRACE("IOCP", "IOCP Compelete callbacked, Error: {}, Bytes Transferred: {}", err2str(dwError), dwBytesTransferred);
         self->mError = dwError;
         self->mBytesTransferred = dwBytesTransferred;
         self->mCaller.resume();
@@ -138,6 +139,14 @@ private:
             ILIAS_WARN("IOCP", "CancelIoEx failed, Error: {}", ::GetLastError());
         }
     }
+#if !defined(ILIAS_NO_FORMAT)
+    static auto err2str(DWORD err) -> std::string {
+        if (err == ERROR_SUCCESS) {
+            return "(0, OK)";
+        }
+        return fmtlib::format("({}, {})", err, SystemError(err).toString());
+    }
+#endif
 
     union {
         ::HANDLE mHandle;

@@ -13,21 +13,21 @@ auto returnInput(T input) -> Task<T> {
 TEST(WhenAll, Basic) {
     {
         auto [a, b, c] = whenAll(returnInput(1), returnInput(2), returnInput(3)).wait();
-        ASSERT_EQ(a.value(), 1);
-        ASSERT_EQ(b.value(), 2);
-        ASSERT_EQ(c.value(), 3);
+        ASSERT_EQ(a, 1);
+        ASSERT_EQ(b, 2);
+        ASSERT_EQ(c, 3);
     }
     {
         auto [a, b, c] = whenAll(sleep(1ms), returnInput(2), returnInput(3)).wait();
         ASSERT_TRUE(a);
-        ASSERT_EQ(b.value(), 2);
-        ASSERT_EQ(c.value(), 3);
+        ASSERT_EQ(b, 2);
+        ASSERT_EQ(c, 3);
     }
     {
         auto [a, b, c] = whenAll(sleep(20ms), sleep(10ms), returnInput(30ms)).wait();
         ASSERT_TRUE(a);
         ASSERT_TRUE(b);
-        ASSERT_TRUE(c);
+        ASSERT_EQ(c, 30ms);
     }
 }
 

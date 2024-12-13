@@ -34,9 +34,9 @@ public:
      * @brief Write data to the socket.
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto write(std::span<const std::byte> buffer) -> Task<size_t> {
+    auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
         return mBase.send(buffer);
     }
 
@@ -44,9 +44,9 @@ public:
      * @brief Read data from the socket.
      * 
      * @param data 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto read(std::span<std::byte> data) -> Task<size_t> {
+    auto read(std::span<std::byte> data) -> IoTask<size_t> {
         return mBase.recv(data);
     }
 
@@ -56,9 +56,9 @@ public:
      * 
      * @param buffer 
      * @param flags 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto send(std::span<const std::byte> buffer, int flags = 0) -> Task<size_t> {
+    auto send(std::span<const std::byte> buffer, int flags = 0) -> IoTask<size_t> {
         return mBase.send(buffer, flags);
     }
 
@@ -67,9 +67,9 @@ public:
      * 
      * @param data 
      * @param flags 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto recv(std::span<std::byte> data, int flags = 0) -> Task<size_t> {
+    auto recv(std::span<std::byte> data, int flags = 0) -> IoTask<size_t> {
         return mBase.recv(data, flags);
     }
 
@@ -87,9 +87,9 @@ public:
      * @brief Shutdown the socket.
      * 
      * @param how 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    auto shutdown(int how = Shutdown::Both) -> Task<void> {
+    auto shutdown(int how = Shutdown::Both) -> IoTask<void> {
         return mBase.shutdown(how);
     }
 
@@ -98,9 +98,9 @@ public:
      * @brief Connect to a remote endpoint.
      * 
      * @param endpoint 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    auto connect(const IPEndpoint &endpoint) -> Task<void> {
+    auto connect(const IPEndpoint &endpoint) -> IoTask<void> {
         return mBase.connect(endpoint);
     }
 
@@ -149,9 +149,9 @@ public:
      * @brief Poll the socket for events.
      * 
      * @param events 
-     * @return Task<uint32_t> 
+     * @return IoTask<uint32_t> 
      */
-    auto poll(uint32_t events) -> Task<uint32_t> {
+    auto poll(uint32_t events) -> IoTask<uint32_t> {
         return mBase.poll(events);
     }
 
@@ -238,9 +238,9 @@ public:
     /**
      * @brief Accept a connection from a remote endpoint.
      * 
-     * @return Task<std::pair<TcpClient, IPEndpoint> > 
+     * @return IoTask<std::pair<TcpClient, IPEndpoint> > 
      */
-    auto accept() -> Task<std::pair<TcpClient, IPEndpoint> > {
+    auto accept() -> IoTask<std::pair<TcpClient, IPEndpoint> > {
         IPEndpoint endpoint;
         auto sock = co_await mBase.accept(&endpoint);
         if (!sock) {
@@ -254,9 +254,9 @@ public:
      * @brief Accept a connection from a remote endpoint.
      * 
      * @param endpoint The address to receive the connection from. (can be nullptr)
-     * @return Task<TcpClient> 
+     * @return IoTask<TcpClient> 
      */
-    auto accept(IPEndpoint *endpoint) -> Task<TcpClient> {
+    auto accept(IPEndpoint *endpoint) -> IoTask<TcpClient> {
         auto sock = co_await mBase.accept(endpoint);
         if (!sock) {
             co_return Unexpected(sock.error());
@@ -268,9 +268,9 @@ public:
      * @brief Accept a connection from a remote endpoint.
      * 
      * @param endpoint The reference to the address to receive the connection from.
-     * @return Task<TcpClient> 
+     * @return IoTask<TcpClient> 
      */
-    auto accept(IPEndpoint &endpoint) -> Task<TcpClient> {
+    auto accept(IPEndpoint &endpoint) -> IoTask<TcpClient> {
         return accept(&endpoint);
     }
 
@@ -278,9 +278,9 @@ public:
      * @brief Poll the socket for events.
      * 
      * @param events 
-     * @return Task<uint32_t> 
+     * @return IoTask<uint32_t> 
      */
-    auto poll(uint32_t events) -> Task<uint32_t> {
+    auto poll(uint32_t events) -> IoTask<uint32_t> {
         return mBase.poll(events);
     }
 

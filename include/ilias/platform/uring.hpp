@@ -74,18 +74,18 @@ public:
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> Result<void> override;
 
-    auto sleep(uint64_t ms) -> Task<void> override;
+    auto sleep(uint64_t ms) -> IoTask<void> override;
 
-    auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
-    auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
+    auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
+    auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
 
-    auto accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> override;
-    auto connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> override;
+    auto accept(IoDescriptor *fd, MutableEndpointView endpoint) -> IoTask<socket_t> override;
+    auto connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> override;
 
-    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> override;
-    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> override;
+    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> override;
+    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> override;
 
-    auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> override;
+    auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
 private:
     auto processCompletion() -> void;
     auto processCallback() -> void;
@@ -224,34 +224,34 @@ inline auto UringContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
     return {};
 }
 
-inline auto UringContext::sleep(uint64_t ms) -> Task<void> {
+inline auto UringContext::sleep(uint64_t ms) -> IoTask<void> {
     ::timespec ts { };
     ts.tv_sec = ms / 1000;
     ts.tv_nsec = (ms % 1000) * 1000000;
     co_return co_await detail::UringTimeoutAwaiter {mRing, ts};
 }
 
-inline auto UringContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
+inline auto UringContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     co_return co_await detail::UringReadAwaiter {mRing, nfd->fd, buffer, offset};
 }
 
-inline auto UringContext::write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
+inline auto UringContext::write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     co_return co_await detail::UringWriteAwaiter {mRing, nfd->fd, buffer, offset};
 }
 
-inline auto UringContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> {
+inline auto UringContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> IoTask<socket_t> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     co_return co_await detail::UringAcceptAwaiter {mRing, nfd->fd, endpoint};
 }
 
-inline auto UringContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> {
+inline auto UringContext::connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     co_return co_await detail::UringConnectAwaiter {mRing, nfd->fd, endpoint};
 }
 
-inline auto UringContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> {
+inline auto UringContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     ::iovec vec {
         .iov_base = (void*) buffer.data(),
@@ -266,7 +266,7 @@ inline auto UringContext::sendto(IoDescriptor *fd, std::span<const std::byte> bu
     co_return co_await detail::UringSendmsgAwaiter {mRing, nfd->fd, msg, flags};
 }
 
-inline auto UringContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> {
+inline auto UringContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     ::iovec vec {
         .iov_base = buffer.data(),
@@ -281,7 +281,7 @@ inline auto UringContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer
     co_return co_await detail::UringRecvmsgAwaiter {mRing, nfd->fd, msg, flags};
 }
 
-inline auto UringContext::poll(IoDescriptor *fd, uint32_t events) -> Task<uint32_t> {
+inline auto UringContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     co_return co_await detail::UringPollAwaiter {mRing, nfd->fd, events};
 }

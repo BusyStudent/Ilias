@@ -73,9 +73,9 @@ public:
      * @param fd 
      * @param buffer 
      * @param offset The offset in the file, std::nullopt means on ignore
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    virtual auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> = 0;
+    virtual auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> = 0;
 
     /**
      * @brief Write to a descriptor
@@ -83,27 +83,27 @@ public:
      * @param fd 
      * @param buffer 
      * @param offset The offset in the file, std::nullopt means on ignore
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    virtual auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> = 0;
+    virtual auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> = 0;
 
     /**
      * @brief Connect to a remote endpoint
      * 
      * @param fd The fd must be a socket
      * @param endpoint 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    virtual auto connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> = 0;
+    virtual auto connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> = 0;
 
     /**
      * @brief Accept a connection
      * 
      * @param fd The fd must be a listening socket
      * @param remoteEndpoint The endpoint of the remote, if nullptr, the endpoint will be ignored
-     * @return Task<socket_t> 
+     * @return IoTask<socket_t> 
      */
-    virtual auto accept(IoDescriptor *fd, MutableEndpointView remoteEndpoint) -> Task<socket_t> = 0;
+    virtual auto accept(IoDescriptor *fd, MutableEndpointView remoteEndpoint) -> IoTask<socket_t> = 0;
 
     /**
      * @brief Send data to a remote endpoint
@@ -112,9 +112,9 @@ public:
      * @param buffer The buffer to send
      * @param flags The flags to use, like MSG_DONTWAIT
      * @param endpoint The endpoint to send to, if nullptr, the fd must be connected
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    virtual auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> = 0;
+    virtual auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> = 0;
 
     /**
      * @brief Receive data from a remote endpoint
@@ -123,18 +123,18 @@ public:
      * @param buffer The buffer to receive into
      * @param flags The flags to use, like MSG_DONTWAIT
      * @param endpoint The endpoint to receive from
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    virtual auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> = 0;
+    virtual auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> = 0;
 
     /**
      * @brief Poll a descriptor for events
      * 
      * @param fd The fd must suport polling (like socket or pipe)
      * @param event The event to poll for (like PollEvent::In)
-     * @return Task<uint32_t> The event we actualy got
+     * @return IoTask<uint32_t> The event we actualy got
      */
-    virtual auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> = 0;
+    virtual auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> = 0;
 
     /**
      * @brief Get the current thread io context
@@ -150,9 +150,9 @@ public:
      * @brief Wrapping Win32 ConnectNamedPipe, The named pipe server wait for a client to connect
      * 
      * @param fd The fd must be a named pipe
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    virtual auto connectNamedPipe(IoDescriptor *fd) -> Task<void> {
+    virtual auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
         co_return Unexpected(Error::OperationNotSupported); //< Default Not implemented
     }
 #endif // defined(_WIN32)

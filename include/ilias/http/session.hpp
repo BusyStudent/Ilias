@@ -31,18 +31,18 @@ public:
      * @brief Send a GET request to the server
      *
      * @param request
-     * @return Task<HttpReply>
+     * @return IoTask<HttpReply>
      */
-    auto get(const HttpRequest &request) -> Task<HttpReply> { return sendRequest("GET", request); }
+    auto get(const HttpRequest &request) -> IoTask<HttpReply> { return sendRequest("GET", request); }
 
     /**
      * @brief Send a POST request to the server
      *
      * @param request
      * @param payload The payload to post (if any)
-     * @return Task<HttpReply>
+     * @return IoTask<HttpReply>
      */
-    auto post(const HttpRequest &request, std::span<const std::byte> payload = {}) -> Task<HttpReply> {
+    auto post(const HttpRequest &request, std::span<const std::byte> payload = {}) -> IoTask<HttpReply> {
         return sendRequest("POST", request, payload);
     }
 
@@ -51,9 +51,9 @@ public:
      *
      * @param request
      * @param payload The payload to post (if any)
-     * @return Task<HttpReply>
+     * @return IoTask<HttpReply>
      */
-    auto post(const HttpRequest &request, std::string_view payload) -> Task<HttpReply> {
+    auto post(const HttpRequest &request, std::string_view payload) -> IoTask<HttpReply> {
         return sendRequest("POST", request, std::as_bytes(std::span(payload)));
     }
 
@@ -61,9 +61,9 @@ public:
      * @brief Send a HEAD request to the server
      *
      * @param request
-     * @return Task<HttpReply>
+     * @return IoTask<HttpReply>
      */
-    auto head(const HttpRequest &request) -> Task<HttpReply> { 
+    auto head(const HttpRequest &request) -> IoTask<HttpReply> { 
         return sendRequest("HEAD", request); 
     }
 
@@ -72,9 +72,9 @@ public:
      *
      * @param request
      * @param payload
-     * @return Task<HttpReply>
+     * @return IoTask<HttpReply>
      */
-    auto put(const HttpRequest &request, std::span<const std::byte> payload) -> Task<HttpReply> {
+    auto put(const HttpRequest &request, std::span<const std::byte> payload) -> IoTask<HttpReply> {
         return sendRequest("PUT", request, payload);
     }
 
@@ -84,10 +84,10 @@ public:
      * @param method The HTTP method to use (GET, POST, HEAD, etc.)
      * @param request The HTTP request to send
      * @param payload The payload to send (if any)
-     * @return Task<HttpReply>
+     * @return IoTask<HttpReply>
      */
     auto sendRequest(std::string_view method, const HttpRequest &request,
-                     std::span<const std::byte> payload = {}) -> Task<HttpReply>;
+                     std::span<const std::byte> payload = {}) -> IoTask<HttpReply>;
 
     /**
      * @brief Set the Cookie Jar object
@@ -123,10 +123,10 @@ private:
      * @param method
      * @param request
      * @param payload
-     * @return Task<HttpReply>
+     * @return IoTask<HttpReply>
      */
     auto sendRequestImpl(std::string_view method, const Url &url, HttpHeaders &headers,
-                         std::span<const std::byte> payload, bool stream) -> Task<HttpReply>;
+                         std::span<const std::byte> payload, bool stream) -> IoTask<HttpReply>;
 
     /**
      * @brief Add Cookie headers and another important headers to the request
@@ -150,9 +150,9 @@ private:
      *
      * @param url
      * @param fromPool If the connection is from the pool
-     * @return Task<std::unique_ptr<HttpStream> >
+     * @return IoTask<std::unique_ptr<HttpStream> >
      */
-    auto connect(const Url &url, bool &fromPool) -> Task<std::unique_ptr<HttpStream>>;
+    auto connect(const Url &url, bool &fromPool) -> IoTask<std::unique_ptr<HttpStream>>;
 
     /**
      * @brief The pair for differentiating connections
@@ -190,7 +190,7 @@ inline HttpSession::~HttpSession() {
 }
 
 inline auto HttpSession::sendRequest(std::string_view method, const HttpRequest &request,
-                                     std::span<const std::byte> payload) -> Task<HttpReply> {
+                                     std::span<const std::byte> payload) -> IoTask<HttpReply> {
     Url         url              = request.url();
     HttpHeaders headers          = request.headers();
     int         maximumRedirects = request.maximumRedirects();
@@ -239,7 +239,7 @@ inline auto HttpSession::sendRequest(std::string_view method, const HttpRequest 
 }
 
 inline auto HttpSession::sendRequestImpl(std::string_view method, const Url &url, HttpHeaders &headers,
-                                         std::span<const std::byte> payload, bool streamMode) -> Task<HttpReply> {
+                                         std::span<const std::byte> payload, bool streamMode) -> IoTask<HttpReply> {
     normalizeRequest(url, headers);
     while (true) {
         bool fromPool = false;
@@ -315,7 +315,7 @@ inline auto HttpSession::parseReply(HttpReply &reply, const Url &url) -> void {
     }
 }
 
-inline auto HttpSession::connect(const Url &url, bool &fromPool) -> Task<std::unique_ptr<HttpStream>> {
+inline auto HttpSession::connect(const Url &url, bool &fromPool) -> IoTask<std::unique_ptr<HttpStream>> {
     // TODO : Improve this by using mpmc channel
     // Check proxy
     auto     scheme = std::string(url.scheme());

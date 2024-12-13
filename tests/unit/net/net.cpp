@@ -29,7 +29,7 @@ TEST(Net, TcpTransfer) {
 
         std::cout << "bytes to transfer: " << bytesToTransfer << std::endl;
 
-        auto sender = [&]() -> Task<void> {
+        auto sender = [&]() -> IoTask<void> {
             TcpClient client(*ctxt, AF_INET);
             auto val = co_await client.connect(endpoint);
             if (!val) {
@@ -43,12 +43,16 @@ TEST(Net, TcpTransfer) {
                 }
                 receiverReceived += n.value();
                 if (n.value() == 0) {
-                    co_return {}; //< Done.
+                    break; //< Done.
                 }
             }
+            if (auto ret = co_await client.shutdown(); !ret) {
+                co_return Unexpected(ret.error());
+            }
+            co_return {};
         };
 
-        auto receiver = [&]() -> Task<void> {
+        auto receiver = [&]() -> IoTask<void> {
             auto val = co_await listener.accept();
             if (!val) {
                 co_return Unexpected(val.error());
@@ -84,7 +88,7 @@ TEST(Net, CloseCancel) {
     UdpClient client(*ctxt, AF_INET);
     ASSERT_TRUE(client.bind("127.0.0.1:0"));
 
-    auto read = [&]() -> Task<void> {
+    auto read = [&]() -> IoTask<void> {
         std::byte buffer[1024];
         auto val = co_await client.recvfrom(makeBuffer(buffer));
         if (!val) {
@@ -93,7 +97,7 @@ TEST(Net, CloseCancel) {
         co_return {};
     };
 
-    auto cancel = [&]() -> Task<void> {
+    auto cancel = [&]() -> IoTask<void> {
         client.close();
         co_return {};
     };

@@ -36,11 +36,11 @@ public:
     /**
      * @brief Create a new http stream on a physical connection
      * 
-     * @return Task<std::unique_ptr<HttpStream> > 
+     * @return IoTask<std::unique_ptr<HttpStream> > 
      */
-    auto newStream() -> Task<std::unique_ptr<HttpStream> > override;
+    auto newStream() -> IoTask<std::unique_ptr<HttpStream> > override;
 
-    auto shutdown() -> Task<void> override;
+    auto shutdown() -> IoTask<void> override;
 
     /**
      * @brief Create a Http1 Connection from a IStreamClient
@@ -99,7 +99,7 @@ public:
     }
 #endif // !defined(NDEBUG)
 
-    auto send(std::string_view method, const Url &url, const HttpHeaders &hheaders, std::span<const std::byte> payload) -> Task<void> override {
+    auto send(std::string_view method, const Url &url, const HttpHeaders &hheaders, std::span<const std::byte> payload) -> IoTask<void> override {
         auto &client = mCon->mClient;
         auto headers = hheaders; //< Copy it
         // Add content length if needeed
@@ -149,7 +149,7 @@ public:
         co_return {};
     }
 
-    auto read(std::span<std::byte> buffer) -> Task<size_t> override {
+    auto read(std::span<std::byte> buffer) -> IoTask<size_t> override {
         ILIAS_ASSERT(mHeaderSent && mHeaderReceived);
         if (mContentEnd) {
             co_return 0;
@@ -209,7 +209,7 @@ public:
         co_return num;
     }
 
-    auto readChunkSize() -> Task<void> {
+    auto readChunkSize() -> IoTask<void> {
         auto line = co_await mCon->mClient.getline("\r\n");
         if (!line || line->empty()) {
             co_return returnError(line.error_or(Error::HttpBadReply));
@@ -225,7 +225,7 @@ public:
         co_return {};
     }
 
-    auto readHeaders(int &statusCode, std::string &statusMessage, HttpHeaders &headers) -> Task<void> override {
+    auto readHeaders(int &statusCode, std::string &statusMessage, HttpHeaders &headers) -> IoTask<void> override {
         ILIAS_ASSERT(mHeaderSent && !mHeaderReceived);
         ILIAS_TRACE("Http1.1", "Recv header Begin");
         
@@ -358,7 +358,7 @@ inline Http1Connection::~Http1Connection() {
     // }
 }
 
-inline auto Http1Connection::newStream() -> Task<std::unique_ptr<HttpStream> > {
+inline auto Http1Connection::newStream() -> IoTask<std::unique_ptr<HttpStream> > {
     if (isClosed()) {
         co_return Unexpected(Error::ConnectionAborted);
     }
@@ -370,7 +370,7 @@ inline auto Http1Connection::newStream() -> Task<std::unique_ptr<HttpStream> > {
     co_return std::make_unique<Http1Stream>(this);
 }
 
-inline auto Http1Connection::shutdown() -> Task<void> {
+inline auto Http1Connection::shutdown() -> IoTask<void> {
     ILIAS_ASSERT(mNumOfStream == 0);
     auto guard = co_await mMutex.uniqueLock();
     if (guard) {

@@ -169,10 +169,10 @@ public:
      * @tparam T 
      * @param fd The user to read from (like socket, file, etc.)
      * @param size The size of data to read
-     * @return Task<size_t> The number of bytes actually written into the stream buffer
+     * @return IoTask<size_t> The number of bytes actually written into the stream buffer
      */
     template <Readable T>
-    auto writeFrom(T &fd, size_t size) -> Task<size_t> {
+    auto writeFrom(T &fd, size_t size) -> IoTask<size_t> {
         auto buffer = prepare(size);
         auto n = co_await fd.read(buffer);
         if (n) {
@@ -187,10 +187,10 @@ public:
      * @tparam T 
      * @param fd The user to write to (like socket, file, etc.)
      * @param size The size of data to write
-     * @return Task<size_t> The number of bytes actually written into the fd
+     * @return IoTask<size_t> The number of bytes actually written into the fd
      */
     template <Writable T>
-    auto readTo(T &fd, size_t size) -> Task<size_t> {
+    auto readTo(T &fd, size_t size) -> IoTask<size_t> {
         auto data = prepare(size);
         auto n = co_await fd.write(data.subspan(0, size));
         if (n) {
@@ -250,9 +250,9 @@ public:
      * @brief Read a new line by delim character
      * 
      * @param delim 
-     * @return Task<std::string> 
+     * @return IoTask<std::string> 
      */
-    auto getline(std::string_view delim) -> Task<std::string> {
+    auto getline(std::string_view delim) -> IoTask<std::string> {
         while (true) {
             // Scanning current buffer
             auto buf = mBuf.data();
@@ -276,11 +276,11 @@ public:
         }
     }
 
-    auto write(std::span<const std::byte> buffer) -> Task<size_t> {
+    auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
         return mStream.write(buffer);
     }
 
-    auto read(std::span<std::byte> buffer) -> Task<size_t> {
+    auto read(std::span<std::byte> buffer) -> IoTask<size_t> {
         const auto n = buffer.size();
         while (true) {
             auto buf = mBuf.data();
@@ -310,7 +310,7 @@ public:
      * @tparam U 
      */
     template <typename U = T> requires (Connectable<U>)
-    auto connect(const IPEndpoint &endpoint) -> Task<void> {
+    auto connect(const IPEndpoint &endpoint) -> IoTask<void> {
         return static_cast<U&>(mStream).connect(endpoint);
     }
 
@@ -320,7 +320,7 @@ public:
      * @tparam U 
      */
     template <typename U = T> requires (Shuttable<U>)
-    auto shutdown() -> Task<void> {
+    auto shutdown() -> IoTask<void> {
         return static_cast<U&>(mStream).shutdown();
     }
 private:

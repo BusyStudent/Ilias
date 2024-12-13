@@ -8,11 +8,11 @@ TEST(Scope, OutScope) {
     bool value = false;
     {
         TaskScope scope;
-        auto handle = scope.spawn([]() -> Task<void> {
+        auto handle = scope.spawn([]() -> IoTask<void> {
             std::cout << "From spawned task1" << std::endl;
             co_return {};
         });
-        auto handle2 = scope.spawn([&]() -> Task<void> {
+        auto handle2 = scope.spawn([&]() -> IoTask<void> {
             value = true;
             co_return {};
         });
@@ -22,16 +22,16 @@ TEST(Scope, OutScope) {
 
 TEST(Scope, Wait) {
     bool value = false;
-    TaskScope::WaitHandle<> handle;
+    TaskScope::WaitHandle<Result<> > handle;
     {
         TaskScope scope;
-        scope.spawn([&]() -> Task<void> {
+        scope.spawn([&]() -> IoTask<void> {
             value = true;
             co_return {};
         }).wait();
         ASSERT_TRUE(value);
 
-        handle = scope.spawn([]() -> Task<void> {
+        handle = scope.spawn([]() -> IoTask<void> {
             std::cout << "From spawned task2" << std::endl;
             co_return {};
         });

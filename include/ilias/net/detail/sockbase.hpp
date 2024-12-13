@@ -76,27 +76,27 @@ public:
     }
 
     // as same as sync system socket
-    auto send(std::span<const std::byte> data, int flags = 0) const -> Task<size_t> {
+    auto send(std::span<const std::byte> data, int flags = 0) const -> IoTask<size_t> {
         return mCtxt->sendto(mFd, data, flags, nullptr);
     }
 
-    auto recv(std::span<std::byte> data, int flags = 0) const -> Task<size_t> {
+    auto recv(std::span<std::byte> data, int flags = 0) const -> IoTask<size_t> {
         return mCtxt->recvfrom(mFd, data, flags, nullptr);
     }
 
-    auto sendto(std::span<const std::byte> data, int flags, EndpointView endpoint) const -> Task<size_t> {
+    auto sendto(std::span<const std::byte> data, int flags, EndpointView endpoint) const -> IoTask<size_t> {
         return mCtxt->sendto(mFd, data, flags, endpoint);
     }
 
-    auto recvfrom(std::span<std::byte> data, int flags, MutableEndpointView endpoint) const -> Task<size_t> {
+    auto recvfrom(std::span<std::byte> data, int flags, MutableEndpointView endpoint) const -> IoTask<size_t> {
         return mCtxt->recvfrom(mFd, data, flags, endpoint);
     }
 
-    auto connect(EndpointView endpoint) const -> Task<void> {
+    auto connect(EndpointView endpoint) const -> IoTask<void> {
         return mCtxt->connect(mFd, endpoint);
     }
 
-    auto poll(uint32_t events) const -> Task<uint32_t> {
+    auto poll(uint32_t events) const -> IoTask<uint32_t> {
         return mCtxt->poll(mFd, events);
     }
 
@@ -118,11 +118,11 @@ public:
         return mSock.remoteEndpoint<T>();
     }
 
-    auto accept(MutableEndpointView endpoint) const -> Task<socket_t> {
+    auto accept(MutableEndpointView endpoint) const -> IoTask<socket_t> {
         return mCtxt->accept(mFd, endpoint);
     }
 
-    auto shutdown(int how = Shutdown::Both) const -> Task<void> {
+    auto shutdown(int how = Shutdown::Both) const -> IoTask<void> {
         co_return mSock.shutdown(how);
     }
 

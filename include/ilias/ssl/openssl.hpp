@@ -167,7 +167,7 @@ public:
     }
 protected:
 #if defined(__cpp_impl_coroutine)
-    auto _handleError(int errcode) -> Task<void> {
+    auto _handleError(int errcode) -> IoTask<void> {
         if (errcode == SSL_ERROR_WANT_READ) {
             auto ret = co_await _waitReadable();
             if (!ret) {
@@ -195,7 +195,7 @@ protected:
         }
         co_return Result<>();
     }
-    auto _flushWrite() -> Task<void> {
+    auto _flushWrite() -> IoTask<void> {
         // Flush the data
         size_t dataLeft = mBio->mWriteRing.size();
         auto tmpbuffer = std::make_unique<std::byte[]>(dataLeft);
@@ -213,7 +213,7 @@ protected:
         }
         co_return Result<>();
     }
-    auto _waitReadable() -> Task<void> {
+    auto _waitReadable() -> IoTask<void> {
         if (!mBio->mWriteRing.empty()) {
             // Require flush
             auto ret = co_await _flushWrite();
@@ -232,7 +232,7 @@ protected:
         ILIAS_ASSERT(written == *ret);
         co_return Result<>();
     }
-    auto _accept() -> Task<void> {
+    auto _accept() -> IoTask<void> {
         while (true) {
             int sslAccept = SSL_accept(mSsl);
             if (sslAccept == 1) {
@@ -322,7 +322,7 @@ public:
         return this->mBio->mFd.remoteEndpoint();
     }
 
-    auto connect(const IPEndpoint &endpoint) -> Task<void> {
+    auto connect(const IPEndpoint &endpoint) -> IoTask<void> {
         auto ret = co_await this->mBio->mFd.connect(endpoint);
         if (!ret) {
             co_return ret;
@@ -330,7 +330,7 @@ public:
         co_return co_await handshake();
     }
 
-    auto read(std::span<std::byte> buffer) -> Task<size_t> {
+    auto read(std::span<std::byte> buffer) -> IoTask<size_t> {
         while (true) {
             size_t readed = 0;
             int readret = SSL_read_ex(this->mSsl, buffer.data(), buffer.size_bytes(), &readed);
@@ -348,7 +348,7 @@ public:
         }
     }
 
-    auto write(std::span<const std::byte> buffer) -> Task<size_t> {
+    auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
         while (true) {
             size_t written = 0;
             int writret = SSL_write_ex(this->mSsl, buffer.data(), buffer.size_bytes(), &written);
@@ -366,7 +366,7 @@ public:
         }
     }
 
-    auto shutdown() -> Task<> {
+    auto shutdown() -> IoTask<> {
         while (true) {
             int ret = SSL_shutdown(this->mSsl);
             if (ret == 1) {
@@ -380,7 +380,7 @@ public:
         }
     }
 
-    auto handshake() -> Task<> {
+    auto handshake() -> IoTask<> {
         while (true) {
             int sslCon = SSL_connect(this->mSsl);
             if (sslCon == 1) {
@@ -414,7 +414,7 @@ public:
     }
 
 #if defined(__cpp_impl_coroutine)
-    auto accept() -> Task<std::pair<Client, IPEndpoint> > {
+    auto accept() -> IoTask<std::pair<Client, IPEndpoint> > {
         // TODO 
         auto val = co_await this->mBio->mFd.accept();
         if (!val) {

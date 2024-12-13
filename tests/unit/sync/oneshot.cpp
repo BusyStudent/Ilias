@@ -31,10 +31,10 @@ TEST(Oneshot, ReceiverClosed) {
 TEST(Oneshot, Async) {
     auto [sender, receiver] = oneshot::channel<int>();
 
-    auto task1 = [&]() -> Task<int> {
+    auto task1 = [&]() -> IoTask<int> {
         co_return co_await receiver;
     };
-    auto task2 = [&]() -> Task<void> {
+    auto task2 = [&]() -> IoTask<void> {
         sender.send(114514);
         co_return {};
     };
@@ -48,10 +48,10 @@ TEST(Oneshot, Async) {
 TEST(Oneshot, AsyncSenderClosed) {
     auto [sender, receiver] = oneshot::channel<int>();
 
-    auto task1 = [&]() -> Task<int> {
+    auto task1 = [&]() -> IoTask<int> {
         co_return co_await receiver;
     };
-    auto task2 = [&]() -> Task<void> {
+    auto task2 = [&]() -> IoTask<void> {
         sender.close();
         co_return {};
     };
@@ -63,11 +63,11 @@ TEST(Oneshot, AsyncSenderClosed) {
 TEST(Oneshot, AsyncReceiverClosed) {
     auto [sender, receiver] = oneshot::channel<int>();
 
-    auto task1 = [&]() -> Task<int> {
+    auto task1 = [&]() -> IoTask<int> {
         receiver.close();
         co_return {};
     };
-    auto task2 = [&]() -> Task<void> {
+    auto task2 = [&]() -> IoTask<void> {
         co_return sender.send(114514);
     };
     auto [result1, result2] = whenAll(task1(), task2()).wait();

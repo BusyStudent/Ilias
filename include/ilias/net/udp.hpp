@@ -53,9 +53,9 @@ public:
      * 
      * @param buffer The buffer to receive the data into.
      * @param endpoint The ptr of the endpoint to receive the datagram's endpoint.
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto recvfrom(std::span<std::byte> buffer, IPEndpoint *endpoint) -> Task<size_t> {
+    auto recvfrom(std::span<std::byte> buffer, IPEndpoint *endpoint) -> IoTask<size_t> {
         return mBase.recvfrom(buffer, 0, endpoint);
     }
 
@@ -64,9 +64,9 @@ public:
      * 
      * @param buffer The buffer to receive the data into.
      * @param endpoint The endpoint reference to receive the datagram's endpoint.
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto recvfrom(std::span<std::byte> buffer, IPEndpoint &endpoint) -> Task<size_t> {
+    auto recvfrom(std::span<std::byte> buffer, IPEndpoint &endpoint) -> IoTask<size_t> {
         return mBase.recvfrom(buffer, 0, &endpoint);
     }
 
@@ -74,9 +74,9 @@ public:
      * @brief Receive datagram from the socket
      * 
      * @param buffer The buffer to receive the data into.
-     * @return Task<std::pair<size_t, IPEndpoint> > (The datagram size and the endpoint)
+     * @return IoTask<std::pair<size_t, IPEndpoint> > (The datagram size and the endpoint)
      */
-    auto recvfrom(std::span<std::byte> buffer) -> Task<std::pair<size_t, IPEndpoint> > {
+    auto recvfrom(std::span<std::byte> buffer) -> IoTask<std::pair<size_t, IPEndpoint> > {
         IPEndpoint endpoint;
         auto n = co_await recvfrom(buffer, endpoint);
         if (!n) {
@@ -90,9 +90,9 @@ public:
      * 
      * @param buffer 
      * @param endpoint 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto sendto(std::span<const std::byte> buffer, const IPEndpoint &endpoint) -> Task<size_t> {
+    auto sendto(std::span<const std::byte> buffer, const IPEndpoint &endpoint) -> IoTask<size_t> {
         return mBase.sendto(buffer, 0, &endpoint);
     }
 
@@ -132,9 +132,9 @@ public:
      * @brief Poll the socket for events.
      * 
      * @param events 
-     * @return Task<uint32_t> 
+     * @return IoTask<uint32_t> 
      */
-    auto poll(uint32_t events) -> Task<uint32_t> {
+    auto poll(uint32_t events) -> IoTask<uint32_t> {
         return mBase.poll(events);
     }
 

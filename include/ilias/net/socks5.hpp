@@ -56,9 +56,9 @@ public:
     /**
      * @brief Do the handshake and authentication.
      * 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    auto handshake() -> Task<void> {
+    auto handshake() -> IoTask<void> {
         uint8_t buf[256];
         auto header = reinterpret_cast<detail::Socks5Header *>(buf);
         header->ver = 0x05;
@@ -108,9 +108,9 @@ public:
      * @brief Connect to the endpoint. (IPV4 or IPV6 address)
      * 
      * @param endpoint 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    auto connect(const IPEndpoint &endpoint) -> Task<void> {
+    auto connect(const IPEndpoint &endpoint) -> IoTask<void> {
         auto addr = endpoint.address();
         co_return co_await connectImpl(
             addr.family() == AF_INET ? 0x01 : 0x04,
@@ -124,9 +124,9 @@ public:
      * 
      * @param host 
      * @param port 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    auto connect(std::string_view host, uint16_t port) -> Task<void> {
+    auto connect(std::string_view host, uint16_t port) -> IoTask<void> {
         // Buf first byte is the length of the host
         std::string buf;
         buf.reserve(host.size() + 1);
@@ -135,7 +135,7 @@ public:
         co_return co_await connectImpl(0x03, makeBuffer(buf), port);
     }
 private:
-    auto connectImpl(uint8_t type, std::span<const std::byte> addr, uint16_t port) -> Task<void> {
+    auto connectImpl(uint8_t type, std::span<const std::byte> addr, uint16_t port) -> IoTask<void> {
         if (!mHandshakeDone) {
             if (auto ret = co_await handshake(); !ret) {
                 co_return Unexpected(ret.error());

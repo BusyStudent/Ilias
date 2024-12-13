@@ -18,7 +18,7 @@ auto main() -> int {
 
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
 
-    [&]() -> Task<> {
+    [&]() -> IoTask<> {
         auto info = co_await AddressInfo::fromHostnameAsync("www.baidu.com");
         auto target = info.value().addresses().at(0);
 

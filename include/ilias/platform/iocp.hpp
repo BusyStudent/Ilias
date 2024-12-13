@@ -91,19 +91,19 @@ public:
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> Result<void> override;
 
-    auto sleep(uint64_t ms) -> Task<void> override;
+    auto sleep(uint64_t ms) -> IoTask<void> override;
 
-    auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
-    auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> override;
+    auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
+    auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
 
-    auto accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> override;
-    auto connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> override;
+    auto accept(IoDescriptor *fd, MutableEndpointView endpoint) -> IoTask<socket_t> override;
+    auto connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> override;
 
-    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> override;
-    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> override;
+    auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> override;
+    auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> override;
 
-    auto poll(IoDescriptor *fd, uint32_t event) -> Task<uint32_t> override;
-    auto connectNamedPipe(IoDescriptor *fd) -> Task<void> override;
+    auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
+    auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void> override;
 private:
     auto processCompletion(DWORD timeout) -> void;
     auto processCompletionEx(DWORD timeout) -> void;
@@ -237,7 +237,7 @@ inline auto IocpContext::processCompletionEx(DWORD timeout) -> void {
     }
 }
 
-inline auto IocpContext::sleep(uint64_t ms) -> Task<void> {
+inline auto IocpContext::sleep(uint64_t ms) -> IoTask<void> {
     return mService.sleep(ms);
 }
 
@@ -338,7 +338,7 @@ inline auto IocpContext::removeDescriptor(IoDescriptor *descriptor) -> Result<vo
 }
 
 #pragma region Fs
-inline auto IocpContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
+inline auto IocpContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use thread pool to do it
         co_return co_await detail::IocpThreadReadAwaiter(nfd->handle, buffer);
@@ -347,7 +347,7 @@ inline auto IocpContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std
 }
 
 
-inline auto IocpContext::write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> Task<size_t> {
+inline auto IocpContext::write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use thread pool to do it
         co_return co_await detail::IocpThreadWriteAwaiter(nfd->handle, buffer);
@@ -356,7 +356,7 @@ inline auto IocpContext::write(IoDescriptor *fd, std::span<const std::byte> buff
 }
 
 #pragma region Net
-inline auto IocpContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> Task<socket_t> {
+inline auto IocpContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> IoTask<socket_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket) {
         co_return Unexpected(Error::OperationNotSupported);
@@ -364,7 +364,7 @@ inline auto IocpContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) 
     co_return co_await detail::IocpAcceptAwaiter(nfd->sockfd, endpoint, nfd->sock.AcceptEx, nfd->sock.GetAcceptExSockaddrs);
 }
 
-inline auto IocpContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Task<void> {
+inline auto IocpContext::connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket) {
         co_return Unexpected(Error::OperationNotSupported);
@@ -375,7 +375,7 @@ inline auto IocpContext::connect(IoDescriptor *fd, EndpointView endpoint) -> Tas
     co_return co_await detail::IocpConnectAwaiter(nfd->sockfd, endpoint, nfd->sock.ConnectEx);
 }
 
-inline auto IocpContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> Task<size_t> {
+inline auto IocpContext::sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket) {
         co_return Unexpected(Error::OperationNotSupported);
@@ -383,7 +383,7 @@ inline auto IocpContext::sendto(IoDescriptor *fd, std::span<const std::byte> buf
     co_return co_await detail::IocpSendtoAwaiter(nfd->sockfd, buffer, flags, endpoint);
 }
 
-inline auto IocpContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> Task<size_t> {
+inline auto IocpContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket) {
         co_return Unexpected(Error::OperationNotSupported);
@@ -392,7 +392,7 @@ inline auto IocpContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer,
 }
 
 #pragma region Poll
-inline auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> Task<uint32_t> {
+inline auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket || !mAfdDevice.isOpen()) {
         co_return Unexpected(Error::OperationNotSupported);
@@ -401,7 +401,7 @@ inline auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> Task<uint32_
 }
 
 #pragma region NamedPipe
-inline auto IocpContext::connectNamedPipe(IoDescriptor *fd) -> Task<void> {
+inline auto IocpContext::connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
     auto nfd = static_cast<detail::IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Pipe) {
         co_return Unexpected(Error::OperationNotSupported);

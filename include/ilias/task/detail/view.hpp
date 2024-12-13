@@ -246,9 +246,9 @@ public:
     /**
      * @brief Get the return value of the task
      * 
-     * @return Result<T> 
+     * @return T
      */
-    auto value() const -> Result<T> {
+    auto value() const -> T {
         return static_cast<promise_type *>(mPromise)->value();
     }
 

@@ -61,9 +61,9 @@ public:
      * @brief Sleep for a specified amount of time, make task
      * 
      * @param ms 
-     * @return Task<> 
+     * @return IoTask<> 
      */
-    auto sleep(uint64_t ms) -> Task<>;
+    auto sleep(uint64_t ms) -> IoTask<>;
 private:
     /**
      * @brief Submit a timer task to run at a specified timepoint
@@ -143,7 +143,7 @@ inline auto TimerService::updateTimers() -> void {
     }
 }
 
-inline auto TimerService::sleep(uint64_t ms) -> Task<> {
+inline auto TimerService::sleep(uint64_t ms) -> IoTask<> {
     co_return co_await TimerAwaiter {*this, ms};    
 }
 

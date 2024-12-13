@@ -200,7 +200,7 @@ template <typename T>
 class TaskPromise final : public TaskPromiseBase {
 public:
     using handle_type = std::coroutine_handle<TaskPromise>;
-    using value_type = Result<T>;
+    using value_type = T;
 
     /**
      * @brief Get the coroutine handle of the promise
@@ -240,13 +240,18 @@ public:
      * 
      */
     auto unhandled_exception() noexcept -> void {
-        try {
-            throw;
+        if constexpr (IsResult<T>) {
+            try {
+                throw;
+            }
+            catch (const BadExpectedAccess<Error> &e) {
+                mValue.emplace(Unexpected(e.error()));
+            }
+            catch (...) {
+                mException = std::current_exception();
+            }
         }
-        catch (const BadExpectedAccess<Error>& e) {
-            mValue.emplace(Unexpected(e.error()));
-        }
-        catch (...) {
+        else {
             mException = std::current_exception();
         }
     }
@@ -279,6 +284,82 @@ public:
     }
 private:
     std::optional<value_type> mValue; //< The value
+#if defined(__cpp_exceptions)
+    std::exception_ptr mException; //< The exception
+#endif
+};
+
+/**
+ * @brief The promise of the Task<void>, hold the return value and exception
+ * 
+ * @tparam  
+ */
+template <>
+class TaskPromise<void> final : public TaskPromiseBase {
+public:
+    using handle_type = std::coroutine_handle<TaskPromise>;
+    using value_type = void;
+
+    /**
+     * @brief Get the coroutine handle of the promise
+     * 
+     * @return handle_type 
+     */
+    auto handle() -> handle_type {
+        return handle_type::from_promise(*this);
+    }
+
+    /**
+     * @brief Get the return object object, wrap it to the Task<void>
+     * 
+     * @return Task<void> 
+     */
+    template <typename T = void>
+    auto get_return_object() -> Task<T> {
+        return {handle()};
+    }
+
+    /**
+     * @brief Return the value of the coroutine
+     * 
+     */
+    auto return_void() -> void {
+        // nothing to do
+    }
+
+#if defined(__cpp_exceptions)
+    /**
+     * @brief Exception support, just store the exception
+     * 
+     */
+    auto unhandled_exception() noexcept -> void {
+        mException = std::current_exception();
+    }
+
+    /**
+     * @brief Exception support, override the default hasException() to return true if there is an exception
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto hasException() const -> bool {
+        return mException != nullptr;
+    }
+#endif
+
+    /**
+     * @brief Get the return value of the coroutine
+     * 
+     */
+    auto value() -> void {
+#if defined(__cpp_exceptions)
+        if (mException) {
+            std::rethrow_exception(mException);
+        }
+#endif
+        ILIAS_ASSERT(handle().done()); //< The coroutine should be done
+    }
+private:
 #if defined(__cpp_exceptions)
     std::exception_ptr mException; //< The exception
 #endif

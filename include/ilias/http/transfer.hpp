@@ -23,17 +23,17 @@ public:
      * @param url The url of the request
      * @param headers The headers of the request
      * @param payload 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    virtual auto send(std::string_view method, const Url &url, const HttpHeaders &headers, std::span<const std::byte> payload) -> Task<void> = 0;
+    virtual auto send(std::string_view method, const Url &url, const HttpHeaders &headers, std::span<const std::byte> payload) -> IoTask<void> = 0;
 
     /**
      * @brief Read the body of the request (must be called after readHeaders)
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    virtual auto read(std::span<std::byte> buffer) -> Task<size_t> = 0;
+    virtual auto read(std::span<std::byte> buffer) -> IoTask<size_t> = 0;
 
     /**
      * @brief Read the headers of the request (must be called before read)
@@ -41,9 +41,9 @@ public:
      * @param statusCode 
      * @param status 
      * @param headers 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    virtual auto readHeaders(int &statusCode, std::string &statusMessage, HttpHeaders &headers) -> Task<void> = 0;
+    virtual auto readHeaders(int &statusCode, std::string &statusMessage, HttpHeaders &headers) -> IoTask<void> = 0;
 };
 
 
@@ -64,16 +64,16 @@ public:
     /**
      * @brief Create a new stream for the connection
      * 
-     * @return Task<std::unique_ptr<HttpStream> > 
+     * @return IoTask<std::unique_ptr<HttpStream> > 
      */
-    virtual auto newStream() -> Task<std::unique_ptr<HttpStream> > = 0;
+    virtual auto newStream() -> IoTask<std::unique_ptr<HttpStream> > = 0;
 
     /**
      * @brief Perform the graceful shutdown of the connection
      * 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    virtual auto shutdown() -> Task<void> = 0;
+    virtual auto shutdown() -> IoTask<void> = 0;
 
     /**
      * @brief Get the implmentation of the http version

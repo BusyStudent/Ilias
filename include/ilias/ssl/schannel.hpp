@@ -152,7 +152,7 @@ public:
         mData.reset();
     }
 protected:
-    auto handshakeAsClient() -> Task<> {
+    auto handshakeAsClient() -> IoTask<> {
         if (mData) {
             co_return {};
         }
@@ -279,7 +279,7 @@ protected:
         mData = std::move(data);
         co_return {};
     }
-    auto writeImpl(const void *_buffer, size_t n) -> Task<size_t> {
+    auto writeImpl(const void *_buffer, size_t n) -> IoTask<size_t> {
         if (!mData) [[unlikely]] {
             if (auto ret = co_await handshakeAsClient(); !ret) {
                 co_return Unexpected(ret.error());
@@ -336,7 +336,7 @@ protected:
         }
         co_return sended;
     }
-    auto readImpl(void *buffer, size_t n) -> Task<size_t> {
+    auto readImpl(void *buffer, size_t n) -> IoTask<size_t> {
         if (!mData) [[unlikely]] {
             if (auto ret = co_await handshakeAsClient(); !ret) {
                 co_return Unexpected(ret.error());
@@ -420,7 +420,7 @@ protected:
             incomingReceived += *num;
         }
     }
-    auto disconnectImpl() -> Task<> {
+    auto disconnectImpl() -> IoTask<> {
         if (!mData) {
             co_return {};
         }
@@ -506,26 +506,26 @@ public:
     SslClient(SslClient &&other) = default;
     SslClient(SslContext &ctxt, T &&fd) : SslSocket<T>(ctxt, std::move(fd)) { }
 
-    auto handshake() -> Task<> {
+    auto handshake() -> IoTask<> {
         return this->handshakeAsClient();
     }
 
-    auto connect(const IPEndpoint &endpoint) -> Task<> {
+    auto connect(const IPEndpoint &endpoint) -> IoTask<> {
         if (auto ret = co_await this->mFd.connect(endpoint); !ret) {
             co_return Unexpected(ret.error());
         }
         co_return co_await this->handshakeAsClient();
     }
 
-    auto shutdown() -> Task<> {
+    auto shutdown() -> IoTask<> {
         return this->disconnectImpl();
     }
 
-    auto write(std::span<const std::byte> buffer) -> Task<size_t> {
+    auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
         return this->writeImpl(buffer.data(), buffer.size_bytes());
     }
 
-    auto read(std::span<std::byte> buffer) -> Task<size_t> {
+    auto read(std::span<std::byte> buffer) -> IoTask<size_t> {
         return this->readImpl(buffer.data(), buffer.size_bytes());
     }
 

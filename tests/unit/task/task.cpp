@@ -12,7 +12,7 @@ auto returnInput(T in) -> Task<T> {
 TEST(Task, Wait) {
     auto value = []() -> Task<int> {
         co_return co_await returnInput(42);
-    }().wait().value();
+    }().wait();
 
     EXPECT_EQ(value, 42);
 }
@@ -26,7 +26,7 @@ TEST(Task, Exception) {
 }
 
 TEST(Task, Exception2) {
-    auto value = []() -> Task<int> {
+    auto value = []() -> Task<Result<int> > {
         Result<void> result {
             Unexpected(Error::Unknown)
         };
@@ -38,7 +38,7 @@ TEST(Task, Exception2) {
 
 TEST(Task, Create) {
     auto fn = []() -> Task<void> {
-        co_return {};  
+        co_return;
     };
     auto task = fn(); //< Just create    
 }
@@ -51,7 +51,7 @@ TEST(TaskDeathTest, Crash) {
 
     auto fn = []() -> Task<void> {
         co_await std::suspend_always();
-        co_return {};
+        co_return;
     };
     EXPECT_DEATH_IF_SUPPORTED({
         auto task = fn();

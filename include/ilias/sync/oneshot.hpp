@@ -142,10 +142,10 @@ public:
     /**
      * @brief Get the value from the channel
      * 
-     * @return Task<T> 
+     * @return IoTask<T> 
      */
     [[nodiscard("DO NOT FORGET TO USE co_await!!!")]]
-    auto recv() -> Task<T> {
+    auto recv() -> IoTask<T> {
         co_return co_await detail::RecvAwaiter<T>(mPtr.get());
     }
 

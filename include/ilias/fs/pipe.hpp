@@ -117,9 +117,9 @@ public:
      * @brief Write data to pipe
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto write(std::span<const std::byte> buffer) -> Task<size_t> {
+    auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
         return mCtxt->write(mDesc, buffer, std::nullopt);
     }
 
@@ -127,18 +127,18 @@ public:
      * @brief Read data from pipe
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto read(std::span<std::byte> buffer) -> Task<size_t> {
+    auto read(std::span<std::byte> buffer) -> IoTask<size_t> {
         return mCtxt->read(mDesc, buffer, std::nullopt);
     }
 
     /**
      * @brief Shutdown the pipe, only do the close
      * 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    auto shutdown() -> Task<void> {
+    auto shutdown() -> IoTask<void> {
         close();
         co_return {};
     }
@@ -147,9 +147,9 @@ public:
     /**
      * @brief Wait for the named pipe to be connected (wrapping ConnectNamedPipe)
      * 
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    auto connect() -> Task<void> {
+    auto connect() -> IoTask<void> {
         return mCtxt->connectNamedPipe(mDesc);
     }
 

@@ -55,9 +55,9 @@ public:
      * @param ctxt The io context
      * @param path The utf-8 encoded path
      * @param mode The mode, see fopen for more details (like "r", "w", "a", "r+", "w+", "a+" etc.)
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    auto open(IoContext *ctxt, const char *path, std::string_view mode) -> Task<void> {
+    auto open(IoContext *ctxt, const char *path, std::string_view mode) -> IoTask<void> {
         close();
 
         auto fd = fd_utils::open(path, mode);
@@ -100,9 +100,9 @@ public:
      * 
      * @param path The utf-8 encoded path
      * @param mode The mode, see fopen for more details (like "r", "w", "a", "r+", "w+", "a+" etc.)
-     * @return Task<void> 
+     * @return IoTask<void> 
      */
-    auto open(const char *path, std::string_view mode) -> Task<void> {
+    auto open(const char *path, std::string_view mode) -> IoTask<void> {
         return open(IoContext::currentThread(), path, mode);
     }
 
@@ -126,9 +126,9 @@ public:
      * @brief Start read data from the file
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto read(std::span<std::byte> buffer) -> Task<size_t> {
+    auto read(std::span<std::byte> buffer) -> IoTask<size_t> {
         auto ret = co_await mCtxt->read(mDesc, buffer, mOffset);
         if (ret && mOffset) {
             *mOffset += ret.value();
@@ -140,9 +140,9 @@ public:
      * @brief Write data to the file
      * 
      * @param buffer 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto write(std::span<const std::byte> buffer) -> Task<size_t> {
+    auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
         auto ret = co_await mCtxt->write(mDesc, buffer, mOffset);
         if (ret && mOffset) {
             *mOffset += ret.value();
@@ -155,9 +155,9 @@ public:
      * 
      * @param buffer 
      * @param offset 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto pread(std::span<std::byte> buffer, size_t offset) -> Task<size_t> {
+    auto pread(std::span<std::byte> buffer, size_t offset) -> IoTask<size_t> {
         return mCtxt->read(mDesc, buffer, offset);
     }
 
@@ -166,9 +166,9 @@ public:
      * 
      * @param buffer 
      * @param offset 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto pwrite(std::span<const std::byte> buffer, size_t offset) -> Task<size_t> {
+    auto pwrite(std::span<const std::byte> buffer, size_t offset) -> IoTask<size_t> {
         return mCtxt->write(mDesc, buffer, offset);
     }
 
@@ -177,9 +177,9 @@ public:
      * 
      * @param offset 
      * @param from 
-     * @return Task<uint64_t> 
+     * @return IoTask<uint64_t> 
      */
-    auto seek(int64_t offset, SeekFrom from) -> Task<uint64_t> {
+    auto seek(int64_t offset, SeekFrom from) -> IoTask<uint64_t> {
         if (!mOffset) {
             co_return Unexpected(Error::OperationNotSupported);
         }
@@ -196,18 +196,18 @@ public:
     /**
      * @brief Doing seek operation
      * 
-     * @return Task<uint64_t> 
+     * @return IoTask<uint64_t> 
      */
-    auto tell() -> Task<uint64_t> {
+    auto tell() -> IoTask<uint64_t> {
         return seek(0, SeekFrom::Current);
     }
 
     /**
      * @brief Get the file size
      * 
-     * @return Task<uint64_t> 
+     * @return IoTask<uint64_t> 
      */
-    auto size() const -> Task<uint64_t> {
+    auto size() const -> IoTask<uint64_t> {
         if (!mOffset) {
             co_return Unexpected(Error::OperationNotSupported);
         }

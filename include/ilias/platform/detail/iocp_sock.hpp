@@ -160,7 +160,7 @@ public:
     }
 
     auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<void> {
-        ILIAS_TRACE("IOCP", "Connect To on sockfd {} completed, Error {}", sockfd(), error);
+        ILIAS_TRACE("IOCP", "Connect To {} on sockfd {} completed, Error {}", mEndpoint, sockfd(), error);
         if (error != ERROR_SUCCESS) {
             return Unexpected(SystemError(error));
         }

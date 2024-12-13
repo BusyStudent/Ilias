@@ -11,7 +11,7 @@ using namespace std::literals;
 TEST(Mutex, Basic) {
     Mutex mtx;
     bool value = true;
-    auto fn1 = [&]() -> Task<void> {
+    auto fn1 = [&]() -> IoTask<void> {
         co_await yield();
         auto val = co_await mtx.lock();
         if (!val) {
@@ -21,7 +21,7 @@ TEST(Mutex, Basic) {
         mtx.unlock();
         co_return {};
     };
-    auto fn2 = [&]() -> Task<void> {
+    auto fn2 = [&]() -> IoTask<void> {
         auto val = co_await mtx.uniqueLock();
         if (!val) {
             co_return Unexpected(val.error());

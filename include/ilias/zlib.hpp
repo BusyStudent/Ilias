@@ -114,10 +114,10 @@ public:
      * @tparam T rquires Readable
      * @param output The output buffer for writing the decompressed data
      * @param source The source stream for reading the data, which need to be decompressed
-     * @return Task<size_t> (The number of bytes written to the output buffer, 0 on EOF)
+     * @return IoTask<size_t> (The number of bytes written to the output buffer, 0 on EOF)
      */
     template <Readable T>
-    auto decompressTo(std::span<std::byte> output, T &source) -> Task<size_t> {
+    auto decompressTo(std::span<std::byte> output, T &source) -> IoTask<size_t> {
         if (mStreamEnd) {
             co_return 0; //< EOF
         }

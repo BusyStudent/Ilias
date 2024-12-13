@@ -29,9 +29,9 @@ public:
      * @brief Write All Data to Stream
      * 
      * @param data The 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto writeAll(std::span<const std::byte> data) -> Task<size_t> {
+    auto writeAll(std::span<const std::byte> data) -> IoTask<size_t> {
         size_t written = 0;
         while (!data.empty()) {
             auto n = co_await static_cast<T*>(this)->write(data);
@@ -66,9 +66,9 @@ public:
      * @brief Read All Data from Stream
      * 
      * @param data The 
-     * @return Task<size_t> 
+     * @return IoTask<size_t> 
      */
-    auto readAll(std::span<std::byte> data) -> Task<size_t> {
+    auto readAll(std::span<std::byte> data) -> IoTask<size_t> {
         size_t read = 0;
         while (!data.empty()) {
             auto n = co_await static_cast<T*>(this)->read(data);
