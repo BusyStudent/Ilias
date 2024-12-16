@@ -106,7 +106,7 @@ public:
     auto await_suspend(TaskView<> caller) -> void {
         mTask.setAwaitingCoroutine(caller); //< When the task is done, resume the caller
         mReg = caller.cancellationToken().register_( //< Let the caller's cancel request cancel the current task
-            &CancelTheTokenHelper, &mTask.cancellationToken()
+            &cancelTheTokenHelper, &mTask.cancellationToken()
         );
     }
 
@@ -145,7 +145,7 @@ private:
         auto self = static_cast<ScheduleOnAwaiterBase*>(_self);
         auto executor = self->mTask.executor();
         auto task = self->mTask;
-        executor->post(CancelTheTokenHelper, &task.cancellationToken());
+        executor->post(cancelTheTokenHelper, &task.cancellationToken());
     }
 
     static auto doSchedule(void *_self) -> void {
@@ -245,7 +245,7 @@ public:
         if (!done()) {
             // Wait until done
             CancellationToken token;
-            mData->mTask.registerCallback(detail::CancelTheTokenHelper, &token);
+            mData->mTask.registerCallback(detail::cancelTheTokenHelper, &token);
             mData->mTask.executor()->run(token);
         }
         auto data = std::move(mData);

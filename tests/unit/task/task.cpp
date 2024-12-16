@@ -33,7 +33,12 @@ TEST(Task, Exception2) {
         result.value(); //< this will throw
         co_return {};
     };
+    auto value2 = []() -> Task<Result<int> > {
+        throw 1;
+        co_return {};
+    };
     EXPECT_NO_THROW(ilias_wait value());
+    EXPECT_THROW(ilias_wait value2(), int);
 }
 
 TEST(Task, Create) {
@@ -41,6 +46,18 @@ TEST(Task, Create) {
         co_return;
     };
     auto task = fn(); //< Just create    
+}
+
+TEST(Task, AwaitableToTask) {
+    auto task = Task(std::suspend_never{});
+    task.wait();
+
+    ilias_wait std::suspend_never{};
+    
+    auto task2 = Task<float>([]() -> Task<int> {
+        co_return 1;
+    }());
+    ASSERT_EQ(task2.wait(), 1);
 }
 
 TEST(TaskDeathTest, Crash) {

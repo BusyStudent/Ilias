@@ -123,7 +123,7 @@ public:
         if (!done()) {
             // Wait until done
             CancellationToken token;
-            mData->mTask.registerCallback(detail::CancelTheTokenHelper, &token);
+            mData->mTask.registerCallback(detail::cancelTheTokenHelper, &token);
             mData->mTask.executor()->run(token);
         }
         auto value = TaskView<T>::cast(mData->mTask).value();

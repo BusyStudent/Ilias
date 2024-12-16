@@ -45,6 +45,13 @@ TEST(WhenAny, Basic1) {
         EXPECT_FALSE(b);
         EXPECT_TRUE(c);
     }
+
+    {
+        auto [a, b, c] = whenAny(std::suspend_never{}, returnInput(2), sleep(10ms)).wait();
+        EXPECT_TRUE(a);
+        EXPECT_FALSE(b);
+        EXPECT_FALSE(c);
+    }
 }
 
 auto main(int argc, char **argv) -> int {

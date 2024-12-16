@@ -29,6 +29,12 @@ TEST(WhenAll, Basic) {
         ASSERT_TRUE(b);
         ASSERT_EQ(c, 30ms);
     }
+
+    {
+        auto [a, b, c] = whenAll(std::suspend_never{}, returnInput(2), returnInput(3)).wait();
+        ASSERT_EQ(b, 2);
+        ASSERT_EQ(c, 3);
+    }
 }
 
 auto main(int argc, char **argv) -> int {

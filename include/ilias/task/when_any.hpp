@@ -28,7 +28,7 @@ namespace detail {
  */
 template <typename ...Types>
 struct WhenAnyTuple {
-    std::tuple<TaskView<Types>...> mTuple;
+    std::tuple<Task<Types>...> mTuple;
 
     /**
      * @brief Blocking wait until the when any complete
@@ -36,10 +36,7 @@ struct WhenAnyTuple {
      * @return std::tuple<std::optional<Types>...>
      */
     auto wait() const {
-        auto helper = [this]() -> Task<std::tuple<std::optional<Types>...> > {
-            co_return co_await (*this);
-        };
-        return helper().wait();
+        return awaitableWrapperForward(*this).wait();
     }
 };
 
@@ -53,7 +50,9 @@ template <typename ...Types>
 class WhenAnyTupleAwaiter {
 public:
     using InTuple = std::tuple<TaskView<Types>...>;
-    using OutTuple = std::tuple<std::optional<Types>...>;
+    using OutTuple = std::tuple<std::optional<
+        std::conditional_t<!std::is_same_v<Types, void>, Types, std::monostate> //< Replace void to std::monostate
+    >...>;
 
     WhenAnyTupleAwaiter(InTuple tasks) : mTasks(tasks) { }
 
@@ -124,11 +123,19 @@ private:
 
     template <size_t I>
     auto makeResult() -> std::tuple_element_t<I, OutTuple> {
+        using RetT = std::tuple_element_t<I, OutTuple>;
         auto task = std::get<I>(mTasks);
-        if (task == mGot) {
+        if (task != mGot) {
+            return std::nullopt;
+        }
+        // Check if the task return void, if so, replace it by std::monostate
+        if constexpr(std::is_same_v<RetT, std::optional<std::monostate> >) {
+            task.value(); //< Make sure the exception throw if the task has it
+            return std::monostate {};
+        }
+        else {
             return task.value();
         }
-        return std::nullopt;
     }
 
     template <size_t ...Idx>
@@ -159,38 +166,67 @@ private:
  * @return auto 
  */
 template <typename ...Types>
-inline auto operator co_await(WhenAnyTuple<Types...> tuple) noexcept {
-    return WhenAnyTupleAwaiter<Types...>(tuple.mTuple);
+inline auto operator co_await(const WhenAnyTuple<Types...> &tuple) noexcept {
+    auto views = std::apply([](auto &...tasks) { //< Convert the task to TaskView
+        return std::tuple { tasks._view()... };
+    }, tuple.mTuple);
+    return WhenAnyTupleAwaiter<Types...>(views);
 }
 
 } // namespace detail
 
 
 /**
- * @brief When Any on multiple tasks
+ * @brief When Any on multiple awaitable
  * 
  * @tparam Types 
  * @param args 
- * @return auto 
+ * @return The awaitable for waiting any of the given awaitable
  */
-template <typename ...Types>
-inline auto whenAny(Task<Types> && ...args) noexcept {
-    return detail::WhenAnyTuple<Types...> {
-        {args._view()...}
+template <Awaitable ...Types>
+inline auto whenAny(Types && ...args) noexcept {
+    return detail::WhenAnyTuple<AwaitableResult<Types>...> { //< Construct the task for the given awaitable
+        { Task<AwaitableResult<Types> >(std::forward<Types>(args))... }
     };
 }
 
-template <typename A, typename B>
-inline auto operator ||(Task<A> && a, Task<B> && b) noexcept {
-    return detail::WhenAnyTuple<A, B> {
-        {a._view(), b._view()}
+/**
+ * @brief When Any on multiple awaitable
+ * 
+ * @tparam A 
+ * @tparam B 
+ * @param a The first awaitable
+ * @param b The second awaitable
+ * @return The awaitable for waiting any of the given awaitable 
+ */
+template <Awaitable A, Awaitable B>
+inline auto operator ||(A && a, B && b) noexcept {
+    using ResultA = AwaitableResult<A>;
+    using ResultB = AwaitableResult<B>;
+    return detail::WhenAnyTuple<ResultA, ResultB> {
+        {
+            Task<ResultA>(std::forward<A>(a)), 
+            Task<ResultB>(std::forward<B>(b)) 
+        }
     };
 }
 
-template <typename ...Types, typename T>
-inline auto operator ||(detail::WhenAnyTuple<Types...> tuple, Task<T> && t) noexcept {
-    return detail::WhenAnyTuple<Types..., T> {
-        std::tuple_cat(tuple.mTuple, std::make_tuple(t._view()))
+/**
+ * @brief When Any on multiple awaitable
+ * 
+ * @tparam Types 
+ * @tparam T 
+ * @param tuple 
+ * @param t 
+ * @return The awaitable for waiting any of the given awaitable 
+ */
+template <typename ...Types, Awaitable T>
+inline auto operator ||(detail::WhenAnyTuple<Types...> &&tuple, T && t) noexcept {
+    return detail::WhenAnyTuple<Types..., AwaitableResult<T> > {
+        std::tuple_cat(
+            std::move(tuple.mTuple), 
+            std::tuple { Task<AwaitableResult<T> >(std::forward<T>(t)) } //< Convert the awaitable to task
+        )
     };
 }
 

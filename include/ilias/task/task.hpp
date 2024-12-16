@@ -22,7 +22,12 @@ ILIAS_NS_BEGIN
 
 namespace detail {
 
-inline auto CancelTheTokenHelper(void *token) -> void {
+/**
+ * @brief The Helper function for the cancel the given token
+ * 
+ * @param token 
+ */
+inline auto cancelTheTokenHelper(void *token) -> void {
     static_cast<CancellationToken*>(token)->cancel();
 }
 
@@ -49,7 +54,7 @@ public:
 
         mTask.setAwaitingCoroutine(caller); //< When the task is done, resume the caller
         mReg = caller.cancellationToken().register_( //< Forward the caller's cancel request cancel to the current task
-            &CancelTheTokenHelper, &mTask.cancellationToken()
+            &cancelTheTokenHelper, &mTask.cancellationToken()
         );
         return true;
     }
@@ -130,8 +135,20 @@ public:
      * 
      * @param other 
      */
-    Task(Task &&other) : mHandle(other.mHandle) {
-        other.mHandle = nullptr;
+    Task(Task &&other) : mHandle(other._leak()) { }
+
+    /**
+     * @brief Construct a new Task object by any awaitable, the result of the awaitable must be convertible to T
+     * 
+     * @tparam U The 
+     * @param awaitable 
+     */
+    template <typename U> requires(
+        Awaitable<U> &&
+        std::convertible_to<AwaitableResult<U>, T>
+    )
+    explicit Task(U &&awaitable) {
+        mHandle = detail::awaitableWrapper<U, T>(std::forward<U>(awaitable))._leak();
     }
 
     /**
@@ -159,7 +176,7 @@ public:
         mHandle.resume(); //< Start it
         if (!mHandle.done()) {
             CancellationToken token;
-            promise.registerCallback(detail::CancelTheTokenHelper, &token);
+            promise.registerCallback(detail::cancelTheTokenHelper, &token);
             executor->run(token);
         }
         return promise.value();
@@ -191,9 +208,7 @@ public:
      * @return handle_type 
      */
     auto _leak() -> handle_type {
-        auto h = mHandle;
-        mHandle = nullptr;
-        return h;
+        return std::exchange(mHandle, nullptr);
     }
 
 
@@ -211,8 +226,7 @@ public:
             ILIAS_ASSERT(_view().isSafeToDestroy());
             mHandle.destroy();
         }
-        mHandle = other.mHandle;
-        other.mHandle = nullptr;
+        mHandle = other._leak();
         return *this;
     }
 
