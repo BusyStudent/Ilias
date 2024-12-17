@@ -200,9 +200,13 @@ inline auto HttpSession::sendRequest(std::string_view method, const HttpRequest 
     int idx = 0; // The number of redirects
     while (true) {
 #if 1
+        auto transferTimeout = request.transferTimeout();
+        if (transferTimeout == std::chrono::milliseconds{}) {
+            transferTimeout = std::chrono::hours(10); //< Just like INFINITE timeout
+        }
         auto [reply_, timeout] = co_await whenAny(
             sendRequestImpl(method, url, headers, payload, request.streamMode()),
-            sleep(request.transferTimeout())
+            sleep(transferTimeout)
         );
         if (timeout) { //< Timed out
             co_return Unexpected(Error::TimedOut);

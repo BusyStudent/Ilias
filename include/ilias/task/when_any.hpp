@@ -14,6 +14,7 @@
 #include <ilias/cancellation_token.hpp>
 #include <ilias/log.hpp>
 #include <optional>
+#include <variant> //< For std::monostate
 #include <tuple>
 
 

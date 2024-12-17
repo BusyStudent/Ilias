@@ -121,7 +121,7 @@ private:
     HttpHeaders mHeaders;
     int  mMaximumRedirects = 10;
     bool mStreamMode = false;
-    std::chrono::milliseconds mTransferTimeout = std::chrono::seconds(5);
+    std::chrono::milliseconds mTransferTimeout = {};
 };
 
 inline HttpRequest::HttpRequest() = default;
