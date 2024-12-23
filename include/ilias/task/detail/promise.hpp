@@ -14,6 +14,7 @@
 #include <ilias/detail/expected.hpp>
 #include <ilias/detail/functional.hpp>
 #include <ilias/cancellation_token.hpp>
+#include <ilias/log.hpp>
 #include <concepts>
 #include <optional>
 #include <vector>
@@ -28,7 +29,7 @@ public:
 
     auto await_ready() noexcept { return false; }
     auto await_suspend(std::coroutine_handle<>) noexcept { return mHandle; }
-    auto await_resume() noexcept { ::abort(); }
+    auto await_resume() noexcept { unreachable(); } //< We don't need to resume the coroutine, it is already done
 private:
     std::coroutine_handle<> mHandle;
 };
@@ -53,6 +54,60 @@ public:
     TaskPromiseBase() { mToken.setAutoReset(true); } //< The default cancel policy is CancelPolicy::Once
     TaskPromiseBase(const TaskPromiseBase &) = delete;
 
+#if defined(__cpp_exceptions)
+    ~TaskPromiseBase() noexcept {
+        if (!mException) [[likely]] { //< Exception are throwed or no exception occured
+            return;
+        }
+
+#if !defined(NDEBUG) //< Try give some debug info about the exception
+        ILIAS_ERROR("Task", "Unhandled exception in task");
+        try {
+            std::rethrow_exception(mException);
+        }
+        catch (std::exception &e) {
+            ILIAS_ERROR("Task", "Exception.what = {}", e.what());
+        }
+        catch (...) { }
+#endif // !defined(NDEBUG)
+        std::terminate();
+    }
+    /**
+     * @brief Default exception handler, store the exception
+     * 
+     * @return auto 
+     */
+    auto unhandled_exception() noexcept { 
+        mException = std::current_exception();
+    }
+
+    /**
+     * @brief Default rethrow the exception if there is one
+     * 
+     */
+    auto rethrowIfException() -> void {
+        if (mException) {
+            std::rethrow_exception(std::exchange(mException, nullptr));
+        }
+    }
+#else //< No exceptions
+    /**
+     * @brief Default exception handler, no exception support, so it is unreachable
+     * 
+     */
+    auto unhandled_exception() const noexcept -> void {
+        unreachable();
+    }
+
+    /**
+     * @brief Default rethrow the exception, no-op
+     * 
+     */
+    auto rethrowIfException() const noexcept -> void {
+
+    }
+#endif // defined(__cpp_exceptions)
+
     /**
      * @brief On the coroutine start, we are lazy, so we suspend it
      * 
@@ -75,14 +130,6 @@ public:
             mAwaitingCoroutine = std::noop_coroutine();
         }
         return mAwaitingCoroutine;
-    }
-
-    /**
-     * @brief Default exception handler, terminates the program
-     * 
-     */
-    auto unhandled_exception() const noexcept -> void {
-        std::terminate();
     }
 
     /**
@@ -111,16 +158,6 @@ public:
      */
     auto isStarted() const -> bool {
         return mStarted;
-    }
-
-    /**
-     * @brief Default, no exception, so always return false
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto hasException() const -> bool {
-        return false;
     }
 
     /**
@@ -189,6 +226,9 @@ protected:
     CancellationToken mToken; //< The cancellation token
     std::coroutine_handle<> mAwaitingCoroutine; //< The coroutine handle that is waiting for us, we will resume it when done 
     std::vector<MoveOnlyFunction<void()> > mCallbacks; //< The callbacks that will be called when the coroutine is done
+#if defined(__cpp_exceptions)
+    std::exception_ptr mException; //< The stored exception
+#endif // defined(__cpp_exceptions)
 };
 
 /**
@@ -252,18 +292,8 @@ public:
             }
         }
         else {
-            mException = std::current_exception();
+            TaskPromiseBase::unhandled_exception(); //< forward to the base class
         }
-    }
-
-    /**
-     * @brief Exception support, override the default hasException() to return true if there is an exception
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto hasException() const -> bool {
-        return mException != nullptr;
     }
 #endif
 
@@ -273,20 +303,13 @@ public:
      * @return value_type 
      */
     auto value() -> value_type {
-#if defined(__cpp_exceptions)
-        if (mException) {
-            std::rethrow_exception(mException);
-        }
-#endif
+        rethrowIfException();
         ILIAS_ASSERT(handle().done()); //< The coroutine should be done
         ILIAS_ASSERT(mValue.has_value()); //< The value should be set
         return std::move(*mValue);
     }
 private:
     std::optional<value_type> mValue; //< The value
-#if defined(__cpp_exceptions)
-    std::exception_ptr mException; //< The exception
-#endif
 };
 
 /**
@@ -327,42 +350,14 @@ public:
         // nothing to do
     }
 
-#if defined(__cpp_exceptions)
-    /**
-     * @brief Exception support, just store the exception
-     * 
-     */
-    auto unhandled_exception() noexcept -> void {
-        mException = std::current_exception();
-    }
-
-    /**
-     * @brief Exception support, override the default hasException() to return true if there is an exception
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto hasException() const -> bool {
-        return mException != nullptr;
-    }
-#endif
-
     /**
      * @brief Get the return value of the coroutine
      * 
      */
     auto value() -> void {
-#if defined(__cpp_exceptions)
-        if (mException) {
-            std::rethrow_exception(mException);
-        }
-#endif
+        rethrowIfException();
         ILIAS_ASSERT(handle().done()); //< The coroutine should be done
     }
-private:
-#if defined(__cpp_exceptions)
-    std::exception_ptr mException; //< The exception
-#endif
 };
 
 

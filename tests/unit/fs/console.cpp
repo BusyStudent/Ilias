@@ -7,8 +7,7 @@ using namespace ILIAS_NAMESPACE;
 using namespace std::literals;
 
 TEST(ConsoleTest, Open) {
-    auto ctxt = IoContext::currentThread();
-    auto out = Console::fromStdout(*ctxt);
+    auto out = Console::fromStdout().wait();
     ASSERT_TRUE(out);
 
     auto ret = out->puts("HelloWorld\n").wait();

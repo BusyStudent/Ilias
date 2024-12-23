@@ -15,8 +15,8 @@
 #include <ilias/task/task.hpp>
 #include <concepts>
 
-#define ilias_go    ILIAS_NS::detail::SpawnTags{ } << 
-#define ilias_spawn ILIAS_NS::detail::SpawnTags{ } <<
+#define ilias_go    ILIAS_NAMESPACE::detail::SpawnTags{ } << 
+#define ilias_spawn ILIAS_NAMESPACE::detail::SpawnTags{ } <<
 
 ILIAS_NS_BEGIN
 

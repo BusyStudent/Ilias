@@ -207,6 +207,16 @@ public:
         Pipe read(ctxt, pipes->read);
         return std::make_pair(std::move(write), std::move(read));
     }
+
+    /**
+     * @brief Create the pipe and return the pair of pipes
+     * 
+     * @return IoTask<std::pair<Pipe, Pipe> > 
+     */
+    static auto pair() -> IoTask<std::pair<Pipe, Pipe> > {
+        auto &&ctxt = co_await currentIoContext();
+        co_return pair(ctxt);
+    }
 private:
     IoContext    *mCtxt = nullptr;
     IoDescriptor *mDesc = nullptr;

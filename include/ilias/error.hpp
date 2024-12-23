@@ -54,9 +54,11 @@ public:
         Ok = 0,                      //< No Error
         Unknown,                     //< Unknown Error
 
-        // --- Coroutine
-        Canceled,                    //< Task is Canceled
-        Pending,                     //< Task is pending
+        // --- Operation
+        Canceled,                    //< Operation is Canceled
+        Pending,                     //< Operation is pending
+
+        // --- Channel
         ChannelBroken,               //< Channel is broken
         ChannelEmpty,                //< Channel is empty
         ChannelFull,                 //< Channel is full

@@ -50,63 +50,6 @@ public:
     }
 
     /**
-     * @brief Open the file by path and mode
-     * 
-     * @param ctxt The io context
-     * @param path The utf-8 encoded path
-     * @param mode The mode, see fopen for more details (like "r", "w", "a", "r+", "w+", "a+" etc.)
-     * @return IoTask<void> 
-     */
-    auto open(IoContext *ctxt, const char *path, std::string_view mode) -> IoTask<void> {
-        close();
-
-        auto fd = fd_utils::open(path, mode);
-        if (!fd) {
-            co_return Unexpected(fd.error());
-        }
-        auto desc = ctxt->addDescriptor(fd.value(), IoDescriptor::File);
-        if (!desc) {
-            co_return Unexpected(desc.error());
-        }
-        mCtxt = ctxt;
-        mDesc = desc.value();
-        mFd = fd.value();
-
-        // Check if the file is a regular file (support offset)
-        // Copy the lowlevel offset from the fd, and let us manage it
-#if defined(_WIN32)
-        if (::GetFileType(mFd) == FILE_TYPE_DISK) {
-            ::LARGE_INTEGER offset { .QuadPart = 0 };
-            ::LARGE_INTEGER cur;
-            if (::SetFilePointerEx(mFd, offset, &cur, FILE_CURRENT)) {
-                mOffset = cur.QuadPart;
-            }
-        }
-#else
-        struct stat st;
-        if (::fstat(mFd, &st) == 0 && S_ISREG(st.st_mode)) {
-            auto offset = ::lseek(mFd, 0, SEEK_CUR);
-            if (offset != -1) {
-                mOffset = offset;
-            }
-        }
-#endif // defined(_WIN32)
-
-        co_return {};
-    }
-
-    /**
-     * @brief Open the file by path and mode
-     * 
-     * @param path The utf-8 encoded path
-     * @param mode The mode, see fopen for more details (like "r", "w", "a", "r+", "w+", "a+" etc.)
-     * @return IoTask<void> 
-     */
-    auto open(const char *path, std::string_view mode) -> IoTask<void> {
-        return open(IoContext::currentThread(), path, mode);
-    }
-
-    /**
      * @brief Close the file stream
      * 
      */
@@ -234,6 +177,72 @@ public:
      */
     auto fd() const -> fd_t {
         return mFd;
+    }
+
+    /**
+     * @brief Open the file by path and mode
+     * 
+     * @param path The utf-8 encoded path
+     * @param mode The mode, see fopen for more details (like "r", "w", "a", "r+", "w+", "a+" etc.)
+     * @return IoTask<File> 
+     */
+    static auto open(const char *path, std::string_view mode) -> IoTask<File> {
+        auto fd = fd_utils::open(path, mode);
+        if (!fd) {
+            co_return Unexpected(fd.error());
+        }
+        auto &&ctxt = co_await currentIoContext();
+        auto desc = ctxt.addDescriptor(fd.value(), IoDescriptor::File);
+        if (!desc) {
+            co_return Unexpected(desc.error());
+        }
+
+        File file;
+        file.mDesc = desc.value();
+        file.mCtxt = &ctxt;
+        file.mFd = fd.value();
+
+        // Check if the file is a regular file (support offset)
+        // Copy the lowlevel offset from the fd, and let us manage it
+#if defined(_WIN32)
+        if (::GetFileType(*fd) == FILE_TYPE_DISK) {
+            ::LARGE_INTEGER offset { .QuadPart = 0 };
+            ::LARGE_INTEGER cur;
+            if (::SetFilePointerEx(*fd, offset, &cur, FILE_CURRENT)) {
+                file.mOffset = cur.QuadPart;
+            }
+        }
+#else
+        struct stat st;
+        if (::fstat(*fd, &st) == 0 && S_ISREG(st.st_mode)) {
+            auto offset = ::lseek(*fd, 0, SEEK_CUR);
+            if (offset != -1) {
+                file.mOffset = offset;
+            }
+        }
+#endif // defined(_WIN32)
+
+        co_return file;
+    }
+
+    static auto open(const char8_t *path, std::string_view mode) -> IoTask<File> {
+        return open(reinterpret_cast<const char *>(path), mode);
+    }
+
+    static auto open(const std::string &path, std::string_view mode) -> IoTask<File> {
+        return open(path.c_str(), mode);
+    }
+
+    static auto open(const std::u8string &path, std::string_view mode) -> IoTask<File> {
+        return open(path.c_str(), mode);
+    }
+
+    static auto open(std::string_view path, std::string_view mode) -> IoTask<File> {
+        co_return co_await open(std::string(path), mode);
+    }
+
+    static auto open(std::u8string_view path, std::string_view mode) -> IoTask<File> {
+        co_return co_await open(std::u8string(path), mode);
     }
 
     /**

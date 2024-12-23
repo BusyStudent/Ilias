@@ -173,6 +173,7 @@ private:
         }
         mTask.executor()->post(&onScheduleCallback, this);
         mCallbackLatch.wait(); //< Wait for the callback to be called, avoid the thread to run another I/O operation
+        ILIAS_TRACE("IOCP", "Thread I/O {} done", (void*) this);
     }
 
     auto onCancel() -> void {

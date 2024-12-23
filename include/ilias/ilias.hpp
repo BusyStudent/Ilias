@@ -62,10 +62,14 @@
 
 // --- Platform detection
 #if   defined(_WIN32)
+    #define ILIAS_EXPORT   ILIAS_ATTRIBUTE(dllexport)
+    #define ILIAS_IMPORT   ILIAS_ATTRIBUTE(dllimport)
     #define ILIAS_ERROR_T  ::uint32_t
     #define ILIAS_SOCKET_T ::uintptr_t
     #define ILIAS_FD_T      void *
 #elif defined(__linux__)
+    #define ILIAS_EXPORT   // no-op
+    #define ILIAS_IMPORT   // no-op
     #define ILIAS_ERROR_T   int
     #define ILIAS_SOCKET_T  int
     #define ILIAS_FD_T      int
@@ -73,10 +77,42 @@
     #error "Unsupported platform"
 #endif
 
+// --- Compiler check
+#if   defined(_MSC_VER)
+    #define ILIAS_ATTRIBUTE(x)  __declspec(x)
+    #define ILIAS_UNREACHABLE() __assume(0)
+#elif defined(__GNUC__)
+    #define ILIAS_ATTRIBUTE(x) __attribute__((x))
+    #define ILIAS_UNREACHABLE() __builtin_unreachable()
+#else
+    #define ILIAS_ATTRIBUTE(x) // no-op
+    #define ILIAS_UNREACHABLE() // no-op
+#endif
+
+// --- Library mode
+// TODO:
+
+
+// --- Version macro
+#define ILIAS_VERSION_MAJOR 0
+#define ILIAS_VERSION_MINOR 1
+#define ILIAS_VERSION_PATCH 0
+#define ILIAS_VERSION_AT_LEAST(major, minor, patch)                  \
+    (ILIAS_VERSION_MAJOR > major ||                                  \
+    (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR > minor) || \
+    (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR == minor && ILIAS_VERSION_PATCH >= patch))
+#define ILIAS_VERSION_STRING                                         \
+    ILIAS_STRINGIFY(ILIAS_VERSION_MAJOR) "."                         \
+    ILIAS_STRINGIFY(ILIAS_VERSION_MINOR) "."                         \
+    ILIAS_STRINGIFY(ILIAS_VERSION_PATCH)
+
 // --- Utils macro
+#define ILIAS_GLUE_(x, y) x##y
+#define ILIAS_GLUE(x, y) ILIAS_GLUE_(x, y)
+#define ILIAS_STRINGIFY_(x) #x
+#define ILIAS_STRINGIFY(x) ILIAS_STRINGIFY_(x)
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT((x) && (msg))
 #define ILIAS_CHECK_MSG(x, msg) ILIAS_CHECK((x) && (msg))
-#define ILIAS_NS ILIAS_NAMESPACE
 #define ILIAS_NS_BEGIN namespace ILIAS_NAMESPACE {
 #define ILIAS_NS_END }
 
@@ -137,5 +173,20 @@ struct DefaultFormatter {
 
 } // namespace detail
 #endif // ILIAS_FMT_NAMESPACE
+
+// --- Utils
+#if defined(__cpp_lib_unreachable)
+using std::unreachable;
+#else
+/**
+ * @brief Unreachable utils function
+ * 
+ */
+[[noreturn]]
+inline auto unreachable() -> void {
+    ILIAS_UNREACHABLE();
+}
+#endif // defined(__cpp_lib_unreachable)
+
 
 ILIAS_NS_END

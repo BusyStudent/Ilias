@@ -211,6 +211,17 @@ public:
     }
 
     /**
+     * @brief Create a console from file descriptor
+     * 
+     * @param fd The file descriptor
+     * @return IoTask<Console> 
+     */
+    static auto fromFileDescriptor(fd_t fd) -> IoTask<Console> {
+        auto &&ctxt = co_await currentIoContext();
+        co_return fromFileDescriptor(ctxt, fd);
+    }
+
+    /**
      * @brief Get the context object of stdin
      * 
      * @param ctxt 
@@ -238,6 +249,33 @@ public:
      */
     static auto fromStderr(IoContext &ctxt) -> Result<Console> {
         return fromFileDescriptor(ctxt, ILIAS_STDERR_FILENO);
+    }
+
+    /**
+     * @brief Get the context object of stdin
+     * 
+     * @return IoTask<Console> 
+     */
+    static auto fromStdin() -> IoTask<Console> {
+        return fromFileDescriptor(ILIAS_STDIN_FILENO);
+    }
+
+    /**
+     * @brief Get the context object of stdout
+     * 
+     * @return IoTask<Console> 
+     */
+    static auto fromStdout() -> IoTask<Console> {
+        return fromFileDescriptor(ILIAS_STDOUT_FILENO);
+    }
+
+    /**
+     * @brief Get the context object of stderr
+     * 
+     * @return IoTask<Console> 
+     */
+    static auto fromStderr() -> IoTask<Console> {
+        return fromFileDescriptor(ILIAS_STDERR_FILENO);
     }
 private:
     auto writeString(std::string str) -> IoTask<size_t> {

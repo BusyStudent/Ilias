@@ -116,9 +116,9 @@ public:
     /**
      * @brief Blocking Wait for the task to complete. and return the result.
      * 
-     * @return Result<T> 
+     * @return T
      */
-    auto wait() -> Result<T> {
+    auto wait() -> T {
         ILIAS_ASSERT_MSG(mData, "Can not wait for an invalid handle");
         if (!done()) {
             // Wait until done
@@ -126,9 +126,8 @@ public:
             mData->mTask.registerCallback(detail::cancelTheTokenHelper, &token);
             mData->mTask.executor()->run(token);
         }
-        auto value = TaskView<T>::cast(mData->mTask).value();
-        mData = nullptr;
-        return value;
+        auto data = std::move(mData);
+        return TaskView<T>::cast(data->mTask).value();
     }
 
     auto operator =(ScopedWaitHandle &&) -> ScopedWaitHandle & = default;
