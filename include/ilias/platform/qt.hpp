@@ -314,7 +314,7 @@ inline auto QIoContext::connect(IoDescriptor *fd, EndpointView endpoint) -> IoTa
         }
         auto pollret = co_await poll(fd, PollEvent::Out);
         if (!pollret) {
-            co_return Unexpected(ret.error());
+            co_return Unexpected(pollret.error());
         }
         auto err = sock.error().value();
         if (err.isOk()) {

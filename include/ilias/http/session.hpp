@@ -1,14 +1,16 @@
 #pragma once
 
+#include <ilias/http/detail/worker.hpp>
 #include <ilias/http/transfer.hpp>
 #include <ilias/http/http1.1.hpp>
 #include <ilias/http/request.hpp>
 #include <ilias/http/cookie.hpp>
 #include <ilias/http/reply.hpp>
+#include <ilias/sync/scope.hpp>
+#include <ilias/sync/mutex.hpp>
 #include <ilias/net/addrinfo.hpp>
 #include <ilias/net/socks5.hpp>
 #include <ilias/net/tcp.hpp>
-#include <ilias/io/context.hpp>
 #include <ilias/task.hpp>
 #include <ilias/ssl.hpp>
 #include <ilias/log.hpp>
@@ -154,20 +156,8 @@ private:
      */
     auto connect(const Url &url, bool &fromPool) -> IoTask<std::unique_ptr<HttpStream>>;
 
-    /**
-     * @brief The pair for differentiating connections
-     *
-     */
-    struct Endpoint {
-        std::string scheme;
-        std::string host;
-        uint16_t    port;
-        Url         proxy;
-
-        auto operator<=>(const Endpoint &other) const = default;
-    };
-
     IoContext &mCtxt;
+    TaskScope  mScope; //< For manage all worker's lifetime
 
 #if !defined(ILIAS_NO_SSL)
     SslContext mSslCtxt;
@@ -177,16 +167,20 @@ private:
     Url            mProxy; //< The proxy url
     HttpCookieJar *mCookieJar =
         nullptr; //< The cookie jar to use for this session (if null, no cookies will be accepted)
+    size_t         mMaxConnectionHttp1_1 = 5; //< Max connection limit for http1
 
     // State ...
-    std::multimap<Endpoint, std::unique_ptr<HttpConnection> > mConnections; //< Conenction Pool
+    Mutex mWorkersMutex; //< The mutex for read write the Worker pool
+    std::map<HttpEndpoint, HttpWorker> mWorkers; //< Worker Pool
 };
 
-inline HttpSession::HttpSession(IoContext &ctxt) : mCtxt(ctxt) {
+// Implement Begin
+inline HttpSession::HttpSession(IoContext &ctxt) : mCtxt(ctxt), mScope(ctxt) {
 }
 
 inline HttpSession::~HttpSession() {
-    mConnections.clear();
+    mScope.cancel();
+    mScope.wait();
 }
 
 inline auto HttpSession::sendRequest(std::string_view method, const HttpRequest &request,
@@ -319,8 +313,7 @@ inline auto HttpSession::parseReply(HttpReply &reply, const Url &url) -> void {
     }
 }
 
-inline auto HttpSession::connect(const Url &url, bool &fromPool) -> IoTask<std::unique_ptr<HttpStream>> {
-    // TODO : Improve this by using mpmc channel
+inline auto HttpSession::connect(const Url &url, bool &fromPool) -> IoTask<std::unique_ptr<HttpStream> > {
     // Check proxy
     auto     scheme = std::string(url.scheme());
     auto     host   = std::string(url.host());
@@ -339,102 +332,36 @@ inline auto HttpSession::connect(const Url &url, bool &fromPool) -> IoTask<std::
         port = *p;
     }
 
-    Endpoint endpoint {.scheme = scheme, .host = host, .port = port, .proxy = mProxy};
+    HttpEndpoint endpoint {.scheme = scheme, .host = host, .port = port, .proxy = mProxy};
 
-    for (auto it = mConnections.find(endpoint); it != mConnections.end();) {
-        auto &[_, con] = *it;
-        if (con->isClosed()) {
-            it = mConnections.erase(it);
-            continue;
-        }
-        if (con->version() == HttpConnection::Http1_1 && !con->isIdle()) {
-            // Not idle, and also http1.1, so we can't use it
-            ++it;
-            continue;
-        }
-        fromPool = true;
-        co_return co_await con->newStream();
+    // Try get mutex
+    auto lock = co_await mWorkersMutex.uniqueLock();
+    if (!lock) {
+        co_return Unexpected(lock.error());
     }
+    ILIAS_TRACE("Http", "Got workers mutex");
 
-    // No connection found, create a new one
-    IStreamClient cur;
-
-    if (!mProxy.empty()) {
-        // Proxy
-        auto proxyPort = mProxy.port();
-        if (!proxyPort || (mProxy.scheme() != "socks5" && mProxy.scheme() != "socks5h")) {
-            ILIAS_ERROR("Http", "Invalid proxy: {}", mProxy);
-            co_return Unexpected(Error::HttpBadRequest);
-        }
-        auto endpoint = IPEndpoint(std::string(mProxy.host()).c_str(), *proxyPort);
-        if (!endpoint.isValid()) {
-            ILIAS_ERROR("Http", "Invalid proxy: {}", mProxy);
-            co_return Unexpected(Error::HttpBadRequest);
-        }
-        ILIAS_TRACE("Http", "Connecting to the {}:{} by proxy: {}", host, port, mProxy);
-        TcpClient client(mCtxt, endpoint.family());
-        if (auto ret = co_await client.connect(endpoint); !ret) {
-            co_return Unexpected(ret.error());
-        }
-        // Do Socks5 handshake
-        Socks5Connector socks5(client);
-        if (auto ret = co_await socks5.connect(host, port); !ret) {
-            co_return Unexpected(ret.error());
-        }
-        cur = std::move(client);
-    }
-    else { //< No proxy
-        auto addrinfo = co_await AddressInfo::fromHostnameAsync(host.c_str());
-        if (!addrinfo) {
-            co_return Unexpected(addrinfo.error());
-        }
-        auto addresses = addrinfo->addresses();
-        if (addresses.empty()) {
-            co_return Unexpected(Error::HostNotFound);
-        }
-
-        // Try connect to all addresses
-        for (size_t idx = 0; idx < addresses.size(); ++idx) {
-            auto     &addr = addresses[idx];
-            TcpClient client(mCtxt, addr.family());
-            ILIAS_TRACE("Http", "Trying to connect to {} ({} of {})", IPEndpoint(addr, port), idx + 1, addresses.size());
-            if (auto ret = co_await client.connect(IPEndpoint {addr, port}); !ret && idx != addresses.size() - 1) {
-                // Try another address
-                if (ret.error() != Error::Canceled) {
-                    continue;
-                }
-                ILIAS_TRACE("Http", "Got Cancel, Exiting");
-                co_return Unexpected(ret.error());
-            }
-            else if (!ret) {
-                co_return Unexpected(ret.error());
-            }
-            cur = std::move(client);
-            break;
-        }
-    }
-
-    // Try adding a ssl if needed
+    auto [it, emplace] = mWorkers.try_emplace(endpoint, endpoint);
+    auto &[_, worker] = *it;
+    if (emplace) {
+        // New worker? add the cleanup task
 #if !defined(ILIAS_NO_SSL)
-    if (scheme == "https") {
-        SslClient sslClient(mSslCtxt, std::move(cur));
-        sslClient.setHostname(host);
-        if (auto ret = co_await sslClient.handshake(); !ret) {
-            co_return Unexpected(ret.error());
-        }
-        cur = std::move(sslClient);
-    }
-#else
-    if (scheme == "https") {
-        co_return Unexpected(Error::ProtocolNotSupported);
-    }
+        worker.setSslContext(mSslCtxt);
 #endif
 
-    // Done, adding connection
-    auto con = std::make_unique<Http1Connection>(std::move(cur));
-    auto ptr = con.get();
-    mConnections.emplace(endpoint, std::move(con));
-    co_return co_await ptr->newStream();
+        mScope.spawn([this](auto it) -> Task<> {
+            auto &[_, worker] = *it;
+            if (!co_await worker.quitEvent()) {
+                co_return;
+            }
+            if (auto lock = co_await mWorkersMutex.uniqueLock(); lock) {
+                ILIAS_INFO("Http", "Session got {} worker quit, remove it", (void*) &worker);
+                mWorkers.erase(it);
+            }
+        }, it);
+    }
+    lock->unlock();
+    co_return co_await worker.newStream();
 }
 
 ILIAS_NS_END

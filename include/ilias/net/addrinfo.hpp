@@ -248,7 +248,7 @@ inline auto AddressInfo::fromHostnameAsync(const char *name, const char *service
         co_return Unexpected(Error(err, GaiCategory::instance()));
     }
     co_return AddressInfo(info);
-#elif defined(__linux) && defined(__USE_GNU) //< GNU Linux, use getaddrinfo_a
+#elif defined(__linux) && defined(__GLIBC__) //< GNU Linux with glibc, use getaddrinfo_a
     ::gaicb request {
         .ar_name = name,
         .ar_service = service,

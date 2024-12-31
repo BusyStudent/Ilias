@@ -5,7 +5,7 @@
 #include <ilias/http/request.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/task/spawn.hpp>
-#include <ilias/sync/mutex.hpp>
+#include <ilias/sync/event.hpp>
 #include <ilias/io/stream.hpp>
 #include <ilias/net/tcp.hpp>
 #include <ilias/buffer.hpp>
@@ -21,7 +21,7 @@ ILIAS_NS_BEGIN
  * @brief Impl the simplest
  * 
  */
-class Http1Connection final : public HttpConnection {
+class Http1Connection final {
 public:
     Http1Connection(const Http1Connection &) = delete;
     ~Http1Connection();
@@ -31,32 +31,55 @@ public:
      * 
      * @param client 
      */
-    Http1Connection(BufferedStream<> &&client) : HttpConnection(Http1_1), mClient(std::move(client)) { }
+    Http1Connection(BufferedStream<> &&client) : mClient(std::move(client)) { }
 
     /**
      * @brief Create a new http stream on a physical connection
      * 
      * @return IoTask<std::unique_ptr<HttpStream> > 
      */
-    auto newStream() -> IoTask<std::unique_ptr<HttpStream> > override;
-
-    auto shutdown() -> IoTask<void> override;
+    auto newStream() -> IoTask<std::unique_ptr<HttpStream> >;
 
     /**
-     * @brief Create a Http1 Connection from a IStreamClient
+     * @brief Shutdown the conenction
      * 
-     * @param client 
-     * @return std::unique_ptr<Http1Connection> 
+     * @return IoTask<void> 
      */
-    static auto make(IStreamClient &&client) -> std::unique_ptr<Http1Connection>;
-protected:
-    using HttpConnection::markBroken;
-    using HttpConnection::setBroken;
+    auto shutdown() -> IoTask<void>;
+
+    /**
+     * @brief Check the connection is closed?
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isClosed() const -> bool;
+
+    /**
+     * @brief The event for idle, if set, it is idle
+     * 
+     * @return Event & 
+     */
+    auto idleEvent() -> Event &;
 private:
+    /**
+     * @brief Notify the connection is closed
+     * 
+     */
+    auto notifyClosed() -> void;
+
+    /**
+     * @brief The task used to watcher the mClient peer closed
+     * 
+     * @return Task<void> 
+     */
+    auto watchClosed() -> Task<void>;
+
     BufferedStream<> mClient;
-    Mutex mMutex; //< For Http1 keep-alive, at one time, only a single request can be processed
-    size_t mNumOfStream = 0; //< Number of Http1Stream alived
-    WaitHandle<void> mHandle; //< The handle of _waitBroken()
+    WaitHandle<void> mHandle; //< The handle of watchClosed()
+    Event mIdleEvent; //< The event for idle, if set, the connection is idle
+    bool mHasStream = false; //< Has one stream alive?
+    bool mClosed = false; //< The the tcp stream closed ?
 friend class Http1Stream;
 };
 
@@ -66,25 +89,38 @@ friend class Http1Stream;
  */
 class Http1Stream final : public HttpStream {
 public:
-    Http1Stream(Http1Connection *con) : mCon(con) { ILIAS_TRACE("Http1.1", "New stream {}", (void*) this); }
+    Http1Stream(Http1Connection *con) : mCon(con) { 
+        ILIAS_TRACE("Http1.1", "New stream {}", (void*) this); 
+        mCon->mHasStream = true;
+        mCon->mIdleEvent.clear();
+    }
+
     Http1Stream(const Http1Stream &) = delete;
+    
     ~Http1Stream() { 
-        if (!mContentEnd && !mCon->isClosed()) {
+        if (!mCon) { //< Already closed by accident
+            return;
+        }
+        if (!mContentEnd) {
             // User did not finish reading the response body
             ILIAS_ERROR("Http1.1", "Stream {} is not finished reading the response body", (void*)this);
             ILIAS_ERROR("Http1.1", "Stream {} was marked to broken", (void*)this);
-            mCon->markBroken();
+            mCon->notifyClosed();
         }
         if (!mKeepAlive) {
-            mCon->markBroken();
+            mCon->notifyClosed();
         }
         ILIAS_TRACE("Http1.1", "Delete stream {}", (void*)this);
-        mCon->mMutex.unlock(); 
+        mCon->mHasStream = false; //< The stream belong to it, destroyed
+        mCon->mIdleEvent.set();
+        // Start the watch task
+        mCon->mHandle = spawn(&Http1Connection::watchClosed, mCon);
     }
 
 #if !defined(NDEBUG)
     auto returnError(Error err, std::source_location loc = std::source_location::current()) -> Unexpected<Error> {
-        mCon->markBroken();
+        mCon->notifyClosed();
+        mCon = nullptr;
         ILIAS_ERROR("Http1.1", "Error happened on {}: {} => {}", 
             loc.function_name(), 
             int(loc.line()), 
@@ -94,7 +130,8 @@ public:
     }
 #else
     auto returnError(Error err) -> Unexpected<Error> {
-        mCon->markBroken();
+        mCon->notifyClosed();
+        mCon = nullptr;
         return Unexpected(err);
     }
 #endif // !defined(NDEBUG)
@@ -351,36 +388,61 @@ inline auto Http1Stream::sprintf(std::string &buf, const char *fmt, ...) -> void
 }
 
 inline Http1Connection::~Http1Connection() {
-    ILIAS_ASSERT(mNumOfStream == 0);
-    // if (mHandle) {
-    //     mHandle.cancel();
-    //     mHandle.join();
-    // }
+    ILIAS_ASSERT(!mHasStream);
+    if (mHandle) {
+        mHandle.cancel();
+        mHandle.wait();
+    }
 }
 
 inline auto Http1Connection::newStream() -> IoTask<std::unique_ptr<HttpStream> > {
-    if (isClosed()) {
+    if (mClosed) {
         co_return Unexpected(Error::ConnectionAborted);
     }
-    auto val = co_await mMutex.lock();
-    if (!val) {
-        co_return Unexpected(val.error());
+    if (mHandle) { //< Cancel the watch task
+        mHandle.cancel();
+        mHandle.wait();
     }
-
+    ILIAS_ASSERT(!mHasStream);
     co_return std::make_unique<Http1Stream>(this);
 }
 
 inline auto Http1Connection::shutdown() -> IoTask<void> {
-    ILIAS_ASSERT(mNumOfStream == 0);
-    auto guard = co_await mMutex.uniqueLock();
-    if (guard) {
-        co_return co_await mClient.shutdown();
-    }
-    co_return Unexpected(guard.error());
+    return mClient.shutdown();
 }
 
-inline auto Http1Connection::make(IStreamClient &&client) -> std::unique_ptr<Http1Connection> {
-    return std::make_unique<Http1Connection>(std::move(client));
+inline auto Http1Connection::isClosed() const -> bool {
+    return mClosed;
+}
+
+inline auto Http1Connection::idleEvent() -> Event & {
+    return mIdleEvent;
+}
+
+inline auto Http1Connection::notifyClosed() -> void {
+    if (mClosed) {
+        return;
+    }
+    mClosed = true;
+    mHasStream = false;
+    mIdleEvent.set();
+}
+
+inline auto Http1Connection::watchClosed() -> Task<void> {
+    std::byte buf[1];
+    auto ret = co_await mClient.read(buf);
+    if (!ret && ret.error() == Error::Canceled) {
+        // Normal way, the connection class cancel the watch
+        ILIAS_TRACE("Http1.1", "The watch of connection {} is canceled", (void*) this);
+        co_return;
+    }
+    if (!ret) {
+        ILIAS_INFO("Http1.1", "Connection {} has an error on it {}", (void*) this, ret.error());
+    }
+    else {
+        ILIAS_INFO("Http1.1", "Connection {} got {} bytes, {}", (void*) this, *ret, *ret == 0 ? "EOF" : "Unexpected");
+    }
+    notifyClosed();
 }
 
 ILIAS_NS_END

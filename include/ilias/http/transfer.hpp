@@ -3,8 +3,8 @@
 #include <ilias/detail/functional.hpp>
 #include <ilias/http/headers.hpp>
 #include <ilias/url.hpp>
-#include <span>
 #include <memory>
+#include <span>
 
 ILIAS_NS_BEGIN
 
@@ -44,101 +44,6 @@ public:
      * @return IoTask<void> 
      */
     virtual auto readHeaders(int &statusCode, std::string &statusMessage, HttpHeaders &headers) -> IoTask<void> = 0;
-};
-
-
-/**
- * @brief The Http abstract Connection (per client)
- * 
- */
-class HttpConnection {
-public:
-    enum Version {
-        Http1_1 = 1,
-        Http2   = 2,
-        Http3   = 3
-    };
-    
-    virtual ~HttpConnection() = default;
-
-    /**
-     * @brief Create a new stream for the connection
-     * 
-     * @return IoTask<std::unique_ptr<HttpStream> > 
-     */
-    virtual auto newStream() -> IoTask<std::unique_ptr<HttpStream> > = 0;
-
-    /**
-     * @brief Perform the graceful shutdown of the connection
-     * 
-     * @return IoTask<void> 
-     */
-    virtual auto shutdown() -> IoTask<void> = 0;
-
-    /**
-     * @brief Get the implmentation of the http version
-     * 
-     * @return auto 
-     */
-    auto version() const { return mVersion; }
-
-    /**
-     * @brief Check current connection is no stream is currently being processed
-     * 
-     * @return auto 
-     */
-    auto isIdle() const { return mIdle; }
-
-    /**
-     * @brief Check if the connection is closed (we can't use it anymore)
-     * 
-     * @return auto 
-     */
-    auto isClosed() const { return mClosed; }
-
-    /**
-     * @brief Set the handler to be called when the connection is broken (network error)
-     * 
-     * @param handler 
-     * @return auto 
-     */
-    auto setBrokenHandler(detail::MoveOnlyFunction<void()> handler) { mOnBroken = std::move(handler); }
-protected:
-    HttpConnection(Version version) : mVersion(version) { }
-
-    /**
-     * @brief Set the Idle object
-     * 
-     * @param idle 
-     * @return auto 
-     */
-    auto setIdle(bool idle) { mIdle = idle; }
-
-    /**
-     * @brief Set the Closed object
-     * 
-     * @return auto 
-     */
-    auto setClosed() { mClosed = true; }
-
-    /**
-     * @brief Set the connection as broken and call the handler
-     * 
-     * @return auto 
-     */
-    auto setBroken() { mClosed = true; return mOnBroken(); }
-
-    /**
-     * @brief Set the connection as broken but don't call the handler
-     * 
-     * @return auto 
-     */
-    auto markBroken() { mClosed = true; }
-private:
-    Version mVersion;
-    bool    mIdle = true;
-    bool    mClosed = false;
-    detail::MoveOnlyFunction<void()> mOnBroken; 
 };
 
 ILIAS_NS_END

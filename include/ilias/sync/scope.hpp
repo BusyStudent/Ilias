@@ -173,7 +173,8 @@ public:
     using WaitHandle = ScopedWaitHandle<T>;
     using CancelHandle = ScopedCancelHandle;
 
-    TaskScope() = default;
+    TaskScope() : mExecutor(Executor::currentThread()) { }
+    TaskScope(Executor &exec) : mExecutor(&exec) { }
     TaskScope(const TaskScope &) = delete;
     ~TaskScope() {
         if (mAutoCancel) {
@@ -296,7 +297,7 @@ private:
     }
 
     std::list<detail::ScopedTask*> mInstances; //< The list of the tasks that are running in the scope.
-    Executor *mExecutor = Executor::currentThread(); //< The executor that the scope use.
+    Executor *mExecutor; //< The executor that the scope use.
     bool mInCancel = false; //< Whether the scope is in canceling.
     bool mAutoCancel = true; //< Whether to cancel the tasks when the scope is destroyed.
     CancellationToken *mWaitToken = nullptr; //< The token for the wait operation.
