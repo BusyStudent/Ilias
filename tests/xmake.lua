@@ -24,6 +24,18 @@ if has_config("use_io_uring") then
     add_defines("ILIAS_USE_IO_URING")
 end
 
+option("sql")
+    set_default(true)
+    set_showmenu(true)
+    set_category("module")
+    set_description("add sql support")
+option_end()
+
+if has_config("sql") then
+    add_requires("mariadb-connector-c")
+    add_packages("mariadb-connector-c")
+end
+
 -- Make all files in the unit directory into targets
 for _, file in ipairs(os.files("unit/**.cpp")) do
     local name = path.basename(file)
