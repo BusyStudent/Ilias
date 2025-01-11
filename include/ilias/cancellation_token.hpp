@@ -84,7 +84,15 @@ friend class CancellationToken;
  */
 class CancellationToken {
 public:
+    enum Flags : uint32_t {
+        None      = 0,
+        AutoReset = 1 << 0,
+    };
+
     CancellationToken() = default;
+    CancellationToken(uint32_t flags) {
+        if (flags & AutoReset) { mAutoReset = true; }
+    }
     CancellationToken(const CancellationToken &) = delete;
     ~CancellationToken() {
         ILIAS_ASSERT(!mIsInCancelling); //< It is ill-formed to destroy the token in the callback

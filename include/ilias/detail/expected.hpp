@@ -906,4 +906,12 @@ struct IsResultT<Result<T> > : std::true_type { };
 template <typename T>
 concept IsResult = IsResultT<std::remove_cvref_t<T> >::value;
 
+/**
+ * @brief Add Result to T if T is not a Result
+ * 
+ * @tparam T 
+ */
+template <typename T>
+using AddResultIf = std::conditional_t<IsResult<T>, T, Result<T> >;
+
 ILIAS_NS_END

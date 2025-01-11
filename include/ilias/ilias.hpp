@@ -95,8 +95,8 @@
 
 // --- Version macro
 #define ILIAS_VERSION_MAJOR 0
-#define ILIAS_VERSION_MINOR 1
-#define ILIAS_VERSION_PATCH 0
+#define ILIAS_VERSION_MINOR 2
+#define ILIAS_VERSION_PATCH 1
 #define ILIAS_VERSION_AT_LEAST(major, minor, patch)                  \
     (ILIAS_VERSION_MAJOR > major ||                                  \
     (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR > minor) || \

@@ -12,6 +12,12 @@ option("use_io_uring")
     set_description("Use io uring as platform context")
 option_end()
 
+option("task_trace")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Add task stacktrace for debug use")
+option_end()
+
 if has_config("use_fmt") then
     add_requires("fmt")
     add_packages("fmt")
@@ -22,6 +28,10 @@ if has_config("use_io_uring") then
     add_requires("liburing");
     add_packages("liburing");
     add_defines("ILIAS_USE_IO_URING")
+end
+
+if has_config("task_trace") then 
+    add_defines("ILIAS_TASK_TRACE")
 end
 
 -- Make all files in the unit directory into targets

@@ -15,9 +15,17 @@
 #include <ilias/detail/functional.hpp>
 #include <ilias/cancellation_token.hpp>
 #include <ilias/log.hpp>
+#include <source_location>
 #include <concepts>
 #include <optional>
 #include <vector>
+
+#if defined(ILIAS_TASK_TRACE)
+    #define ILIAS_CAPTURE_CALLER(name) std::source_location name = std::source_location::current()
+#else
+    #define ILIAS_CAPTURE_CALLER(name) [[maybe_unused]] int name = 0
+#endif // defined(ILIAS_TASK_TRACE)
+
 
 ILIAS_NS_BEGIN
 
@@ -29,7 +37,8 @@ public:
 
     auto await_ready() noexcept { return false; }
     auto await_suspend(std::coroutine_handle<>) noexcept { return mHandle; }
-    auto await_resume() noexcept { unreachable(); } //< We don't need to resume the coroutine, it is already done
+    [[noreturn]]
+    auto await_resume() noexcept { unreachable(); } //< We don't need to resume the current coroutine, it is already done
 private:
     std::coroutine_handle<> mHandle;
 };
@@ -46,12 +55,12 @@ private:
 };
 
 /**
- * @brief The Task's promise common part
+ * @brief The Task's promise common part, hold the exception and the schedule code
  * 
  */
 class TaskPromiseBase {
 public:
-    TaskPromiseBase() { mToken.setAutoReset(true); } //< The default cancel policy is CancelPolicy::Once
+    TaskPromiseBase() = default;
     TaskPromiseBase(const TaskPromiseBase &) = delete;
 
 #if defined(__cpp_exceptions)
@@ -108,6 +117,24 @@ public:
     }
 #endif // defined(__cpp_exceptions)
 
+
+#if defined(ILIAS_TASK_TRACE)
+    /**
+     * @brief Forward the awaiter, it used to trace the await point
+     * 
+     * @tparam T 
+     * @param awaiter 
+     * @param loc The source location of the await point
+     * @return decltype(auto) 
+     */
+    template <typename T>
+    auto await_transform(T &&awaiter, std::source_location loc = std::source_location::current()) -> decltype(auto) {
+        mAwaitLocation = loc;
+        mChild.clear(); //< Clear previous await info
+        return std::forward<T>(awaiter);
+    }
+#endif // defined(ILIAS_TASK_TRACE)
+
     /**
      * @brief On the coroutine start, we are lazy, so we suspend it
      * 
@@ -125,9 +152,6 @@ public:
     auto final_suspend() noexcept -> SwitchCoroutine {
         for (auto &callback: mCallbacks) {
             callback();
-        }
-        if (!mAwaitingCoroutine) {
-            mAwaitingCoroutine = std::noop_coroutine();
         }
         return mAwaitingCoroutine;
     }
@@ -223,42 +247,30 @@ public:
 protected:  
     bool mStarted = false;
     Executor *mExecutor = nullptr; //< The executor, doing the 
-    CancellationToken mToken; //< The cancellation token
-    std::coroutine_handle<> mAwaitingCoroutine; //< The coroutine handle that is waiting for us, we will resume it when done 
+    CancellationToken mToken { CancellationToken::AutoReset }; //< The cancellation token
+    std::coroutine_handle<> mAwaitingCoroutine { std::noop_coroutine() }; //< The coroutine handle that is waiting for us, we will resume it when done 
     std::vector<MoveOnlyFunction<void()> > mCallbacks; //< The callbacks that will be called when the coroutine is done
 #if defined(__cpp_exceptions)
     std::exception_ptr mException; //< The stored exception
 #endif // defined(__cpp_exceptions)
+
+#if defined(ILIAS_TASK_TRACE) //< Used for debug and trace
+    std::source_location mCreateLocation;  //< The location of the creation
+    std::source_location mAwaitLocation;   //< The location of the await point
+    std::vector<TaskPromiseBase *> mChild; //< The Task we are await for
+    TaskPromiseBase *mParent = nullptr;    //< The Task who await us
+#endif // defined(ILIAS_TASK_TRACE)
 };
 
 /**
- * @brief The promise of the Task<T>, hold the return value and exception
+ * @brief The promise impl for process the return value T, hold the return value
  * 
  * @tparam T 
  */
 template <typename T>
-class TaskPromise final : public TaskPromiseBase {
+class TaskPromiseImpl : public TaskPromiseBase {
 public:
-    using handle_type = std::coroutine_handle<TaskPromise>;
     using value_type = T;
-
-    /**
-     * @brief Get the coroutine handle of the promise
-     * 
-     * @return handle_type 
-     */
-    auto handle() -> handle_type {
-        return handle_type::from_promise(*this);
-    }
-
-    /**
-     * @brief Get the return object object of the coroutine, wrap it to the Task<T>
-     * 
-     * @return Task<T> 
-     */
-    auto get_return_object() -> Task<T> {
-        return {handle()};
-    }
 
     /**
      * @brief Return the value of the coroutine
@@ -274,29 +286,6 @@ public:
         mValue.emplace(std::forward<U>(value));
     }
 
-#if defined(__cpp_exceptions)
-    /**
-     * @brief Exception support, it will translate BadExpectedAccess<Error> to the Unexpected<Error>() and store it to value
-     * 
-     */
-    auto unhandled_exception() noexcept -> void {
-        if constexpr (IsResult<T>) {
-            try {
-                throw;
-            }
-            catch (const BadExpectedAccess<Error> &e) {
-                mValue.emplace(Unexpected(e.error()));
-            }
-            catch (...) {
-                mException = std::current_exception();
-            }
-        }
-        else {
-            TaskPromiseBase::unhandled_exception(); //< forward to the base class
-        }
-    }
-#endif
-
     /**
      * @brief Get the return value of the coroutine
      * 
@@ -304,24 +293,76 @@ public:
      */
     auto value() -> value_type {
         rethrowIfException();
-        ILIAS_ASSERT(handle().done()); //< The coroutine should be done
-        ILIAS_ASSERT(mValue.has_value()); //< The value should be set
+        ILIAS_ASSERT(mValue.has_value()); //< The return value should be set
         return std::move(*mValue);
     }
 private:
     std::optional<value_type> mValue; //< The value
 };
 
+#if defined(__cpp_exceptions) //< Handle the exception specially
 /**
- * @brief The promise of the Task<void>, hold the return value and exception
+ * @brief The specialized version for handle the exception specially
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class TaskPromiseImpl<Result<T> > : public TaskPromiseBase {
+public:
+    using value_type = Result<T>;
+
+    auto return_value(value_type value) -> void {
+        mValue.emplace(std::move(value));
+    }
+
+    template <typename U>
+    auto return_value(U &&value) -> void {
+        mValue.emplace(std::forward<U>(value));
+    }
+
+    auto unhandled_exception() noexcept -> void {
+        try {
+            throw;
+        }
+        catch (BadExpectedAccess<Error> &e) { //< Translate the BadExpectedAccess into return value's errc
+            mValue.emplace(Unexpected(e.error()));
+        }
+        catch (...) {
+            mException = std::current_exception();
+        }
+    }
+
+    auto value() -> value_type {
+        rethrowIfException();
+        ILIAS_ASSERT(mValue.has_value());
+        return std::move(*mValue);
+    }
+private:
+    std::optional<value_type> mValue; //< The value
+};
+#endif // defined(__cpp_exceptions)
+
+/**
+ * @brief The promise impl for void return value
  * 
  * @tparam  
  */
 template <>
-class TaskPromise<void> final : public TaskPromiseBase {
+class TaskPromiseImpl<void> : public TaskPromiseBase {
+public:
+    auto return_void() const noexcept { }
+    auto value() const noexcept { }
+};
+
+/**
+ * @brief The promise of the Task<T>, interop with the Task<T> class
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class TaskPromise final : public TaskPromiseImpl<T> {
 public:
     using handle_type = std::coroutine_handle<TaskPromise>;
-    using value_type = void;
 
     /**
      * @brief Get the coroutine handle of the promise
@@ -333,33 +374,17 @@ public:
     }
 
     /**
-     * @brief Get the return object object, wrap it to the Task<void>
-     * 
-     * @return Task<void> 
+     * @brief Get the return object object of the coroutine, wrap it to the Task<T>
+     * @param loc The source location of the task
+     * @return Task<T> 
      */
-    template <typename T = void>
-    auto get_return_object() -> Task<T> {
+    auto get_return_object(ILIAS_CAPTURE_CALLER(loc)) -> Task<T> {
+#if defined(ILIAS_TASK_TRACE)
+        this->mCreateLocation = loc; //< Store the location whe trace enable
+#endif // defined(ILIAS_TASK_TRACE)
         return {handle()};
     }
-
-    /**
-     * @brief Return the value of the coroutine
-     * 
-     */
-    auto return_void() -> void {
-        // nothing to do
-    }
-
-    /**
-     * @brief Get the return value of the coroutine
-     * 
-     */
-    auto value() -> void {
-        rethrowIfException();
-        ILIAS_ASSERT(handle().done()); //< The coroutine should be done
-    }
 };
-
 
 template <typename T>
 concept IsTaskPromise = std::is_base_of_v<TaskPromiseBase, T>;

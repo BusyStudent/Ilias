@@ -14,5 +14,6 @@
 #include <ilias/task/executor.hpp>
 #include <ilias/task/when_all.hpp>
 #include <ilias/task/when_any.hpp>
+#include <ilias/task/declator.hpp>
 #include <ilias/task/spawn.hpp>
 #include <ilias/task/task.hpp>

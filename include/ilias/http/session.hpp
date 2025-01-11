@@ -193,29 +193,15 @@ inline auto HttpSession::sendRequest(std::string_view method, const HttpRequest 
     }
     int idx = 0; // The number of redirects
     while (true) {
-#if 1
+        auto task = sendRequestImpl(method, url, headers, payload, request.streamMode());
         auto transferTimeout = request.transferTimeout();
-        if (transferTimeout == std::chrono::milliseconds{}) {
-            transferTimeout = std::chrono::hours(10); //< Just like INFINITE timeout
+        if (transferTimeout != std::chrono::milliseconds{}) {
+            task = std::move(task) | setTimeout(transferTimeout); //< set the timeout limit to it
         }
-        auto [reply_, timeout] = co_await whenAny(
-            sendRequestImpl(method, url, headers, payload, request.streamMode()),
-            sleep(transferTimeout)
-        );
-        if (timeout) { //< Timed out
-            co_return Unexpected(Error::TimedOut);
-        }
-        // Has reply
-        if (!reply_->has_value()) { //< Failed to get 
-            co_return Unexpected(reply_->error());
-        }
-        auto &reply = reply_.value();
-#else
-        auto reply = co_await sendRequestImpl(method, url, headers, payload, request.streamMode());
+        auto reply = co_await std::move(task); //< Execute it
         if (!reply) {
             co_return Unexpected(reply.error());
         }
-#endif
         const std::array redirectCodes = {301, 302, 303, 307, 308};
         if (std::find(redirectCodes.begin(), redirectCodes.end(), reply->statusCode()) != redirectCodes.end() &&
             idx < maximumRedirects) {
