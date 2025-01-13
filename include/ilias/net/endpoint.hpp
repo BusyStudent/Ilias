@@ -230,20 +230,24 @@ public:
      * @param port The port number in host byte order
      */
     IPEndpoint(const IPAddress &addr, uint16_t port) {
-        mData.sa_family = addr.family();
         switch (addr.family()) {
             case AF_INET: {
                 auto &sockaddr = cast<::sockaddr_in>();
+                ::memset(&sockaddr, 0, sizeof(sockaddr));
+                sockaddr.sin_family = AF_INET;
                 sockaddr.sin_port = ::htons(port); 
                 sockaddr.sin_addr = addr.cast<::in_addr>();
                 break;
             }
             case AF_INET6: {
                 auto &sockaddr = cast<::sockaddr_in6>();
+                ::memset(&sockaddr, 0, sizeof(sockaddr));
+                sockaddr.sin6_family = AF_INET6;
                 sockaddr.sin6_port = ::htons(port); 
                 sockaddr.sin6_addr = addr.cast<::in6_addr>();
                 break;
             }
+            default: mData.sa_family = addr.family(); break;
         }
     }
 
@@ -542,6 +546,9 @@ public:
     auto toString() const -> std::string {
         if (!mAddr) {
             return "EndpointView(null)";
+        }
+        if (auto family = mAddr->sa_family; family == AF_INET || family == AF_INET6) {
+            return "EndpointView(" + IPEndpoint::fromRaw(mAddr, mLength).value().toString() + ")";
         }
         char buffer[256] {0};
         ::snprintf(buffer, sizeof(buffer), "EndpointView(.family = %d, .len = %d)", int(mAddr->sa_family), int(mLength));

@@ -151,10 +151,9 @@ private:
      * @brief Connect to the server by url and return the HttpStream for transfer
      *
      * @param url
-     * @param fromPool If the connection is from the pool
      * @return IoTask<std::unique_ptr<HttpStream> >
      */
-    auto connect(const Url &url, bool &fromPool) -> IoTask<std::unique_ptr<HttpStream>>;
+    auto connect(const Url &url) -> IoTask<std::unique_ptr<HttpStream>>;
 
     IoContext &mCtxt;
     TaskScope  mScope; //< For manage all worker's lifetime
@@ -167,7 +166,7 @@ private:
     Url            mProxy; //< The proxy url
     HttpCookieJar *mCookieJar =
         nullptr; //< The cookie jar to use for this session (if null, no cookies will be accepted)
-    size_t         mMaxConnectionHttp1_1 = 5; //< Max connection limit for http1
+    size_t         mMaxConnectionHttp1 = 5; //< Max connection limit for http1
 
     // State ...
     Mutex mWorkersMutex; //< The mutex for read write the Worker pool
@@ -225,30 +224,21 @@ inline auto HttpSession::sendRequest(std::string_view method, const HttpRequest 
 inline auto HttpSession::sendRequestImpl(std::string_view method, const Url &url, HttpHeaders &headers,
                                          std::span<const std::byte> payload, bool streamMode) -> IoTask<HttpReply> {
     normalizeRequest(url, headers);
-    while (true) {
-        bool fromPool = false;
-        auto stream = co_await connect(url, fromPool);
-        if (!stream) {
-            co_return Unexpected(stream.error());
-        }
-        auto &streamPtr = stream.value();
-        if (auto ret = co_await streamPtr->send(method, url, headers, payload); !ret) {
-            if (fromPool) {
-                continue;
-            }
-            co_return Unexpected(ret.error());
-        }
-        // Build the reply
-        auto reply = co_await HttpReply::make(std::move(streamPtr), streamMode, method == "HEAD");
-        if (!reply) {
-            if (fromPool) {
-                continue;
-            }
-            co_return Unexpected(reply.error());
-        }
-        parseReply(reply.value(), url);
-        co_return std::move(*reply);
+    auto stream = co_await connect(url);
+    if (!stream) {
+        co_return Unexpected(stream.error());
     }
+    auto &streamPtr = stream.value();
+    if (auto ret = co_await streamPtr->send(method, url, headers, payload); !ret) {
+        co_return Unexpected(ret.error());
+    }
+    // Build the reply
+    auto reply = co_await HttpReply::make(std::move(streamPtr), streamMode, method == "HEAD");
+    if (!reply) {
+        co_return Unexpected(reply.error());
+    }
+    parseReply(reply.value(), url);
+    co_return std::move(*reply);
 }
 
 inline auto HttpSession::normalizeRequest(const Url &url, HttpHeaders &headers) -> void {
@@ -299,7 +289,7 @@ inline auto HttpSession::parseReply(HttpReply &reply, const Url &url) -> void {
     }
 }
 
-inline auto HttpSession::connect(const Url &url, bool &fromPool) -> IoTask<std::unique_ptr<HttpStream> > {
+inline auto HttpSession::connect(const Url &url) -> IoTask<std::unique_ptr<HttpStream> > {
     // Check proxy
     auto     scheme = std::string(url.scheme());
     auto     host   = std::string(url.host());
@@ -331,6 +321,7 @@ inline auto HttpSession::connect(const Url &url, bool &fromPool) -> IoTask<std::
     auto &[_, worker] = *it;
     if (emplace) {
         // New worker? add the cleanup task
+        worker.setMaxConnectionHttp1(mMaxConnectionHttp1);
 #if !defined(ILIAS_NO_SSL)
         worker.setSslContext(mSslCtxt);
 #endif

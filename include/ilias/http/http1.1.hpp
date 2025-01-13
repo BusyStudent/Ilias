@@ -113,8 +113,10 @@ public:
         ILIAS_TRACE("Http1.1", "Delete stream {}", (void*)this);
         mCon->mHasStream = false; //< The stream belong to it, destroyed
         mCon->mIdleEvent.set();
-        // Start the watch task
-        mCon->mHandle = spawn(&Http1Connection::watchClosed, mCon);
+        // Start the watch task when not closed
+        if (!mCon->mClosed) {
+            mCon->mHandle = spawn(&Http1Connection::watchClosed, mCon);
+        }
     }
 
 #if !defined(NDEBUG)
@@ -290,7 +292,7 @@ public:
         statusMessage = lineView;
 
         // While recv an empty line
-        // Collect the hesders
+        // Collect the headers
         while (true) {
             line = co_await client.getline("\r\n");
             if (!line) {
@@ -443,6 +445,7 @@ inline auto Http1Connection::watchClosed() -> Task<void> {
         ILIAS_INFO("Http1.1", "Connection {} got {} bytes, {}", (void*) this, *ret, *ret == 0 ? "EOF" : "Unexpected");
     }
     notifyClosed();
+    co_return;
 }
 
 ILIAS_NS_END

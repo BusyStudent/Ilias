@@ -23,7 +23,7 @@ namespace detail {
  * 
  */
 struct TimeoutTags {
-    std::chrono::milliseconds mMs; //< The 
+    std::chrono::milliseconds mMs; //< The Timeout
 
     template <typename T>
     auto declare(Task<T> &&task) const {
@@ -36,7 +36,7 @@ struct TimeoutTags {
         if (timeout) {
             co_return Unexpected(Error::TimedOut);
         }
-        if constexpr (std::is_same_v<T, void>) { //< If is void, just return it
+        if constexpr (std::is_same_v<T, void>) { // If is void, just return it
             co_return {};
         }
         else {
@@ -45,10 +45,52 @@ struct TimeoutTags {
     }
 };
 
+/**
+ * @brief Awaiter to start the task, 
+ * 
+ * @tparam T 
+ */
+template <typename T>
+struct IgnoreCancellationAwaiter {
+    auto await_ready() const noexcept { return false; }
+
+    auto await_suspend(TaskView<> caller) const -> bool {
+        auto task = mTask._view();
+        task.setExecutor(caller.executor());
+        task.resume();
+        if (task.done()) {
+            return false;
+        }
+        task.setAwaitingCoroutine(caller);
+        return true;
+    }
+    
+    auto await_resume() const {
+        return mTask._view().value();
+    }
+
+    Task<T> mTask;
+};
+
+/**
+ * @brief Tags for ignore the cancellation
+ * 
+ */
+struct IgnoreCancellationTags {
+    template <typename T>
+    auto declare(Task<T> &&task) const {
+        return IgnoreCancellationAwaiter<T> { std::move(task) };
+    }
+};
+
 } // namespace detail
 
 /**
  * @brief The concept of declare any awaitable
+ * 
+ * @code 
+ *  co_await awaitable | declator;
+ * @endcode 
  * 
  * @tparam T 
  */
@@ -89,8 +131,30 @@ inline auto setTimeout(uint64_t ms) noexcept {
 template <Awaitable T, AwaitableDeclator Declator>
 inline auto operator |(T &&awaitable, Declator &&declator) {
     return std::forward<Declator>(declator).declare(
-        Task{std::forward<T>(awaitable)} //< Make the awaitable into task
+        Task{std::forward<T>(awaitable)} // Make the awaitable into task
     );
 }
+
+/**
+ * @brief Combine the awaiteble with declator
+ * 
+ * @note requires the combine result still is T
+ * @tparam T 
+ * @tparam Declator
+ * @param awaitable 
+ * @param declator 
+ * @return auto 
+ */
+template <typename T, AwaitableDeclator Declator> 
+inline auto operator |=(Task<T> &awaitable, Declator &&declator) -> T & {
+    awaitable = std::move(awaitable) | std::forward<Declator>(declator);
+    return awaitable;
+}
+
+/**
+ * @brief The tags used to ignore the cancellation, use | to combine it
+ * 
+ */
+inline constexpr auto ignoreCancellation = detail::IgnoreCancellationTags { };
 
 ILIAS_NS_END

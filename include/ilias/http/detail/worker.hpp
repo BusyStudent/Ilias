@@ -55,6 +55,12 @@ public:
     auto setSslContext(SslContext &ctxt) -> void;
 #endif
 
+    /**
+     * @brief Set the max connection limits on http1.1
+     * 
+     * @param n 
+     */
+    auto setMaxConnectionHttp1(size_t n) -> void;
 private:
     auto newStream1() -> IoTask<std::unique_ptr<HttpStream> >;
     auto startConnection() -> Task<void>;
@@ -126,7 +132,11 @@ inline auto HttpWorker::setSslContext(SslContext &ctxt) -> void {
 }
 #endif
 
-inline auto HttpWorker::newStream1() -> IoTask<std::unique_ptr<HttpStream> > {
+inline auto HttpWorker::setMaxConnectionHttp1(size_t n) -> void {
+    mMaxConenction1 = n;
+}
+
+inline auto HttpWorker::newStream1() -> IoTask<std::unique_ptr<HttpStream>> {
     while (mIdleConnection1.empty()) {
         mConenction1Idle.clear();
         if (mConnection1Size < mMaxConenction1) {
@@ -239,21 +249,21 @@ inline auto HttpWorker::connect() const -> IoTask<IStreamClient> {
         cur = std::move(client);
     }
     else { //< No proxy
-        auto addrinfo = co_await AddressInfo::fromHostnameAsync(host.c_str());
+        auto addrinfo = co_await AddressInfo::fromHostnameAsync(host.c_str(), std::to_string(port).c_str());
         if (!addrinfo) {
             co_return Unexpected(addrinfo.error());
         }
-        auto addresses = addrinfo->addresses();
-        if (addresses.empty()) {
+        auto endpoints = addrinfo->endpoints();
+        if (endpoints.empty()) {
             co_return Unexpected(Error::HostNotFound);
         }
 
-        // Try connect to all addresses
-        for (size_t idx = 0; idx < addresses.size(); ++idx) {
-            auto     &addr = addresses[idx];
-            TcpClient client(ctxt, addr.family());
-            ILIAS_TRACE("Http", "Trying to connect to {} ({} of {})", IPEndpoint(addr, port), idx + 1, addresses.size());
-            if (auto ret = co_await client.connect(IPEndpoint {addr, port}); !ret && idx != addresses.size() - 1) {
+        // Try connect to all endpoints
+        for (size_t idx = 0; idx < endpoints.size(); ++idx) {
+            auto     &endpoint = endpoints[idx];
+            TcpClient client(ctxt, endpoint.family());
+            ILIAS_TRACE("Http", "Trying to connect to {} ({} of {})", endpoint, idx + 1, endpoints.size());
+            if (auto ret = co_await client.connect(endpoint); !ret && idx != endpoints.size() - 1) {
                 // Try another address
                 if (ret.error() != Error::Canceled) {
                     continue;

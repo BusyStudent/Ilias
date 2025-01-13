@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 using namespace ILIAS_NAMESPACE;
+using namespace std::literals;
 
 HttpSession *session = nullptr;
 
@@ -31,6 +32,16 @@ TEST(Session, HEAD) {
     ASSERT_TRUE(reply2);
     auto text2 = reply2->text().wait();
     ASSERT_TRUE(text2);
+}
+
+TEST(Session, HEADWithTimeout) {
+    HttpRequest request("https://www.baidu.com");
+    request.setTransferTimeout(5s);
+    auto reply = session->head(request).wait();
+    ASSERT_TRUE(reply);
+    auto text = reply->text().wait();
+    ASSERT_TRUE(text);
+    ASSERT_TRUE(text.value().empty());
 }
 
 auto main(int argc, char **argv) -> int {

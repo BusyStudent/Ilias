@@ -107,7 +107,7 @@ public:
      * @param hint 
      * @return Result<AddressInfo> 
      */
-    static auto fromHostname(const char *name, const char *service, std::optional<addrinfo_t> hints) -> Result<AddressInfo>;
+    static auto fromHostname(const char *name, const char *service, std::optional<addrinfo_t> hints = {}) -> Result<AddressInfo>;
 
     /**
      * @brief Wrapping the raw getaddrinfo asynchronously
@@ -117,7 +117,7 @@ public:
      * @param hints 
      * @return IoTask<AddressInfo> 
      */
-    static auto fromHostnameAsync(const char *name, const char *service, std::optional<addrinfo_t> hints) -> IoTask<AddressInfo>;
+    static auto fromHostnameAsync(const char *name, const char *service, std::optional<addrinfo_t> hints = {}) -> IoTask<AddressInfo>;
 private:
     AddressInfo(addrinfo_t *info) : mInfo(info) { }
 

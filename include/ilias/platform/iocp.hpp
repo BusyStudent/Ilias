@@ -255,6 +255,11 @@ inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resu
             case FILE_TYPE_UNKNOWN: return Unexpected(SystemError::fromErrno());
             default: return Unexpected(Error::InvalidArgument);
         }
+        // Check is real pipe or socket
+        DWORD flags = 0;
+        if (type == IoDescriptor::Pipe && !GetNamedPipeInfo(fd, &flags, nullptr, nullptr, nullptr)) {
+            type = IoDescriptor::Socket; // Failed to get name pipe info?, is socket
+        }
     }
 
     // Try add it to the completion port

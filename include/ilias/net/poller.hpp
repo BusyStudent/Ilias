@@ -95,6 +95,37 @@ public:
     auto fd() const -> fd_t {
         return mFd;
     }
+
+    /**
+     * @brief Assign the poller by move
+     * 
+     * @param other 
+     * @return Poller& 
+     */
+    auto operator =(Poller &&other) -> Poller & {
+        if (&other == this) {
+            return *this;
+        }
+        mCtxt = std::exchange(other.mCtxt, nullptr);
+        mDesc = std::exchange(other.mDesc, nullptr);
+        mFd = std::exchange(other.mFd, fd_t { });
+        return *this;
+    }
+
+    auto operator =(std::nullptr_t) -> Poller & {
+        close();
+        return *this;
+    }
+
+    /**
+     * @brief Check the poller is valid
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept {
+        return mDesc != nullptr;
+    }
 private:
     IoContext    *mCtxt = nullptr;
     IoDescriptor *mDesc = nullptr;
