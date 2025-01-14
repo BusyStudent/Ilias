@@ -29,7 +29,7 @@ public:
     EventAwaiter(Event &event) : mEvent(event) { }
 
     auto await_ready() const -> bool;
-    auto await_suspend(TaskView<>) -> void;
+    auto await_suspend(CoroHandle) -> void;
     auto await_resume() -> Result<void>;
 
     auto notifySet() -> void;
@@ -37,7 +37,7 @@ private:
     auto onCancel() -> void;
 
     Event &mEvent;
-    TaskView<> mCaller;
+    CoroHandle mCaller;
     bool mCanceled = false; //< Is Canceled ?
     CancellationToken::Registration mReg;
     std::list<EventAwaiter *>::iterator mIt;
@@ -118,7 +118,7 @@ inline auto detail::EventAwaiter::await_ready() const -> bool {
     return mEvent.isSet();
 }
 
-inline auto detail::EventAwaiter::await_suspend(TaskView <> caller) -> void {
+inline auto detail::EventAwaiter::await_suspend(CoroHandle caller) -> void {
     mCaller = caller;
     mEvent.mAwaiters.push_back(this);
     mIt = mEvent.mAwaiters.end();

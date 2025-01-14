@@ -54,7 +54,7 @@ template <typename T>
 struct IgnoreCancellationAwaiter {
     auto await_ready() const noexcept { return false; }
 
-    auto await_suspend(TaskView<> caller) const -> bool {
+    auto await_suspend(CoroHandle caller) const -> bool {
         auto task = mTask._view();
         task.setExecutor(caller.executor());
         task.resume();

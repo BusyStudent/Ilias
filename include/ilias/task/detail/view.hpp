@@ -20,7 +20,7 @@ namespace detail {
 }
 
 /**
- * @brief The cancellation policy for the task
+ * @brief The cancellation policy for the coroutine
  * 
  */
 enum class CancelPolicy {
@@ -28,38 +28,34 @@ enum class CancelPolicy {
     Persistent,   // Cancellation persists; all subsequent co_await operations will receive cancellation notifications
 };
 
-template <typename T = detail::TaskViewNull>
-class TaskView;
-
 /**
- * @brief The type erased TaskView class, it can observe the task, 
- *  it is a superset of std::coroutine_handle<> and has interface to access the task's promise field
+ * @brief The type erased coroutine, it can observe the coroutine, 
+ *  it is a superset of std::coroutine_handle<> and has interface to access the coroutine's promise field
  * 
  */
-template <>
-class TaskView<detail::TaskViewNull> {
+class CoroHandle {
 public:
-    TaskView() = default;
-    TaskView(std::nullptr_t) { }
+    CoroHandle() = default;
+    CoroHandle(std::nullptr_t) { }
 
     /**
-     * @brief Construct a TaskView from a Task's coroutine handle
+     * @brief Construct a CoroHandle from a Task's or Generator coroutine handle
      * 
      * @tparam T 
      * @param handle 
      */
-    template <detail::IsTaskPromise T>
-    TaskView(std::coroutine_handle<T> handle) : mPromise(&handle.promise()), mHandle(handle) { }
+    template <detail::IsCoroPromise T>
+    CoroHandle(std::coroutine_handle<T> handle) : mPromise(&handle.promise()), mHandle(handle) { }
 
     /**
-     * @brief Check if the task is done
+     * @brief Check if the coroutine is done
      * 
      * @return bool 
      */
     auto done() const noexcept { return mHandle.done(); }
 
     /**
-     * @brief Resume the task
+     * @brief Resume the coroutine
      * 
      */
     auto resume() const noexcept { 
@@ -68,18 +64,18 @@ public:
     }
 
     /**
-     * @brief Schedule the task in the executor (thread safe)
-     * @note Do not call this function if the task is already scheduled
+     * @brief Schedule the coroutine in the executor (thread safe)
+     * @warning Don't call this function if the coroutine is already scheduled
      * 
      * @return auto 
      */
     auto schedule() const noexcept { 
-        ILIAS_ASSERT(executor()); 
+        ILIAS_ASSERT(executor());  
         return executor()->post(scheduleImpl, mHandle.address());
     }
 
     /**
-     * @brief Destroy the task
+     * @brief Destroy the coroutine
      * 
      * @return auto 
      */
@@ -89,27 +85,27 @@ public:
     }
 
     /**
-     * @brief Send a cancel request to the task
+     * @brief Send a cancel request to the coroutine
      * 
      */
     auto cancel() const { return cancellationToken().cancel(); }
 
     /**
-     * @brief Get the cancellation token of the task
+     * @brief Get the cancellation token of the coroutine
      * 
      * @return CancellationToken& 
      */
     auto cancellationToken() const -> CancellationToken & { return mPromise->cancellationToken(); }
 
     /**
-     * @brief Check if the task is cancelled
+     * @brief Check if the coroutine is cancelled
      * 
      * @return bool
      */
     auto isCancelled() const noexcept -> bool { return cancellationToken().isCancelled(); }
 
     /**
-     * @brief Check if the task is started
+     * @brief Check if the coroutine is started
      * 
      * @return true 
      * @return false 
@@ -124,14 +120,14 @@ public:
     auto isSafeToDestroy() const noexcept -> bool { return !isStarted() || done(); }
 
     /**
-     * @brief Get the executor of the task
+     * @brief Get the executor of the coroutine
      * 
      * @return Executor* 
      */
     auto executor() const noexcept -> Executor * { return mPromise->executor(); }
 
     /**
-     * @brief Set the Awaiting Coroutine object, the task will resume it when self is done
+     * @brief Set the Awaiting Coroutine object, the coroutine will resume it when self is done
      * 
      * @param handle 
      */
@@ -140,7 +136,7 @@ public:
     }
 
     /**
-     * @brief Set the Cancel Policy object, the task will follow this policy when self is cancelled
+     * @brief Set the Cancel Policy object, the coroutine will follow this policy when self is cancelled
      * 
      * @param policy 
      */
@@ -149,7 +145,7 @@ public:
     }
 
     /**
-     * @brief Set the Executor object, the task will use this executor to schedule itself
+     * @brief Set the Executor object, the coroutine will use this executor to schedule itself
      * 
      * @param executor 
      */
@@ -158,7 +154,7 @@ public:
     }
 
     /**
-     * @brief Register a callback function to be called when the task is done
+     * @brief Register a callback function to be called when the coroutine is done
      * 
      * @param fn 
      * @param data 
@@ -169,7 +165,7 @@ public:
     }
 
     /**
-     * @brief Register a callback function to be called when the task is done
+     * @brief Register a callback function to be called when the coroutine is done
      * 
      * @param fn 
      */
@@ -178,10 +174,10 @@ public:
     }
 
     /**
-     * @brief Allow comparison with other TaskView<> objects
+     * @brief Allow comparison with other CoroHandle objects
      * 
      */
-    auto operator <=>(const TaskView<> &other) const noexcept = default;
+    auto operator <=>(const CoroHandle &other) const noexcept = default;
 
     /**
      * @brief Cast to std::coroutine_handle<>
@@ -209,8 +205,31 @@ protected:
         std::coroutine_handle<>::from_address(ptr).resume();
     }
 
-    detail::TaskPromiseBase *mPromise = nullptr;
+    detail::CoroPromiseBase *mPromise = nullptr;
     std::coroutine_handle<>  mHandle = nullptr;
+};
+
+template <typename T = detail::TaskViewNull>
+class TaskView;
+
+/**
+ * @brief The type erased TaskView class, it can observe the task
+ * 
+ */
+template <>
+class TaskView<detail::TaskViewNull> : public CoroHandle {
+public:
+    TaskView() = default;
+    TaskView(std::nullptr_t) { }
+
+    /**
+     * @brief Construct a new Task View object from any Task's handle
+     * 
+     * @tparam T 
+     * @param handle 
+     */
+    template <typename T>
+    TaskView(std::coroutine_handle<detail::TaskPromise<T> > handle) : CoroHandle(handle) { }
 };
 
 /**
@@ -262,14 +281,95 @@ public:
     }
 
     /**
-     * @brief Cast from TaskView<> (note it is dangerous)
+     * @brief Cast from CoroHandle (note it is dangerous)
+     * @warning If types mismatch, it is UB
      * 
      * @param view 
      * @return TaskView<T> 
      */
-    static auto cast(TaskView<detail::TaskViewNull> view) {
-        auto handle = std::coroutine_handle<>(view);
+    static auto cast(CoroHandle coroHandle) {
+        auto handle = std::coroutine_handle<>(coroHandle);
         return TaskView<T>(handle_type::from_address(handle.address()));
+    }
+};
+
+template <typename T = void>
+class GeneratorView;
+
+/**
+ * @brief The type erased GeneratorView class, it can observe the Generator
+ * 
+ * @tparam  
+ */
+template <>
+class GeneratorView<void> : public CoroHandle {
+public:
+    GeneratorView() = default;
+    GeneratorView(std::nullptr_t) { }
+
+    /**
+     * @brief Construct a new Generator View object from any generator handle
+     * 
+     * @tparam T 
+     * @param handle 
+     */
+    template <typename T>
+    GeneratorView(std::coroutine_handle<detail::GeneratorPromise<T> > handle) : CoroHandle(handle) { }
+
+    /**
+     * @brief Rethrow the exception in it if needed
+     * 
+     * @return auto 
+     */
+    auto rethrowIfException() const {
+        return mPromise->rethrowIfException();
+    }
+};
+
+template <typename T>
+class GeneratorView final : public GeneratorView<> {
+public:
+    using promise_type = detail::GeneratorPromise<T>;
+    using handle_type = std::coroutine_handle<promise_type>;
+
+    GeneratorView() = default;
+    GeneratorView(std::nullptr_t) { }
+
+    /**
+     * @brief Construct a new Generator View object from Generator<T>'s handle
+     * 
+     * @param handle 
+     */
+    GeneratorView(handle_type handle) : GeneratorView<>(handle) { }
+
+    /**
+     * @brief Get the handle of the Generator
+     * 
+     * @return handle_type 
+     */
+    auto handle() const -> handle_type {
+        return handle_type::from_address(mHandle.address());
+    }
+
+    /**
+     * @brief Get the stored value in the generator
+     * 
+     * @return std::optional<T>& 
+     */
+    auto value() const -> std::optional<T> & {
+        return static_cast<promise_type*>(mPromise)->value();
+    }
+
+    /**
+     * @brief Cast from CoroHandle (note it is dangerous)
+     * @warning If types mismatch, it is UB
+     * 
+     * @param coroHandle 
+     * @return GeneratorView<T>
+     */
+    static auto cast(CoroHandle coroHandle) {
+        auto handle = std::coroutine_handle<>(coroHandle);
+        return GeneratorView<T>(handle_type::from_address(handle.address()));
     }
 };
 

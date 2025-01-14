@@ -19,7 +19,7 @@ public:
 
     auto await_ready() const -> bool;
     
-    auto await_suspend(TaskView<> caller) -> void;
+    auto await_suspend(CoroHandle caller) -> void;
 
     auto await_resume() -> Result<void>;
 
@@ -28,7 +28,7 @@ protected:
     auto onCancel() -> void;
 
     Mutex &mMutex;
-    TaskView<> mCaller;
+    CoroHandle mCaller;
     CancellationToken::Registration mRegistration;
     std::list<MutexAwaiter*>::iterator mIt;
     bool mCanceled = false;
@@ -136,7 +136,7 @@ inline auto detail::MutexAwaiter::await_ready() const -> bool {
     return mMutex.tryLock();
 }
 
-inline auto detail::MutexAwaiter::await_suspend(TaskView<> caller) -> void {
+inline auto detail::MutexAwaiter::await_suspend(CoroHandle caller) -> void {
     // Add self to the waiting list
     mCaller = caller;
     mRegistration = mCaller.cancellationToken().register_([this]() { onCancel(); });

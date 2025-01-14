@@ -45,7 +45,7 @@ public:
      * @return true 
      * @return false 
      */
-    auto await_suspend(TaskView<> caller) noexcept -> bool {
+    auto await_suspend(CoroHandle caller) noexcept -> bool {
         mTask.setExecutor(caller.executor());
         mTask.resume();
         if (mTask.done()) { //< Done, resume the caller

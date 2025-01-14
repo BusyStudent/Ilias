@@ -61,7 +61,7 @@ public:
         return false;
     }
 
-    auto await_suspend(TaskView<> caller) -> void {
+    auto await_suspend(CoroHandle caller) -> void {
         ILIAS_TRACE("WhenAny", "[{}] Begin", sizeof ...(Types));
         // Register callback
         mCaller = caller;
@@ -153,7 +153,7 @@ private:
     }
 
     InTuple mTasks;
-    TaskView<> mCaller;
+    CoroHandle mCaller;
     TaskView<> mGot; // The task that got the result
     size_t mTaskLeft = sizeof...(Types);
     CancellationToken::Registration mRegistration;

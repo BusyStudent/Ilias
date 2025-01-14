@@ -37,8 +37,7 @@ public:
 
     auto await_ready() noexcept { return false; }
     auto await_suspend(std::coroutine_handle<>) noexcept { return mHandle; }
-    [[noreturn]]
-    auto await_resume() noexcept { unreachable(); } //< We don't need to resume the current coroutine, it is already done
+    auto await_resume() noexcept { }
 private:
     std::coroutine_handle<> mHandle;
 };
@@ -55,16 +54,16 @@ private:
 };
 
 /**
- * @brief The Task's promise common part, hold the exception and the schedule code
+ * @brief The Coroutine's promise common part, hold the exception and the schedule code
  * 
  */
-class TaskPromiseBase {
+class CoroPromiseBase {
 public:
-    TaskPromiseBase() = default;
-    TaskPromiseBase(const TaskPromiseBase &) = delete;
+    CoroPromiseBase() = default;
+    CoroPromiseBase(const CoroPromiseBase &) = delete;
 
 #if defined(__cpp_exceptions)
-    ~TaskPromiseBase() noexcept {
+    ~CoroPromiseBase() noexcept {
         if (!mException) [[likely]] { //< Exception are throwed or no exception occured
             return;
         }
@@ -257,8 +256,8 @@ protected:
 #if defined(ILIAS_TASK_TRACE) //< Used for debug and trace
     std::source_location mCreateLocation;  //< The location of the creation
     std::source_location mAwaitLocation;   //< The location of the await point
-    std::vector<TaskPromiseBase *> mChild; //< The Task we are await for
-    TaskPromiseBase *mParent = nullptr;    //< The Task who await us
+    std::vector<CoroPromiseBase *> mChild; //< The Task we are await for
+    CoroPromiseBase *mParent = nullptr;    //< The Task who await us
 #endif // defined(ILIAS_TASK_TRACE)
 };
 
@@ -268,7 +267,7 @@ protected:
  * @tparam T 
  */
 template <typename T>
-class TaskPromiseImpl : public TaskPromiseBase {
+class TaskPromiseImpl : public CoroPromiseBase {
 public:
     using value_type = T;
 
@@ -307,7 +306,7 @@ private:
  * @tparam T 
  */
 template <typename T>
-class TaskPromiseImpl<Result<T> > : public TaskPromiseBase {
+class TaskPromiseImpl<Result<T> > : public CoroPromiseBase {
 public:
     using value_type = Result<T>;
 
@@ -348,7 +347,7 @@ private:
  * @tparam  
  */
 template <>
-class TaskPromiseImpl<void> : public TaskPromiseBase {
+class TaskPromiseImpl<void> : public CoroPromiseBase {
 public:
     auto return_void() const noexcept { }
     auto value() const noexcept { }
@@ -386,8 +385,77 @@ public:
     }
 };
 
+/**
+ * @brief The promise for the Generator<T>, interop with the Generator<T> class
+ * 
+ * @tparam T 
+ */
+template <typename T> requires (!std::is_same_v<T, void>)
+class GeneratorPromise final : public CoroPromiseBase {
+public:
+    using handle_type = std::coroutine_handle<GeneratorPromise>;
+    using value_type = T;
+
+    /**
+     * @brief Only allow co_return;
+     * 
+     */
+    auto return_void() const noexcept { }
+
+    /**
+     * @brief Yield the value to the user
+     * 
+     * @param value 
+     * @return SwitchCoroutine 
+     */
+    auto yield_value(value_type value) -> SwitchCoroutine {
+        mValue.emplace(std::move(value));
+        // Switching to the awaiting coroutine and set it to the noop
+        return {std::exchange(mAwaitingCoroutine, std::noop_coroutine())};
+    }
+
+    template <typename U>
+    auto yield_value(U &&value) -> SwitchCoroutine {
+        mValue.emplace(std::forward<U>(value));
+        return {std::exchange(mAwaitingCoroutine, std::noop_coroutine())};
+    }
+
+    /**
+     * @brief Get the return object object of the coroutine, wrap it to the Generator<T>
+     * @param loc The source location of the generator
+     * 
+     * @return Generator<T> 
+     */
+    auto get_return_object(ILIAS_CAPTURE_CALLER(loc)) -> Generator<T> {
+#if defined(ILIAS_TASK_TRACE)
+        this->mCreateLocation = loc; //< Store the location whe trace enable
+#endif // defined(ILIAS_TASK_TRACE)
+        return {handle()};
+    }
+
+    /**
+     * @brief Get the coroutine handle of the promise
+     * 
+     * @return handle_type 
+     */
+    auto handle() -> handle_type {
+        return handle_type::from_promise(*this);
+    }
+
+    /**
+     * @brief Get the value stored in it
+     * 
+     * @return std::optional<T> &
+     */
+    auto value() -> std::optional<T> & {
+        return mValue;
+    }
+private:
+    std::optional<T> mValue;
+};
+
 template <typename T>
-concept IsTaskPromise = std::is_base_of_v<TaskPromiseBase, T>;
+concept IsCoroPromise = std::is_base_of_v<CoroPromiseBase, T>;
 
 } // namespace detail
 

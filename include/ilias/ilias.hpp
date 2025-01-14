@@ -134,6 +134,10 @@ using socket_t = ILIAS_SOCKET_T;
 template <typename T = void>
 class Task;
 
+// --- Forward declaration for Generator<T>
+template <typename T>
+class Generator;
+
 // --- Forward declaration for Result<T>
 template <typename T = void>
 class Result;
@@ -141,6 +145,10 @@ class Result;
 // --- Types for io operation task
 template <typename T = void>
 using IoTask = Task<Result<T> >;
+
+// --- Types for io operation generator
+template <typename T>
+using IoGenerator = Generator<Result<T> >;
 
 // --- Formatting namespace
 #if defined(ILIAS_FMT_NAMESPACE)

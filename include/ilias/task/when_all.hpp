@@ -48,7 +48,7 @@ public:
         return false;
     }
 
-    auto await_suspend(TaskView<> caller) noexcept -> bool {
+    auto await_suspend(CoroHandle caller) noexcept -> bool {
         ILIAS_TRACE("WhenAll", "[{}] Begin", sizeof ...(Types));
         // Start all tasks
         auto executor = caller.executor();
@@ -128,7 +128,7 @@ private:
     }
 
     InTuple mTasks;
-    TaskView<> mCaller;
+    CoroHandle mCaller;
     size_t mTaskLeft = sizeof...(Types);
     CancellationToken::Registration mRegistration;
 };
