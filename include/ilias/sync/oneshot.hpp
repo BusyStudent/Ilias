@@ -53,13 +53,13 @@ class DataBlock {
 public:
     ~DataBlock() {
         ILIAS_TRACE("Oneshot::Channel", "Sender::close() {}", (void*) this);
-        ILIAS_ASSERT(!suspendedTask); //< MUST no-one waiting on the channel
+        ILIAS_ASSERT(!suspendedCaller); //< MUST no-one waiting on the channel
         if (sender) {
             sender->mPtr = nullptr;
         }
     }
 
-    TaskView<> suspendedTask; //< The task that is suspended on the recv operation
+    CoroHandle suspendedCaller; //< The caller that is suspended on the recv operation
     Sender<T> *sender = nullptr;
     std::optional<Result<T> > value;
     bool sended = false; //< Does the sender has sended the value
@@ -80,17 +80,17 @@ public:
         return mPtr->sended || mPtr->sender == nullptr;
     }
 
-    auto await_suspend(TaskView<> caller) -> void {
-        mPtr->suspendedTask = caller;
+    auto await_suspend(CoroHandle caller) -> void {
+        mPtr->suspendedCaller = caller;
         mReg = caller.cancellationToken().register_([this]() {
-            mPtr->suspendedTask.schedule();
-            mPtr->suspendedTask = nullptr; //< Clear the suspended task
+            mPtr->suspendedCaller.schedule();
+            mPtr->suspendedCaller = nullptr; //< Clear the suspended caller
             mIsCanceled = true;
         });
     }
 
     auto await_resume() -> Result<T> {
-        mPtr->suspendedTask = nullptr;
+        mPtr->suspendedCaller = nullptr;
         if (mPtr->value) {
             return std::move(*mPtr->value);
         }
@@ -221,8 +221,8 @@ public:
         }
         ILIAS_TRACE("Oneshot::Channel", "Sender::close() {}", (void*) mPtr);
         mPtr->sender = nullptr;
-        if (mPtr->suspendedTask) {
-            mPtr->suspendedTask.schedule();
+        if (mPtr->suspendedCaller) {
+            mPtr->suspendedCaller.schedule();
         }
         mPtr = nullptr;
     }
@@ -241,8 +241,8 @@ public:
         }
         mPtr->value.emplace(std::forward<U>(value));
         mPtr->sended = true;
-        if (mPtr->suspendedTask) {
-            mPtr->suspendedTask.schedule();
+        if (mPtr->suspendedCaller) {
+            mPtr->suspendedCaller.schedule();
         }
         return {};
     }

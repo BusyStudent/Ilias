@@ -145,13 +145,14 @@ inline auto UringContext::processCompletion() -> void {
         ILIAS_ERROR("Uring", "io_uring_wait_cqe failed {}", SystemError(-errno));
         return;
     }
-    auto ptr = ::io_uring_cqe_get_data(cqe);
+    auto entry = *cqe;
+    auto ptr = ::io_uring_cqe_get_data(&entry);
     auto cb = static_cast<detail::UringCallback*>(ptr);
+    ::io_uring_cqe_seen(&mRing, cqe);
     ILIAS_ASSERT_MSG(cb, "May missing io_uring_sqe_set_data ?");
     if (cb->onCallback) [[likely]] {
-        cb->onCallback(cb, *cqe);
+        cb->onCallback(cb, entry);
     }
-    ::io_uring_cqe_seen(&mRing, cqe);
     return;
 }
 

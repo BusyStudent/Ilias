@@ -217,7 +217,7 @@ public:
                mChannel->mReceiverCount == 0;                     //< No receiver (broken)
     }
 
-    auto await_suspend(TaskView<> caller) -> void {
+    auto await_suspend(CoroHandle caller) -> void {
         mCaller = caller;
         mToken = mChannel->mSenderQueue.push(onComplete, this);
         mHasToken = true;
@@ -260,7 +260,7 @@ private:
 
     ChannelT *mChannel;
     ResultType &&mValue; //< The value we want to send
-    TaskView<> mCaller;
+    CoroHandle mCaller;
     Token      mToken;
     CancellationToken::Registration mReg;
     bool mIsCanceled = false;
@@ -280,7 +280,7 @@ public:
         return mChannel->mQueue.size() > 0 || mChannel->mSenderCount == 0; //< Has item to receive or no sender (broken)
     }
 
-    auto await_suspend(TaskView<> caller) -> void {
+    auto await_suspend(CoroHandle caller) -> void {
         mCaller = caller;
         mToken = mChannel->mReceiverQueue.push(onComplete, this);
         mHasToken = true;
@@ -324,7 +324,7 @@ private:
     }
 
     ChannelT *mChannel;
-    TaskView<> mCaller;
+    CoroHandle mCaller;
     Token      mToken;
     CancellationToken::Registration mReg;
     bool mIsCanceled = false;

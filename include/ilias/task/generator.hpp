@@ -20,6 +20,14 @@
 
 /**
  * @brief The range for for the Generator<T>
+ * @note Because for(xxx; xxx; co_await(++it)) compile failed in gcc, so we have to use if instead
+ * 
+ * @code {.cpp}
+ * ilias_foreach(const auto &val, generator()) {
+ *  useVal(val);
+ * }
+ * @endcode
+ * 
  * 
  * This macro allows for easy iteration over a generator object.
  * It uses co_await to asynchronously iterate through the generator.
@@ -27,12 +35,17 @@
  * @param var The variable to hold each value from the generator.
  * @param generator The generator object to iterate over.
  */
-#define ilias_foreach(var, generator)                                               \
-    if (auto &&_gen = (generator); false) { }                                       \
-    else                                                                            \
-        for (auto _it = co_await _gen.begin(); _it != _gen.end(); co_await (++_it)) \
-            if (var = *_it; false) { }                                              \
-            else
+#define ilias_foreach(var, generator)                                                   \
+    if (auto &&_gen_ = (generator); false) { }                                          \
+    else if (bool _first_ = true; false) { }                                            \
+    else                                                                                \
+        for (auto _it_ = co_await _gen_.begin(), _end_ = _gen_.end();; _first_ = false) \
+            if (!_first_ ? (co_await (++_it_), 0) : 0; _it_ == _end_) {                 \
+                break;                                                                  \
+            }                                                                           \
+            else                                                                        \
+                if (var = *_it_; false) { }                                             \
+                else 
 
 ILIAS_NS_BEGIN
 
@@ -114,6 +127,34 @@ private:
 friend class Generator<T>;
 };
 
+/**
+ * @brief The awaiter used to executor the generator, and return the iterator
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class GeneratorBeginAwaiter final : public GeneratorAwaiter<T> {
+public:
+    using Base = GeneratorAwaiter<T>;
+    using Base::Base;
+
+    auto await_ready() const noexcept { return false; }
+
+    auto await_suspend(CoroHandle caller) -> bool {
+        this->mView.setExecutor(caller.executor());
+        if (Base::await_ready()) {
+            return false;
+        }
+        Base::await_suspend(caller);
+        return true;
+    }
+    
+    auto await_resume() -> GeneratorIterator<T> {
+        Base::await_resume();
+        return {this->mView};
+    }
+};
+
 } // namespace detail
 
 /**
@@ -128,6 +169,8 @@ public:
     using promise_type = detail::GeneratorPromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
     using value_type = T;
+
+    static_assert(!std::is_same_v<T, void>, "Generator can't yield void");
 
     /**
      * @brief Construct a new empty Generator object
@@ -177,28 +220,8 @@ public:
      * @return iterator
      */
     [[nodiscard("Don't forget to use co_await ")]]
-    auto begin() {
-        using Base = detail::GeneratorAwaiter<T>;
-        struct Awaiter final : Base {
-            using Base::Base;
-
-            auto await_ready() const noexcept { return false; }
-
-            auto await_suspend(CoroHandle caller) -> bool {
-                this->mView.setExecutor(caller.executor());
-                if (Base::await_ready()) {
-                    return false;
-                }
-                Base::await_suspend(caller);
-                return true;
-            }
-            
-            auto await_resume() -> iterator {
-                Base::await_resume();
-                return {this->mView};
-            }
-        };
-        return Awaiter {mHandle};
+    auto begin() -> detail::GeneratorBeginAwaiter<T> {
+        return {mHandle};
     }
 
     /**
@@ -217,7 +240,7 @@ public:
      * @return Task<Container> 
      */
     template <typename Container = std::vector<T> >
-    auto collect() && -> Task<Container> {
+    auto collect() -> Task<Container> {
         Container ret;
         ilias_foreach(T &var, *this) {
             ret.emplace_back(std::move(var));
