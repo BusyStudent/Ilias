@@ -6,10 +6,10 @@ using namespace ILIAS_NAMESPACE;
 auto main() -> int {
     PlatformContext ctxt;
     auto fn = [&]() -> Task<void> {
-        auto in = Console::fromStdin(ctxt);
-        auto out = Console::fromStdout(ctxt);
+        auto in = co_await Console::fromStdin();
+        auto out = co_await Console::fromStdout();
         if (!in || !out) {
-            co_return {};
+            co_return;
         }
         while (true) {
             auto str = co_await in->getline();
@@ -19,7 +19,7 @@ auto main() -> int {
             co_await out->write(makeBuffer(str.value()));
             co_await out->puts("\n");
         }
-        co_return {};
+        co_return;
     };
     fn().wait();
 }

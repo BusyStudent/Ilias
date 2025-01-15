@@ -1,7 +1,7 @@
 /**
- * @file declator.hpp
+ * @file decorator.hpp
  * @author BusyStudent (fyw90mc@gmail.com)
- * @brief The declator
+ * @brief The decorator
  * @version 0.1
  * @date 2025-01-11
  * 
@@ -26,7 +26,7 @@ struct TimeoutTags {
     std::chrono::milliseconds mMs; //< The Timeout
 
     template <typename T>
-    auto declare(Task<T> &&task) const {
+    auto decorate(Task<T> &&task) const {
         return impl(std::move(task), *this);
     }
 
@@ -78,7 +78,7 @@ struct IgnoreCancellationAwaiter {
  */
 struct IgnoreCancellationTags {
     template <typename T>
-    auto declare(Task<T> &&task) const {
+    auto decorate(Task<T> &&task) const {
         return IgnoreCancellationAwaiter<T> { std::move(task) };
     }
 };
@@ -86,17 +86,17 @@ struct IgnoreCancellationTags {
 } // namespace detail
 
 /**
- * @brief The concept of declare any awaitable
+ * @brief The concept of decorate any awaitable
  * 
  * @code 
- *  co_await awaitable | declator;
+ *  co_await awaitable | decorator;
  * @endcode 
  * 
  * @tparam T 
  */
 template <typename T>
-concept AwaitableDeclator = requires(T t) {
-    t.declare(Task<void> { });
+concept AwaitableDecorator = requires(T t) {
+    t.decorate(Task<void> { });
 };
 
 /**
@@ -120,34 +120,34 @@ inline auto setTimeout(uint64_t ms) noexcept {
 }
 
 /**
- * @brief Combine the awaitable with declator
+ * @brief Combine the awaitable with decorator
  * 
  * @tparam T The awaitable type
- * @tparam Declator The AwaitableDeclator type
+ * @tparam Decorator The AwaitableDecorator type
  * @param awaitable 
- * @param declator 
+ * @param decorator 
  * @return auto 
  */
-template <Awaitable T, AwaitableDeclator Declator>
-inline auto operator |(T &&awaitable, Declator &&declator) {
-    return std::forward<Declator>(declator).declare(
+template <Awaitable T, AwaitableDecorator Decorator>
+inline auto operator |(T &&awaitable, Decorator &&decorator) {
+    return std::forward<Decorator>(decorator).decorate(
         Task{std::forward<T>(awaitable)} // Make the awaitable into task
     );
 }
 
 /**
- * @brief Combine the awaiteble with declator
+ * @brief Combine the awaiteble with decorator
  * 
  * @note requires the combine result still is T
  * @tparam T 
- * @tparam Declator
+ * @tparam Decorator
  * @param awaitable 
- * @param declator 
+ * @param decorator 
  * @return auto 
  */
-template <typename T, AwaitableDeclator Declator> 
-inline auto operator |=(Task<T> &awaitable, Declator &&declator) -> T & {
-    awaitable = std::move(awaitable) | std::forward<Declator>(declator);
+template <typename T, AwaitableDecorator Decorator> 
+inline auto operator |=(Task<T> &awaitable, Decorator &&decorator) -> T & {
+    awaitable = std::move(awaitable) | std::forward<Decorator>(decorator);
     return awaitable;
 }
 

@@ -376,6 +376,12 @@ public:
 ILIAS_NS_END
 
 #if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(CoroHandle) {
+    auto format(const auto &view, auto &ctxt) const {
+        return format_to(ctxt.out(), "CoroHandle<{}>", std::coroutine_handle<>(view).address());
+    }
+};
+
 ILIAS_FORMATTER(TaskView<>) {
     auto format(const auto &view, auto &ctxt) const {
         return format_to(ctxt.out(), "TaskView<{}>", std::coroutine_handle<>(view).address());

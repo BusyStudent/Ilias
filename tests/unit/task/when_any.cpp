@@ -1,5 +1,5 @@
 #include <ilias/task/when_any.hpp>
-#include <ilias/task/declator.hpp>
+#include <ilias/task/decorator.hpp>
 #include <ilias/task/mini_executor.hpp>
 #include <gtest/gtest.h>
 
@@ -55,12 +55,12 @@ TEST(WhenAny, Basic1) {
     }
 }
 
-TEST(Declator, SetTimeout) {
+TEST(Decorator, SetTimeout) {
     auto res = (returnInput(10) | setTimeout(10s)).wait();
     ASSERT_TRUE(res);
 }
 
-TEST(Declator, IgnoreCancellation) {
+TEST(Decorator, IgnoreCancellation) {
     auto job = []() -> Task<void> {
         auto val = co_await (sleep(50ms) | ignoreCancellation);
         ILIAS_ASSERT(val); // Must true, not cancelled
