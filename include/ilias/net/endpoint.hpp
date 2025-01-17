@@ -408,6 +408,31 @@ public:
     }
 
     /**
+     * @brief Compare two ip endpoint
+     * 
+     * @param other 
+     */
+    auto operator ==(const IPEndpoint &other) const {
+        if (family() != other.family()) {
+            return false;
+        }
+        if (isValid()) {
+            return ::memcmp(data(), other.data(), length()) == 0;
+        }
+        return true; // Both are invalid
+    }
+
+    /**
+     * @brief Compare two ip endpoint
+     * 
+     * @param other 
+     * @return auto 
+     */
+    auto operator !=(const IPEndpoint &other) const {
+        return !(*this == other);
+    }
+
+    /**
      * @brief Parse endpoint from string
      * 
      * @param str The endpoint in string format (address4:port) or ([address6]:port)

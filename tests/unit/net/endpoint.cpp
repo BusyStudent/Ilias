@@ -66,6 +66,26 @@ TEST(Endpoint, Parse6) {
     std::cout << endpoint5.toString() << std::endl;
 }
 
+TEST(Endpoint, Access4) {
+    IPEndpoint endpoint("127.0.0.1:8080");
+    EXPECT_TRUE(endpoint.isValid());
+    EXPECT_EQ(endpoint.address4(), IPAddress4::loopback());
+}
+
+TEST(Endpoint, Access6) {
+    IPEndpoint endpoint("[::1]:8080");
+    EXPECT_TRUE(endpoint.isValid());
+    EXPECT_EQ(endpoint.address6(), IPAddress6::loopback());
+}
+
+TEST(Endpoint, Compare) {
+    EXPECT_EQ(IPEndpoint(IPAddress4::loopback(), 8080), "127.0.0.1:8080");
+    EXPECT_EQ(IPEndpoint("127.0.0.1:8080"), "127.0.0.1:8080");
+    EXPECT_EQ(IPEndpoint("[::1]:8080"), "[::1]:8080");
+    EXPECT_NE(IPEndpoint("[::1]:8080"), "127.0.0.1:8080");
+    EXPECT_EQ(IPEndpoint(), IPEndpoint());
+}
+
 TEST(Endpoint, Invalid) {
     IPEndpoint endpoint7;
     EXPECT_FALSE(endpoint7.isValid());

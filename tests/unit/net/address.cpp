@@ -41,6 +41,12 @@ TEST(Address4, Span) {
     EXPECT_EQ(span[3], std::byte {255});
 }
 
+TEST(Address4, Compare) {
+    EXPECT_EQ(IPAddress4::none(), IPAddress4::none());
+    EXPECT_NE(IPAddress4::none(), IPAddress4::any());
+    EXPECT_NE(IPAddress4::none(), IPAddress4::loopback());
+}
+
 // For V6 Address
 TEST(Address6, Parse) {
     EXPECT_EQ(IPAddress6::fromString("::1").value(), IPAddress6::loopback());
@@ -51,6 +57,12 @@ TEST(Address6, Parse) {
     EXPECT_FALSE(IPAddress6::fromString("127.0.0.1").has_value());
     EXPECT_FALSE(IPAddress6::fromString("127.0.0.1:8080").has_value());
     EXPECT_FALSE(IPAddress6::fromString("256.256.256.256").has_value());
+}
+
+TEST(Address6, Compare) {
+    EXPECT_EQ(IPAddress6::loopback(), IPAddress6::loopback());
+    EXPECT_NE(IPAddress6::loopback(), IPAddress6::any());
+    EXPECT_NE(IPAddress6::loopback(), IPAddress6::none());
 }
 
 // For V4 / 6 Address
@@ -71,7 +83,16 @@ TEST(Address, Parse) {
 TEST(Address, ToString) {
     EXPECT_EQ(IPAddress(IPAddress4::any()).toString(), "0.0.0.0");
     EXPECT_EQ(IPAddress(IPAddress4::none()).toString(), "255.255.255.255");
+}
 
+TEST(Address, Compare) {
+    EXPECT_EQ(IPAddress(), IPAddress());
+    EXPECT_EQ(IPAddress(IPAddress4::any()), IPAddress(IPAddress4::any()));
+    EXPECT_NE(IPAddress(IPAddress4::any()), IPAddress(IPAddress4::none()));
+    EXPECT_EQ(IPAddress(IPAddress6::loopback()), IPAddress(IPAddress6::loopback()));
+    EXPECT_NE(IPAddress(IPAddress6::loopback()), IPAddress(IPAddress6::any()));
+    EXPECT_NE(IPAddress(IPAddress4::loopback()), IPAddress(IPAddress6::none()));
+    EXPECT_NE(IPAddress(IPAddress4::loopback()), IPAddress());
 }
 
 auto main() -> int {

@@ -14,6 +14,7 @@
 #include <ilias/detail/expected.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/error.hpp>
+#include <array>
 #include <span>
 
 ILIAS_NS_BEGIN
@@ -245,6 +246,17 @@ public:
     }
 
     /**
+     * @brief Convert ipv6 address to uint8 array (uint8 * 16) in network order 
+     * 
+     * @return std::array<uint8_t, 16>
+     */
+    auto toUint8Array() const -> std::array<uint8_t, 16> {
+        std::array<uint8_t, 16> array;
+        ::memcpy(array.data(), s6_addr, sizeof(::in6_addr));
+        return array;
+    }
+
+    /**
      * @brief Cast self to a byte span
      * 
      * @return std::span<const std::byte> 
@@ -297,10 +309,22 @@ public:
      * @brief Compare this ipv6 address with other
      * 
      */
+    auto operator <=>(const IPAddress6 &other) const {
+        return toUint8Array() <=> other.toUint8Array();
+    }
+
+    /**
+     * @brief Compare this ipv6 address with other
+     * 
+     */
     auto operator ==(const IPAddress6 &other) const {
         return ::memcmp(this, &other, sizeof(::in6_addr)) == 0;
     }
 
+    /**
+     * @brief Compare this ipv6 address with other
+     * 
+     */
     auto operator !=(const IPAddress6 &other) const {
         return ::memcmp(this, &other, sizeof(::in6_addr)) != 0;
     }
@@ -476,7 +500,10 @@ public:
         if (mFamily != other.mFamily) {
             return false;
         }
-        return ::memcmp(&mAddr, &other.mAddr, length()) == 0;
+        if (mFamily != AF_UNSPEC) {
+            return ::memcmp(&mAddr, &other.mAddr, length()) == 0;
+        }
+        return true; // Both are invalid
     }
 
     /**
