@@ -1,7 +1,3 @@
-if not is_plat("windows") then
-    add_requires("openssl")
-end
-
 add_requires("zlib")
 
 -- Special configuration for http session
@@ -15,7 +11,7 @@ target("test_session")
     add_defines("ILIAS_ENABLE_LOG")
     add_packages("zlib")
 
-    if not is_plat("windows") then
-        add_packages("openssl")
+    if has_config("use_openssl") then
+        add_requires("openssl")
     end
 target_end()

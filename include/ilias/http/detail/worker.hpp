@@ -61,6 +61,10 @@ public:
      * @param n 
      */
     auto setMaxConnectionHttp1(size_t n) -> void;
+
+    // Internal
+    auto ref() -> void;
+    auto deref() -> void;
 private:
     auto newStream1() -> IoTask<std::unique_ptr<HttpStream> >;
     auto startConnection() -> Task<void>;
@@ -69,6 +73,7 @@ private:
     TaskScope mScope; //< The scope for limit
     HttpEndpoint mEndpoint; //< The endpoint of the
     Error        mError; //< The error
+    int          mRefcount = 0; //< The refcount (used for the worker pool)
 
     // Quit...
     Event        mQuitEvent; //< If set, the worker quiting
@@ -101,6 +106,7 @@ inline HttpWorker::HttpWorker(const HttpEndpoint &endpoint) : mEndpoint(endpoint
 inline HttpWorker::~HttpWorker() {
     mScope.cancel();
     mScope.wait();
+    ILIAS_TRACE("HttpWorker", "on {}://{}:{}, {} is destroyed", mEndpoint.scheme, mEndpoint.host, mEndpoint.port, (void*) this);
 }
 
 inline auto HttpWorker::newStream() -> IoTask<std::unique_ptr<HttpStream> > {
@@ -134,6 +140,17 @@ inline auto HttpWorker::setSslContext(SslContext &ctxt) -> void {
 
 inline auto HttpWorker::setMaxConnectionHttp1(size_t n) -> void {
     mMaxConenction1 = n;
+}
+
+inline auto HttpWorker::ref() -> void {
+    mRefcount += 1;
+}
+
+inline auto HttpWorker::deref() -> void {
+    mRefcount -= 1;
+    if (mRefcount == 0) {
+        delete this;
+    }
 }
 
 inline auto HttpWorker::newStream1() -> IoTask<std::unique_ptr<HttpStream>> {
@@ -209,7 +226,7 @@ inline auto HttpWorker::startConnection() -> Task<void> {
     while (false);
     mConnection1Size -= 1;
     if (mConnection1Size == 0) {
-        ILIAS_INFO("HttpWorker", "No conenction alive, quiting");
+        ILIAS_INFO("HttpWorker", "on {}://{}:{}, No conenction alive, quiting", mEndpoint.scheme, mEndpoint.host, mEndpoint.port);
         mInitEvent.set();
         mQuitEvent.set();
     }

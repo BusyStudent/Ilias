@@ -18,7 +18,7 @@ auto main() -> int {
 
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
 
-    [&]() -> IoTask<> {
+    [&]() -> Task<void> {
         auto info = co_await AddressInfo::fromHostnameAsync("www.baidu.com");
         auto target = info.value().addresses().at(0);
 
@@ -26,7 +26,7 @@ auto main() -> int {
         if (auto val = co_await client.connect(IPEndpoint(target, 443)); !val) {
             std::cerr << "connect failed: " << val.error().toString() << '\n';
             std::cerr << "target: " << IPEndpoint(target, 443).toString() << '\n';
-            co_return {};
+            co_return;
         }
         SslClient<TcpClient> sslClient(sslCtxt, std::move(client));
         sslClient.setHostname("www.baidu.com");
@@ -35,11 +35,11 @@ auto main() -> int {
         auto val = co_await sslClient.write(makeBuffer(requestHeaders));
         if (!val) {
             std::cerr << "write failed: " << val.error().toString() << '\n';
-            co_return {};
+            co_return;
         }
         if (*val != requestHeaders.size()) {
             std::cerr << "write " << *val << " bytes, expected " << requestHeaders.size() << '\n';
-            co_return {};
+            co_return;
         }
 
         char buffer[1024];
@@ -47,7 +47,7 @@ auto main() -> int {
             auto val = co_await sslClient.read(makeBuffer(buffer));
             if (!val) {
                 std::cerr << "read failed: " << val.error().toString() << '\n';
-                co_return {};
+                co_return;
             }
             if (*val == 0) {
                 std::cerr << "read 0 bytes" << '\n';
@@ -55,6 +55,8 @@ auto main() -> int {
             }
             std::cout << std::string_view(buffer, *val);
         }
-        co_return {};
+        if (auto res = co_await sslClient.shutdown(); !res) {
+            std::cerr << "shutdown failed: " << res.error().toString() << '\n';
+        }
     }().wait();
 }

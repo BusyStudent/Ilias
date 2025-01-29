@@ -236,6 +236,9 @@ inline auto AddressInfo::fromHostnameAsync(const char *name, const char *service
         nullptr, 
         &namedHandle
     );
+    if (err == ERROR_SUCCESS) { // Done
+        co_return AddressInfo(info); 
+    }
     if (err != ERROR_IO_PENDING) { //< FAILED to start overlapped
         co_return Unexpected(Error(err, GaiCategory::instance()));
     }

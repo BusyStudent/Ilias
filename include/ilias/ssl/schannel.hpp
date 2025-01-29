@@ -124,6 +124,7 @@ public:
     size_t incomingCapicity = sizeof(incoming); //< The maxsize of the mIncoming
     uint8_t *decrypted = nullptr;
     size_t decryptedAvailable = 0; //< How many bytes useable in buffer 
+    bool shutdown = false; //< Whether the ssl shutdown
 };
 
 /**
@@ -279,6 +280,7 @@ protected:
         mData = std::move(data);
         co_return {};
     }
+
     auto writeImpl(const void *_buffer, size_t n) -> IoTask<size_t> {
         if (!mData) [[unlikely]] {
             if (auto ret = co_await handshakeAsClient(); !ret) {
@@ -336,6 +338,7 @@ protected:
         }
         co_return sended;
     }
+    
     auto readImpl(void *buffer, size_t n) -> IoTask<size_t> {
         if (!mData) [[unlikely]] {
             if (auto ret = co_await handshakeAsClient(); !ret) {
@@ -420,11 +423,14 @@ protected:
             incomingReceived += *num;
         }
     }
-    auto disconnectImpl() -> IoTask<> {
+
+    auto shutdownImpl() -> IoTask<void> {
         if (!mData) {
             co_return {};
         }
-        ILIAS_TRACE("Schannel", "disconnect");
+        // TODO: Fully implement the shutdown process by MSDN document
+        // https://learn.microsoft.com/zh-cn/windows/win32/secauthn/shutting-down-an-schannel-connection
+        ILIAS_TRACE("Schannel", "Shutdown for {}", win32::toUtf8(mHost));
 
         // Send say goodbye 
         DWORD type = SCHANNEL_SHUTDOWN;
@@ -444,8 +450,10 @@ protected:
 
         auto table = mCtxt->table();
         auto credHandle = mCtxt->credHandle();
-        table->ApplyControlToken(&mData->ssl, &indesc);
-
+        if (auto status = table->ApplyControlToken(&mData->ssl, &indesc); status != SEC_E_OK) {
+            ILIAS_WARN("Schannel", "Failed to ApplyControlToken {}", status);
+            co_return Unexpected(SslCategory::makeError(status));
+        }
         DWORD flags = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT 
             | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
         auto status = table->InitializeSecurityContextW(
@@ -474,6 +482,9 @@ protected:
 
             while (size) {
                 auto n = co_await mFd.write(makeBuffer(buffer, size));
+                if (!n) {
+                    ILIAS_WARN("Schannel", "Failed to send shutdown {}", n.error());
+                }
                 if (!n || *n == 0) {
                     break;
                 }
@@ -483,7 +494,12 @@ protected:
         }
 
         // Shutdown fd below us
-        co_return co_await mFd.shutdown();
+        if constexpr (Shuttable<T>) {
+            co_return co_await mFd.shutdown();
+        }
+        else {
+            co_return {};
+        }
     }
     auto operator =(SslSocket &&other) -> SslSocket & = default;
 protected:
@@ -506,19 +522,20 @@ public:
     SslClient(SslClient &&other) = default;
     SslClient(SslContext &ctxt, T &&fd) : SslSocket<T>(ctxt, std::move(fd)) { }
 
-    auto handshake() -> IoTask<> {
+    auto handshake() -> IoTask<void> {
         return this->handshakeAsClient();
     }
 
-    auto connect(const IPEndpoint &endpoint) -> IoTask<> {
+    template <Connectable U = T, typename EndpointLike>
+    auto connect(const EndpointLike &endpoint) -> IoTask<void> {
         if (auto ret = co_await this->mFd.connect(endpoint); !ret) {
             co_return Unexpected(ret.error());
         }
         co_return co_await this->handshakeAsClient();
     }
 
-    auto shutdown() -> IoTask<> {
-        return this->disconnectImpl();
+    auto shutdown() -> IoTask<void> {
+        return this->shutdownImpl();
     }
 
     auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {

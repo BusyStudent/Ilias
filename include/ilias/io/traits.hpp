@@ -16,8 +16,14 @@
 
 ILIAS_NS_BEGIN
 
-// Forward declaration
-class IPEndpoint;
+/**
+ * @brief A type that can be converted to any type.
+ * 
+ */
+struct AnyType {
+    template <typename T>
+    constexpr operator T() const noexcept; // No implementation
+};
 
 /**
  * @brief Concept for types that can be read to a a byte span.
@@ -36,7 +42,7 @@ concept Readable = requires(T t) {
  */
 template <typename T>
 concept Writable = requires(T t) {
-    t.write(std::span<std::byte> {});
+    t.write(std::span<const std::byte> {});
 };
 
 /**
@@ -56,7 +62,7 @@ concept Shuttable = requires(T t) {
  */
 template <typename T>
 concept Connectable = requires(T t) {
-    t.connect(std::declval<const IPEndpoint &>());
+    t.connect(AnyType {});
 };
 
 /**

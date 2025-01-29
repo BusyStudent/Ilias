@@ -1,12 +1,11 @@
 /**
  * @file scope.hpp
- * @author BusyStudent (fyw90mc@gmail.com)
- * @brief The task scope. It is used to manage the tasks that are running in the scope.
+ * @author BusyStudent
+ * @brief Manages tasks within a scope.
  * @version 0.1
  * @date 2024-10-02
  * 
  * @copyright Copyright (c) 2024
- * 
  */
 
 #pragma once
@@ -21,10 +20,12 @@
 
 ILIAS_NS_BEGIN
 
+class TaskScope;
+
 namespace detail {
 
 /**
- * @brief The instance of the task spawned in the scope.
+ * @brief Represents a task instance within a scope.
  * 
  */
 struct ScopedTask {
@@ -38,7 +39,7 @@ struct ScopedTask {
     ScopedTask(const ScopedTask &) = delete;
 
     ~ScopedTask() {
-        ILIAS_ASSERT(!mList); //< It should be unlinked before destruction.
+        ILIAS_ASSERT(!mList); //< Must be unlinked before destruction.
         mTask.destroy();
     }
 
@@ -60,10 +61,29 @@ struct ScopedTask {
         }
     }
 
-    TaskView<> mTask; //< The task instance.
-    std::list<ScopedTask*> *mList; //< The list that the task is in.
-    std::list<ScopedTask*>::iterator mIt; //< The iterator of the task in the manage list.
-    int mRefcount = 1; //< The reference count of the task.
+    TaskView<> mTask; //< Task instance.
+    std::list<ScopedTask*> *mList; //< List containing the task.
+    std::list<ScopedTask*>::iterator mIt; //< Iterator for the task in the list.
+    int mRefcount = 1; //< Reference count.
+};
+
+/**
+ * @brief Awaiter for the task scope to complete.
+ * 
+ */
+class TaskScopeAwaiter {
+public:
+    TaskScopeAwaiter(TaskScope &scope) : mScope(scope) { }
+
+    auto await_ready() const -> bool;
+    auto await_suspend(CoroHandle caller) -> void;
+    auto await_resume() const noexcept { }
+private:
+    static auto onNotify(void *self) -> void;
+
+    TaskScope &mScope;
+    CoroHandle mCaller;
+    CancellationToken::Registration mReg;
 };
 
 using ScopedTaskPtr = RefPtr<ScopedTask>;
@@ -71,7 +91,7 @@ using ScopedTaskPtr = RefPtr<ScopedTask>;
 } // namespace detail
 
 /**
- * @brief Handle for observeing the spawned task in the scope.
+ * @brief Handle for observing and canceling tasks within a scope.
  * 
  */
 class ScopedCancelHandle {
@@ -95,7 +115,7 @@ private:
 };
 
 /**
- * @brief Wait Handle for TaskScope, only movable.
+ * @brief Wait handle for TaskScope, only movable.
  * 
  * @tparam T 
  */
@@ -114,12 +134,12 @@ public:
     auto cancel() const -> void { return mData->mTask.cancel(); }
 
     /**
-     * @brief Blocking Wait for the task to complete. and return the result.
+     * @brief Blocking wait for the task to complete and return the result.
      * 
      * @return T
      */
     auto wait() -> T {
-        ILIAS_ASSERT_MSG(mData, "Can not wait for an invalid handle");
+        ILIAS_ASSERT_MSG(mData, "Cannot wait for an invalid handle");
         if (!done()) {
             // Wait until done
             CancellationToken token;
@@ -135,18 +155,18 @@ public:
     auto operator <=>(const ScopedWaitHandle &) const = default;
 
     /**
-     * @brief co-await the handle to complete. and return the result.
+     * @brief co-await the handle to complete and return the result.
      * 
      * @return co_await 
      */
     auto operator co_await() && {
-        // using the impl in task/spawn.hpp
-        ILIAS_ASSERT_MSG(mData, "Can not await an invalid handle");
+        // Using the implementation in task/spawn.hpp
+        ILIAS_ASSERT_MSG(mData, "Cannot await an invalid handle");
         return detail::WaitHandleAwaiter<T>{TaskView<T>::cast(mData->mTask)};
     }
 
     /**
-     * @brief Check this handle is valid.
+     * @brief Checks if the handle is valid.
      * 
      * @return true 
      * @return false 
@@ -164,7 +184,7 @@ private:
 };
 
 /**
- * @brief The task scope. user can spawn tasks in the scope and the scope will wait all the tasks when it is destroyed.
+ * @brief Manages tasks within a scope. Waits for all tasks to complete upon destruction.
  * 
  */
 class TaskScope {
@@ -173,8 +193,8 @@ public:
     using WaitHandle = ScopedWaitHandle<T>;
     using CancelHandle = ScopedCancelHandle;
 
-    TaskScope() : mExecutor(Executor::currentThread()) { }
-    TaskScope(Executor &exec) : mExecutor(&exec) { }
+    TaskScope() : mExecutor(*Executor::currentThread()) { }
+    TaskScope(Executor &exec) : mExecutor(exec) { }
     TaskScope(const TaskScope &) = delete;
     ~TaskScope() {
         if (mAutoCancel) {
@@ -184,21 +204,23 @@ public:
     }
 
     /**
-     * @brief Blocking current thread until all the tasks in the scope are finished.
+     * @brief Blocks the current thread until all tasks in the scope are finished.
      * 
      */
     auto wait() -> void {
         if (mInstances.empty()) {
-            return; //< Nothing to wait.
+            return; //< Nothing to wait for.
         }
+        ILIAS_ASSERT(!mWaitCallback && !mWaitData); // Ensure it's not called twice. or blocking wait and async wait at the same time.
         CancellationToken token;
-        mWaitToken = &token;
-        mExecutor->run(token);
+        mWaitCallback = &detail::cancelTheTokenHelper;
+        mWaitData = &token;
+        mExecutor.run(token);
         ILIAS_ASSERT(mInstances.empty());
     }
 
     /**
-     * @brief Send the cancel request to all the tasks in the scope.
+     * @brief Sends a cancel request to all tasks in the scope.
      * 
      */
     auto cancel() -> void {
@@ -210,10 +232,19 @@ public:
     }
 
     /**
-     * @brief Spawn a task in the scope. note, The result of the task will be discarded.
+     * @brief Gets the number of tasks running in the scope.s
+     * 
+     * @return size_t 
+     */
+    auto runningTasks() const -> size_t {
+        return mInstances.size();
+    }
+
+    /**
+     * @brief Spawns a task in the scope. The result of the task will be discarded.
      * 
      * @tparam T 
-     * @param task The task to spawn. (cannot be null)
+     * @param task The task to spawn (cannot be null).
      */
     template <typename T>
     auto spawn(Task<T> &&task) -> WaitHandle<T> {
@@ -222,14 +253,14 @@ public:
         auto instance = new detail::ScopedTask(handle, mInstances);
         // Start and add the complete callback.
         instance->mTask.registerCallback(std::bind(&TaskScope::onTaskComplete, this, instance));
-        instance->mTask.setExecutor(mExecutor);
+        instance->mTask.setExecutor(&mExecutor);
         instance->mTask.schedule();
-        ILIAS_TRACE("TaskScope", "Spawn a task {} in the scope.", (void*) instance);
+        ILIAS_TRACE("TaskScope", "Spawned a task {} in the scope.", (void*) instance);
         return WaitHandle<T>(instance);
     }
 
     /**
-     * @brief Spawn a task in the scope. the callable version.
+     * @brief Spawns a task in the scope using a callable.
      * 
      * @tparam Callable 
      * @tparam Args 
@@ -246,7 +277,7 @@ public:
             return spawn(std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...));
         }
         else {
-            // Oh, this callable has member, we should store it.
+            // Callable has members, store it.
             using TaskType = std::invoke_result_t<Callable, Args...>;
             return spawn([](Callable callable, Args ...args) -> TaskType {
                 co_return co_await std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...);
@@ -256,7 +287,7 @@ public:
     }
 
     /**
-     * @brief Set the scope should auto cancel the tasks when it is destroyed.
+     * @brief Sets whether the scope should auto-cancel tasks upon destruction.
      * 
      * @param autoCancel 
      */
@@ -265,7 +296,7 @@ public:
     }
 
     /**
-     * @brief Check whether the scope cancel the tasks when it is destroyed.
+     * @brief Checks whether the scope auto-cancels tasks upon destruction.
      * 
      * @return true 
      * @return false 
@@ -273,34 +304,68 @@ public:
     auto autoCancel() const -> bool {
         return mAutoCancel;
     }
+
+    /**
+     * @brief co-await the scope to complete. if cancellation is requested, all the tasks in the scope will be canceled.
+     * 
+     * @return co_await 
+     */
+    auto operator co_await() noexcept {
+        return detail::TaskScopeAwaiter(*this);
+    }
 private:
     /**
-     * @brief The callback for each task, we do management in this callback.
+     * @brief Callback for task completion, used for management.
      * 
      * @param instance 
      */
     auto onTaskComplete(detail::ScopedTask *instance) -> void {
-        ILIAS_TRACE("TaskScope", "Task {} is finished.", (void*) instance);
-        ILIAS_ASSERT(!mInCancel); //< Cannot be in canceling. ill-formed state.
+        ILIAS_TRACE("TaskScope", "Task {} finished.", (void*) instance);
+        ILIAS_ASSERT(!mInCancel); // Cannot be in canceling state.
         instance->unlink();
-        mExecutor->post([](void *instance) {
+        mExecutor.post([](void *instance) {
             static_cast<detail::ScopedTask*>(instance)->deref();
-        }, instance);
-        if (mInstances.empty() && mWaitToken) { //< Notify the wait operation.
-            mExecutor->post([](void *token) { 
-                //< We defer the notify to avoid the memory leak. the delete of the instance does not execute in the same thread.
-                ILIAS_TRACE("TaskScope", "All tasks are finished, notify the wait operation.");
-                static_cast<CancellationToken*>(token)->cancel();
-            }, mWaitToken);
-            mWaitToken = nullptr;
+        }, instance); // Delete the instance in the executor.
+        if (mInstances.empty() && mWaitCallback) { // Notify the wait operation.
+            // Defer the notify to avoid memory leak and ensure the user doesn't quit the event loop before the task instance is deleted.
+            mExecutor.post([](void *self) { 
+                static_cast<TaskScope*>(self)->notifyWait();
+            }, this);
         }
     }
 
-    std::list<detail::ScopedTask*> mInstances; //< The list of the tasks that are running in the scope.
-    Executor *mExecutor; //< The executor that the scope use.
-    bool mInCancel = false; //< Whether the scope is in canceling.
-    bool mAutoCancel = true; //< Whether to cancel the tasks when the scope is destroyed.
-    CancellationToken *mWaitToken = nullptr; //< The token for the wait operation.
+    auto notifyWait() -> void {
+        ILIAS_ASSERT(mWaitCallback); // Ensure it's not called twice or in the wrong state.
+        ILIAS_TRACE("TaskScope", "All tasks finished, notifying wait operation.");
+        auto callback = std::exchange(mWaitCallback, nullptr);
+        auto data = std::exchange(mWaitData, nullptr);
+        callback(data);
+    }
+
+    std::list<detail::ScopedTask*> mInstances; //< List of tasks running in the scope.
+    Executor &mExecutor; //< Executor used by the scope.
+    bool mInCancel = false; //< Indicates if the scope is canceling tasks.
+    bool mAutoCancel = true; //< Indicates if tasks should be auto-canceled upon destruction.
+    void (*mWaitCallback)(void *) = nullptr; //< Callback for wait operation.
+    void  *mWaitData = nullptr; //< Data for the wait callback.
+friend class detail::TaskScopeAwaiter;
 };
+
+inline auto detail::TaskScopeAwaiter::await_ready() const -> bool {
+    return mScope.mInstances.empty();
+}
+
+inline auto detail::TaskScopeAwaiter::await_suspend(CoroHandle caller) -> void {
+    ILIAS_ASSERT(!mScope.mWaitCallback && !mScope.mWaitData); // Ensure it's not called twice. or blocking wait and async wait at the same time.
+    mCaller = caller;
+    mScope.mWaitCallback = &detail::TaskScopeAwaiter::onNotify;
+    mScope.mWaitData = this;
+    mReg = caller.cancellationToken().register_(std::bind(&TaskScope::cancel, &mScope)); // Forwards the cancellation request to the scope.
+}
+
+inline auto detail::TaskScopeAwaiter::onNotify(void *self) -> void {
+    auto &awaiter = *static_cast<TaskScopeAwaiter*>(self);
+    awaiter.mCaller.resume();
+}
 
 ILIAS_NS_END

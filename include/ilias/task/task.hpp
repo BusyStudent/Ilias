@@ -23,15 +23,6 @@ ILIAS_NS_BEGIN
 namespace detail {
 
 /**
- * @brief The Helper function for the cancel the given token
- * 
- * @param token 
- */
-inline auto cancelTheTokenHelper(void *token) -> void {
-    static_cast<CancellationToken*>(token)->cancel();
-}
-
-/**
  * @brief The common part of the task awaiter
  * 
  */

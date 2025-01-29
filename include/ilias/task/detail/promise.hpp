@@ -454,8 +454,22 @@ private:
     std::optional<T> mValue;
 };
 
+/**
+ * @brief Check the promise is a our coroutine promise
+ * 
+ * @tparam T 
+ */
 template <typename T>
 concept IsCoroPromise = std::is_base_of_v<CoroPromiseBase, T>;
+
+/**
+ * @brief The Helper function for the cancel the given token
+ * 
+ * @param token 
+ */
+inline auto cancelTheTokenHelper(void *token) -> void {
+    static_cast<CancellationToken*>(token)->cancel();
+}
 
 } // namespace detail
 

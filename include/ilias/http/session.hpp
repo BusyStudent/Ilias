@@ -1,5 +1,16 @@
+/**
+ * @file session.hpp
+ * @author BusyStudent (fyw90mc@gmail.com)
+ * @brief The session for managing the HTTP requests, cookies and connection pooling
+ * @version 0.1
+ * @date 2025-01-24
+ * 
+ * @copyright Copyright (c) 2025
+ * 
+ */
 #pragma once
 
+#include <ilias/detail/refptr.hpp>
 #include <ilias/http/detail/worker.hpp>
 #include <ilias/http/transfer.hpp>
 #include <ilias/http/http1.1.hpp>
@@ -170,7 +181,7 @@ private:
 
     // State ...
     Mutex mWorkersMutex; //< The mutex for read write the Worker pool
-    std::map<HttpEndpoint, HttpWorker> mWorkers; //< Worker Pool
+    std::map<HttpEndpoint, detail::RefPtr<HttpWorker> > mWorkers; //< Worker Pool
 };
 
 // Implement Begin
@@ -317,28 +328,28 @@ inline auto HttpSession::connect(const Url &url) -> IoTask<std::unique_ptr<HttpS
     }
     ILIAS_TRACE("Http", "Got workers mutex");
 
-    auto [it, emplace] = mWorkers.try_emplace(endpoint, endpoint);
-    auto &[_, worker] = *it;
-    if (emplace) {
+    auto it = mWorkers.find(endpoint);
+    if (it == mWorkers.end()) {
+        detail::RefPtr<HttpWorker> worker(new HttpWorker(endpoint));
         // New worker? add the cleanup task
-        worker.setMaxConnectionHttp1(mMaxConnectionHttp1);
+        worker->setMaxConnectionHttp1(mMaxConnectionHttp1);
 #if !defined(ILIAS_NO_SSL)
-        worker.setSslContext(mSslCtxt);
+        worker->setSslContext(mSslCtxt);
 #endif
-
-        mScope.spawn([this](auto it) -> Task<> {
-            auto &[_, worker] = *it;
-            if (!co_await worker.quitEvent()) {
+        it = mWorkers.emplace(endpoint, worker).first;
+        mScope.spawn([it, worker, this]() -> Task<> {
+            if (!co_await worker->quitEvent()) {
                 co_return;
             }
             if (auto lock = co_await mWorkersMutex.uniqueLock(); lock) {
                 ILIAS_INFO("Http", "Session got {} worker quit, remove it", (void*) &worker);
                 mWorkers.erase(it);
             }
-        }, it);
+        });
     }
     lock->unlock();
-    co_return co_await worker.newStream();
+    auto [_, worker] = *it; //< Copy the worker shared_ptr
+    co_return co_await worker->newStream();
 }
 
 ILIAS_NS_END

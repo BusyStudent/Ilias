@@ -162,41 +162,14 @@ public:
         mTail = 0;
     }
 
-    // Interop with
     /**
-     * @brief Read data from the fd and write it into the stream buffer
+     * @brief Check the stream buffer's input window is empty or not
      * 
-     * @tparam T 
-     * @param fd The user to read from (like socket, file, etc.)
-     * @param size The size of data to read
-     * @return IoTask<size_t> The number of bytes actually written into the stream buffer
+     * @return true 
+     * @return false 
      */
-    template <Readable T>
-    auto writeFrom(T &fd, size_t size) -> IoTask<size_t> {
-        auto buffer = prepare(size);
-        auto n = co_await fd.read(buffer);
-        if (n) {
-            commit(n.value());
-        }
-        co_return n;
-    }
-
-    /**
-     * @brief Read data from the stream buffer and write it into the fd
-     * 
-     * @tparam T 
-     * @param fd The user to write to (like socket, file, etc.)
-     * @param size The size of data to write
-     * @return IoTask<size_t> The number of bytes actually written into the fd
-     */
-    template <Writable T>
-    auto readTo(T &fd, size_t size) -> IoTask<size_t> {
-        auto data = prepare(size);
-        auto n = co_await fd.write(data.subspan(0, size));
-        if (n) {
-            consume(n.value());
-        }
-        co_return n;
+    auto empty() const -> bool {
+        return mPos == mTail;
     }
 
     /**
@@ -309,8 +282,8 @@ public:
      * 
      * @tparam U 
      */
-    template <typename U = T> requires (Connectable<U>)
-    auto connect(const IPEndpoint &endpoint) -> IoTask<void> {
+    template <Connectable U = T, typename EndpointLike>
+    auto connect(const EndpointLike &endpoint) -> IoTask<void> {
         return static_cast<U&>(mStream).connect(endpoint);
     }
 
@@ -319,7 +292,7 @@ public:
      * 
      * @tparam U 
      */
-    template <typename U = T> requires (Shuttable<U>)
+    template <Shuttable U = T>
     auto shutdown() -> IoTask<void> {
         return static_cast<U&>(mStream).shutdown();
     }

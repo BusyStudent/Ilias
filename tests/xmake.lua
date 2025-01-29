@@ -18,6 +18,12 @@ option("task_trace")
     set_description("Add task stacktrace for debug use")
 option_end()
 
+option("use_openssl")
+    set_default(not is_host("windows"))
+    set_showmenu(true)
+    set_description("Use openssl for the ssl backend")
+option_end()
+
 if has_config("use_fmt") then
     add_requires("fmt")
     add_packages("fmt")
@@ -32,6 +38,11 @@ end
 
 if has_config("task_trace") then 
     add_defines("ILIAS_TASK_TRACE")
+end
+
+if has_config("use_openssl") then
+    add_requires("openssl")
+    add_defines("ILIAS_USE_OPENSSL")
 end
 
 -- Make all files in the unit directory into targets

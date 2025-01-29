@@ -180,6 +180,15 @@ public:
     auto operator <=>(const CoroHandle &other) const noexcept = default;
 
     /**
+     * @brief Resume the coroutine
+     * 
+     */
+    auto operator ()() const noexcept {
+        ILIAS_ASSERT(executor()); 
+        return mHandle();
+    }
+
+    /**
      * @brief Cast to std::coroutine_handle<>
      * 
      * @return std::coroutine_handle<> 
