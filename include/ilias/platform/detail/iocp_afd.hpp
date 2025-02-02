@@ -133,28 +133,32 @@ public:
     static auto afdToString(ULONG afdEvents) -> std::string {
         std::string ret;
         if (afdEvents & AFD_POLL_RECEIVE) {
-            ret += "AFD_POLL_RECEIVE ";
+            ret += "AFD_POLL_RECEIVE | ";
         }
         if (afdEvents & AFD_POLL_RECEIVE_EXPEDITED) {
-            ret += "AFD_POLL_RECEIVE_EXPEDITED ";
+            ret += "AFD_POLL_RECEIVE_EXPEDITED | ";
         }
         if (afdEvents & AFD_POLL_SEND) {
-            ret += "AFD_POLL_SEND ";
+            ret += "AFD_POLL_SEND | ";
         }
         if (afdEvents & AFD_POLL_DISCONNECT) {
-            ret += "AFD_POLL_DISCONNECT ";
+            ret += "AFD_POLL_DISCONNECT | ";
         }
         if (afdEvents & AFD_POLL_ABORT) {
-            ret += "AFD_POLL_ABORT ";
+            ret += "AFD_POLL_ABORT | ";
         }
         if (afdEvents & AFD_POLL_LOCAL_CLOSE) {
-            ret += "AFD_POLL_LOCAL_CLOSE ";
+            ret += "AFD_POLL_LOCAL_CLOSE | ";
         }
         if (afdEvents & AFD_POLL_ACCEPT) {
-            ret += "AFD_POLL_ACCEPT ";
+            ret += "AFD_POLL_ACCEPT | ";
         }
         if (afdEvents & AFD_POLL_CONNECT_FAIL) {
-            ret += "AFD_POLL_CONNECT_FAIL ";
+            ret += "AFD_POLL_CONNECT_FAIL | ";
+        }
+        if (!ret.empty()) {
+            ret.pop_back();
+            ret.pop_back();
         }
         return ret;
     }

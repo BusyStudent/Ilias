@@ -21,6 +21,7 @@
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/net/sockfd.hpp>
+#include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/log.hpp>
 #include <algorithm>
@@ -112,6 +113,9 @@ private:
     HANDLE mIocpFd = INVALID_HANDLE_VALUE;
     detail::TimerService mService;
     detail::AfdDevice    mAfdDevice;
+
+    // Batching
+    bool mBatching = false;
 
     // NT Functions
     decltype(::RtlNtStatusToDosError) *mRtlNtStatusToDosError = nullptr;
@@ -248,18 +252,11 @@ inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resu
         return Unexpected(Error::InvalidArgument);
     }
     if (type == IoDescriptor::Unknown) {
-        switch (::GetFileType(fd)) {
-            case FILE_TYPE_CHAR: type = IoDescriptor::Tty; break;
-            case FILE_TYPE_DISK: type = IoDescriptor::File; break;
-            case FILE_TYPE_PIPE: type = IoDescriptor::Pipe; break;
-            case FILE_TYPE_UNKNOWN: return Unexpected(SystemError::fromErrno());
-            default: return Unexpected(Error::InvalidArgument);
+        auto ret = fd_utils::type(fd);
+        if (!ret) {
+            return Unexpected(ret.error());
         }
-        // Check is real pipe or socket
-        DWORD flags = 0;
-        if (type == IoDescriptor::Pipe && !GetNamedPipeInfo(fd, &flags, nullptr, nullptr, nullptr)) {
-            type = IoDescriptor::Socket; // Failed to get name pipe info?, is socket
-        }
+        type = *ret;
     }
 
     // Try add it to the completion port

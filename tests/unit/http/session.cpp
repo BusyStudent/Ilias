@@ -1,4 +1,5 @@
 #include <ilias/http/session.hpp>
+#include <ilias/task/when_all.hpp>
 #include <ilias/platform.hpp>
 #include <gtest/gtest.h>
 
@@ -44,6 +45,30 @@ TEST(Session, HEADWithTimeout) {
     ASSERT_TRUE(text.value().empty());
 }
 
+TEST(Session, StreamMode) {
+    HttpRequest request("https://www.baidu.com");
+    request.setStreamMode(true);
+    auto reply = session->get(request).wait();
+    ASSERT_TRUE(reply);
+    auto text = reply->text().wait();
+    ASSERT_TRUE(text);
+}
+
+TEST(Session, Cocurrent) {
+    auto [reply1, reply2, reply3, reply4, reply5] = whenAll(
+        session->get("https://www.baidu.com"),
+        session->get("https://www.baidu.com"),
+        session->get("https://www.baidu.com"),
+        session->get("https://www.baidu.com"),
+        session->get("https://www.baidu.com")
+    ).wait();
+    ASSERT_TRUE(reply1);
+    ASSERT_TRUE(reply2);
+    ASSERT_TRUE(reply3);
+    ASSERT_TRUE(reply4);
+    ASSERT_TRUE(reply5);
+}
+
 auto main(int argc, char **argv) -> int {
 
 #if defined(_WIN32)
@@ -59,6 +84,7 @@ auto main(int argc, char **argv) -> int {
     HttpSession httpSession(ctxt);
     session = &httpSession;
     session->setCookieJar(&jar);
+    session->setMaxConnectionHttp1(2); // Test with 2 connections limit
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

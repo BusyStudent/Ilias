@@ -1,81 +1,260 @@
 <?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
-<!-- Socket -->
-<Type Name="Ilias::SocketView">
-    <DisplayString Condition="mFd != -1">{mFd}</DisplayString>
-    <DisplayString Condition="mFd == -1">invalid</DisplayString>
-</Type>
-	
-<Type Name="Ilias::IPEndpoint">
-	<DisplayString Condition="mAddr.ss_family == 0">empty</DisplayString>
-	<DisplayString Condition="mAddr.ss_family != 0">{mAddr}</DisplayString>
+<!-- Basic -->
+<Type Name="ilias::CancellationToken">
+	<DisplayString Condition="mIsCancellationRequested">cancellation requested</DisplayString>
+	<DisplayString Condition="!mIsCancellationRequested">idle</DisplayString>
+	<Expand>
+		<Item Name="[cancellationRequested]">mIsCancellationRequested</Item>
+		<Item Name="[callbacks]">mCallbacks</Item>
+		<Item Name="[autoReset]">mAutoReset</Item>
+	</Expand>
 </Type>
 
-<Type Name="Ilias::AsyncSocket">
-    <DisplayString>{mFd}</DisplayString>
-    <Expand>
-        <Item Name="[fd]">mFd</Item>
-        <Item Name="[ioContext]">mContext</Item>
-    </Expand>
+<Type Name="ilias::Error">
+	<DisplayString Condition="mErr != 0">{mErr}</DisplayString>
+	<DisplayString Condition="mErr == 0">OK</DisplayString>
+	<Expand>
+		<Item Name="[code]">mErr</Item>
+		<Item Name="[category]">mCategory</Item>
+	</Expand>
 </Type>
-	
-<Type Name="Ilias::IStreamClient">
-	<DisplayString Condition="mPtr">{mPtr}</DisplayString>
-	<DisplayString Condition="!mPtr">empty</DisplayString>
-</Type>
-	
-<Type Name="Ilias::SslClient&lt;*&gt;">
-	<DisplayString Condition="mBio">{mBio->mFd}</DisplayString>
-    <DisplayString Condition="!mBio">empty</DisplayString>
-</Type>
-	
-<Type Name="Ilias::ByteStream&lt;*, *&gt;">
-	<DisplayString>{mFd}</DisplayString>
-    <Expand>
-		<Item Name="[fd]">mFd</Item>
-		<Item Name="[bufferLeft]">mBufferTail - mPosition</Item>
+
+<!-- StreamBuffer -->
+<Type Name="ilias::StreamBuffer">
+	<Intrinsic Name="capacity" Expression="mBuffer._Mysize"></Intrinsic>
+	<Intrinsic Name="data" Expression="mBuffer._Mydata"></Intrinsic>
+	<Intrinsic Name="size" Expression="mTail - mPos"></Intrinsic>
+	<Intrinsic Name="empty" Expression="mPos == mTail"></Intrinsic>
+	<DisplayString Condition="empty()">empty</DisplayString>
+	<DisplayString Condition="!empty()">{{size={size()}}}</DisplayString>
+	<Expand>
+		<Item Name="[capacity]">capacity()</Item>
+		<Item Name="[size]">size()</Item>
 		<ArrayItems>
-			<Size>mBufferTail - mPosition</Size>
-			<ValuePointer>mBuffer + mPosition</ValuePointer>
+			<Size>size()</Size>
+			<ValuePointer>data()</ValuePointer>
 		</ArrayItems>
 	</Expand>
 </Type>
 
+<Type Name="ilias::FixedStreamBuffer&lt;*&gt;">
+	<Intrinsic Name="capacity" Expression="$T1"></Intrinsic>
+	<Intrinsic Name="data" Expression="(std::byte*)(&amp;mBuffer)"></Intrinsic>
+	<Intrinsic Name="size" Expression="mTail - mPos"></Intrinsic>
+	<Intrinsic Name="empty" Expression="mPos == mTail"></Intrinsic>
+	<DisplayString Condition="empty()">empty</DisplayString>
+	<DisplayString Condition="!empty()">{{size={size()}}}</DisplayString>
+	<Expand>
+		<Item Name="[capacity]">capacity()</Item>
+		<Item Name="[size]">size()</Item>
+		<ArrayItems>
+			<Size>size()</Size>
+			<ValuePointer>data()</ValuePointer>
+		</ArrayItems>
+	</Expand>
+</Type>
+
+<!-- Stream -->
+<Type Name="ilias::BufferedStream&lt;*&gt;">
+	<DisplayString>{mStream}</DisplayString>
+	<Expand>
+		<Item Name="[stream]">mStream</Item>
+		<ExpandedItem>mBuf</ExpandedItem>
+	</Expand>
+</Type>
+
+<!-- Socket -->
+<Type Name="ilias::SocketView">
+    <DisplayString Condition="mFd != -1">{mFd}</DisplayString>
+    <DisplayString Condition="mFd == -1">invalid</DisplayString>
+</Type>
+
+<Type Name="ilias::TcpClient">
+	<DisplayString>{mBase}</DisplayString>
+	<Expand>
+		<ExpandedItem>mBase</ExpandedItem>
+	</Expand>
+</Type>
+
+<Type Name="ilias::TcpListener">
+	<DisplayString>{mBase}</DisplayString>
+	<Expand>
+		<ExpandedItem>mBase</ExpandedItem>
+	</Expand>
+</Type>
+
+<Type Name="ilias::UdpClient">
+	<DisplayString>{mBase}</DisplayString>
+	<Expand>
+		<ExpandedItem>mBase</ExpandedItem>
+	</Expand>
+</Type>
+
+<Type Name="ilias::UnixClient">
+	<DisplayString>{mBase}</DisplayString>
+	<Expand>
+		<ExpandedItem>mBase</ExpandedItem>
+	</Expand>
+</Type>
+
+<Type Name="ilias::UnixListener">
+	<DisplayString>{mBase}</DisplayString>
+	<Expand>
+		<ExpandedItem>mBase</ExpandedItem>
+	</Expand>
+</Type>
+
+<Type Name="ilias::detail::SocketBase">
+	<DisplayString>{mSock}</DisplayString>
+	<Expand>
+		<Item Name="[fd]">mSock</Item>
+		<Item Name="[context]">mCtxt</Item>
+	</Expand>
+</Type>
+
+<!-- Network -->
+<Type Name="in_addr">
+	<Intrinsic Name="array" Expression="S_un.S_un_b"></Intrinsic>
+	<Intrinsic Name="p1" Expression="(int)(array().s_b1)"></Intrinsic>
+	<Intrinsic Name="p2" Expression="(int)(array().s_b2)"></Intrinsic>
+	<Intrinsic Name="p3" Expression="(int)(array().s_b3)"></Intrinsic>
+	<Intrinsic Name="p4" Expression="(int)(array().s_b4)"></Intrinsic>
+	<DisplayString>{p1()}.{p2()}.{p3()}.{p4()}</DisplayString>
+	<Expand>
+		<Item Name="[1]">p1()</Item>
+		<Item Name="[2]">p2()</Item>
+		<Item Name="[3]">p3()</Item>
+		<Item Name="[4]">p4()</Item>
+	</Expand>
+</Type>
+
+<Type Name="in6_addr">
+	<Intrinsic Name="p1" Expression="(u.Byte[0])"></Intrinsic>
+	<Intrinsic Name="p2" Expression="(u.Byte[1])"></Intrinsic>
+	<Intrinsic Name="p3" Expression="(u.Byte[2])"></Intrinsic>
+	<Intrinsic Name="p4" Expression="(u.Byte[3])"></Intrinsic>
+	<Intrinsic Name="p5" Expression="(u.Byte[4])"></Intrinsic>
+	<Intrinsic Name="p6" Expression="(u.Byte[5])"></Intrinsic>
+	<Intrinsic Name="p7" Expression="(u.Byte[6])"></Intrinsic>
+	<Intrinsic Name="p8" Expression="(u.Byte[7])"></Intrinsic>
+	<Intrinsic Name="p9" Expression="(u.Byte[8])"></Intrinsic>
+	<Intrinsic Name="p10" Expression="(u.Byte[9])"></Intrinsic>
+	<Intrinsic Name="p11" Expression="(u.Byte[10])"></Intrinsic>
+	<Intrinsic Name="p12" Expression="(u.Byte[11])"></Intrinsic>
+	<Intrinsic Name="p13" Expression="(u.Byte[12])"></Intrinsic>
+	<Intrinsic Name="p14" Expression="(u.Byte[13])"></Intrinsic>
+	<Intrinsic Name="p15" Expression="(u.Byte[14])"></Intrinsic>
+	<Intrinsic Name="p16" Expression="(u.Byte[15])"></Intrinsic>
+	
+	<DisplayString>{p1(), nvoxb}{p2(), nvoxb}:{p3(), nvoxb}{p4(), nvoxb}:{p5(), nvoxb}{p6(), nvoxb}:{p7(), nvoxb}{p8(), nvoxb}:{p9(), nvoxb}{p10(), nvoxb}:{p11(), nvoxb}{p12(), nvoxb}:{p13(), nvoxb}{p14(), nvoxb}:{p15(), nvoxb}{p16(), nvoxb}</DisplayString>
+</Type>
+
+<Type Name="ilias::IPAddress">
+	<DisplayString Condition="mFamily == 0">empty</DisplayString>
+	<DisplayString Condition="mFamily == 2">{mAddr.v4}</DisplayString>
+	<DisplayString Condition="mFamily == 23">{mAddr.v6}</DisplayString>
+	<Expand>
+		<Item Name="[family]">mFamily</Item>
+		<Item Name="[address]" Condition="mFamily == 2">mAddr.v4</Item>
+		<Item Name="[address]" Condition="mFamily == 23">mAddr.v6</Item>
+	</Expand>
+</Type>
+
+<Type Name="ilias::IPEndpoint">
+	<Intrinsic Name="family" Expression="mData.sa_family"></Intrinsic>
+	<Intrinsic Name="portRaw" Expression="family() ? mAddr4.sin_port : mAddr6.sin6_port"></Intrinsic>
+	<Intrinsic Name="hi" Expression="(unsigned short)(arg &lt;&lt; 8)">
+		<Parameter Name="arg" Type="unsigned short" />
+	</Intrinsic>
+	<Intrinsic Name="lo" Expression="(unsigned short)(arg &gt;&gt; 8)">
+		<Parameter Name="arg" Type="unsigned short" />
+	</Intrinsic>
+	<Intrinsic Name="ntohs" Expression="(unsigned short)(hi(arg) | lo(arg))">
+		<Parameter Name="arg" Type="unsigned short" />
+	</Intrinsic>
+	<Intrinsic Name="port" Expression="ntohs(portRaw())"></Intrinsic>
+	<DisplayString Condition="family() == 0">empty</DisplayString>
+	<DisplayString Condition="family() == 2">{mAddr4.sin_addr}:{port()}</DisplayString>
+	<DisplayString Condition="family() == 23">{mAddr6.sin6_addr}:{port()}</DisplayString>
+	<Expand>
+		<Item Name="[family]">family()</Item>
+		<Item Name="[address]" Condition="family() == 2">mAddr4.sin_addr</Item>
+		<Item Name="[address]" Condition="family() == 23">mAddr6.sin6_addr</Item>
+		<Item Name="[port]">port()</Item>
+	</Expand>
+</Type>
+
+<Type Name="ilias::UnixEndpoint">
+	<DisplayString Condition="sun_family != 1">empty</DisplayString>
+	<DisplayString Condition="sun_family == 1 &amp;&amp; sun_path[0] != '\0'">{sun_path, s8}</DisplayString>
+	<DisplayString Condition="sun_family == 1 &amp;&amp; sun_path[0] == '\0'">abstract: {sun_path + 1, s8}</DisplayString>
+</Type>
+
+<!-- Ssl -->
+<Type Name="ilias::openssl::SslClient&lt;*&gt;">
+	<DisplayString Condition="mBio">{(*mBio).mFd}</DisplayString>
+	<DisplayString Condition="!mBio">empty</DisplayString>
+	<Expand>
+		<Item Name="[fd]" Condition="mBio">(*mBio).mFd</Item>
+		<Item Name="[readBuffer]" Condition="mBio">(*mBio).mReadBuffer</Item>
+		<Item Name="[writeBuffer]" Condition="mBio">(*mBio).mWriteBuffer</Item>
+	</Expand>
+</Type>
+
+
 <!-- Http -->
-<Type Name="Ilias::HttpCookieJar">
+<Type Name="ilias::HttpCookieJar">
     <DisplayString>{mCookies}</DisplayString>
 </Type>
 
-<Type Name="Ilias::HttpCookie">
+<Type Name="ilias::HttpCookie">
     <DisplayString>{mName}:{mValue}</DisplayString>
 </Type>
-	
+
 <!-- Coroutine -->
-<Type Name="Ilias::Task&lt;*&gt;">
+<Type Name="ilias::Task&lt;*&gt;">
     <DisplayString>{mHandle}</DisplayString>
 </Type>
-	
-<Type Name="Ilias::Uninitialized&lt;*&gt;">
-    <DisplayString Condition="!mInited">empty</DisplayString>
-    <DisplayString Condition="mInited">">non-empty</DisplayString>
+
+<Type Name="ilias::Generator&lt;*&gt;">
+    <DisplayString>{mHandle}</DisplayString>
 </Type>
 
-<Type Name="Ilias::PromiseBase" Inheritable="false">
+<Type Name="ilias::CoroHandle">
 	<DisplayString>{mHandle}</DisplayString>
 	<Expand>
-		<Item Name="[canceled]">mCanceled</Item>
-		<Item Name="[eventLoop]">mEventLoop</Item>
+		<ExpandedItem>*mPromise</ExpandedItem>
+		<Item Name="[handle]">mHandle</Item>
+		<Item Name="[promise]">mPromise</Item>
 	</Expand>
 </Type>
 
-<Type Name="Ilias::TaskPromise&lt;*&gt;">
-	<DisplayString>{mHandle}</DisplayString>
+<Type Name="ilias::detail::CoroPromiseBase">
 	<Expand>
-		<Item Name="[canceled]">mCanceled</Item>
-		<Item Name="[eventLoop]">mEventLoop</Item>
-        <Item Name="[returnValue]">mValue</Item>
+		<Item Name="[started]">mStarted</Item>
+		<Item Name="[executor]">mExecutor</Item>
+		<Item Name="[exception]" Optional="true">mException</Item>
+		<Item Name="[cancellationToken]">mToken</Item>
+		<Item Name="[awaitingCoroutine]">mAwaitingCoroutine</Item>
 	</Expand>
 </Type>
+
+<Type Name="ilias::detail::TaskPromise&lt;*&gt;">
+	<Expand>
+		<ExpandedItem>*((ilias::detail::CoroPromiseBase*)this)</ExpandedItem>
+		<Item Name="[value]" Optional="true">mValue</Item>
+	</Expand>
+</Type>
+
+<Type Name="ilias::detail::GeneratorPromise&lt;*&gt;">
+	<Expand>
+		<ExpandedItem>*((ilias::detail::CoroPromiseBase*)this)</ExpandedItem>
+		<Item Name="[value]">mValue</Item>
+	</Expand>
+</Type>
+
+<!-- Sync -->
 
 </AutoVisualizer>

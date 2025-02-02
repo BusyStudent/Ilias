@@ -99,12 +99,11 @@ public:
             return 0;
         }
         BIO_clear_retry_flags(mBio);
-        if (mWriteBuffer.size() >= mWriteBufferLimit) {
+        auto span = mWriteBuffer.prepare(len);
+        if (span.empty()) {
             BIO_set_retry_write(mBio);
             return 0;
         }
-        len = std::min(len, mWriteBufferLimit - mWriteBuffer.size());
-        auto span = mWriteBuffer.prepare(len);
         std::memcpy(span.data(), data, len);
         mWriteBuffer.commit(len);
         *ret = len;
@@ -135,10 +134,10 @@ public:
         return 0; 
     }
 
-    StreamBuffer mReadBuffer;
-    StreamBuffer mWriteBuffer;
-    size_t mReadBufferLimit = 65535; //< Max tls record size
-    size_t mWriteBufferLimit = 65535; //< Max tls record size
+    static constexpr auto MaxTlsRecordSize = 16384;
+
+    FixedStreamBuffer<MaxTlsRecordSize + 500> mReadBuffer; //< Read buffer
+    FixedStreamBuffer<MaxTlsRecordSize + 500> mWriteBuffer; //< Write buffer
     BIO *mBio = nullptr;
     bool mFlush = false; //< Flush the write buffer into the fd ?
 };
@@ -243,7 +242,7 @@ protected:
             }
             mBio->mFlush = false;
         }
-        auto left = mBio->mReadBufferLimit - mBio->mReadBuffer.size();
+        auto left = mBio->mReadBuffer.capacity() - mBio->mReadBuffer.size();
         auto data = mBio->mReadBuffer.prepare(left);
         auto ret = co_await mBio->mFd.read(data);
         if (!ret) {

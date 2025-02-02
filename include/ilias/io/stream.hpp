@@ -16,12 +16,28 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <array>
 #include <span>
 
+// For min max macro in windows.h :(
 #undef min
 #undef max
 
 ILIAS_NS_BEGIN
+
+/**
+ * @brief Concept for Stream Buffer Like, StreamBuffer or FixedStreamBuffer
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept StreamBufferLike = requires(T t) {
+    t.prepare();
+    t.commit(0);
+    t.data();
+    t.size();
+    t.consume(0);
+};
 
 /**
  * @brief A Buffer for stream, like a pipe (write => output window --- input window => read)
@@ -100,9 +116,18 @@ public:
     /**
      * @brief Get the stream buffer's input window
      * 
-     * @return std::span<const std::byte> 
+     * @return std::span<std::byte> 
      */
     auto data() const -> std::span<const std::byte> {
+        return mBuffer.subspan(mPos, mTail - mPos);
+    }
+
+    /**
+     * @brief Get the stream buffer's input window (mutable)
+     * 
+     * @return std::span<std::byte> 
+     */
+    auto data() -> std::span<std::byte> {
         return mBuffer.subspan(mPos, mTail - mPos);
     }
 
@@ -113,6 +138,16 @@ public:
      */
     auto size() const -> size_t {
         return mTail - mPos;
+    }
+
+    /**
+     * @brief Check the stream buffer's input window is empty or not
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto empty() const -> bool {
+        return mPos == mTail;
     }
 
     /**
@@ -163,16 +198,6 @@ public:
     }
 
     /**
-     * @brief Check the stream buffer's input window is empty or not
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto empty() const -> bool {
-        return mPos == mTail;
-    }
-
-    /**
      * @brief Move another stream buffer into this one
      * 
      * @param other 
@@ -197,6 +222,131 @@ private:
     std::span<std::byte> mBuffer;
     size_t mPos = 0; //< Current position to read (input window)
     size_t mTail = 0; //< Current position to write (output window)
+};
+
+/**
+ * @brief The Stream Buffer with fixed size, non memory allocation
+ * 
+ * @tparam N The capacity of the buffer (Must be greater than 0)
+ */
+template <size_t N> requires (N > 0)
+class FixedStreamBuffer {
+public:
+    /**
+     * @brief Construct a new Fixed Stream Buffer object
+     * 
+     */
+    FixedStreamBuffer() = default;
+
+    // Output window
+    /**
+     * @brief Prepare a buffer for writing into the stream buffer (it make previous parepared buffer to invalid)
+     * @note if the size is too large, it will return an empty buffer
+     * 
+     * @param size The size of the buffer to prepare
+     * @return std::span<std::byte> 
+     */
+    auto prepare(size_t size) -> std::span<std::byte> {
+        if (mPos == mTail) { //< Input window is empty, move it and us to the begin of the buffer
+            mPos = 0;
+            mTail = 0;
+        }
+        if ((mTail - mPos) < mBuffer.size() / 8) { //< If the input window is too small, move it to the begin of the buffer
+            ::memmove(mBuffer.data(), mBuffer.data() + mPos, mTail - mPos);
+            mTail -= mPos;
+            mPos = 0;
+        }
+        auto space = mBuffer.size() - mTail; // The space left in the buffer
+        if (space < size) {
+            return {};
+        }
+        return std::span(mBuffer).subspan(mTail, size);
+    }
+
+    /**
+     * @brief Commit the size of data from output window into the input window
+     * 
+     * @param size The size of data to commit (can't exceed the capacity of the output window)
+     */
+    auto commit(size_t size) -> void {
+        ILIAS_ASSERT_MSG(size <= (mBuffer.size() - mTail), "Commit size exceed the capacity");
+        size = std::min(size, mBuffer.size() - mTail); //< In release version, the assert may be removed, so we add it
+        mTail += size;
+    }
+
+    // Input Window
+    /**
+     * @brief Get the data of the input window
+     * 
+     * @return std::span<const std::byte> 
+     */
+    auto data() const -> std::span<const std::byte> {
+        return {mBuffer.data() + mPos, mTail - mPos};
+    }
+
+    /**
+     * @brief Get the data of the input window (mutable)
+     * 
+     * @return std::span<std::byte> 
+     */
+    auto data() -> std::span<std::byte> {
+        return {mBuffer.data() + mPos, mTail - mPos};
+    }
+
+    /**
+     * @brief Get the size of the input window
+     * 
+     * @return size_t 
+     */
+    auto size() const -> size_t {
+        return mTail - mPos;
+    }
+
+    /**
+     * @brief Check the input window is empty or not
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto empty() const -> bool {
+        return mPos == mTail;
+    }
+
+    /**
+     * @brief Consume the size of data from the input window
+     * 
+     * @param size The size of data to consume (can't exceed the capacity of the input window)
+     */
+    auto consume(size_t size) -> void {
+        ILIAS_ASSERT_MSG(size <= (mTail - mPos), "Consume size exceed the capacity");
+        size = std::min(size, mTail - mPos);
+        mPos += size;
+    }
+
+    // Misc
+    /**
+     * @brief Clear the whole stream buffer
+     * 
+     */
+    auto clear() -> void {
+        mPos = 0;
+        mTail = 0;
+    }
+
+    /**
+     * @brief Get the size of the whole stream buffer (output + input window)
+     * 
+     * @return size_t 
+     */
+    auto capacity() const -> size_t {
+        return N;
+    }
+
+    auto operator <=>(const FixedStreamBuffer &) const noexcept = default;
+private:
+    std::array<std::byte, N> mBuffer;
+    size_t mPos = 0;
+    size_t mTail = 0;
 };
 
 /**

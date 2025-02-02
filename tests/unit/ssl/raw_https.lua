@@ -10,7 +10,7 @@ if is_plat("windows") then
         add_defines("ILIAS_ENABLE_LOG")
 
         if has_config("use_openssl") then
-            add_requires("openssl")
+            add_packages("openssl")
         end
     target_end()
 end

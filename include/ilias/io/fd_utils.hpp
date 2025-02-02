@@ -10,8 +10,9 @@
  */
 #pragma once
 
-#include <ilias/io/system_error.hpp>
 #include <ilias/detail/expected.hpp>
+#include <ilias/io/system_error.hpp>
+#include <ilias/io/context.hpp> // For IoDescriptor::Type
 #include <string>
 
 #if defined(_WIN32)
@@ -252,6 +253,50 @@ inline auto open(const char *path, std::string_view mode) -> Result<fd_t> {
     int fd = ::open(path, flags);
     if (fd >= 0) {
         return fd;
+    }
+#endif // defined(_WIN32)
+
+    return Unexpected(SystemError::fromErrno());
+}
+
+/**
+ * @brief Get the file descriptor type.
+ * 
+ * @param fd The os file descriptor.
+ * @return Result<IoDescriptor::Type> 
+ */
+inline auto type(fd_t fd) -> Result<IoDescriptor::Type> {
+
+#if defined(_WIN32)
+    ::DWORD type = ::GetFileType(fd);
+    switch (type) {
+        default: break;
+        case FILE_TYPE_CHAR: return IoDescriptor::Tty;
+        case FILE_TYPE_DISK: return IoDescriptor::File;
+        case FILE_TYPE_PIPE: {
+            // Check if it's a pipe or a socket
+            ::DWORD flags = 0;
+            if (!::GetNamedPipeInfo(fd, &flags, nullptr, nullptr, nullptr)) {
+                return IoDescriptor::Socket;
+            }
+            return IoDescriptor::Pipe;
+        }
+    }
+#else
+    struct ::stat st;
+    if (::fstat(fd, &st) == 0) {
+        if (S_ISCHR(st.st_mode) && ::isatty(fd)) {
+            return IoDescriptor::Tty;
+        }
+        else if (S_ISREG(st.st_mode)) {
+            return IoDescriptor::File;
+        }
+        else if (S_ISFIFO(st.st_mode)) {
+            return IoDescriptor::Pipe;
+        }
+        else if (S_ISSOCK(st.st_mode)) {
+            return IoDescriptor::Socket;
+        }
     }
 #endif // defined(_WIN32)
 

@@ -117,6 +117,13 @@ public:
     auto setProxy(const Url &proxy) -> void { mProxy = proxy; }
 
     /**
+     * @brief Set the Max Connection Http1 object
+     * 
+     * @param n The max connection limit
+     */
+    auto setMaxConnectionHttp1(size_t n) -> void { mMaxConnectionHttp1 = n; }   
+
+    /**
      * @brief Get the Cookie Jar object
      * 
      * @return HttpCookieJar* 

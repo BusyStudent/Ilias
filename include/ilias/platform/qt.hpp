@@ -14,6 +14,7 @@
 #include <ilias/task/executor.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/net/sockfd.hpp>
+#include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/log.hpp>
 #include <QSocketNotifier>
@@ -198,9 +199,16 @@ inline auto QIoContext::run(CancellationToken &token) -> void {
 
 inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> {
     auto nfd = std::make_unique<detail::QIoDescriptor>(this);
-    nfd->type = type;
 
-    // Check if fd is pollable
+    // If the type is unknown, we need to check it
+    if (type == IoDescriptor::Unknown) {
+        auto ret = fd_utils::type(fd);
+        if (!ret) {
+            return Unexpected(ret.error());
+        }
+        type = *ret;
+    }
+    // Check the fd type that we support
     switch (type) {
         case IoDescriptor::Socket:
             nfd->pollable = true;
@@ -210,6 +218,7 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resul
             return Unexpected(Error::OperationNotSupported);
     }
     
+    nfd->type = type;
     // Prepare env for pollable (in windows only socket can be pollable)
     if (nfd->pollable) {
         nfd->sockfd = socket_t(fd);

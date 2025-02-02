@@ -113,7 +113,7 @@ public:
     auto register_(detail::MoveOnlyFunction<void()> &&callback) -> Registration {
         Registration reg;
 
-        if (mIsCancelled) {
+        if (mIsCancellationRequested) {
             callback();
             return reg;
         }
@@ -151,13 +151,24 @@ public:
     }
 
     /**
-     * @brief Check if the token is cancelled
+     * @brief Check if the cancellation is requested
      * 
      * @return true 
      * @return false 
      */
+    [[deprecated("Use isCancellationRequested() instead")]]
     auto isCancelled() const -> bool {
-        return mIsCancelled;
+        return mIsCancellationRequested;
+    }
+
+    /**
+     * @brief Check if the cancellation is requested
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isCancellationRequested() const -> bool {
+        return mIsCancellationRequested;
     }
 
     /**
@@ -165,10 +176,10 @@ public:
      * 
      */
     auto cancel() -> void {
-        if (mIsCancelled) {
+        if (mIsCancellationRequested) {
             return;
         }
-        mIsCancelled = true;
+        mIsCancellationRequested = true;
         mIsInCancelling = true; //< Prevent new callback to be registered
 
         for (auto &callback : mCallbacks) {
@@ -180,7 +191,7 @@ public:
         mCallbacks.clear();
 
         if (mAutoReset) {
-            mIsCancelled = false;
+            mIsCancellationRequested = false;
         }
     }
 
@@ -189,10 +200,10 @@ public:
      * 
      */
     auto reset() -> void {
-        mIsCancelled = false;
+        mIsCancellationRequested = false;
     }
 private:
-    bool mIsCancelled = false;
+    bool mIsCancellationRequested = false;
     bool mIsInCancelling = false;
     bool mAutoReset = false;
     std::list<detail::CancellationCallback*> mCallbacks; //< Invoke when token is cancelled

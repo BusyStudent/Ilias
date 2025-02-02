@@ -158,7 +158,7 @@ public:
             requestString += query;
         }
 
-        sprintf(headersBuf, "%s %s HTTP/1.1\r\n", method.data(), requestString.c_str());
+        sprintf(headersBuf, "%.*s %s HTTP/1.1\r\n", int(method.size()), method.data(), requestString.c_str());
 
         // Then format request headers
         for (const auto &[key, value] : headers) {
