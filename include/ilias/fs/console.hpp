@@ -110,11 +110,10 @@ public:
      */
     auto printf(const char *fmt, ...) -> IoTask<size_t> {
         std::string buffer;
-        MemWriter writer(buffer);
 
         va_list args;
         va_start(args, fmt);
-        writer.printf(fmt, args);
+        vsprintfTo(buffer, fmt, args);
         va_end(args);
 
         return writeString(std::move(buffer)); //< Move the buffer to the co frame

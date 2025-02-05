@@ -13,7 +13,7 @@ TEST(CancellationToken, SimpleUsecase) {
     token.cancel();
 
     ASSERT_TRUE(value);
-    ASSERT_TRUE(token.isCancelled());
+    ASSERT_TRUE(token.isCancellationRequested());
 }
 
 TEST(CancellationToken, Unregistered) {
@@ -28,7 +28,7 @@ TEST(CancellationToken, Unregistered) {
     token.cancel();
 
     ASSERT_FALSE(value);
-    ASSERT_TRUE(token.isCancelled());
+    ASSERT_TRUE(token.isCancellationRequested());
 }
 
 TEST(CancellationToken, InvokeAfterCancel) {
@@ -46,7 +46,7 @@ TEST(CancellationToken, InvokeAfterCancel) {
 
     ASSERT_TRUE(value1);
     ASSERT_TRUE(value2);
-    ASSERT_TRUE(token.isCancelled());
+    ASSERT_TRUE(token.isCancellationRequested());
 }
 
 TEST(CancellationToken, MultipleRegistrations) {
@@ -64,7 +64,7 @@ TEST(CancellationToken, MultipleRegistrations) {
 
     ASSERT_TRUE(value1);
     ASSERT_TRUE(value2);
-    ASSERT_TRUE(token.isCancelled());
+    ASSERT_TRUE(token.isCancellationRequested());
 }
 
 TEST(CancellationToken, MultipleUnregistered) {
@@ -91,27 +91,27 @@ TEST(CancellationToken, MultipleUnregistered) {
     ASSERT_FALSE(value1);
     ASSERT_FALSE(value2);
     ASSERT_TRUE(value3);
-    ASSERT_TRUE(token.isCancelled());
+    ASSERT_TRUE(token.isCancellationRequested());
 }
 
 TEST(CancellationToken, AutoReset) {
     CancellationToken token;
     {
         auto reg1 = token.register_([&]() {
-           ILIAS_ASSERT(token.isCancelled()); 
+           ILIAS_ASSERT(token.isCancellationRequested()); 
         });
         token.cancel();
-        ASSERT_TRUE(token.isCancelled());
+        ASSERT_TRUE(token.isCancellationRequested());
     }
     token.reset();
     token.setAutoReset(true);
     {
-        ASSERT_FALSE(token.isCancelled());
+        ASSERT_FALSE(token.isCancellationRequested());
         auto reg2 = token.register_([&]() {
-            ILIAS_ASSERT(token.isCancelled());
+            ILIAS_ASSERT(token.isCancellationRequested());
         });
         token.cancel();
-        ASSERT_FALSE(token.isCancelled()); //< Because auto reset enabled, the token is reset immediately after cancel
+        ASSERT_FALSE(token.isCancellationRequested()); //< Because auto reset enabled, the token is reset immediately after cancel
         bool value = false;
         auto reg3 = token.register_([&]() {
             value = true;

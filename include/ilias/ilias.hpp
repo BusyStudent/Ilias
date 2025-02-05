@@ -122,6 +122,11 @@
     struct ILIAS_FMT_NAMESPACE::formatter<ILIAS_NAMESPACE::type> : \
         ILIAS_NAMESPACE::detail::DefaultFormatter
 
+#define ILIAS_FORMATTER_T(T, type)                                 \
+    template <T>                                                   \
+    struct ILIAS_FMT_NAMESPACE::formatter<ILIAS_NAMESPACE::type> : \
+        ILIAS_NAMESPACE::detail::DefaultFormatter
+
 
 ILIAS_NS_BEGIN
 

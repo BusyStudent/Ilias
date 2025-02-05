@@ -97,7 +97,7 @@ using AwaiterResult = decltype(std::declval<T>().await_resume());
  * @return auto 
  */
 template <Awaitable T>
-auto toAwaiter(T &&val) noexcept {
+auto toAwaiter(T &&val) noexcept -> decltype(auto) {
     if constexpr (Awaiter<T>) {
         return std::forward<T>(val);
     }

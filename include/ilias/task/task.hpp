@@ -126,7 +126,7 @@ public:
      * 
      * @param other 
      */
-    Task(Task &&other) : mHandle(other._leak()) { }
+    Task(Task &&other) noexcept : mHandle(other._leak()) { }
 
     /**
      * @brief Construct a new Task object by any awaitable, the result of the awaitable must be convertible to T

@@ -37,6 +37,31 @@ TEST(WhenAll, Basic) {
     }
 }
 
+TEST(WhenAll, Range) {
+    {
+        std::vector<Task<int> > tasks;
+        tasks.emplace_back(returnInput(1));
+        tasks.emplace_back(returnInput(2));
+        tasks.emplace_back(returnInput(3));
+        auto vec = whenAll(std::move(tasks)).wait();
+        ASSERT_EQ(vec.size(), 3);
+        ASSERT_EQ(vec[0], 1);
+        ASSERT_EQ(vec[1], 2);
+        ASSERT_EQ(vec[2], 3);
+    }
+    {
+        std::vector<IoTask<void> > tasks;
+        tasks.emplace_back(sleep(1ms));
+        tasks.emplace_back(sleep(2ms));
+        tasks.emplace_back(sleep(3ms));
+        auto vec = whenAll(std::move(tasks)).wait();
+        ASSERT_EQ(vec.size(), 3);
+        ASSERT_TRUE(vec[0]);
+        ASSERT_TRUE(vec[1]);
+        ASSERT_TRUE(vec[2]);
+    }
+}
+
 auto main(int argc, char **argv) -> int {
     MiniExecutor exec;
     ::testing::InitGoogleTest(&argc, argv);

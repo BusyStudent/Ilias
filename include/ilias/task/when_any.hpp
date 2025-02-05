@@ -15,7 +15,9 @@
 #include <ilias/log.hpp>
 #include <optional>
 #include <variant> //< For std::monostate
+#include <vector>
 #include <tuple>
+#include <span>
 
 
 ILIAS_NS_BEGIN
@@ -23,7 +25,7 @@ ILIAS_NS_BEGIN
 namespace detail {
 
 /**
- * @brief The tag for when any
+ * @brief The tag for when any on tuple
  * 
  * @tparam Types 
  */
@@ -37,6 +39,25 @@ struct WhenAnyTuple {
      * @return std::tuple<std::optional<Types>...>
      */
     auto wait() const {
+        return awaitableWrapperForward(*this).wait();
+    }
+};
+
+/**
+ * @brief The tag for when any on range (vector)
+ * 
+ * @tparam T 
+ */
+template <typename T>
+struct WhenAnyRange {
+    std::vector<Task<T> > mRange;
+
+    /**
+     * @brief Blocking wait until the when any complete
+     * 
+     * @return T
+     */
+    auto wait() const -> T {
         return awaitableWrapperForward(*this).wait();
     }
 };
@@ -65,24 +86,17 @@ public:
         ILIAS_TRACE("WhenAny", "[{}] Begin", sizeof ...(Types));
         // Register callback
         mCaller = caller;
-        auto register_ = [&](auto ...tasks) {
-            (tasks.registerCallback(
-                std::bind(&WhenAnyTupleAwaiter::completeCallback, this, tasks)
-            )
-            , ...);
-        };
-        std::apply(register_, mTasks);
-
-        // Register caller cancel callback
-        mRegistration = caller.cancellationToken().register_(
-            std::bind(&WhenAnyTupleAwaiter::cancelAll, this)
-        );
 
         // Start all tasks
         auto start = [&](auto ...tasks) {
             (startTask(tasks), ...);
         };
         std::apply(start, mTasks);
+
+        // Register caller cancel callback
+        mRegistration = caller.cancellationToken().register_(
+            std::bind(&WhenAnyTupleAwaiter::cancelAll, this)
+        );
     }
 
     auto await_resume() -> OutTuple {
@@ -146,6 +160,9 @@ private:
 
     auto startTask(TaskView<> task) -> void {
         task.setExecutor(mCaller.executor());
+        task.registerCallback(
+            std::bind(&WhenAnyTupleAwaiter::completeCallback, this, task)
+        );
         task.resume();
         if (mGot && mGot != task) { //< Another task has already got the result, send a cancel
             task.cancel();
@@ -156,6 +173,91 @@ private:
     CoroHandle mCaller;
     TaskView<> mGot; // The task that got the result
     size_t mTaskLeft = sizeof...(Types);
+    CancellationToken::Registration mRegistration;
+};
+
+/**
+ * @brief WhenAny on an vector of tasks
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class WhenAnyRangeAwaiter {
+public:
+    WhenAnyRangeAwaiter(std::span<const Task<T> > tasks) : mTasks(tasks), mTaskLeft(tasks.size()) { }
+
+    auto await_ready() -> bool {
+        return false;
+    }
+
+    auto await_suspend(CoroHandle caller) -> void {
+        ILIAS_TRACE("WhenAny", "Range [{}] Begin", mTasks.size());
+        // Register callback
+        mCaller = caller;
+
+        // Start all tasks
+        for (auto &task : mTasks) {
+            auto view = task._view();
+            view.setExecutor(caller.executor());
+            view.registerCallback(
+                std::bind(&WhenAnyRangeAwaiter::completeCallback, this, view)
+            ); // Register the completion callback, wait for the task to complete
+            view.resume();
+            if (mGot && mGot != view) { //< Another task has already got the result, send a cancel
+                view.cancel();
+            }
+        }
+
+        // Register caller cancel callback
+        mRegistration = caller.cancellationToken().register_(
+            std::bind(&WhenAnyRangeAwaiter::cancelAll, this)
+        );
+    }
+
+    auto await_resume() -> T {
+        ILIAS_TRACE("WhenAny", "Range [{}] End", mTasks.size());
+        ILIAS_ASSERT(mGot);
+        if constexpr (std::is_same_v<T, void>) {
+            mGot.value(); //< Make sure the exception throw if the task has it
+        }
+        else {
+            return mGot.value();
+        }
+    }
+private:
+    /**
+     * @brief Get invoked when a task is completed
+     * 
+     * @param task 
+     */
+    auto completeCallback(TaskView<T> task) -> void {
+        ILIAS_TRACE("WhenAny", "[{}] Task {} completed, {} Left", mTasks.size(), task, mTaskLeft - 1);
+        if (!mGot) {
+            ILIAS_TRACE("WhenAny", "[{}] First task got the result is {}", mTasks.size(), task);
+            mGot = task;
+            cancelAll(); //< Cancel all another existing tasks
+        }
+        mTaskLeft -= 1;
+        if (mTaskLeft == 0) {
+            mCaller.schedule(); // Resume the caller
+        }
+    }
+
+    /**
+     * @brief Callback used to cancel all sub tasks
+     * 
+     */
+    auto cancelAll() -> void {
+        ILIAS_TRACE("WhenAny", "[{}] Cancel all tasks", mTasks.size());
+        for (auto &task : mTasks) {
+            task._view().cancel();
+        }
+    }
+
+    std::span<const Task<T> > mTasks;
+    size_t mTaskLeft;
+    CoroHandle mCaller;
+    TaskView<T> mGot;
     CancellationToken::Registration mRegistration;
 };
 
@@ -174,6 +276,18 @@ inline auto operator co_await(const WhenAnyTuple<Types...> &tuple) noexcept {
     return WhenAnyTupleAwaiter<Types...>(views);
 }
 
+/**
+ * @brief Convert the WhenAnyRange to awaiter
+ * 
+ * @tparam T 
+ * @param range 
+ * @return auto 
+ */
+template <typename T>
+inline auto operator co_await(const WhenAnyRange<T> &range) noexcept {
+    return WhenAnyRangeAwaiter<T>(range.mRange);
+}
+
 } // namespace detail
 
 
@@ -189,6 +303,19 @@ inline auto whenAny(Types && ...args) noexcept {
     return detail::WhenAnyTuple<AwaitableResult<Types>...> { //< Construct the task for the given awaitable
         { Task<AwaitableResult<Types> >(std::forward<Types>(args))... }
     };
+}
+
+/**
+ * @brief When Any on task vector
+ * 
+ * @tparam T 
+ * @param tasks The tasks' vector (must not be empty)
+ * @return auto 
+ */
+template <typename T>
+inline auto whenAny(std::vector<Task<T> > &&tasks) noexcept {
+    ILIAS_ASSERT(!tasks.empty());
+    return detail::WhenAnyRange<T> { std::move(tasks) };
 }
 
 /**

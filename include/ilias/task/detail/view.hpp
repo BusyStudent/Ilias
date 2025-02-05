@@ -98,11 +98,11 @@ public:
     auto cancellationToken() const -> CancellationToken & { return mPromise->cancellationToken(); }
 
     /**
-     * @brief Check if the coroutine is cancelled
+     * @brief Check if the coroutine is cancellation requested
      * 
      * @return bool
      */
-    auto isCancelled() const noexcept -> bool { return cancellationToken().isCancelled(); }
+    auto isCancellationRequested() const noexcept -> bool { return cancellationToken().isCancellationRequested(); }
 
     /**
      * @brief Check if the coroutine is started
@@ -387,13 +387,20 @@ ILIAS_NS_END
 #if !defined(ILIAS_NO_FORMAT)
 ILIAS_FORMATTER(CoroHandle) {
     auto format(const auto &view, auto &ctxt) const {
-        return format_to(ctxt.out(), "CoroHandle<{}>", std::coroutine_handle<>(view).address());
+        return format_to(ctxt.out(), "CoroHandle({})", std::coroutine_handle<>(view).address());
     }
 };
 
 ILIAS_FORMATTER(TaskView<>) {
     auto format(const auto &view, auto &ctxt) const {
-        return format_to(ctxt.out(), "TaskView<{}>", std::coroutine_handle<>(view).address());
+        return format_to(ctxt.out(), "TaskView({})", std::coroutine_handle<>(view).address());
     }
 };
+
+ILIAS_FORMATTER_T(typename T, TaskView<T>) {
+    auto format(const auto &view, auto &ctxt) const {
+        return format_to(ctxt.out(), "TaskView<{}>({})", typeid(T).name(), std::coroutine_handle<>(view).address());
+    }
+};
+
 #endif

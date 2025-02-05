@@ -158,11 +158,12 @@ public:
             requestString += query;
         }
 
-        sprintf(headersBuf, "%.*s %s HTTP/1.1\r\n", int(method.size()), method.data(), requestString.c_str());
+        headersBuf.reserve(method.size() + requestString.size() + 128); // Reserve some space
+        sprintfTo(headersBuf, "%.*s %s HTTP/1.1\r\n", int(method.size()), method.data(), requestString.c_str());
 
         // Then format request headers
         for (const auto &[key, value] : headers) {
-            sprintf(headersBuf, "%s: %s\r\n", key.c_str(), value.c_str());
+            sprintfTo(headersBuf, "%s: %s\r\n", key.c_str(), value.c_str());
         }
         // Add the end of headers
         headersBuf += "\r\n";
@@ -352,8 +353,6 @@ public:
     }
 
 private:
-    auto sprintf(std::string &buf, const char *fmt, ...) -> void;
-
     Http1Connection *mCon;
     bool mMethodHead = false; //< If the method is HEAD, we should not recv the body
     bool mHeaderSent = false;
@@ -368,26 +367,6 @@ private:
     size_t mChunkRemain = 0; //< How many bytes remain in the current chunk
 friend class Http1Connection;
 };
-
-inline auto Http1Stream::sprintf(std::string &buf, const char *fmt, ...) -> void {
-    va_list varg;
-    int s;
-    
-    va_start(varg, fmt);
-#ifdef _WIN32
-    s = ::_vscprintf(fmt, varg);
-#else
-    s = ::vsnprintf(nullptr, 0, fmt, varg);
-#endif // define _WIN32
-    va_end(varg);
-
-    int len = buf.length();
-    buf.resize(len + s);
-
-    va_start(varg, fmt);
-    ::vsprintf(buf.data() + len, fmt, varg);
-    va_end(varg);
-}
 
 inline Http1Connection::~Http1Connection() {
     ILIAS_ASSERT(!mHasStream);

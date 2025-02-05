@@ -55,6 +55,17 @@ TEST(WhenAny, Basic1) {
     }
 }
 
+TEST(WhenAny, Range) {
+    {
+        std::vector<IoTask<void> > tasks;
+        tasks.emplace_back(sleep(20ms));
+        tasks.emplace_back(sleep(10ms));
+        tasks.emplace_back(sleep(15ms));
+        auto res = whenAny(std::move(tasks)).wait();
+        EXPECT_TRUE(res);
+    }
+}
+
 TEST(Decorator, SetTimeout) {
     auto res = (returnInput(10) | setTimeout(10s)).wait();
     ASSERT_TRUE(res);

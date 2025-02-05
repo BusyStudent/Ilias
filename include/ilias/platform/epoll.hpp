@@ -524,7 +524,7 @@ inline auto EpollContext::post(void (*fn)(void *), void *args) -> void {
 
 inline auto EpollContext::run(CancellationToken &token) -> void {
     int timeout = ::std::numeric_limits<int>::max();
-    while (!token.isCancelled()) {
+    while (!token.isCancellationRequested()) {
         auto nextTimepoint = mService.nextTimepoint();
         if (nextTimepoint) {
             auto diffRaw = *nextTimepoint - ::std::chrono::steady_clock::now();

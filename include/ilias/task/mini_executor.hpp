@@ -38,16 +38,16 @@ public:
         auto reg = token.register_([&]() {
             mCond.notify_one();
         });
-        while (!token.isCancelled()) {
+        while (!token.isCancellationRequested()) {
             std::unique_lock locker(mMutex);
             auto timepoint = mService.nextTimepoint();
             if (!timepoint) {
                 timepoint = std::chrono::steady_clock::now() + std::chrono::hours(60);
             }
             mCond.wait_until(locker, timepoint.value(), [&]() {
-                return !mQueue.empty() || token.isCancelled();
+                return !mQueue.empty() || token.isCancellationRequested();
             });
-            if (token.isCancelled()) {
+            if (token.isCancellationRequested()) {
                 return;
             }
             if (!mQueue.empty()) {

@@ -157,7 +157,7 @@ inline auto IocpContext::post(void (*fn)(void *), void *args) -> void {
 
 inline auto IocpContext::run(CancellationToken &token) -> void {
     DWORD timeout = INFINITE;
-    while (!token.isCancelled()) {
+    while (!token.isCancellationRequested()) {
         auto nextTimepoint = mService.nextTimepoint();
         if (nextTimepoint) {
             auto diffRaw = *nextTimepoint - std::chrono::steady_clock::now();

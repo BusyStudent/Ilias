@@ -193,7 +193,7 @@ inline auto UringContext::run(CancellationToken &token) -> void {
         ::io_uring_sqe_set_data(sqe, detail::UringCallback::noop());
         ::io_uring_submit(&mRing);
     });
-    while (!token.isCancelled()) {
+    while (!token.isCancellationRequested()) {
         ::io_uring_submit(&mRing); //< Submit any pending request
         processCompletion();
     }
