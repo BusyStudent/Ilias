@@ -11,11 +11,9 @@
 #pragma once
 
 #include <ilias/ilias.hpp>
-#include <optional>
 #include <cstring> //< for memcpy
 #include <cstdarg>
 #include <cstdio>  //< for sprintf
-#include <string>  //< for std::string_view
 #include <span>
 
 ILIAS_NS_BEGIN
@@ -137,7 +135,7 @@ inline auto spanCast(std::span<In> in) -> std::span<T> {
  * @brief Get the sprintf output size
  * 
  * @param fmt 
- * @param args 
+ * @param args The va_list, the function will use a copy of it
  * @return size_t 
  */
 inline auto vsprintfSize(const char *fmt, va_list args) -> size_t {

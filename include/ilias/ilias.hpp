@@ -135,6 +135,10 @@ using fd_t     = ILIAS_FD_T;
 using error_t  = ILIAS_ERROR_T;
 using socket_t = ILIAS_SOCKET_T;
 
+// --- Forward declaration for Error
+class Error;
+class SystemError;
+
 // --- Forward declaration for Task<T>
 template <typename T = void>
 class Task;

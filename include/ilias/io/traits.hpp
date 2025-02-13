@@ -66,6 +66,16 @@ concept Connectable = requires(T t) {
 };
 
 /**
+ * @brief Concept for types that can get the file descriptor.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept HasFileDescriptor = requires(T t) {
+    t.fd();
+};
+
+/**
  * @brief Concept for types that can be read and written to a byte span.
  * 
  * @tparam T 

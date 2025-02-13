@@ -29,6 +29,16 @@ enum class SeekFrom : int {
 };
 
 /**
+ * @brief Concept for std::filesystem::path or another compatible path type
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept PathLike = requires(T &t) {
+    { t.u8string() } -> std::convertible_to<std::u8string>;
+};
+
+/**
  * @brief The File class, used to represent a file stream
  * 
  */
@@ -38,11 +48,13 @@ public:
     
     File(const File &) = delete;
 
-    File(File &&other) : mCtxt(other.mCtxt), mDesc(other.mDesc), mFd(other.mFd), mOffset(other.mOffset) {
-        other.mCtxt = nullptr;
-        other.mDesc = nullptr;
-        other.mFd = {};
-        other.mOffset = std::nullopt;
+    File(File &&other) : 
+        mCtxt(std::exchange(other.mCtxt, nullptr)), 
+        mDesc(std::exchange(other.mDesc, nullptr)), 
+        mFd(std::exchange(other.mFd, {})), 
+        mOffset(std::exchange(other.mOffset, std::nullopt)) 
+    {
+
     }
 
     ~File() {
@@ -180,6 +192,24 @@ public:
     }
 
     /**
+     * @brief Move assignment
+     * 
+     * @param other 
+     * @return File & 
+     */
+    auto operator = (File &&other) -> File & {
+        if (&other == this) {
+            return *this;
+        }
+        close();
+        mCtxt = std::exchange(other.mCtxt, nullptr);
+        mDesc = std::exchange(other.mDesc, nullptr);
+        mFd = std::exchange(other.mFd, {});
+        mOffset = std::exchange(other.mOffset, std::nullopt);
+        return *this;
+    }
+
+    /**
      * @brief Open the file by path and mode
      * 
      * @param path The utf-8 encoded path
@@ -191,15 +221,15 @@ public:
         if (!fd) {
             co_return Unexpected(fd.error());
         }
-        auto &&ctxt = co_await currentIoContext();
-        auto desc = ctxt.addDescriptor(fd.value(), IoDescriptor::File);
+        auto ctxt = co_await currentIoContext();
+        auto desc = ctxt.get().addDescriptor(fd.value(), IoDescriptor::File);
         if (!desc) {
             co_return Unexpected(desc.error());
         }
 
         File file;
         file.mDesc = desc.value();
-        file.mCtxt = &ctxt;
+        file.mCtxt = &ctxt.get();
         file.mFd = fd.value();
 
         // Check if the file is a regular file (support offset)
@@ -245,6 +275,11 @@ public:
         co_return co_await open(std::u8string(path), mode);
     }
 
+    template <PathLike T>
+    static auto open(const T &path, std::string_view mode) -> IoTask<File> {
+        return open(path.u8string(), mode);
+    }
+
     /**
      * @brief Check if the file stream is valid
      * 
@@ -260,5 +295,132 @@ private:
     fd_t       mFd { };
     std::optional<size_t> mOffset; //< The offset of the file stream, nullopt for unsupport seek
 };
+
+/**
+ * @brief Wrapping the mmap operation, no advance operations are supported, only for plain read / write operations
+ * 
+ */
+class FileMapping {
+public:
+    enum Flags {
+        ReadOnly  = 1 << 1,
+        WriteOnly = 1 << 2,
+        Private   = 1 << 3, // Copy on write
+        ReadWrite = ReadOnly | WriteOnly
+    };
+
+    FileMapping() = default;
+
+    FileMapping(const FileMapping &) = delete;
+
+    FileMapping(FileMapping &&other) : mBuffer(std::exchange(other.mBuffer, {})) { }
+
+    ~FileMapping() { unmap(); }
+
+    /**
+     * @brief Unmap the file
+     * 
+     */
+    auto unmap() -> void {
+        if (mBuffer.empty()) {
+            return;
+        }
+
+#if defined(_WIN32)
+        ::UnmapViewOfFile(mBuffer.data());
+#else
+        ::munmap(mBuffer.data(), mBuffer.size());
+#endif // defined(_WIN32)
+        mBuffer = {};
+    }
+
+    /**
+     * @brief Get the content of the file (read-only)
+     * 
+     * @return std::span<const std::byte> 
+     */
+    auto data() const -> std::span<const std::byte> {
+        return mBuffer;
+    }
+
+    /**
+     * @brief Get the content of the file (read-write)
+     * 
+     * @return std::span<std::byte> 
+     */
+    auto mutableData() -> std::span<std::byte> {
+        return mBuffer;
+    }
+
+    /**
+     * @brief Move the file mapping
+     * 
+     * @param other 
+     * @return FileMapping & 
+     */
+    auto operator =(FileMapping &&other) -> FileMapping & {
+        if (this == &other) {
+            return *this;
+        }
+        unmap();
+        mBuffer = std::exchange(other.mBuffer, {});
+        return *this;
+    }
+
+    /**
+     * @brief Map the file into memory
+     * 
+     * @param fd The file descriptor of the file
+     * @param offset The offset of the file
+     * @param size The size of the file
+     * @param flags The flags of the file
+     * @return IoTask<FileMapping> 
+     */
+    static auto mapFrom(fd_t fd, std::optional<size_t> offset, std::optional<size_t> size, Flags flags) -> IoTask<FileMapping> {
+
+#if defined(_WIN32)
+        ::ULARGE_INTEGER offsetEx { .QuadPart = offset.value_or(0) };
+        ::DWORD access = 0;
+        if (flags & ReadOnly) {
+            access |= FILE_MAP_READ;
+        }
+        if (flags & WriteOnly) {
+            access |= FILE_MAP_WRITE;
+        }
+        if (flags & Private) {
+            access |= FILE_MAP_COPY;
+        }
+        auto ptr = ::MapViewOfFile(fd, access, offsetEx.HighPart, offsetEx.LowPart, size.value_or(0));
+        if (!ptr) {
+            co_return Unexpected(SystemError::fromErrno());
+        }
+        // Get the size of the mapping
+        ::MEMORY_BASIC_INFORMATION info { };
+        if (!::VirtualQuery(ptr, &info, sizeof(info))) {
+            co_return Unexpected(SystemError::fromErrno());
+        }
+        FileMapping mapping;
+        mapping.mBuffer = { reinterpret_cast<std::byte *>(ptr), static_cast<size_t>(info.RegionSize) };
+        co_return mapping;
+#else
+        co_return Unexpected(Error::OperationNotSupported); // Not supported yet
+#endif // defined(_WIN32)
+        
+    }
+
+    /**
+     * @brief Map the file into memory
+     * 
+     * @param fd 
+     * @param flags The flags of the file (default to ReadOnly)
+     * @return Task<FileMapping> 
+     */
+    static auto mapFrom(fd_t fd, Flags flags = ReadOnly) -> IoTask<FileMapping> {
+        return mapFrom(fd, std::nullopt, std::nullopt, flags);
+    }
+private:
+    std::span<std::byte> mBuffer;
+};
+
 
 ILIAS_NS_END

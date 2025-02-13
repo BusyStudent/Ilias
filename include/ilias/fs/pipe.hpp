@@ -214,8 +214,7 @@ public:
      * @return IoTask<std::pair<Pipe, Pipe> > 
      */
     static auto pair() -> IoTask<std::pair<Pipe, Pipe> > {
-        auto &&ctxt = co_await currentIoContext();
-        co_return pair(ctxt);
+        co_return pair(co_await currentIoContext());
     }
 private:
     IoContext    *mCtxt = nullptr;

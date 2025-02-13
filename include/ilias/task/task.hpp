@@ -77,6 +77,20 @@ public:
 };
 
 /**
+ * @brief The helper awaiter class for simplify the duplicate code of get the coroutine handle
+ * 
+ */
+class GetHandleAwaiter {
+public:
+    auto await_ready() const -> bool { return false; }
+    auto await_suspend(CoroHandle caller) -> bool { mHandle = caller; return false; }
+protected:
+    auto handle() const -> CoroHandle { return mHandle; }
+private:
+    CoroHandle mHandle;
+};
+
+/**
  * @brief Check if callable and args can be used to create a task.
  * 
  * @tparam Callable 
@@ -259,14 +273,14 @@ inline auto sleep(std::chrono::milliseconds ms) -> IoTask<void> {
 }
 
 /**
- * @brief Suspend the current task, and queue self to the executor
+ * @brief Suspend the current coroutine, and queue self to the executor
  * 
  * @return Awaiter 
  */
 inline auto yield() noexcept {
     struct Awaiter {
         auto await_ready() { return false; }
-        auto await_suspend(TaskView<> task) { task.schedule(); }
+        auto await_suspend(CoroHandle handle) { handle.schedule(); }
         auto await_resume() { }
     };
     return Awaiter {};
@@ -290,13 +304,13 @@ inline auto currentTask() noexcept {
 /**
  * @brief Get the current executor in the task
  * 
- * @return Executor &
+ * @return std::reference_wrapper<Executor>
  */
 inline auto currentExecutor() noexcept {
     struct Awaiter {
         auto await_ready() { return false; }
-        auto await_suspend(TaskView<> task) -> bool { mExecutor = task.executor(); return false; }
-        auto await_resume() -> Executor & { ILIAS_ASSERT(mExecutor); return *mExecutor; }
+        auto await_suspend(CoroHandle handle) -> bool { mExecutor = handle.executor(); return false; }
+        auto await_resume() -> std::reference_wrapper<Executor> { ILIAS_ASSERT(mExecutor); return *mExecutor; }
         Executor *mExecutor;
     };
     return Awaiter {};

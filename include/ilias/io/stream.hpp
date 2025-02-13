@@ -13,6 +13,7 @@
 #include <ilias/io/dyn_traits.hpp>
 #include <ilias/io/method.hpp>
 #include <ilias/io/traits.hpp>
+#include <ilias/buffer.hpp>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -32,7 +33,7 @@ ILIAS_NS_BEGIN
  */
 template <typename T>
 concept StreamBufferLike = requires(T t) {
-    t.prepare();
+    t.prepare(0);
     t.commit(0);
     t.data();
     t.size();
@@ -446,10 +447,88 @@ public:
     auto shutdown() -> IoTask<void> {
         return static_cast<U&>(mStream).shutdown();
     }
+
+    /**
+     * @brief Get the underlying stream buffer object
+     * 
+     * @return const StreamBuffer & 
+     */
+    auto buffer() const -> const StreamBuffer & {
+        return mBuf;
+    }
+
+    /**
+     * @brief Get the underlying stream buffer object
+     * 
+     * @return StreamBuffer & 
+     */
+    auto buffer() -> StreamBuffer & {
+        return mBuf;
+    }
+
+    /**
+     * @brief Get the underlying stream object
+     * 
+     * @return const T & 
+     */
+    auto stream() const -> const T & {
+        return mStream;
+    }
+
+    /**
+     * @brief Get the underlying stream object
+     * 
+     * @return T & 
+     */
+    auto stream() -> T & {
+        return mStream;
+    }
 private:
     T mStream;
     StreamBuffer mBuf;
 };
 
+// Utility functions
+/**
+ * @brief print the string into the stream buffer's input window
+ * 
+ * @tparam T 
+ * @param stream 
+ * @param fmt 
+ * @param args 
+ * @return size_t The number of bytes written (0 on failed to prepare the space)
+ */
+template <StreamBufferLike T>
+inline auto vsprintfTo(T &streamBuf, const char *fmt, va_list args) -> size_t {
+    va_list copy;
+    va_copy(copy, args);
+    auto size = vsprintfSize(fmt, args);
+    auto buf = streamBuf.prepare(size + 1); // +1 for the null terminator
+    if (buf.empty() || size == 0) {
+        return 0;
+    }
+    size = ::vsnprintf(reinterpret_cast<char*>(buf.data()), buf.size(), fmt, copy);
+    streamBuf.commit(size); // commit discard the null terminator
+    va_end(copy);
+    return size;
+}
+
+/**
+ * @brief print the string into the stream buffer's input window
+ * 
+ * @tparam T 
+ * @param stream 
+ * @param fmt 
+ * @param ... 
+ * @return size_t 
+ */
+template <StreamBufferLike T>
+inline auto sprintfTo(T &streamBuf, const char *fmt, ...) -> size_t {
+    va_list args;
+    va_start(args, fmt);
+    auto size = vsprintfTo(streamBuf, fmt, args);
+    va_end(args);
+    return size;
+}
 
 ILIAS_NS_END

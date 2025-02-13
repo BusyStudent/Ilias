@@ -19,19 +19,66 @@
     #define _WINSOCKAPI_ // Avoid windows.h to include winsock.h
     #define NOMINMAX
     #include <Windows.h>
-#elif defined(__unix__)
+    #define MAP(x) WSA##x
+    #elif defined(__unix__)
     #include <errno.h>
     #include <string.h>
+    #define MAP(x) x
 #endif
 
 ILIAS_NS_BEGIN
 
 /**
- * @brief System Error class
+ * @brief System Error class, wrapping the system error (Win32 or POSIX)
  * 
  */
 class SystemError {
 public:
+    /**
+     * @brief The known system dependent error codes
+     * 
+     */
+    enum Code : error_t {
+        Ok                            = 0,
+        AccessDenied                  = MAP(EACCES),
+        AddressInUse                  = MAP(EADDRINUSE),
+        AddressNotAvailable           = MAP(EADDRNOTAVAIL),
+        AddressFamilyNotSupported     = MAP(EAFNOSUPPORT),
+        AlreadyInProgress             = MAP(EALREADY),
+        BadFileDescriptor             = MAP(EBADF),
+        ConnectionAborted             = MAP(ECONNABORTED),
+        ConnectionRefused             = MAP(ECONNREFUSED),
+        ConnectionReset               = MAP(ECONNRESET),
+        DestinationAddressRequired    = MAP(EDESTADDRREQ),
+        BadAddress                    = MAP(EFAULT),
+        HostDown                      = MAP(EHOSTDOWN),
+        HostUnreachable               = MAP(EHOSTUNREACH),
+        InProgress                    = MAP(EINPROGRESS),
+        InvalidArgument               = MAP(EINVAL),
+        SocketIsConnected             = MAP(EISCONN),
+        TooManyOpenFiles              = MAP(EMFILE),
+        MessageTooLarge               = MAP(EMSGSIZE),
+        NetworkDown                   = MAP(ENETDOWN),
+        NetworkReset                  = MAP(ENETRESET),
+        NetworkUnreachable            = MAP(ENETUNREACH),
+        NoBufferSpaceAvailable        = MAP(ENOBUFS),
+        ProtocolOptionNotSupported    = MAP(ENOPROTOOPT),
+        SocketIsNotConnected          = MAP(ENOTCONN),
+        NotASocket                    = MAP(ENOTSOCK),
+        OperationNotSupported         = MAP(EOPNOTSUPP),
+        ProtocolFamilyNotSupported    = MAP(EPFNOSUPPORT),
+        ProtocolNotSupported          = MAP(EPROTONOSUPPORT),
+        SocketShutdown                = MAP(ESHUTDOWN),
+        SocketTypeNotSupported        = MAP(ESOCKTNOSUPPORT),
+        TimedOut                      = MAP(ETIMEDOUT),
+        WouldBlock                    = MAP(EWOULDBLOCK),
+#if   defined(ERROR_OPERATION_ABORTED) // For windows cancellation
+        Canceled                      = ERROR_OPERATION_ABORTED,
+#elif defined(ECANCELED) // For linux cancellation
+        Canceled                      = ECANCELED,
+#endif
+    };
+
     explicit SystemError(error_t err) : mErr(err) { }
     SystemError() = default;
 
@@ -51,6 +98,12 @@ public:
     auto toString() const -> std::string;
 
     /**
+     * @brief Compare with another SystemError
+     * 
+     */
+    auto operator <=>(const SystemError &other) const noexcept = default;
+
+    /**
      * @brief cast to int64_t
      * 
      * @return Error 
@@ -63,7 +116,7 @@ public:
      * @param err 
      * @return SystemError 
      */
-    static SystemError fromErrno();
+    static auto fromErrno() -> SystemError;
 private:
     error_t mErr = 0;
 };
@@ -83,74 +136,60 @@ public:
 };
 
 ILIAS_DECLARE_ERROR(SystemError, SystemCategory);
+ILIAS_DECLARE_ERROR(SystemError::Code, SystemCategory);
 
 // --- SystemCategory
 inline auto SystemCategory::name() const -> std::string_view {
     return "os";
 }
+
 inline auto SystemCategory::message(int64_t code) const -> std::string {
     return SystemError(code).toString();
 }
+
 inline auto SystemCategory::translate(error_t code) -> Error::Code {
-
-#ifdef _WIN32
-    #define MAP(x) WSA##x
-#else
-    #define MAP(x) x
-#endif
-
     switch (code) {
-        case 0: return Error::Ok;
-        case MAP(EACCES): return Error::AccessDenied;
-        case MAP(EADDRINUSE): return Error::AddressInUse;
-        case MAP(EADDRNOTAVAIL): return Error::AddressNotAvailable;
-        case MAP(EAFNOSUPPORT): return Error::AddressFamilyNotSupported;
-        case MAP(EALREADY): return Error::AlreadyInProgress;
-        case MAP(EBADF): return Error::BadFileDescriptor;
-        case MAP(ECONNABORTED): return Error::ConnectionAborted;
-        case MAP(ECONNREFUSED): return Error::ConnectionRefused;
-        case MAP(ECONNRESET): return Error::ConnectionReset;
-        case MAP(EDESTADDRREQ): return Error::DestinationAddressRequired;
-        case MAP(EFAULT): return Error::BadAddress;
-        case MAP(EHOSTDOWN): return Error::HostDown;
-        case MAP(EHOSTUNREACH): return Error::HostUnreachable;
-        case MAP(EINPROGRESS): return Error::InProgress;
-        case MAP(EINVAL): return Error::InvalidArgument;
-        case MAP(EISCONN): return Error::SocketIsConnected;
-        case MAP(EMFILE): return Error::TooManyOpenFiles;
-        case MAP(EMSGSIZE): return Error::MessageTooLarge;
-        case MAP(ENETDOWN): return Error::NetworkDown;
-        case MAP(ENETRESET): return Error::NetworkReset;
-        case MAP(ENETUNREACH): return Error::NetworkUnreachable;
-        case MAP(ENOBUFS): return Error::NoBufferSpaceAvailable;
-        case MAP(ENOPROTOOPT): return Error::ProtocolOptionNotSupported;
-        case MAP(ENOTCONN): return Error::SocketIsNotConnected;
-        case MAP(ENOTSOCK): return Error::NotASocket;
-        case MAP(EOPNOTSUPP): return Error::OperationNotSupported;
-        case MAP(EPFNOSUPPORT): return Error::ProtocolFamilyNotSupported;
-        case MAP(EPROTONOSUPPORT): return Error::ProtocolNotSupported;
-        case MAP(EPROTOTYPE): return Error::ProtocolNotSupported;
-        case MAP(ESHUTDOWN): return Error::SocketShutdown;
-        case MAP(ESOCKTNOSUPPORT): return Error::SocketTypeNotSupported;
-        case MAP(ETIMEDOUT): return Error::TimedOut;
-        case MAP(EWOULDBLOCK): return Error::WouldBlock;
-
-#if defined(ERROR_OPERATION_ABORTED) //< For IOCP Cancelation
-        case ERROR_OPERATION_ABORTED: return Error::Canceled;
-#endif
-
-#if defined(ECANCELED) && !defined(_WIN32) // For POSIX Cancelation
-        case ECANCELED: return Error::Canceled;
-#endif
-
-        default: return Error::Unknown;
+        case SystemError::Ok                        : return Error::Ok;
+        case SystemError::AccessDenied              : return Error::AccessDenied;
+        case SystemError::AddressInUse              : return Error::AddressInUse;
+        case SystemError::AddressNotAvailable       : return Error::AddressNotAvailable;
+        case SystemError::AddressFamilyNotSupported : return Error::AddressFamilyNotSupported;
+        case SystemError::AlreadyInProgress         : return Error::AlreadyInProgress;
+        case SystemError::BadFileDescriptor         : return Error::BadFileDescriptor;
+        case SystemError::ConnectionAborted         : return Error::ConnectionAborted;
+        case SystemError::ConnectionRefused         : return Error::ConnectionRefused;
+        case SystemError::ConnectionReset           : return Error::ConnectionReset;
+        case SystemError::DestinationAddressRequired: return Error::DestinationAddressRequired;
+        case SystemError::BadAddress                : return Error::BadAddress;
+        case SystemError::HostDown                  : return Error::HostDown;
+        case SystemError::HostUnreachable           : return Error::HostUnreachable;
+        case SystemError::InProgress                : return Error::InProgress;
+        case SystemError::InvalidArgument           : return Error::InvalidArgument;
+        case SystemError::SocketIsConnected         : return Error::SocketIsConnected;
+        case SystemError::TooManyOpenFiles          : return Error::TooManyOpenFiles;
+        case SystemError::MessageTooLarge           : return Error::MessageTooLarge;
+        case SystemError::NetworkDown               : return Error::NetworkDown;
+        case SystemError::NetworkReset              : return Error::NetworkReset;
+        case SystemError::NetworkUnreachable        : return Error::NetworkUnreachable;
+        case SystemError::NoBufferSpaceAvailable    : return Error::NoBufferSpaceAvailable;
+        case SystemError::ProtocolOptionNotSupported: return Error::ProtocolOptionNotSupported;
+        case SystemError::SocketIsNotConnected      : return Error::SocketIsNotConnected;
+        case SystemError::NotASocket                : return Error::NotASocket;
+        case SystemError::OperationNotSupported     : return Error::OperationNotSupported;
+        case SystemError::ProtocolFamilyNotSupported: return Error::ProtocolFamilyNotSupported;
+        case SystemError::ProtocolNotSupported      : return Error::ProtocolNotSupported;
+        case SystemError::SocketShutdown            : return Error::SocketShutdown;
+        case SystemError::SocketTypeNotSupported    : return Error::SocketTypeNotSupported;
+        case SystemError::TimedOut                  : return Error::TimedOut;
+        case SystemError::WouldBlock                : return Error::WouldBlock;
+        case SystemError::Canceled                  : return Error::Canceled;
+        default                                     : return Error::Unknown;
     }
-#undef MAP
-
 }
+
 inline auto SystemCategory::equivalent(int64_t value, const Error &other) const -> bool {
     if (this == &other.category() && value == other.value()) {
-        //< Category is same, value is same
+        // Category is same, value is same
         return true;
     }
     if (other.category() == IliasCategory::instance()) {
@@ -159,6 +198,7 @@ inline auto SystemCategory::equivalent(int64_t value, const Error &other) const 
     }
     return false;
 }
+
 inline auto SystemCategory::instance() -> SystemCategory & {
     static SystemCategory c;
     return c;
@@ -175,9 +215,11 @@ inline auto SystemError::fromErrno() -> SystemError {
 #endif
     return SystemError(err);
 }
+
 inline auto SystemError::isOk() const noexcept -> bool {
     return mErr == 0;
 }
+
 inline auto SystemError::toString() const -> std::string {
 
 #ifdef _WIN32
@@ -209,3 +251,5 @@ ILIAS_FORMATTER(SystemError) {
     }
 };
 #endif
+
+#undef MAP

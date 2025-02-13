@@ -160,23 +160,23 @@ public:
 };
 
 /**
- * @brief Get the current io context in the task
+ * @brief Get the current io context in the coroutine
  * 
- * @return IoContext & 
+ * @return std::reference_wrapper<IoContext>
  */
 inline auto currentIoContext() {
     struct Awaiter {
         auto await_ready() const -> bool { 
             return false; 
         }
-        auto await_suspend(TaskView<> task) -> bool {
-            mCtxt = static_cast<IoContext*>(task.executor());
+        auto await_suspend(CoroHandle handle) -> bool {
+            mCtxt = static_cast<IoContext*>(handle.executor());
 #if defined(__cpp_rtti)
-            ILIAS_ASSERT(dynamic_cast<IoContext*>(task.executor())); //< Check that the executor impl the IoContext
+            ILIAS_ASSERT(dynamic_cast<IoContext*>(handle.executor())); //< Check that the executor impl the IoContext
 #endif // defined(__cpp_rtti)
             return false;
         }
-        auto await_resume() const -> IoContext & { 
+        auto await_resume() const -> std::reference_wrapper<IoContext> { 
             return *mCtxt; 
         }
         IoContext *mCtxt;
