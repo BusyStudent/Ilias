@@ -18,7 +18,6 @@
 #include <version>
 
 #include <ilias/ilias.hpp>
-#include <ilias/error.hpp>
 
 #if defined(__cpp_lib_expected)
 #if __cpp_lib_expected >= 202211L

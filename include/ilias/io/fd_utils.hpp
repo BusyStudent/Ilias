@@ -303,6 +303,28 @@ inline auto type(fd_t fd) -> Result<IoDescriptor::Type> {
     return Unexpected(SystemError::fromErrno());
 }
 
+/**
+ * @brief Get the file size.
+ * 
+ * @param fd The os file descriptor to a file.
+ * @return Result<uint64_t> 
+ */
+inline auto size(fd_t fd) -> Result<uint64_t> {
+
+#if defined(_WIN32)
+    ::LARGE_INTEGER size;
+    if (::GetFileSizeEx(fd, &size)) {
+        return size.QuadPart;
+    }
+#else
+    struct ::stat st;
+    if (::fstat(fd, &st) == 0) {
+        return st.st_size;
+    }
+#endif // defined(_WIN32)
+
+    return Unexpected(SystemError::fromErrno());
+}
 
 }
 

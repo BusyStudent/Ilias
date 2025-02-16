@@ -99,10 +99,10 @@ auto main() -> int {
         auto reply = co_await session.get("http://www.baidu.com");
         if (!reply) {
             std::cout << reply.error().toString() << std::endl;
-            co_return unexpected(reply.error());
+            co_return;
         }
         std::cout << (co_await reply.value().text()).value() << std::endl;
-        co_return {};
+        co_return;
     };
     fn().wait();
     return 0;

@@ -30,10 +30,10 @@
 #include <set>
 
 #define ILIAS_LOG_MAKE_LEVEL(name) ::ILIAS_NAMESPACE::detail::LogLevel::name
-#define ILIAS_LOG_SET_LEVEL(level_) ::ILIAS_NAMESPACE::detail::GetLogContext().level = level_
-#define ILIAS_LOG_ADD_WHITELIST(mod) ::ILIAS_NAMESPACE::detail::GetLogContext().whitelist.insert(mod)
-#define ILIAS_LOG_ADD_BLACKLIST(mod) ::ILIAS_NAMESPACE::detail::GetLogContext().blacklist.insert(mod)
-#define ILIAS_LOG(level, mod, ...) ::ILIAS_NAMESPACE::detail::Log(stderr, level, mod, std::source_location::current(), __VA_ARGS__)
+#define ILIAS_LOG_SET_LEVEL(level_) ::ILIAS_NAMESPACE::detail::getLogContext().level = level_
+#define ILIAS_LOG_ADD_WHITELIST(mod) ::ILIAS_NAMESPACE::detail::getLogContext().whitelist.insert(mod)
+#define ILIAS_LOG_ADD_BLACKLIST(mod) ::ILIAS_NAMESPACE::detail::getLogContext().blacklist.insert(mod)
+#define ILIAS_LOG(level, mod, ...) ::ILIAS_NAMESPACE::detail::log(stderr, level, mod, std::source_location::current(), __VA_ARGS__)
 
 ILIAS_NS_BEGIN
 
@@ -63,12 +63,12 @@ struct LogContext {
  * 
  * @return LogContext& 
  */
-inline auto GetLogContext() -> LogContext & {
+inline auto getLogContext() -> LogContext & {
     static LogContext ctxt;
     return ctxt;
 }
 
-inline auto GetLevelString(LogLevel level) -> std::string_view {
+inline auto getLevelString(LogLevel level) -> std::string_view {
     switch (level) {
         case LogLevel::Trace: return "TRACE";
         case LogLevel::Info:  return "INFO ";
@@ -78,7 +78,7 @@ inline auto GetLevelString(LogLevel level) -> std::string_view {
     }
 }
 
-inline auto GetLevelColor(LogLevel level) -> const char * {
+inline auto getLevelColor(LogLevel level) -> const char * {
     switch (level) {
         case LogLevel::Trace: return "\033[1;34m";
         case LogLevel::Info:  return "\033[1;32m";
@@ -98,8 +98,8 @@ inline auto GetLevelColor(LogLevel level) -> const char * {
  * @return true 
  * @return false On this log is flitered
  */
-inline auto BeginLog(std::string &buf, LogLevel level, std::string_view mod, std::source_location loc) -> bool {
-    auto &ctxt = GetLogContext();
+inline auto beginLog(std::string &buf, LogLevel level, std::string_view mod, std::source_location loc) -> bool {
+    auto &ctxt = getLogContext();
     if (int(level) < int(ctxt.level)) {
         return false;
     }
@@ -111,7 +111,7 @@ inline auto BeginLog(std::string &buf, LogLevel level, std::string_view mod, std
     }
 
     // Set the color
-    buf += GetLevelColor(level);
+    buf += getLevelColor(level);
 
     // Print the body
     auto now = std::chrono::system_clock::now();
@@ -129,16 +129,17 @@ inline auto BeginLog(std::string &buf, LogLevel level, std::string_view mod, std
     if (!ctxt.notime) {
         fmtlib::format_to(std::back_inserter(buf), "[{}] ", now);
     }
+    fmtlib::format_to(std::back_inserter(buf), "[{}/{}]: ", getLevelString(level), mod);
     if (!ctxt.nolocation) {
         fmtlib::format_to(std::back_inserter(buf), "[{}:{}] ", file, line);
     }
-    fmtlib::format_to(std::back_inserter(buf), "[{}/{}]: ", mod, GetLevelString(level));
+    // Clear the color
+    buf += "\033[0m";
     return true;
 }
 
-inline auto EndLog(std::string &buf, LogLevel level) -> void {
-    // Clear the color
-    buf += "\033[0m\n";
+inline auto endLog(std::string &buf, LogLevel level) -> void {
+    buf += "\n";
 }
 
 /**
@@ -152,13 +153,13 @@ inline auto EndLog(std::string &buf, LogLevel level) -> void {
  * @param args 
  */
 template <typename ...Args>
-auto Log(FILE *stream, LogLevel level, std::string_view mod, std::source_location loc, fmtlib::format_string<Args...> fmt, Args &&...args) -> void {
+auto log(FILE *stream, LogLevel level, std::string_view mod, std::source_location loc, fmtlib::format_string<Args...> fmt, Args &&...args) -> void {
     std::string buf;
-    if (!BeginLog(buf, level, mod, loc)) {
+    if (!beginLog(buf, level, mod, loc)) {
         return;
     }
     fmtlib::format_to(std::back_inserter(buf), fmt, std::forward<Args>(args)...);
-    EndLog(buf, level);
+    endLog(buf, level);
     ::fputs(buf.c_str(), stream);
     ::fflush(stream);
 }

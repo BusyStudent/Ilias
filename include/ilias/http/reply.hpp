@@ -23,8 +23,6 @@ public:
     HttpReply(HttpReply &&) = default;
     ~HttpReply() = default;
 
-    using ReadableMethod<HttpReply>::readAll;
-
     /**
      * @brief Read the reply body from the stream
      * 
@@ -32,15 +30,6 @@ public:
      * @return IoTask<size_t> 
      */
     auto read(std::span<std::byte> buffer) -> IoTask<size_t>;
-
-    /**
-     * @brief Read all the reply body from the stream (not recommended for large body, for large body, please use for + read until zero)
-     * 
-     * @tparam T 
-     * @return IoTask<T> 
-     */
-    template <typename T>
-    auto readAll() -> IoTask<T>;
 
     /**
      * @brief Get the Reply's content (not recommended for large body, see readAll)
@@ -165,7 +154,7 @@ inline auto HttpReply::read(std::span<std::byte> buffer) -> IoTask<size_t> {
     Result<size_t> ret;
 #if !defined(ILIAS_NO_ZLIB)
     if (mDecompressor) {
-        ret = co_await mDecompressor->decompressTo(buffer, *mStream);
+        ret = co_await mDecompressor->decompress(*mStream, buffer);
     }
 #else
     if (false) { }
@@ -203,30 +192,6 @@ inline auto HttpReply::text() -> IoTask<std::string> {
         co_return std::string(sv);
     }
     co_return co_await readAll<std::string>();
-}
-
-template <typename T>
-inline auto HttpReply::readAll() -> IoTask<T> {
-    size_t readed = 0;
-    T data;
-    data.resize(1024);
-    while (true) {
-        auto buf = makeBuffer(data).subspan(readed);
-        if (buf.empty()) {
-            data.resize(data.size() * 2);
-            continue;
-        }
-        auto ret = co_await read(buf);
-        if (!ret) {
-            co_return Unexpected(ret.error());
-        }
-        readed += *ret;
-        if (*ret == 0) { //< EOF
-            break;
-        }
-    }
-    data.resize(readed);
-    co_return data;
 }
 
 ILIAS_NS_END

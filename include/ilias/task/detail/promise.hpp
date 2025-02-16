@@ -10,10 +10,10 @@
  */
 #pragma once
 
-#include <ilias/task/executor.hpp>
-#include <ilias/detail/expected.hpp>
-#include <ilias/detail/functional.hpp>
 #include <ilias/cancellation_token.hpp>
+#include <ilias/detail/functional.hpp>
+#include <ilias/task/executor.hpp>
+#include <ilias/error.hpp>
 #include <ilias/log.hpp>
 #include <source_location>
 #include <concepts>
@@ -104,7 +104,7 @@ public:
      * 
      */
     auto unhandled_exception() const noexcept -> void {
-        unreachable();
+        ILIAS_UNREACHABLE();
     }
 
     /**

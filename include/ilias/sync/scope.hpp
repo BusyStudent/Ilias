@@ -203,6 +203,13 @@ public:
         wait();
     }
 
+#if !defined(NDEBUG)
+    template <typename T = int> // No implmentation, make the language server happy. :(
+    TaskScope(TaskScope &&, T = {}) {
+        static_assert(!std::is_same_v<T, int>, "TaskScope cannot be moved");
+    }
+#endif // !defined(NDEBUG)
+
     /**
      * @brief Blocks the current thread until all tasks in the scope are finished.
      * 
@@ -312,6 +319,22 @@ public:
      */
     auto operator co_await() noexcept {
         return detail::TaskScopeAwaiter(*this);
+    }
+
+    /**
+     * @brief Create a task scope with current coroutine's executor.
+     * 
+     * @tparam T 
+     * @return auto 
+     */
+    template <typename T = TaskScope>
+    static auto make() {
+        struct Awaiter : detail::GetHandleAwaiter {
+            auto await_resume() -> T {
+                return T(*handle().executor()); // MUST NRVO
+            }
+        };
+        return Awaiter{};
     }
 private:
     /**

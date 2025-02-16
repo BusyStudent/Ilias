@@ -42,7 +42,7 @@ TEST(Scope, Wait) {
 
 TEST(Scope, Await) {
     auto task = []() -> Task<void> {
-        TaskScope scope;
+        auto scope = co_await TaskScope::make();
         bool value1 = false;
         bool value2 = false;
         scope.spawn([&]() -> Task<void> {

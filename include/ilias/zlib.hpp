@@ -13,9 +13,9 @@
 
 #if __has_include(<zlib.h>) && !defined(ILIAS_NO_ZLIB)
 
-#include <ilias/detail/expected.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/io/traits.hpp>
+#include <ilias/io/stream.hpp>
 #include <ilias/buffer.hpp>
 #include <ilias/error.hpp>
 #include <ilias/log.hpp>
@@ -85,11 +85,17 @@ public:
 ILIAS_DECLARE_ERROR(ZError, ZCategory);
 
 /**
- * @brief The zlib decompressor
+ * @brief The zlib decompressor, for async decompression
  * 
  */
 class Decompressor {
 public:
+    /**
+     * @brief Construct a new empty Decompressor object
+     * 
+     */
+    Decompressor() = default;
+
     /**
      * @brief Construct a new Decompressor object by format
      * 
@@ -100,7 +106,32 @@ public:
         mInitialized = (::inflateInit2(&mStream, wbits) == Z_OK);
     }
 
-    Decompressor(const Decompressor&) = delete;
+    /**
+     * @brief Construct a new Decompressor object by stream, it will take the ownership of the stream
+     * 
+     * @param stream 
+     */
+    
+    explicit 
+    Decompressor(::z_stream stream) : mStream(stream), mInitialized(true) {
+
+    }
+
+    Decompressor(const Decompressor &) = delete;
+
+    /**
+     * @brief Construct a new Decompressor object by move
+     * 
+     */
+    Decompressor(Decompressor &&) : 
+        mStream(std::exchange(mStream, {})), 
+        mInitialized(std::exchange(mInitialized, false)),
+        mStreamEnd(std::exchange(mStreamEnd, false)),
+        mBuffer(std::exchange(mBuffer, {})), 
+        mBufferPrepareSize(std::exchange(mBufferPrepareSize, 0))
+    {
+        
+    }
 
     ~Decompressor() {
         if (mInitialized) {
@@ -112,12 +143,12 @@ public:
      * @brief Doing the decompression on an async stream
      * 
      * @tparam T rquires Readable
-     * @param output The output buffer for writing the decompressed data
      * @param source The source stream for reading the data, which need to be decompressed
+     * @param output The output buffer for writing the decompressed data
      * @return IoTask<size_t> (The number of bytes written to the output buffer, 0 on EOF)
      */
     template <Readable T>
-    auto decompressTo(std::span<std::byte> output, T &source) -> IoTask<size_t> {
+    auto decompress(T &source, std::span<std::byte> output) -> IoTask<size_t> {
         if (mStreamEnd) {
             co_return 0; //< EOF
         }
@@ -125,22 +156,24 @@ public:
         mStream.avail_out = output.size_bytes();
 
         if (mStream.avail_in == 0) {
-            // We need to fill the source buffer
-            if (mBuffer.empty()) {
-                mBuffer.resize(1024);
-            }
-            if (mBufferFullFilled) { //< Trying to increase the buffer size, improve the performance
-                mBufferFullFilled = false;
-                mBuffer.resize(mBuffer.size() * 2);
-            }
-            auto n = co_await source.read(makeBuffer(mBuffer));
+            // We need to fill the source buffer, all data in buffer was comsumed
+            mBuffer.consume(mBuffer.size()); // Cusume all data in buffer
+            auto n = co_await source.read(mBuffer.prepare(mBufferPrepareSize));
             if (!n || *n == 0) { //< Error from lower layer or lower layer return 0, We can not continue
                 ILIAS_ERROR("Zlib", "Failed to read data from source stream");
                 co_return Unexpected(n.error_or(Error::ZeroReturn));
             }
-            mStream.next_in = (Bytef*) mBuffer.data();
-            mStream.avail_in = *n;
-            mBufferFullFilled = (*n == mBuffer.size());
+            mBuffer.commit(*n);
+            auto span = mBuffer.data();
+            mStream.next_in = (Bytef*) span.data();
+            mStream.avail_in = span.size_bytes();
+            if (*n == mBufferPrepareSize) {
+                mBufferPrepareSize *= 2; // Double the buffer size for improve performance
+            }
+            if (*n < mBufferPrepareSize / 2) {
+                mBufferPrepareSize = *n; // Set the buffer size to the size of the last read, to avoid waste too much memory
+                mBuffer.shrinkToFit();
+            }
         }
         do {
             auto ret = ::inflate(&mStream, Z_NO_FLUSH);
@@ -154,8 +187,44 @@ public:
             }
         } // Output buffer is full or source buffer is empty or end of stream
         while (mStream.avail_out != 0 && mStream.avail_in != 0);
-        auto readed = mStream.next_out - (Bytef*) output.data(); //< Calculate the number of bytes readed
+        auto readed = mStream.next_out - (Bytef*) output.data(); // Calculate the number of bytes readed
         co_return readed;
+    }
+
+    auto operator =(const Decompressor &) = delete;
+    
+    /**
+     * @brief Construct a new Decompressor object by move
+     * 
+     * @param other 
+     * @return Decompressor& 
+     */
+    auto operator =(Decompressor &&other) -> Decompressor & {
+        if (this == &other) {
+            return *this;
+        }
+        if (mInitialized) {
+            ::inflateEnd(&mStream);
+        }
+        mStream = std::exchange(other.mStream, {});
+        mInitialized = std::exchange(other.mInitialized, false);
+        mStreamEnd = std::exchange(other.mStreamEnd, false);
+        mBuffer = std::exchange(other.mBuffer, {});
+        mBufferPrepareSize = std::exchange(other.mBufferPrepareSize, 0);
+        return *this;
+    }
+
+    /**
+     * @brief Reset the decompressor to empty state
+     * 
+     * @return Decompressor& 
+     */
+    auto operator =(std::nullptr_t) -> Decompressor & {
+        if (mInitialized) {
+            ::inflateEnd(&mStream);
+        }
+        mInitialized = false;
+        return *this;
     }
 
     /**
@@ -170,9 +239,9 @@ public:
 private:
     ::z_stream mStream {};
     bool mInitialized = false;
-    std::vector<std::byte> mBuffer {}; //< Buffer for the source, waiting to be decompressed
-    bool mBufferFullFilled = false; //< Does the previous action make the buffer full filled ?
     bool mStreamEnd = false; //< Does the stream end ?
+    StreamBuffer mBuffer; //< Buffer for the source, waiting to be decompressed
+    size_t mBufferPrepareSize = 1024; //< The size of the buffer prepared
 };
 
 /**
@@ -183,7 +252,7 @@ private:
  * @param wbits The wbits parameter for zlib (use the ZFormat enum)
  * @return auto 
  */
-template <MemWritable T = std::vector<std::byte> >
+template <MemContainer T = std::vector<std::byte> >
 inline auto decompress(std::span<const std::byte> input, int wbits) -> Result<T> {
     static_assert(sizeof(std::declval<T>().data()[0]) == sizeof(Bytef), "Output buffer type must be a byte buffer");
     

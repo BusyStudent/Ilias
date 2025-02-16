@@ -31,7 +31,7 @@
 #endif
 
 #if !defined(ILIAS_CHECK)
-    #define ILIAS_CHECK(x) if (!(x)) { ILIAS_ASSERT(x); ::abort(); }
+    #define ILIAS_CHECK(x) if (!(x)) { ILIAS_ASSERT(x); ::abort(); } ILIAS_ASSUME(x)
 #endif
 
 #if !defined(ILIAS_MALLOC)
@@ -81,12 +81,27 @@
 #if   defined(_MSC_VER)
     #define ILIAS_ATTRIBUTE(x)  __declspec(x)
     #define ILIAS_UNREACHABLE() __assume(0)
+    #define ILIAS_ASSUME(...)   __assume(__VA_ARGS__)
 #elif defined(__GNUC__)
     #define ILIAS_ATTRIBUTE(x) __attribute__((x))
     #define ILIAS_UNREACHABLE() __builtin_unreachable()
+    #define ILIAS_ASSUME(...) if (!(__VA_ARGS__)) __builtin_unreachable()
 #else
     #define ILIAS_ATTRIBUTE(x) // no-op
     #define ILIAS_UNREACHABLE() // no-op
+    #define ILIAS_ASSUME(...) // no-op
+#endif
+
+// --- Standard library check
+#if defined(__cpp_lib_unreachable)
+    #undef ILIAS_UNREACHABLE
+    #define ILIAS_UNREACHABLE() std::unreachable()
+    #include <utility>
+#endif
+
+#if defined(__cpp_lib_assume)
+    #undef ILIAS_ASSUME
+    #define ILIAS_ASSUME(...) [[assume(__VA_ARGS__)]]
 #endif
 
 // --- Library mode
@@ -190,20 +205,5 @@ struct DefaultFormatter {
 
 } // namespace detail
 #endif // ILIAS_FMT_NAMESPACE
-
-// --- Utils
-#if defined(__cpp_lib_unreachable)
-using std::unreachable;
-#else
-/**
- * @brief Unreachable utils function
- * 
- */
-[[noreturn]]
-inline auto unreachable() -> void {
-    ILIAS_UNREACHABLE();
-}
-#endif // defined(__cpp_lib_unreachable)
-
 
 ILIAS_NS_END

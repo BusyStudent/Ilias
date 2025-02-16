@@ -21,6 +21,53 @@
     #define ILIAS_PLATFORM_CONTEXT EpollContext
 #endif
 
+
+/**
+ * @brief Declare the coroutine main function.
+ * 
+ * @param ctxt The context type.
+ * @param ... The parameters of the main function.
+ */
+#define ilias_main4(ctxt, ...)                                                  \
+    _ilias_tags();                                                              \
+    using ILIAS_NAMESPACE::Task;                                                \
+    static auto _ilias_main(__VA_ARGS__) -> Task<decltype(_ilias_tags())>;      \
+    auto main(int argc, char ** argv) -> int {                                  \
+        ctxt context;                                                           \
+        auto makeTask = [&](auto callable) {                                    \
+            if constexpr (std::invocable<decltype(callable)>) {                 \
+                return callable();                                              \
+            }                                                                   \
+            else {                                                              \
+                static_assert(                                                  \
+                    std::invocable<decltype(callable), int, char **>,           \
+                    "Bad main function signature"                               \
+                );                                                              \
+                return callable(argc, argv);                                    \
+            }                                                                   \
+        };                                                                      \
+        auto invoke = [&](auto callable) {                                      \
+            auto task = makeTask(callable);                                     \
+            if constexpr (std::is_same_v<decltype(task), Task<void> >) {        \
+                task.wait();                                                    \
+                return 0;                                                       \
+            }                                                                   \
+            else {                                                              \
+                return task.wait();                                             \
+            }                                                                   \
+        };                                                                      \
+        return invoke(_ilias_main);                                             \
+    }                                                                           \
+    static auto _ilias_main(__VA_ARGS__) -> Task<decltype(_ilias_tags())>       
+
+/**
+ * @brief Declare the coroutine main function.
+ * 
+ * @param ... The parameters of the main function.
+ */
+#define ilias_main(...) ilias_main4(ILIAS_NAMESPACE::PlatformContext, __VA_ARGS__)
+
+
 ILIAS_NS_BEGIN
 
 /**

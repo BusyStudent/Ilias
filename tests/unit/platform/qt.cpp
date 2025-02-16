@@ -24,7 +24,11 @@ public:
 
         // Prep signals
         connect(ui.httpSendButton, &QPushButton::clicked, this, [this]() {
-            spawn(sendHttpRequest());
+            spawn([this]() -> Task<> {
+                ui.httpSendButton->setEnabled(false);
+                co_await sendHttpRequest();
+                ui.httpSendButton->setEnabled(true);
+            });
         });
 
         connect(ui.addrinfoButton, &QPushButton::clicked, this, [this]() {

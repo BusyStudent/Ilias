@@ -166,20 +166,7 @@ public:
         if (!mOffset) {
             co_return Unexpected(Error::OperationNotSupported);
         }
-
-#if defined(_WIN32)
-        ::LARGE_INTEGER size;
-        if (::GetFileSizeEx(mFd, &size)) {
-            co_return size.QuadPart;
-        }
-#else
-        struct stat st;
-        if (::fstat(mFd, &st) == 0 && S_ISREG(st.st_mode)) {
-            co_return st.st_size;
-        }
-#endif // defined(_WIN32)
-
-        co_return Unexpected(SystemError::fromErrno());
+        co_return fd_utils::size(mFd);
     }
 
     /**

@@ -14,6 +14,7 @@
 #include <cstring> //< for memcpy
 #include <cstdarg>
 #include <cstdio>  //< for sprintf
+#include <string>
 #include <span>
 
 ILIAS_NS_BEGIN
@@ -61,6 +62,14 @@ concept MemReadable = requires(T &t) {
     { std::span(t).data() } -> std::convertible_to<const void *>;
     { std::span(t).size_bytes() } -> std::convertible_to<size_t>;
 };
+
+/**
+ * @brief Concept for types that can be resized, written to memory and read from memory, like (std::string or std::vector)
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept MemContainer = MemExpendable<T> && MemWritable<T> && MemReadable<T>;
 
 // --- Utils for std::span<std::byte>
 /**
@@ -129,6 +138,22 @@ inline auto spanCast(std::span<In> in) -> std::span<T> {
     };
 }
 
+/**
+ * @brief Cast the any byte span to the string view
+ * 
+ * @tparam T 
+ * @tparam In 
+ * @param in 
+ * @return std::basic_string_view<T> 
+ */
+template <typename T = char> requires(sizeof(T) == sizeof(std::byte))
+inline auto asStringView(std::span<const std::byte> span) -> std::basic_string_view<T> {
+    return {
+        reinterpret_cast<const T *>(span.data()),
+        span.size_bytes()
+    };
+}
+
 // --- Utils for sprintf
 
 /**
@@ -141,7 +166,7 @@ inline auto spanCast(std::span<In> in) -> std::span<T> {
 inline auto vsprintfSize(const char *fmt, va_list args) -> size_t {
     va_list copy;
     va_copy(copy, args);
-    auto n = ::vsnprintf(nullptr, 0, fmt, args);
+    auto n = ::vsnprintf(nullptr, 0, fmt, copy);
     va_end(copy);
     ILIAS_ASSERT(n >= 0);
     return n;
@@ -181,7 +206,7 @@ inline auto vsprintfTo(T &buf, const char *fmt, va_list args) -> size_t {
     buf.resize(curSize + size + 1);
     auto n = ::vsnprintf(reinterpret_cast<char *>(buf.data()) + curSize, size + 1, fmt, args);
     buf.resize(curSize + n); // trim the '\0'
-    ILIAS_ASSERT(n >= 0);
+    ILIAS_ASSERT(n == size);
     return n;
 }
 
@@ -219,7 +244,7 @@ inline auto vsprintfTo(std::basic_string<T, Traits, Alloc> &buf, const char *fmt
     auto len = buf.length();
     buf.resize(len + size); // The string's will auto add the place of the '\0'
     auto n = ::vsprintf(reinterpret_cast<char*>(buf.data() + len), fmt, args);
-    ILIAS_ASSERT(n >= 0);
+    ILIAS_ASSERT(n == size);
     return n;
 }
 

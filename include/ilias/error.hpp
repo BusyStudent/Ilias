@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <ilias/detail/expected.hpp>
 #include <ilias/ilias.hpp>
 
 /**

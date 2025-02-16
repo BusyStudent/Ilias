@@ -203,7 +203,7 @@ auto handleConnection(BufferedStream<TcpClient> client) -> Task<void> {
     co_return;
 }
 
-auto main(int argc, char **argv) -> int {
+void ilias_main(int argc, char **argv) {
 
 #if defined(_WIN32)
     ::SetConsoleCP(65001);
@@ -211,29 +211,25 @@ auto main(int argc, char **argv) -> int {
     std::setlocale(LC_ALL, ".utf-8");
 #endif
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
-    PlatformContext ctxt;
 
-    auto fn = []() -> Task<void> {
-        auto &&ctxt = co_await currentIoContext();
-        TcpListener listener(ctxt, AF_INET);
-        listener.setOption(sockopt::ReuseAddress(true)).value();
-        if (auto ret = listener.bind(IPEndpoint("127.0.0.1", 25565)); !ret) {
-            std::cerr << "Failed to bind: " << ret.error().toString() << std::endl;
-            co_return;
+    auto ctxt = co_await currentIoContext();
+    TcpListener listener(ctxt, AF_INET);
+    listener.setOption(sockopt::ReuseAddress(true)).value();
+    if (auto ret = listener.bind(IPEndpoint("127.0.0.1", 25565)); !ret) {
+        std::cerr << "Failed to bind: " << ret.error().toString() << std::endl;
+        co_return;
+    }
+    std::cout << "Listening on " << listener.localEndpoint().value().toString() << std::endl;
+    while (true) {
+        auto ret = co_await listener.accept();
+        if (!ret) {
+            std::cerr << "Failed to accept: " << ret.error().toString() << std::endl;
+            continue;
         }
-        std::cout << "Listening on " << listener.localEndpoint().value().toString() << std::endl;
-        while (true) {
-            auto ret = co_await listener.accept();
-            if (!ret) {
-                std::cerr << "Failed to accept: " << ret.error().toString() << std::endl;
-                continue;
-            }
-            auto &[client, endpoint] = *ret;
-            std::cout << "Accepted connection from " << endpoint.toString() << std::endl;
+        auto &[client, endpoint] = *ret;
+        std::cout << "Accepted connection from " << endpoint.toString() << std::endl;
 
-            // Start it
-            spawn(handleConnection(std::move(client)));
-        }
-    };
-    fn().wait();
+        // Start it
+        spawn(handleConnection(std::move(client)));
+    }
 }
