@@ -15,8 +15,8 @@
 #include <ilias/task/task.hpp>
 #include <concepts>
 
-#define ilias_go    ILIAS_NAMESPACE::detail::SpawnTags{ } << 
-#define ilias_spawn ILIAS_NAMESPACE::detail::SpawnTags{ } <<
+#define ilias_go    ILIAS_NAMESPACE::detail::SpawnTags { *ILIAS_NAMESPACE::Executor::currentThread() } << 
+#define ilias_spawn ILIAS_NAMESPACE::detail::SpawnTags { co_await ILIAS_NAMESPACE::currentExecutor() } <<
 
 ILIAS_NS_BEGIN
 
@@ -76,7 +76,7 @@ struct SpawnData {
 };
 
 template <typename T>
-struct SpawnDataWithCallable : SpawnData {
+struct SpawnDataWithCallable final : SpawnData {
     template <typename ...Args>
     SpawnDataWithCallable(T callable, Args &&...args) : mCallable(std::move(callable)) {
         mDeleteSelf = &deleteSelf;
@@ -172,7 +172,7 @@ class ScheduleOnAwaiter final : public ScheduleOnAwaiterBase {
 public:
     ScheduleOnAwaiter(Executor &executor, TaskView<T> task) : ScheduleOnAwaiterBase(executor, task) { }
 
-    auto await_resume() const -> Result<T> {
+    auto await_resume() const -> T {
         return TaskView<T>::cast(mTask).value();
     }
 };
@@ -181,7 +181,9 @@ public:
  * @brief Helper tags for ilias_go and ilias_spawn macro
  * 
  */
-struct SpawnTags { };
+struct SpawnTags {
+    Executor &executor;
+};
 
 } // namespace detail
 
@@ -285,40 +287,42 @@ private:
 };
 
 /**
- * @brief Spawn a task and return a handle to wait for it to complete.
+ * @brief Spawn a task and return a handle.
  * 
  * @tparam T 
- * @param task 
- * @return WaitHandle<T> 
+ * @param executor The executor to schedule the task on
+ * @param task The task to spawn
+ * @return WaitHandle<T> The handle to wait for the task to complete
  */
 template <typename T>
-inline auto spawn(Task<T> &&task) -> WaitHandle<T> {
+inline auto spawn(Executor &executor, Task<T> &&task) -> WaitHandle<T> {
     auto ref = detail::SpawnDataRef(new detail::SpawnData);
     ref->mTask = task._leak();
-    ref->mTask.setExecutor(Executor::currentThread());
+    ref->mTask.setExecutor(&executor);
     ref->mTask.schedule(); //< Start it on the event loop
     return WaitHandle<T>(ref);
 }
 
 /**
- * @brief Spawn a task from a callable and args  and return a handle to wait for it to complete.
+ * @brief Spawn a task from a callable and args
  * 
  * @tparam Callable The invokeable type
  * @tparam Args The arguments to pass to the callable
  * 
+ * @param executor The executor to schedule the task on
  * @param callable The callable to invoke, invoke_result must be a Task<T>
  * @param args The arguments to pass to the callable
- * @return WaitHandle<T>
+ * @return WaitHandle<T> The handle to wait for the task to complete
  */
 template <typename Callable, typename ...Args> 
     requires (detail::TaskGenerator<Callable, Args...>)
-inline auto spawn(Callable callable, Args &&...args) {
+inline auto spawn(Executor &executor, Callable callable, Args &&...args) {
     // Normal function or empty class
     if constexpr (std::is_empty_v<Callable> || 
                   std::is_function_v<Callable> || 
                   std::is_member_function_pointer_v<Callable>) 
     {
-        return spawn(std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...));
+        return spawn(executor, std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...));
     }
     else {
         // We need to create a class that hold the callable
@@ -328,10 +332,38 @@ inline auto spawn(Callable callable, Args &&...args) {
                 std::forward<Args>(args)...
             )
         );
-        ref->mTask.setExecutor(Executor::currentThread());
+        ref->mTask.setExecutor(&executor);
         ref->mTask.schedule(); //< Start it on the event loop
         return WaitHandle<typename std::invoke_result_t<Callable, Args...>::value_type>(ref);
     }
+}
+
+/**
+ * @brief Spawn a task by using current thread executor and return a handle to wait for it to complete.
+ * 
+ * @tparam T 
+ * @param task The task to spawn
+ * @return WaitHandle<T> 
+ */
+template <typename T>
+inline auto spawn(Task<T> &&task) -> WaitHandle<T> {
+    return spawn(*Executor::currentThread(), std::move(task));
+}
+
+/**
+ * @brief Spawn a task from a callable and args by using current thread executor and return a handle to wait for it to complete.
+ * 
+ * @tparam Callable 
+ * @tparam Args 
+ * 
+ * @param callable The callable to invoke, invoke_result must be a Task<T>
+ * @param args The arguments to pass to the callable
+ * @return WaitHandle<T> The handle to wait for the task to complete
+ */
+template <typename Callable, typename ...Args>
+    requires (detail::TaskGenerator<Callable, Args...>)
+inline auto spawn(Callable callable, Args &&...args) {
+    return spawn(*Executor::currentThread(), std::forward<Callable>(callable), std::forward<Args>(args)...);
 }
 
 /**
@@ -355,8 +387,8 @@ inline auto scheduleOn(Executor &executor, Task<T> &&task) noexcept {
  * @return auto 
  */
 template <typename ...Args>
-inline auto operator <<(detail::SpawnTags, Args &&...args) {
-    return spawn(std::forward<Args>(args)...);
+inline auto operator <<(detail::SpawnTags tags, Args &&...args) {
+    return spawn(tags.executor, std::forward<Args>(args)...);
 }
 
 ILIAS_NS_END

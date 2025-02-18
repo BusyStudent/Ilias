@@ -40,6 +40,13 @@ public:
     HttpSession(const HttpSession &other) = delete;
     ~HttpSession();
 
+#if !defined(NDEBUG) // No implmentation, make the language server happy. :(
+    template <typename T = int>
+    HttpSession(HttpSession &&, T = 0) {
+        static_assert(!std::is_same_v<T, int>, "HttpSession can't be moved");
+    }
+#endif // !defined(NDEBUG)
+
     /**
      * @brief Send a GET request to the server
      *
@@ -136,6 +143,13 @@ public:
      * @return const Url& 
      */
     auto proxy() const -> const Url & { return mProxy; }
+
+    /**
+     * @brief Create the HttpSession from current coroutine's io context
+     * 
+     * @return HttpSession 
+     */
+    static auto make();
 private:
     /**
      * @brief The sendRequest implementation, only do the connection handling
@@ -357,6 +371,15 @@ inline auto HttpSession::connect(const Url &url) -> IoTask<std::unique_ptr<HttpS
     lock->unlock();
     auto [_, worker] = *it; //< Copy the worker shared_ptr
     co_return co_await worker->newStream();
+}
+
+inline auto HttpSession::make() {
+    struct Awaiter : detail::GetContextAwaiter {
+        auto await_resume() const -> HttpSession {
+            return HttpSession(*context());
+        }
+    };
+    return Awaiter {};
 }
 
 ILIAS_NS_END

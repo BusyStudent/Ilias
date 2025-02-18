@@ -212,8 +212,7 @@ void ilias_main(int argc, char **argv) {
 #endif
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
 
-    auto ctxt = co_await currentIoContext();
-    TcpListener listener(ctxt, AF_INET);
+    auto listener = (co_await TcpListener::make(AF_INET)).value();
     listener.setOption(sockopt::ReuseAddress(true)).value();
     if (auto ret = listener.bind(IPEndpoint("127.0.0.1", 25565)); !ret) {
         std::cerr << "Failed to bind: " << ret.error().toString() << std::endl;

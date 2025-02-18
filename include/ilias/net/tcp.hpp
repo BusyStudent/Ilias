@@ -176,6 +176,16 @@ public:
     auto operator <=>(const TcpClient &) const = default;
 
     /**
+     * @brief Create a new tcp client by using current coroutine's io context.
+     * 
+     * @param family The address family.
+     * @return Result<TcpClient>
+     */
+    static auto make(int family) {
+        return detail::SocketBase::make<TcpClient>(family, SOCK_STREAM, IPPROTO_TCP);
+    }
+
+    /**
      * @brief Check if the socket is valid.
      * 
      * @return true 
@@ -183,7 +193,10 @@ public:
      */
     explicit operator bool() const { return bool(mBase); }
 private:
+    TcpClient(detail::SocketBase &&base) : mBase(std::move(base)) { }
+
     detail::SocketBase mBase;
+friend class detail::SocketBase;
 };
 
 /**
@@ -312,6 +325,16 @@ public:
     }
 
     /**
+     * @brief Create a new tcp listener by using current coroutine's io context.
+     * 
+     * @param family The address family.
+     * @return Result<TcpListener>
+     */
+    static auto make(int family) {
+        return detail::SocketBase::make<TcpListener>(family, SOCK_STREAM, IPPROTO_TCP);
+    }
+
+    /**
      * @brief Check if the socket is valid.
      * 
      * @return true 
@@ -319,7 +342,10 @@ public:
      */
     explicit operator bool() const { return bool(mBase); }
 private:
+    TcpListener(detail::SocketBase &&base) : mBase(std::move(base)) { }
+
     detail::SocketBase mBase;
+friend class detail::SocketBase;
 };
 
 ILIAS_NS_END

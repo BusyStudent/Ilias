@@ -483,9 +483,7 @@ public:
      * 
      * @param other 
      */
-    Socket(Socket &&other) : SocketView(other.mFd) {
-        other.mFd = Invalid;
-    }
+    Socket(Socket &&other) : SocketView(std::exchange(other.mFd, Invalid)) { }
 
     /**
      * @brief Construct a new Socket object
@@ -563,9 +561,24 @@ public:
 
     auto operator =(Socket &&other) -> Socket & {
         close();
-        mFd = other.mFd;
-        other.mFd = Invalid;
+        mFd = std::exchange(other.mFd, Invalid);
         return *this;
+    }
+
+    /**
+     * @brief Create a new socket
+     * 
+     * @param family The address family
+     * @param type The socket type
+     * @param protocol The protocol
+     * @return Result<Socket> 
+     */
+    static auto make(int family, int type, int protocol) -> Result<Socket> {
+        auto sockfd = ::socket(family, type, protocol);
+        if (sockfd != Invalid) {
+            return Socket(sockfd);
+        }
+        return Unexpected(SystemError::fromErrno());
     }
 };
 

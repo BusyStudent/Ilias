@@ -150,6 +150,16 @@ public:
     auto operator <=>(const UdpClient &) const = default;
 
     /**
+     * @brief Create a new udp client by using current coroutine's io context.
+     * 
+     * @param family The address family.
+     * @return Result<UdpClient>
+     */
+    static auto make(int family) {
+        return detail::SocketBase::make<UdpClient>(family, SOCK_DGRAM, IPPROTO_UDP);
+    }
+
+    /**
      * @brief Check if the socket is valid.
      * 
      * @return true 
@@ -157,7 +167,10 @@ public:
      */
     explicit operator bool() const { return bool(mBase); }
 private:
+    UdpClient(detail::SocketBase &&base) : mBase(std::move(base)) { }
+
     detail::SocketBase mBase;
+friend class detail::SocketBase;
 };
 
 ILIAS_NS_END

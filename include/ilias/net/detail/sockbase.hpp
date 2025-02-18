@@ -17,7 +17,6 @@ ILIAS_NS_BEGIN
 
 namespace detail {
 
-// TODO: Imrpove the socket base class
 /**
  * @brief The RAII class take the ownship of the socket and register it to the context
  * 
@@ -48,9 +47,12 @@ public:
      * 
      * @param other 
      */
-    SocketBase(SocketBase &&other) : mFd(other.mFd), mCtxt(other.mCtxt), mSock(std::move(other.mSock)) {
-        other.mFd = nullptr;
-        other.mCtxt = nullptr;
+    SocketBase(SocketBase &&other) noexcept : 
+        mFd(std::exchange(other.mFd, nullptr)), 
+        mCtxt(std::exchange(other.mCtxt, nullptr)), 
+        mSock(std::move(other.mSock)) 
+    {
+
     }
 
     /**
@@ -171,11 +173,9 @@ public:
             return *this;
         }
         close();
-        mFd = other.mFd;
-        mCtxt = other.mCtxt;
-        mSock = std::move(other.mSock);
-        other.mFd = nullptr;
-        other.mCtxt = nullptr;
+        mFd = std::exchange(other.mFd, nullptr);
+        mCtxt = std::exchange(other.mCtxt, nullptr);
+        mSock = std::exchange(other.mSock, Socket{});
         return *this;
     }
 
@@ -187,6 +187,63 @@ public:
     auto operator =(std::nullptr_t) -> SocketBase & {
         close();
         return *this;
+    }
+
+    /**
+     * @brief Create the socket and added it into the context
+     * 
+     * @param ctxt 
+     * @param family 
+     * @param type 
+     * @param protocol 
+     * @return Result<SocketBase> 
+     */
+    template <typename T = SocketBase>
+    static auto make(IoContext &ctxt, int family, int type, int protocol = 0) -> Result<T> {
+        auto sockfd = Socket::make(family, type, protocol);
+        if (!sockfd) {
+            return Unexpected(sockfd.error());
+        }
+        auto fd = ctxt.addDescriptor(fd_t(sockfd->get()), IoDescriptor::Socket);
+        if (!fd) {
+            return Unexpected(fd.error());
+        }
+        // Done, combine them
+        T base;
+        base.mFd = fd.value();
+        base.mCtxt = &ctxt;
+        base.mSock = std::move(sockfd.value());
+        return base;
+    }
+
+    /**
+     * @brief Create an awaiter for construct the T object
+     * 
+     * @tparam T 
+     * @param family 
+     * @param type 
+     * @param protocol 
+     * @return auto 
+     */
+    template <typename T>
+    static auto make(int family, int type, int protocol = 0) {
+        struct Awaiter : public GetContextAwaiter {
+            auto await_resume() -> Result<T> {
+                auto base = SocketBase::make(*context(), family, type, protocol);
+                if (!base) {
+                    return Unexpected(base.error());
+                }
+                return T(std::move(*base));
+            }
+            int family;
+            int type;
+            int protocol;
+        };
+        Awaiter awaiter;
+        awaiter.family = family;
+        awaiter.type = type;
+        awaiter.protocol = protocol;
+        return awaiter;
     }
 
     /**

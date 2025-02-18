@@ -93,9 +93,16 @@ auto WinContext::wndproc(UINT msg, WPARAM wParam, LPARAM lParam) -> LRESULT {
 
 
 auto main() -> int {
+
+#if defined(_WIN32)
+    ::SetConsoleCP(65001);
+    ::SetConsoleOutputCP(65001);
+    std::setlocale(LC_ALL, ".utf-8");
+#endif
+
     WinContext ctxt;
-    HttpSession session(ctxt);
     auto fn = [&]() -> Task<void> {
+        auto session = co_await HttpSession::make();
         auto reply = co_await session.get("http://www.baidu.com");
         if (!reply) {
             std::cout << reply.error().toString() << std::endl;

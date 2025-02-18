@@ -18,8 +18,34 @@
 
 ILIAS_NS_BEGIN
 
+class IoContext;
 class EndpointView;
 class MutableEndpointView;
+
+namespace detail {
+
+/**
+ * @brief The helper awaiter for getting the io context
+ * 
+ */
+class GetContextAwaiter : public GetHandleAwaiter {
+public:
+    /**
+     * @brief Get the io context
+     * 
+     * @return IoContext* 
+     */
+    template <typename T = IoContext>
+    auto context() const -> T * {
+        auto executor = handle().executor();
+#if defined(__cpp_rtti)
+        ILIAS_ASSERT(dynamic_cast<T *>(executor)); // Check that the executor impl the IoContext
+#endif // defined(__cpp_rtti)
+        return static_cast<T *>(executor);
+    }
+};
+
+} // namespace detail    
 
 /**
  * @brief The IoDescriptor class, user should only take the pointer to this class, it is opaque to the user
@@ -165,21 +191,10 @@ public:
  * @return std::reference_wrapper<IoContext>
  */
 inline auto currentIoContext() {
-    struct Awaiter {
-        auto await_ready() const -> bool { 
-            return false; 
+    struct Awaiter : detail::GetContextAwaiter {
+        auto await_resume() const -> std::reference_wrapper<IoContext> {
+            return *context();
         }
-        auto await_suspend(CoroHandle handle) -> bool {
-            mCtxt = static_cast<IoContext*>(handle.executor());
-#if defined(__cpp_rtti)
-            ILIAS_ASSERT(dynamic_cast<IoContext*>(handle.executor())); //< Check that the executor impl the IoContext
-#endif // defined(__cpp_rtti)
-            return false;
-        }
-        auto await_resume() const -> std::reference_wrapper<IoContext> { 
-            return *mCtxt; 
-        }
-        IoContext *mCtxt;
     };
     return Awaiter {};
 }

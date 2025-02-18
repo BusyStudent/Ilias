@@ -172,8 +172,21 @@ public:
 #endif // _WIN32
 
     }
+
+    /**
+     * @brief Create a new unix client by using current coroutine's io context.
+     * 
+     * @param type The socket type
+     * @return Result<UnixClient>
+     */
+    static auto make(int type) {
+        return detail::SocketBase::make<UnixClient>(AF_UNIX, type, 0);
+    }
 private:
+    UnixClient(detail::SocketBase &&base) : mBase(std::move(base)) { }
+
     detail::SocketBase mBase;
+friend class detail::SocketBase;
 };
 
 /**
@@ -326,8 +339,21 @@ public:
     static auto isSupported() -> bool {
         return UnixClient::isSupported();
     }
+
+    /**
+     * @brief Create a new udp listener by using current coroutine's io context.
+     * 
+     * @param type The socket type
+     * @return Result<UnixListener>
+     */
+    static auto make(int type) {
+        return detail::SocketBase::make<UnixListener>(AF_UNIX, type, 0);
+    }
 private:
+    UnixListener(detail::SocketBase &&base) : mBase(std::move(base)) { }
+
     detail::SocketBase mBase;
+friend class detail::SocketBase;
 };
 
 ILIAS_NS_END
