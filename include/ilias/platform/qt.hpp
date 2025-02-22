@@ -26,8 +26,13 @@
 #include <map>
 
 #if defined(_WIN32)
+    #include <ilias/platform/detail/iocp_fs.hpp> // For read console
     #include <QWinEventNotifier>
 #endif // defined(_WIN32)
+
+#if defined(__linux__) && __has_include(<aio.h>)
+    #include <ilias/platform/detail/aio_core.hpp> // For read file
+#endif
 
 
 ILIAS_NS_BEGIN
@@ -81,7 +86,7 @@ public:
     QTimerAwaiter(QIoContext *context, uint64_t ms) : mCtxt(context), mMs(ms) { }
 
     auto await_ready() -> bool { return mMs == 0; }
-    auto await_suspend(TaskView<> caller) -> void;
+    auto await_suspend(CoroHandle caller) -> void;
     auto await_resume() -> Result<void>;
 private:
     auto onTimeout() -> void;
@@ -89,7 +94,7 @@ private:
 
     QIoContext *mCtxt;
     uint64_t   mMs;
-    TaskView<> mCaller;
+    CoroHandle mCaller;
     int        mTimerId = 0;
     bool       mCanceled = false;
     CancellationToken::Registration mRegistration;
@@ -105,7 +110,7 @@ public:
     QPollAwaiter(QIoDescriptor *fd, uint32_t event) : mFd(fd), mEvent(event) { }
 
     auto await_ready() -> bool { return false; }
-    auto await_suspend(TaskView<> caller) -> void;
+    auto await_suspend(CoroHandle caller) -> void;
     auto await_resume() -> Result<uint32_t>;
 private:
     auto onNotifierActivated(QSocketDescriptor, QSocketNotifier::Type type) -> void;
@@ -116,14 +121,38 @@ private:
 
     QIoDescriptor *mFd;
     uint32_t       mEvent;
-    TaskView<>     mCaller;
-    Result<uint32_t> mResult; //< The result of poll function. revent or Error
+    CoroHandle     mCaller;
+    Result<uint32_t> mResult; // The result of poll function. revent or Error
     QMetaObject::Connection mReadCon;
     QMetaObject::Connection mWriteCon;
     QMetaObject::Connection mExceptCon;
-    QMetaObject::Connection mDestroyCon; //< to observe the QIoDescriptor destroyed
+    QMetaObject::Connection mDestroyCon; // To observe the QIoDescriptor destroyed
     CancellationToken::Registration mRegistration;
 };
+
+#if defined(_WIN32)
+/**
+ * @brief The internal qt impl for any using OVERLAPPED
+ * 
+ */
+class QOverlapped {
+public:
+    QOverlapped(::HANDLE handle) : mHandle(handle) { }
+    QOverlapped(const QOverlapped &) = delete;
+    ~QOverlapped() { ::CloseHandle(mOverlapped.hEvent); }
+
+    auto await_ready() -> bool { return false; }
+    auto await_suspend(CoroHandle caller) -> void;
+    auto await_resume() -> void;
+    auto operator &() -> ::OVERLAPPED * { return &mOverlapped; }
+private:
+    ::OVERLAPPED mOverlapped { .hEvent = ::CreateEventW(nullptr, FALSE, FALSE, nullptr) };
+    ::HANDLE     mHandle;
+    CoroHandle   mCaller;
+    QWinEventNotifier mNotifier { mOverlapped.hEvent }; // To observe the event
+    CancellationToken::Registration mRegistration;
+}; //TODO: Add Event Pool for reduce the create and destroy event
+#endif // defined(_WIN32)
 
 } // namespace detail
 
@@ -213,8 +242,25 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resul
         case IoDescriptor::Socket:
             nfd->pollable = true;
             break;
+
+#if   defined(_WIN32)
+        case IoDescriptor::Pipe:
+        case IoDescriptor::File:
+        case IoDescriptor::Tty:
+            break;
+#elif defined(__linux__)
+        case IoDescriptor::Pipe:
+            nfd->pollable = true; // Linux pipe can be pollable
+            break;
+#if __has_include(<aio.h>) // If posix aio available, we can use it
+        case IoDescriptor::File:
+            break;
+#endif
+
+#endif // defined(_WIN32)
+
         default:
-            ILIAS_WARN("QIo", "QIoContext::addDescriptor(): the descriptor type is not supported");
+            ILIAS_WARN("QIo", "QIoContext::addDescriptor(): the descriptor type {} is not supported", type);
             return Unexpected(Error::OperationNotSupported);
     }
     
@@ -266,6 +312,15 @@ inline auto QIoContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
         return {};
     }
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
+
+#if defined(_WIN32)
+    if (!::CancelIoEx(nfd->fd, nullptr)) {
+        if (auto err = ::GetLastError(); err != ERROR_NOT_FOUND) {
+            ILIAS_WARN("QIo", "QIoContext::removeDescriptor(): failed to cancel any pending IO operation on {}, {}", nfd->fd, err);            
+        }
+    }
+#endif // defined(_WIN32)
+
     delete nfd;
     --mNumOfDescriptors;
     return {};
@@ -277,6 +332,28 @@ inline auto QIoContext::sleep(uint64_t ms) -> IoTask<void> {
 
 inline auto QIoContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
+
+#if defined(_WIN32)
+    if (nfd->type == IoDescriptor::Tty) {
+        co_return co_await detail::IocpThreadReadAwaiter(nfd->fd, buffer);
+    }
+    if (nfd->type == IoDescriptor::Pipe || nfd->type == IoDescriptor::File) {
+        detail::QOverlapped overlapped(nfd->fd);
+        ::DWORD bytesRead = 0;
+        if (::ReadFile(nfd->fd, buffer.data(), buffer.size(), &bytesRead, &overlapped)) {
+            co_return bytesRead;
+        }
+        if (auto err = ::GetLastError(); err != ERROR_IO_PENDING) {
+            co_return Unexpected(SystemError(err));
+        }
+        co_await overlapped;
+        if (::GetOverlappedResult(nfd, &overlapped, &bytesRead, FALSE)) {
+            co_return bytesRead;
+        }
+        co_return Unexpected(SystemError::fromErrno());
+    }
+#endif // defined(_WIN32)
+
     if (nfd->type == IoDescriptor::Socket) {
         co_return co_await recvfrom(fd, buffer, 0, nullptr);
     }
@@ -285,6 +362,28 @@ inline auto QIoContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std:
 
 inline auto QIoContext::write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
+
+#if defined(_WIN32)
+    if (nfd->type == IoDescriptor::Tty) {
+        co_return co_await detail::IocpThreadWriteAwaiter(nfd->fd, buffer);
+    }
+    if (nfd->type == IoDescriptor::Pipe || nfd->type == IoDescriptor::File) {
+        detail::QOverlapped overlapped(nfd->fd);
+        ::DWORD bytesWritten = 0;
+        if (::WriteFile(nfd->fd, buffer.data(), buffer.size(), &bytesWritten, &overlapped)) {
+            co_return bytesWritten;
+        }
+        if (auto err = ::GetLastError(); err != ERROR_IO_PENDING) {
+            co_return Unexpected(SystemError(err));
+        }
+        co_await overlapped;
+        if (::GetOverlappedResult(nfd, &overlapped, &bytesWritten, FALSE)) {
+            co_return bytesWritten;
+        }
+        co_return Unexpected(SystemError::fromErrno());
+    }
+#endif // defined(_WIN32)
+
     if (nfd->type == IoDescriptor::Socket) {
         co_return co_await sendto(fd, buffer, 0, nullptr);
     }
@@ -407,7 +506,7 @@ inline auto QIoContext::cancelTimer(int id) -> void {
     mTimers.erase(id);
 }
 
-inline auto detail::QTimerAwaiter::await_suspend(TaskView<> caller) -> void {
+inline auto detail::QTimerAwaiter::await_suspend(CoroHandle caller) -> void {
     mCaller = caller;
     mTimerId = mCtxt->submitTimer(mMs, this);
     mRegistration = caller.cancellationToken().register_(std::bind(&QTimerAwaiter::onCancel, this));
@@ -437,7 +536,7 @@ inline auto detail::QTimerAwaiter::onTimeout() -> void {
 }
 
 // Poll
-inline auto detail::QPollAwaiter::await_suspend(TaskView<> caller) -> void {
+inline auto detail::QPollAwaiter::await_suspend(CoroHandle caller) -> void {
     ILIAS_TRACE("QIo", "poll fd {}", mFd->sockfd);
     mCaller = caller;
     doConnect(); //< Connect the signal
@@ -537,5 +636,23 @@ inline auto detail::QPollAwaiter::doConnect() -> void {
     // Connect the destroy notifier
     mDestroyCon = QObject::connect(mFd, &QObject::destroyed, destroyFn);
 }
+
+#if defined(_WIN32)
+inline auto detail::QOverlapped::await_suspend(CoroHandle caller) -> void {
+    mCaller = caller;
+    mRegistration = caller.cancellationToken().register_([this]() {
+        ::CancelIoEx(mHandle, &mOverlapped);
+    });
+    QObject::connect(&mNotifier, &QWinEventNotifier::activated, [this](::HANDLE event) {
+        mNotifier.setEnabled(false);
+        mCaller.schedule();
+    });
+    mNotifier.setEnabled(true);
+}
+
+inline auto detail::QOverlapped::await_resume() -> void {
+    // Nothing to do
+}
+#endif // defined(_WIN32)
 
 ILIAS_NS_END

@@ -8,6 +8,7 @@
  * @copyright Copyright (c) 2024
  * 
  */
+#pragma once
 
 #include <ilias/cancellation_token.hpp>
 #include <ilias/task/task.hpp>

@@ -22,8 +22,8 @@
     #include <ilias/detail/win32.hpp> //< EventOverlapped
     #include <VersionHelpers.h>
 #else
-    #include <csignal>
     #define ILIAS_ADDRINFO ::addrinfo
+    #include <csignal>
 #endif
 
 ILIAS_NS_BEGIN
@@ -73,6 +73,13 @@ public:
     auto endpoints() const -> std::vector<IPEndpoint>;
 
     /**
+     * @brief Get the canonical name of the info
+     * 
+     * @return std::string 
+     */
+    auto canonicalName() const -> std::string;
+
+    /**
      * @brief Access the wrapped addrinfo
      * 
      * @return addrinfo_t* 
@@ -80,6 +87,14 @@ public:
     auto operator ->() const -> addrinfo_t *;
     auto operator  *() const -> addrinfo_t &;
     auto operator  =(AddressInfo &&info) -> AddressInfo &;
+
+    /**
+     * @brief Check if the info is valid
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept;
 
     /**
      * @brief Try get the address info by it
@@ -138,6 +153,7 @@ inline AddressInfo::AddressInfo() = default;
 inline AddressInfo::AddressInfo(AddressInfo &&other) = default;
 inline AddressInfo::~AddressInfo() = default;
 
+inline AddressInfo::operator bool() const noexcept { return mInfo != nullptr; }
 inline auto AddressInfo::operator =(AddressInfo &&info) -> AddressInfo & = default;
 inline auto AddressInfo::operator *() const -> addrinfo_t & { return *mInfo; }
 inline auto AddressInfo::operator ->() const -> addrinfo_t * { return mInfo.get(); }
@@ -162,6 +178,17 @@ inline auto AddressInfo::endpoints() const -> std::vector<IPEndpoint> {
         }
     }
     return vec;
+}
+
+inline auto AddressInfo::canonicalName() const -> std::string {
+    if (!mInfo->ai_canonname) {
+        return {};
+    }
+#if defined(_WIN32)
+    return win32::toUtf8(mInfo->ai_canonname);
+#else
+    return mInfo->ai_canonname;
+#endif // _WIN32
 }
 
 inline auto AddressInfo::fromHostname(const char *hostname, int family) -> Result<AddressInfo> {

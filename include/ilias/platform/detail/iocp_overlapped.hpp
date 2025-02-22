@@ -103,7 +103,7 @@ public:
         return mError != ERROR_IO_PENDING; //< Pending means this job is still in progress
     }
 
-    auto await_suspend(TaskView<> caller) -> void {
+    auto await_suspend(CoroHandle caller) -> void {
         mCaller = caller;
         onCompleteCallback = completeCallback;
         mRegistration = mCaller.cancellationToken().register_(onCancel, this);
@@ -154,7 +154,7 @@ private:
     };
     ::DWORD mError = 0;
     ::DWORD mBytesTransferred = 0;
-    TaskView<> mCaller;
+    CoroHandle mCaller;
     CancellationToken::Registration mRegistration;
 };
 

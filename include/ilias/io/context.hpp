@@ -199,5 +199,23 @@ inline auto currentIoContext() {
     return Awaiter {};
 }
 
-
 ILIAS_NS_END
+
+// Formatter for IoDescriptor::Type
+#if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(IoDescriptor::Type) {
+    auto format(const auto &type, auto &ctxt) const {
+        using Type = ILIAS_NAMESPACE::IoDescriptor::Type;
+        std::string_view name;
+        switch (type) {
+            case Type::File: name = "File"; break;
+            case Type::Socket: name = "Socket"; break;
+            case Type::Pipe: name = "Pipe"; break;
+            case Type::Tty: name = "Tty"; break;
+            case Type::Unknown: name = "Unknown"; break;
+            default: name = "Unknown"; break;
+        }
+        return format_to(ctxt.out(), "{}", name);
+    }
+};
+#endif

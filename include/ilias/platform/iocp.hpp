@@ -248,7 +248,7 @@ inline auto IocpContext::sleep(uint64_t ms) -> IoTask<void> {
 #pragma region Context
 inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> {
     if (fd == nullptr || fd == INVALID_HANDLE_VALUE) {
-        ILIAS_ERROR("IOCP", "Invalid file descriptor in addDescriptor");
+        ILIAS_ERROR("IOCP", "Invalid file descriptor in addDescriptor, fd = {}, type = {}", fd, type);
         return Unexpected(Error::InvalidArgument);
     }
     if (type == IoDescriptor::Unknown) {
@@ -322,7 +322,7 @@ inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resu
             }
         }
     }
-    ILIAS_TRACE("IOCP", "Adding fd: {} to completion port", fd);
+    ILIAS_TRACE("IOCP", "Adding fd: {} to completion port, type: {}", fd, type);
     return nfd.release();
 }
 

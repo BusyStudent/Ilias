@@ -58,7 +58,7 @@ public:
         ) == 0;
     }
 
-    auto onComplete(::DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
         ILIAS_TRACE("IOCP", "WSASendTo {} bytes on sockfd {} completed, Error {}", bytesTransferred, sockfd(), error);
         if (error != ERROR_SUCCESS) {
             return Unexpected(SystemError(error));
@@ -256,7 +256,40 @@ private:
     LPFN_GETACCEPTEXSOCKADDRS mGetAcceptExSockaddrs = nullptr;
 };
 
-inline auto WSAGetExtensionFnPtr(::SOCKET sockfd, GUID id, void *fnptr) -> Result<void> {
+class IocpSendfileAwaiter final : public IocpAwaiter<IocpSendfileAwaiter> {
+public:
+    IocpSendfileAwaiter(SOCKET sock, HANDLE file, size_t offset, DWORD size, LPFN_TRANSMITFILE transmitFile) : 
+        IocpAwaiter(sock), mFile(file), mSize(size), mTransmitFile(transmitFile)
+    {
+        setOffset(offset);
+    }
+
+    auto onSubmit() -> bool {
+        return mTransmitFile(
+            sockfd(),
+            mFile,
+            mSize,
+            0,
+            overlapped(),
+            nullptr,
+            0
+        );
+    }
+
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+        if (error != ERROR_SUCCESS) {
+            return Unexpected(SystemError(error));
+        }
+        return bytesTransferred;
+    }
+private:
+    HANDLE mFile;
+    DWORD  mSize;
+
+    LPFN_TRANSMITFILE mTransmitFile;
+};
+
+inline auto WSAGetExtensionFnPtr(SOCKET sockfd, GUID id, void *fnptr) -> Result<void> {
     DWORD bytes = 0;
     auto ret = ::WSAIoctl(
         sockfd,
