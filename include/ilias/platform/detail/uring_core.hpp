@@ -170,7 +170,7 @@ public:
     }
 
     auto onComplete(int64_t result) -> Result<void> {
-        if (result < 0 && result != -ETIMEDOUT) { // Treat ETIMEDOUT as success
+        if (result < 0 && result != -ETIME) { // Treat ETIME as success
             return Unexpected(SystemError(-result));
         }
         return {};
