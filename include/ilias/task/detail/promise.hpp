@@ -280,7 +280,7 @@ public:
         mValue.emplace(std::move(value));
     }
 
-    template <typename U>
+    template <typename U> requires (std::convertible_to<U, value_type>)
     auto return_value(U &&value) -> void {
         mValue.emplace(std::forward<U>(value));
     }
@@ -292,29 +292,30 @@ public:
      */
     auto value() -> value_type {
         rethrowIfException();
-        ILIAS_ASSERT(mValue.has_value()); //< The return value should be set
+        ILIAS_ASSERT(mValue.has_value()); // The return value should be set
         return std::move(*mValue);
     }
 private:
-    std::optional<value_type> mValue; //< The value
+    std::optional<value_type> mValue; // The value
 };
 
-#if defined(__cpp_exceptions) //< Handle the exception specially
+#if defined(__cpp_exceptions) // Handle the exception specially
 /**
  * @brief The specialized version for handle the exception specially
  * 
- * @tparam T 
+ * @tparam T The success type
+ * @tparam E The error type
  */
-template <typename T>
-class TaskPromiseImpl<Result<T> > : public CoroPromiseBase {
+template <typename T, typename E>
+class TaskPromiseImpl<Result<T, E> > : public CoroPromiseBase {
 public:
-    using value_type = Result<T>;
+    using value_type = Result<T, E>;
 
     auto return_value(value_type value) -> void {
         mValue.emplace(std::move(value));
     }
 
-    template <typename U>
+    template <typename U> requires (std::convertible_to<U, value_type>)
     auto return_value(U &&value) -> void {
         mValue.emplace(std::forward<U>(value));
     }
@@ -323,7 +324,7 @@ public:
         try {
             throw;
         }
-        catch (BadExpectedAccess<Error> &e) { //< Translate the BadExpectedAccess into return value's errc
+        catch (BadExpectedAccess<E> &e) { // Translate the BadExpectedAccess into return value's errc
             mValue.emplace(Unexpected(e.error()));
         }
         catch (...) {

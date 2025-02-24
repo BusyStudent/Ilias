@@ -355,7 +355,7 @@ private:
  * 
  * @tparam T 
  */
-template <Stream T = IStreamClient>
+template <Stream T = DynStreamClient>
 class BufferedStream final : public StreamMethod<BufferedStream<T> > {
 public:
     /**

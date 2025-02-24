@@ -325,7 +325,7 @@ inline auto HttpSession::connect(const Url &url) -> IoTask<std::unique_ptr<HttpS
     // Check proxy
     auto     scheme = std::string(url.scheme());
     auto     host   = std::string(url.host());
-    uint16_t port;
+    uint16_t port   = 0;
 
     if (auto p = url.port(); !p) {
         // Get port by scheme
@@ -334,13 +334,13 @@ inline auto HttpSession::connect(const Url &url) -> IoTask<std::unique_ptr<HttpS
             ILIAS_ERROR("Http", "Failed to get port for scheme: {}", scheme);
             co_return Unexpected(SystemError::fromErrno());
         }
-        port = ::ntohs(ent->s_port);
+        port = networkToHost(ent->s_port);
     }
     else {
         port = *p;
     }
 
-    HttpEndpoint endpoint {.scheme = scheme, .host = host, .port = port, .proxy = mProxy};
+    HttpEndpoint endpoint { .scheme = scheme, .host = host, .port = port, .proxy = mProxy };
 
     // Try get mutex
     auto lock = co_await mWorkersMutex.uniqueLock();

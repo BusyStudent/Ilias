@@ -235,7 +235,7 @@ public:
                 auto &sockaddr = cast<::sockaddr_in>();
                 ::memset(&sockaddr, 0, sizeof(sockaddr));
                 sockaddr.sin_family = AF_INET;
-                sockaddr.sin_port = ::htons(port); 
+                sockaddr.sin_port = hostToNetwork(port); 
                 sockaddr.sin_addr = addr.cast<::in_addr>();
                 break;
             }
@@ -243,7 +243,7 @@ public:
                 auto &sockaddr = cast<::sockaddr_in6>();
                 ::memset(&sockaddr, 0, sizeof(sockaddr));
                 sockaddr.sin6_family = AF_INET6;
-                sockaddr.sin6_port = ::htons(port); 
+                sockaddr.sin6_port = hostToNetwork(port); 
                 sockaddr.sin6_addr = addr.cast<::in6_addr>();
                 break;
             }
@@ -320,8 +320,8 @@ public:
      */
     auto port() const -> uint16_t {
         switch (family()) {
-            case AF_INET: return ::ntohs(cast<::sockaddr_in>().sin_port);
-            case AF_INET6: return ::ntohs(cast<::sockaddr_in6>().sin6_port);
+            case AF_INET: return networkToHost(cast<::sockaddr_in>().sin_port);
+            case AF_INET6: return networkToHost(cast<::sockaddr_in6>().sin6_port);
             default: return 0;
         }
     }

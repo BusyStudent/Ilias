@@ -1,4 +1,6 @@
 #include <ilias/platform/qt.hpp>
+#include <ilias/fs/console.hpp>
+#include <ilias/fs/file.hpp>
 #include <ilias/http.hpp>
 #include <ilias/net.hpp>
 
@@ -44,6 +46,7 @@ public:
             if (filename.isEmpty()) {
                 return;
             }
+#if 0
             QFile file(filename);
             if (!file.open(QIODevice::WriteOnly)) {
                 QMessageBox::critical(this, "Error", "Could not open file for writing");
@@ -51,6 +54,15 @@ public:
             }
             file.write(reinterpret_cast<const char*>(mContent.data()), mContent.size());
             file.close();
+#else
+            spawn([this, filename]() -> Task<void> {
+                auto file = co_await File::open(filename.toStdString(), "wb");
+                if (!file) {
+                    co_return;
+                }
+                auto n = co_await file->writeAll(makeBuffer(mContent));
+            });
+#endif
         });
 
         connect(ui.httpProxyButton, &QPushButton::clicked, this, [this]() {
@@ -74,12 +86,28 @@ public:
         connect(ui.tcpTestButton, &QPushButton::clicked, this, [this]() {
             spawn(echoTest());
         });
+
+        connect(ui.consoleStartButton, &QPushButton::clicked, this, [this]() {
+            if (!mConsoleListenerHandle) {
+                ui.consoleStartButton->setText("Stop");
+                mConsoleListenerHandle = spawn(consoleListener());
+            }
+            else {
+                ui.consoleStartButton->setText("Start");
+                mConsoleListenerHandle.cancel();
+                mConsoleListenerHandle.wait();
+            }
+        });
     } 
 
     ~App() {
         if (mEchoServerHandle) {
             mEchoServerHandle.cancel();            
             mEchoServerHandle.wait();
+        }
+        if (mConsoleListenerHandle) {
+            mConsoleListenerHandle.cancel();
+            mConsoleListenerHandle.wait();
         }
     }
 
@@ -177,13 +205,13 @@ public:
         uint64_t receivedTime; //< The time the echo server was received
     };
 
-    auto echoServer() -> IoTask<void> {
-        auto handle = [](TcpClient client) -> IoTask<void> {
+    auto echoServer() -> Task<void> {
+        auto handle = [](TcpClient client) -> Task<void> {
             EchoPacket packet;
             while (true) {
                 auto ret = co_await client.readAll(makeBuffer(&packet, sizeof(packet)));
                 if (!ret || *ret != sizeof(packet)) {
-                    co_return {};
+                    co_return;
                 }
                 // Update the packet with the current time and send back
                 packet.receivedTime = std::chrono::system_clock::now().time_since_epoch().count();
@@ -193,18 +221,18 @@ public:
                 buffer.resize(packet.len);
                 ret = co_await client.readAll(buffer);
                 if (!ret || *ret != packet.len) {
-                    co_return {};
+                    co_return;
                 }
 
                 // Do Send back the packet here
                 ret = co_await client.writeAll(makeBuffer(&packet, sizeof(packet)));
                 if (!ret || *ret != sizeof(packet)) {
-                    co_return {};
+                    co_return;
                 }
                 // Send back the data after the packet
                 ret = co_await client.writeAll(buffer);
                 if (!ret || *ret != buffer.size()) {
-                    co_return {};
+                    co_return;
                 }
             }
         };
@@ -212,16 +240,14 @@ public:
         TcpListener listener {mCtxt, endpoint.family()};
         if (auto ret = listener.bind(endpoint); !ret) {
             ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
-            co_return {};
         }
         while (auto ret = co_await listener.accept()) {
             auto &[client, endpoint] = ret.value();
             spawn(handle(std::move(client)));
         }
-        co_return {};
     }
 
-    auto echoTest() -> IoTask<void> {
+    auto echoTest() -> Task<void> {
         ui.tcpLogWidget->clear();
         auto endpoint = IPEndpoint(ui.tcpTestEdit->text().toUtf8().data());
         TcpClient client {mCtxt, endpoint.family()};
@@ -229,7 +255,7 @@ public:
         ui.tcpLogWidget->addItem(QString::fromUtf8("Connecting to " + endpoint.toString()));
         if (auto ret = co_await client.connect(endpoint); !ret) {
             ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
-            co_return {};
+            co_return;
         }
         ui.tcpLogWidget->addItem("Connected");
         
@@ -242,7 +268,7 @@ public:
             auto ret = co_await client.writeAll(makeBuffer(&packet, sizeof(packet)));
             if (!ret || *ret != sizeof(packet)) {
                 ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
-                co_return {};
+                co_return;
             }
             // Send back the data after the packet
             std::vector<std::byte> buffer;
@@ -260,7 +286,7 @@ public:
             auto ret = co_await client.readAll(makeBuffer(&packet, sizeof(packet)));
             if (!ret || *ret != sizeof(packet)) {
                 ui.statusbar->showMessage(QString::fromUtf8(ret.error().toString()));
-                co_return {};
+                co_return;
             }
             ui.tcpLogWidget->addItem(QString::fromUtf8("idx: " + std::to_string(i) + " Received " + std::to_string(packet.len) + " bytes"));
             // Receive the data after the packet
@@ -281,8 +307,21 @@ public:
                 )
             );
         }
+    }
 
-        co_return {};
+    auto consoleListener() -> Task<void> {
+        auto in = co_await Console::fromStdin();
+        if (!in) {
+            ui.statusbar->showMessage(QString::fromUtf8(in.error().toString()));
+            co_return;
+        }
+        while (true) {
+            auto string = co_await in->getline();
+            if (!string) {
+                co_return;
+            }
+            ui.consoleListWidget->addItem(QString::fromUtf8(*string));
+        }
     }
 private:
     QIoContext mCtxt;
@@ -291,7 +330,8 @@ private:
     Ui::MainWindow ui;
     std::vector<std::byte> mContent;
 
-    WaitHandle<Result<void> > mEchoServerHandle;
+    WaitHandle<void> mEchoServerHandle;
+    WaitHandle<void> mConsoleListenerHandle;
 };
 
 auto main(int argc, char **argv) -> int {

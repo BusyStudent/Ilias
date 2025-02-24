@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include <ilias/ilias.hpp>
-#include <ilias/error.hpp>
 #include <ilias/io/system_error.hpp>
-#include <ilias/detail/expected.hpp>
+#include <ilias/error.hpp>
+#include <array>
+#include <bit>
 
 // --- Import system header files ---
 #if defined(_WIN32)
@@ -113,7 +113,7 @@ private:
     Result<void> mInited { initialize() };
 };
 
-// --- Init spec
+// Platform initialization
 inline SockInitializer::SockInitializer() {
 
 }
@@ -144,21 +144,51 @@ inline auto SockInitializer::uninitialize() -> Result<void> {
     return {};
 }
 
-// --- Endianess
-inline auto hostToNetwork(uint16_t value) -> uint16_t {
-    return ::htons(value);
+// Endianess
+/**
+ * @brief Swap the bytes of the value
+ * 
+ * @tparam T 
+ */
+template <std::integral T> requires(std::has_unique_object_representations_v<T>)
+constexpr auto byteswap(const T value) -> T { // std::byteswap is C++23, so we need to implement it by ourselves
+    auto bytes = std::bit_cast<std::array<std::byte, sizeof(T)> >(value);
+    std::reverse(bytes.begin(), bytes.end());
+    return std::bit_cast<T>(bytes);
 }
 
-inline auto hostToNetwork(uint32_t value) -> uint32_t {
-    return ::htonl(value);
+/**
+ * @brief Convert the value from host to network byte order
+ * 
+ * @tparam T 
+ * @param value 
+ * @return T 
+ */
+template <std::integral T>
+constexpr auto hostToNetwork(const T value) -> T {
+    if constexpr (std::endian::native == std::endian::big) { // Network is big endian
+        return value;
+    }
+    else {
+        return byteswap(value);
+    }
 }
 
-inline auto networkToHost(uint16_t value) -> uint16_t {
-    return ::ntohs(value);
-}
-
-inline auto networkToHost(uint32_t value) -> uint32_t {
-    return ::ntohl(value);
+/**
+ * @brief Convert the value from network to host byte order
+ * 
+ * @tparam T 
+ * @param value 
+ * @return T 
+ */
+template <std::integral T>
+constexpr auto networkToHost(const T value) -> T {
+    if constexpr (std::endian::native == std::endian::big) { // Network is big endian
+        return value;
+    }
+    else {
+        return byteswap(value);
+    }
 }
 
 ILIAS_NS_END

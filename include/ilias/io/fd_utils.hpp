@@ -208,7 +208,7 @@ inline auto open(const char *path, std::string_view mode) -> Result<fd_t> {
         append = true;
     }
 
-    if (mode.find('+' != std::string_view::npos)) {
+    if (mode.find('+') != std::string_view::npos) {
         access |= GENERIC_READ | GENERIC_WRITE;
     }
 
@@ -320,6 +320,32 @@ inline auto size(fd_t fd) -> Result<uint64_t> {
     struct ::stat st;
     if (::fstat(fd, &st) == 0) {
         return st.st_size;
+    }
+#endif // defined(_WIN32)
+
+    return Unexpected(SystemError::fromErrno());
+}
+
+/**
+ * @brief Truncate the file with specified size.
+ * 
+ * @param fd 
+ * @param size 
+ * @return Result<void> 
+ */
+inline auto truncate(fd_t fd, uint64_t size) -> Result<void> {
+
+#if defined(_WIN32)
+    ::LARGE_INTEGER currentPos { };
+    ::LARGE_INTEGER newSize { .QuadPart = LONGLONG(size) };
+    auto ok = ::SetFilePointerEx(fd, newSize, &currentPos, FILE_BEGIN) && ::SetEndOfFile(fd);
+    ::SetFilePointerEx(fd, currentPos, nullptr, FILE_BEGIN);
+    if (ok) {
+        return {};
+    }
+#else
+    if (::ftruncate(fd, size) == 0) {
+        return {};
     }
 #endif // defined(_WIN32)
 

@@ -162,13 +162,13 @@ class Task;
 template <typename T>
 class Generator;
 
-// --- Forward declaration for Result<T>
-template <typename T = void>
+// --- Forward declaration for Result<T, E>
+template <typename T = void, typename E = Error>
 class Result;
 
 // --- Types for io operation task
-template <typename T = void>
-using IoTask = Task<Result<T> >;
+template <typename T = void, typename E = Error>
+using IoTask = Task<Result<T, Error> >;
 
 // --- Types for io operation generator
 template <typename T>

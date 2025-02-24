@@ -171,20 +171,29 @@ public:
     /**
      * @brief Run the task and block until the task is done, return the value
      * 
+     * @param executor The executor to run the task
      * @return T 
      */
-    auto wait() const -> T {
-        auto executor = Executor::currentThread();
+    auto wait(Executor &executor) const -> T {
         auto &promise = mHandle.promise();
         ILIAS_ASSERT(!promise.isStarted());
-        promise.setExecutor(executor);
+        promise.setExecutor(&executor);
         mHandle.resume(); //< Start it
         if (!mHandle.done()) {
             CancellationToken token;
             promise.registerCallback(detail::cancelTheTokenHelper, &token);
-            executor->run(token);
+            executor.run(token);
         }
         return promise.value();
+    }
+
+    /**
+     * @brief Run the task on current thread executor and block until the task is done, return the value
+     * 
+     * @return T 
+     */
+    auto wait() const -> T {
+        return wait(*Executor::currentThread());
     }
 
     /**
@@ -262,29 +271,6 @@ private:
 friend class detail::TaskPromise<T>;
 };
 
-/**
- * @brief Sleep the current task for a period of time
- * 
- * @param ms 
- * @return IoTask<void> 
- */
-inline auto sleep(std::chrono::milliseconds ms) -> IoTask<void> {
-    return Executor::currentThread()->sleep(ms.count());
-}
-
-/**
- * @brief Suspend the current coroutine, and queue self to the executor
- * 
- * @return Awaiter 
- */
-inline auto yield() noexcept {
-    struct Awaiter {
-        auto await_ready() { return false; }
-        auto await_suspend(CoroHandle handle) { handle.schedule(); }
-        auto await_resume() { }
-    };
-    return Awaiter {};
-}
 
 /**
  * @brief Get the current task view
@@ -312,6 +298,31 @@ inline auto currentExecutor() noexcept {
         auto await_suspend(CoroHandle handle) -> bool { mExecutor = handle.executor(); return false; }
         auto await_resume() -> std::reference_wrapper<Executor> { ILIAS_ASSERT(mExecutor); return *mExecutor; }
         Executor *mExecutor;
+    };
+    return Awaiter {};
+}
+
+/**
+ * @brief Sleep the current task for a period of time
+ * 
+ * @param ms 
+ * @return IoTask<void> 
+ */
+inline auto sleep(std::chrono::milliseconds ms) -> IoTask<void> {
+    auto executor = co_await currentExecutor();
+    co_return co_await executor.get().sleep(ms.count());
+}
+
+/**
+ * @brief Suspend the current coroutine, and queue self to the executor
+ * 
+ * @return Awaiter 
+ */
+inline auto yield() noexcept {
+    struct Awaiter {
+        auto await_ready() { return false; }
+        auto await_suspend(CoroHandle handle) { handle.schedule(); }
+        auto await_resume() { }
     };
     return Awaiter {};
 }

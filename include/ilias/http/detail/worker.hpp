@@ -68,7 +68,7 @@ public:
 private:
     auto newStream1() -> IoTask<std::unique_ptr<HttpStream> >;
     auto startConnection() -> Task<void>;
-    auto connect() const -> IoTask<IStreamClient>;
+    auto connect() const -> IoTask<DynStreamClient>;
 
     TaskScope mScope; //< The scope for limit
     HttpEndpoint mEndpoint; //< The endpoint of the
@@ -233,13 +233,13 @@ inline auto HttpWorker::startConnection() -> Task<void> {
     co_return;
 }
 
-inline auto HttpWorker::connect() const -> IoTask<IStreamClient> {
+inline auto HttpWorker::connect() const -> IoTask<DynStreamClient> {
     const auto &scheme = mEndpoint.scheme;
     const auto &proxy = mEndpoint.proxy;
     const auto &host = mEndpoint.host;
     const auto &port = mEndpoint.port;
     auto &&ctxt = co_await currentIoContext();
-    IStreamClient cur;
+    DynStreamClient cur;
 
     if (!proxy.empty()) {
         // Proxy

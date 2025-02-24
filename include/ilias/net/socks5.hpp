@@ -143,7 +143,7 @@ private:
         }
 
         ILIAS_TRACE("Socks5", "Connecting to type: {} addrlen({}):{}", type, addr.size(), port);
-        port = ::htons(port);
+        port = hostToNetwork(port);
         
         // Version uint8_t
         // Command uint8_t
@@ -194,7 +194,7 @@ private:
                 if (*n < 4 + 4 + sizeof(uint16_t)) {
                     co_return Unexpected(Error::Socks5Unknown);
                 }
-                auto port = ::ntohs(*reinterpret_cast<const uint16_t *>(buf.get() + 4 + 4));
+                auto port = networkToHost(*reinterpret_cast<const uint16_t *>(buf.get() + 4 + 4));
                 auto addr = IPAddress4::fromRaw(buf.get() + 4, 4);
                 mServerBound = IPEndpoint(addr, port);
                 ILIAS_TRACE("Socks5", "Server bound to {}", mServerBound);
@@ -204,7 +204,7 @@ private:
                 if (*n < 4 + 16 + sizeof(uint16_t)) {
                     co_return Unexpected(Error::Socks5Unknown);
                 }
-                auto port = ::ntohs(*reinterpret_cast<const uint16_t *>(buf.get() + 4 + 16));
+                auto port = networkToHost(*reinterpret_cast<const uint16_t *>(buf.get() + 4 + 16));
                 auto addr = IPAddress6::fromRaw(buf.get() + 4, 16);
                 mServerBound = IPEndpoint(addr, port);
                 ILIAS_TRACE("Socks5", "Server bound to {}", mServerBound);

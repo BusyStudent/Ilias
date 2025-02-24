@@ -873,11 +873,11 @@ private:
  *
  * @tparam T
  */
-template <typename T>
-class Result final : public Expected<T, Error> {
+template <typename T, typename E>
+class Result final : public Expected<T, E> {
 public:
-    using Expected<T, Error>::Expected;
-    using Expected<T, Error>::operator=;
+    using Expected<T, E>::Expected;
+    using Expected<T, E>::operator=;
 };
 
 /**

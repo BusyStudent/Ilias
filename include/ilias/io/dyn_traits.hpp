@@ -27,6 +27,55 @@ struct StreamClientVtbl : public StreamVtbl {
 };
 
 /**
+ * @brief Proxy for read operation
+ * 
+ * @tparam T 
+ * @param object 
+ * @param buffer 
+ * @return IoTask<size_t> 
+ */
+template <Readable T>
+inline auto readProxy(void *object, std::span<std::byte> buffer) -> IoTask<size_t> {
+    return static_cast<T *>(object)->read(buffer);
+}
+
+/**
+ * @brief Proxy for write operation
+ * 
+ * @tparam T 
+ * @param object 
+ * @param buffer 
+ * @return IoTask<size_t> 
+ */
+template <Writable T>
+inline auto writeProxy(void *object, std::span<const std::byte> buffer) -> IoTask<size_t> {
+    return static_cast<T *>(object)->write(buffer);
+}
+
+/**
+ * @brief Proxy for shutdown operation
+ * 
+ * @tparam T 
+ * @param object 
+ * @return IoTask<void> 
+ */
+template <Shuttable T>
+inline auto shutdownProxy(void *object) -> IoTask<void> {
+    return static_cast<T *>(object)->shutdown();
+}
+
+/**
+ * @brief Proxy for delete the T pointer
+ * 
+ * @tparam T 
+ * @param object 
+ */
+template <typename T>
+inline auto deleteProxy(void *object) -> void {
+    delete static_cast<T *>(object);
+}
+
+/**
  * @brief Generate the virtual table for StreamClient concept
  * 
  * @tparam T 
@@ -35,19 +84,9 @@ struct StreamClientVtbl : public StreamVtbl {
 template <StreamClient T>
 inline auto makeStreamClientVtbl() {
     static constexpr StreamClientVtbl vtbl {
-        StreamVtbl {
-            [](void *object, std::span<std::byte> buffer) {
-                return static_cast<T *>(object)->read(buffer);
-            },
-            [](void *object, std::span<const std::byte> buffer) {
-                return static_cast<T *>(object)->write(buffer);
-            }
-        },
-        [](void *object) {
-            return static_cast<T *>(object)->shutdown();
-        }
+        StreamVtbl { readProxy<T>, writeProxy<T> },
+        shutdownProxy<T>
     };
-
     return &vtbl;
 }
 
@@ -60,18 +99,13 @@ inline auto makeStreamClientVtbl() {
 template <Stream T>
 inline auto makeStreamVtbl() -> const StreamVtbl * {
     static constexpr StreamVtbl vtbl = {
-        .read = [](void *object, std::span<std::byte> buffer) {
-            return static_cast<T *>(object)->read(buffer);
-        },
-        .write = [](void *object, std::span<const std::byte> buffer) {
-            return static_cast<T *>(object)->write(buffer);
-        }
+        .read = readProxy<T>,
+        .write = writeProxy<T>
     };
-
     return &vtbl;
 }
 
-}
+} // namespace detail
 
 /**
  * @brief The view of the Stream concept, it does not own the object
@@ -170,65 +204,63 @@ public:
     auto shutdown() const -> IoTask<void> {
         return static_cast<const detail::StreamClientVtbl*>(mVtbl)->shutdown(mObject);
     }
-friend class IStreamClient;
+friend class DynStreamClient;
 };
 
 /**
  * @brief To type erase the StreamClient concept, using fat pointer
  * 
  */
-class IStreamClient final : public StreamClientView {
+class DynStreamClient final : public StreamClientView {
 public:
-    IStreamClient() = default;
+    DynStreamClient() = default;
 
     /**
-     * @brief Construct a new empty IStreamClient object
+     * @brief Construct a new empty DynStreamClient object
      * 
      */
-    IStreamClient(std::nullptr_t) { }
+    DynStreamClient(std::nullptr_t) { }
 
     /**
-     * @brief Construct a new IStreamClient object by StreamClient concept 
+     * @brief Construct a new DynStreamClient object by StreamClient concept 
      * 
      * @tparam T The type of the StreamClient concept
      * @param t 
      */
     template <StreamClient T>
-    IStreamClient(T &&t) {
+    DynStreamClient(T &&t) {
         mVtbl = detail::makeStreamClientVtbl<T>();
         mObject = new T(std::move(t));
-        mDelete = [](void *object) {
-            delete static_cast<T *>(object);
-        };
+        mDelete = detail::deleteProxy<T>;
     }
 
     /**
-     * @brief Construct a new IStreamClient object from StreamClientView
+     * @brief Construct a new DynStreamClient object from StreamClientView
      * 
      * @param s 
      */
-    explicit IStreamClient(StreamClientView s) {
+    explicit DynStreamClient(StreamClientView s) {
         mVtbl = s.mVtbl;
         mObject = s.mObject;
         mDelete = nullptr;
     }
 
     /**
-     * @brief Construct a new IStreamClient object by move
+     * @brief Construct a new DynStreamClient object by move
      * 
      * @param other 
      */
-    IStreamClient(IStreamClient &&other) noexcept {
+    DynStreamClient(DynStreamClient &&other) noexcept {
         mVtbl = std::exchange(other.mVtbl, nullptr);
         mObject = std::exchange(other.mObject, nullptr);
         mDelete = std::exchange(other.mDelete, nullptr);
     }
 
     /**
-     * @brief Destroy the IStreamClient object
+     * @brief Destroy the DynStreamClient object
      * 
      */
-    ~IStreamClient() {
+    ~DynStreamClient() {
         close();
     }
 
@@ -248,10 +280,10 @@ public:
     /**
      * @brief Move assignment operator 
      * 
-     * @param other The other IStreamClient object
-     * @return IStreamClient & 
+     * @param other The other DynStreamClient object
+     * @return DynStreamClient & 
      */
-    auto operator =(IStreamClient &&other) noexcept -> IStreamClient & {
+    auto operator =(DynStreamClient &&other) noexcept -> DynStreamClient & {
         if (this == &other) {
             return *this;
         }
@@ -265,9 +297,9 @@ public:
     /**
      * @brief Null assignment operator
      * 
-     * @return IStreamClient & 
+     * @return DynStreamClient & 
      */
-    auto operator =(std::nullptr_t) -> IStreamClient & {
+    auto operator =(std::nullptr_t) -> DynStreamClient & {
         close();
         return *this;
     }
@@ -275,10 +307,16 @@ private:
     void (*mDelete)(void *object) = nullptr; //< For deleting the object
 };
 
+/**
+ * @brief To type erase the StreamClient concept, using fat pointer, alias from DynStreamClient 
+ * 
+ */
+using IStreamClient = DynStreamClient;
+
 #if !defined(NDEBUG)
 static_assert(Stream<StreamView>, "StreamView should has Stream concept");
 static_assert(StreamClient<StreamClientView>, "StreamClientView should has StreamClient concept");
-static_assert(StreamClient<IStreamClient>, "IStreamClient should has StreamClient concept");
+static_assert(StreamClient<DynStreamClient>, "DynStreamClient should has StreamClient concept");
 #endif
 
 ILIAS_NS_END

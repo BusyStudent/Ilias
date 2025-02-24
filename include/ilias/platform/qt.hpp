@@ -143,7 +143,8 @@ public:
 
     auto await_ready() -> bool { return false; }
     auto await_suspend(CoroHandle caller) -> void;
-    auto await_resume() -> void;
+    auto await_resume() -> void { }
+    auto setOffset(uint64_t offset) -> void;
     auto operator &() -> ::OVERLAPPED * { return &mOverlapped; }
 private:
     ::OVERLAPPED mOverlapped { .hEvent = ::CreateEventW(nullptr, FALSE, FALSE, nullptr) };
@@ -186,6 +187,11 @@ public:
     auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> override;
 
     auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
+
+#if defined(_WIN32)
+    auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void> override;
+#endif // defined(_WIN32)
+
 protected:
     auto timerEvent(QTimerEvent *event) -> void override;
 private:
@@ -253,6 +259,7 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resul
             nfd->pollable = true; // Linux pipe can be pollable
             break;
 #if __has_include(<aio.h>) // If posix aio available, we can use it
+        case IoDescriptor::Tty:
         case IoDescriptor::File:
             break;
 #endif
@@ -265,9 +272,9 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resul
     }
     
     nfd->type = type;
+    nfd->fd = fd;
     // Prepare env for pollable (in windows only socket can be pollable)
     if (nfd->pollable) {
-        nfd->sockfd = socket_t(fd);
         nfd->poll.readNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Read, nfd.get());
         nfd->poll.writeNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Write, nfd.get());
         nfd->poll.exceptNotifier = new QSocketNotifier(nfd->sockfd, QSocketNotifier::Exception, nfd.get());
@@ -340,6 +347,9 @@ inline auto QIoContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std:
     if (nfd->type == IoDescriptor::Pipe || nfd->type == IoDescriptor::File) {
         detail::QOverlapped overlapped(nfd->fd);
         ::DWORD bytesRead = 0;
+        if (offset) {
+            overlapped.setOffset(offset.value());
+        }
         if (::ReadFile(nfd->fd, buffer.data(), buffer.size(), &bytesRead, &overlapped)) {
             co_return bytesRead;
         }
@@ -353,6 +363,28 @@ inline auto QIoContext::read(IoDescriptor *fd, std::span<std::byte> buffer, std:
         co_return Unexpected(SystemError::fromErrno());
     }
 #endif // defined(_WIN32)
+
+#if defined(__linux__)
+    if (nfd->type == IoDescriptor::Pipe) {
+        while (true) {
+            if (auto ret = ::read(nfd->fd, buffer.data(), buffer.size()); ret >= 0) {
+                co_return ret;
+            }
+
+            // Error Handling
+            if (auto err = errno; err != EAGAIN && err != EWOULDBLOCK) {
+                co_return Unexpected(SystemError(err));
+            }
+        }
+    }
+
+#if __has_include(<aio.h>)
+    if (nfd->type == IoDescriptor::Tty || nfd->type == IoDescriptor::File) {
+        co_return co_await detail::AioReadAwaiter(nfd->fd, buffer, offset);
+    }
+#endif // __has_include(<aio.h>)
+
+#endif // defined(__linux__)
 
     if (nfd->type == IoDescriptor::Socket) {
         co_return co_await recvfrom(fd, buffer, 0, nullptr);
@@ -370,6 +402,9 @@ inline auto QIoContext::write(IoDescriptor *fd, std::span<const std::byte> buffe
     if (nfd->type == IoDescriptor::Pipe || nfd->type == IoDescriptor::File) {
         detail::QOverlapped overlapped(nfd->fd);
         ::DWORD bytesWritten = 0;
+        if (offset) {
+            overlapped.setOffset(offset.value());
+        }
         if (::WriteFile(nfd->fd, buffer.data(), buffer.size(), &bytesWritten, &overlapped)) {
             co_return bytesWritten;
         }
@@ -383,6 +418,29 @@ inline auto QIoContext::write(IoDescriptor *fd, std::span<const std::byte> buffe
         co_return Unexpected(SystemError::fromErrno());
     }
 #endif // defined(_WIN32)
+
+#if defined(__linux__)
+    if (nfd->type == IoDescriptor::Pipe) {
+        while (true) {
+            if (auto ret = ::write(nfd->fd, buffer.data(), buffer.size()); ret >= 0) {
+                co_return ret;
+            }
+            // Error Handling
+            if (auto err = errno; err != EAGAIN && err != EWOULDBLOCK) {
+                co_return Unexpected(SystemError::fromErrno());
+            }
+            if (auto pollret = co_await poll(fd, PollEvent::Out); !pollret) {
+                co_return Unexpected(pollret.error());
+            }
+        }
+    }
+#if __has_include(<aio.h>)
+    if (nfd->type == IoDescriptor::Tty || nfd->type == IoDescriptor::File) {
+        co_return co_await detail::AioWriteAwaiter(nfd->fd, buffer, offset);
+    }
+#endif // __has_include(<aio.h>)
+
+#endif // defined(__linux__)
 
     if (nfd->type == IoDescriptor::Socket) {
         co_return co_await sendto(fd, buffer, 0, nullptr);
@@ -475,6 +533,23 @@ inline auto QIoContext::poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_
     }
     co_return co_await detail::QPollAwaiter {nfd, event};
 }
+
+#if defined(_WIN32)
+inline auto QIoContext::connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
+    auto nfd = static_cast<detail::QIoDescriptor*>(fd);
+    detail::QOverlapped overlapped(nfd->fd);
+    if (!::ConnectNamedPipe(nfd->fd, &overlapped)) {
+        if (auto err = ::GetLastError(); err != ERROR_IO_PENDING) {
+            co_return Unexpected(SystemError(err));
+        }
+        co_await overlapped;
+        if (!::GetOverlappedResult(nfd->fd, &overlapped, nullptr, FALSE)) {
+            co_return Unexpected(SystemError::fromErrno());
+        }
+    }
+    co_return {};
+}
+#endif // defined(_WIN32)
 
 // Timer
 inline auto QIoContext::timerEvent(QTimerEvent *event) -> void {
@@ -650,8 +725,12 @@ inline auto detail::QOverlapped::await_suspend(CoroHandle caller) -> void {
     mNotifier.setEnabled(true);
 }
 
-inline auto detail::QOverlapped::await_resume() -> void {
-    // Nothing to do
+inline auto detail::QOverlapped::setOffset(size_t offset) -> void {
+    ::ULARGE_INTEGER integer {
+        .QuadPart = offset
+    };
+    mOverlapped.Offset = integer.LowPart;
+    mOverlapped.OffsetHigh = integer.HighPart;
 }
 #endif // defined(_WIN32)
 

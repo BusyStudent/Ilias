@@ -275,7 +275,7 @@ protected:
  * 
  * @tparam T 
  */
-template <StreamClient T = IStreamClient>
+template <StreamClient T = DynStreamClient>
 class SslClient final : public SslSocket<T>, public StreamMethod<SslClient<T> > {    
 public:
     SslClient() = default;

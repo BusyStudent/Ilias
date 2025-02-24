@@ -45,7 +45,7 @@ public:
      * @return uint32_t 
      */
     auto toUint32() const -> uint32_t {
-        return ::ntohl(s_addr);
+        return networkToHost(s_addr);
     }
 
     /**
@@ -196,7 +196,7 @@ public:
      * @return IPAddress4 
      */
     static auto fromUint32(uint32_t value)  -> IPAddress4 {
-        return fromUint32NetworkOrder(::htonl(value));
+        return fromUint32NetworkOrder(hostToNetwork(value));
     }
     /**
      * @brief Create ipv4 address from uint32, network order

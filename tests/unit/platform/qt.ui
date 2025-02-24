@@ -30,7 +30,7 @@
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
-       <number>3</number>
+       <number>4</number>
       </property>
       <widget class="QWidget" name="tab">
        <attribute name="title">
@@ -374,6 +374,34 @@
         </item>
        </layout>
       </widget>
+      <widget class="QWidget" name="tab_5">
+       <attribute name="title">
+        <string>Console</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_6">
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_8">
+          <item>
+           <widget class="QPushButton" name="consoleClearButton">
+            <property name="text">
+             <string>Clear</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="consoleStartButton">
+            <property name="text">
+             <string>Start</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QListWidget" name="consoleListWidget"/>
+        </item>
+       </layout>
+      </widget>
      </widget>
     </item>
    </layout>
@@ -384,7 +412,7 @@
      <x>0</x>
      <y>0</y>
      <width>944</width>
-     <height>26</height>
+     <height>23</height>
     </rect>
    </property>
   </widget>
@@ -421,6 +449,22 @@
     <hint type="destinationlabel">
      <x>881</x>
      <y>75</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>consoleClearButton</sender>
+   <signal>clicked()</signal>
+   <receiver>consoleListWidget</receiver>
+   <slot>clear()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>239</x>
+     <y>65</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>470</x>
+     <y>456</y>
     </hint>
    </hints>
   </connection>

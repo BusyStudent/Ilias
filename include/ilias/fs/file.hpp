@@ -16,6 +16,10 @@
 #include <ilias/io/method.hpp>
 #include <cstdio>
 
+#if defined(__linux__)
+    #include <sys/mman.h>
+#endif // defined(__linux__)
+
 ILIAS_NS_BEGIN
 
 /**
@@ -112,7 +116,7 @@ public:
      * @param offset 
      * @return IoTask<size_t> 
      */
-    auto pread(std::span<std::byte> buffer, size_t offset) -> IoTask<size_t> {
+    auto pread(std::span<std::byte> buffer, uint64_t offset) -> IoTask<size_t> {
         return mCtxt->read(mDesc, buffer, offset);
     }
 
@@ -123,7 +127,7 @@ public:
      * @param offset 
      * @return IoTask<size_t> 
      */
-    auto pwrite(std::span<const std::byte> buffer, size_t offset) -> IoTask<size_t> {
+    auto pwrite(std::span<const std::byte> buffer, uint64_t offset) -> IoTask<size_t> {
         return mCtxt->write(mDesc, buffer, offset);
     }
 
@@ -146,6 +150,19 @@ public:
         }
         mOffset = std::min<int64_t>(0, now);
         co_return *mOffset;
+    }
+
+    /**
+     * @brief Truncate the file to the given size
+     * 
+     * @param size 
+     * @return IoTask<void> 
+     */
+    auto truncate(uint64_t size) -> IoTask<void> {
+        if (!mOffset) { // Not Actually File in disk
+            co_return Unexpected(Error::OperationNotSupported);
+        }
+        co_return fd_utils::truncate(mFd, size);
     }
 
     /**
@@ -280,7 +297,7 @@ private:
     IoDescriptor *mDesc = nullptr;
     IoContext *mCtxt = nullptr;
     fd_t       mFd { };
-    std::optional<size_t> mOffset; //< The offset of the file stream, nullopt for unsupport seek
+    std::optional<uint64_t> mOffset; //< The offset of the file stream, nullopt for unsupport seek
 };
 
 /**

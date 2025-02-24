@@ -38,7 +38,7 @@ public:
      * 
      * @param offset 
      */
-    auto setOffset(size_t offset) -> void {
+    auto setOffset(uint64_t offset) -> void {
         ::ULARGE_INTEGER integer;
         integer.QuadPart = offset;
         Offset = integer.LowPart;
