@@ -31,7 +31,7 @@ struct AnyType {
  * @tparam T 
  */
 template <typename T>
-concept Readable = requires(T t) {
+concept Readable = requires(T &t) {
     t.read(std::span<std::byte> {});
 };
 
@@ -41,7 +41,7 @@ concept Readable = requires(T t) {
  * @tparam T 
  */
 template <typename T>
-concept Writable = requires(T t) {
+concept Writable = requires(T &t) {
     t.write(std::span<const std::byte> {});
 };
 
@@ -51,7 +51,7 @@ concept Writable = requires(T t) {
  * @tparam T 
  */
 template <typename T>
-concept Shuttable = requires(T t) {
+concept Shuttable = requires(T &t) {
     t.shutdown();
 };
 
@@ -61,7 +61,7 @@ concept Shuttable = requires(T t) {
  * @tparam T 
  */
 template <typename T>
-concept Connectable = requires(T t) {
+concept Connectable = requires(T &t) {
     t.connect(AnyType {});
 };
 
@@ -71,7 +71,7 @@ concept Connectable = requires(T t) {
  * @tparam T 
  */
 template <typename T>
-concept HasFileDescriptor = requires(T t) {
+concept HasFileDescriptor = requires(T &t) {
     t.fd();
 };
 

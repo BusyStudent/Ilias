@@ -125,7 +125,7 @@ struct AwaitableResultImpl<Task<T> > { //< FAST PATH
  * @tparam T 
  */
 template <Awaitable T>
-using AwaitableResult = AwaitableResultImpl<T>::type;
+using AwaitableResult = typename AwaitableResultImpl<T>::type;
 
 /**
  * @brief Helper tags struct for dispatch the wait function

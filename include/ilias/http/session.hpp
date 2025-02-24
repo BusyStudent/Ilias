@@ -334,7 +334,7 @@ inline auto HttpSession::connect(const Url &url) -> IoTask<std::unique_ptr<HttpS
             ILIAS_ERROR("Http", "Failed to get port for scheme: {}", scheme);
             co_return Unexpected(SystemError::fromErrno());
         }
-        port = networkToHost(ent->s_port);
+        port = networkToHost(uint16_t(ent->s_port));
     }
     else {
         port = *p;

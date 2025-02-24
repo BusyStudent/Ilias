@@ -10,7 +10,10 @@
 #include <ilias/net/tcp.hpp>
 #include <ilias/buffer.hpp>
 #include <ilias/log.hpp>
-#include <source_location>
+
+#if defined(__cpp_lib_source_location)
+    #include <source_location>
+#endif // defined(__cpp_lib_source_location)
 
 #undef min
 #undef max
@@ -119,7 +122,7 @@ public:
         }
     }
 
-#if !defined(NDEBUG)
+#if !defined(NDEBUG) && defined(__cpp_lib_source_location)
     auto returnError(Error err, std::source_location loc = std::source_location::current()) -> Unexpected<Error> {
         mCon->notifyClosed();
         mCon = nullptr;
