@@ -37,8 +37,27 @@ TEST(Task, Exception2) {
         throw 1;
         co_return {};
     };
-    EXPECT_NO_THROW(ilias_wait value());
-    EXPECT_THROW(ilias_wait value2(), int);
+    EXPECT_NO_THROW(value().wait());
+    EXPECT_THROW(value2().wait(), int);
+}
+
+TEST(Task, Try) {
+    auto fail = []() -> Task<Result<int> > {
+        co_return Unexpected(Error::Unknown);
+    };
+    auto done = []() -> Task<Result<int> > {
+        co_return 42;
+    };
+    auto forwardFail = [&]() -> Task<Result<int> > {
+        auto value = ilias_try(co_await fail());
+        co_return value; // Never reaches here
+    };
+    auto forwardDone = [&]() -> Task<Result<int> > {
+        auto value = ilias_try(co_await done());
+        co_return value; // reaches here, returns 42
+    };
+    EXPECT_FALSE(forwardFail().wait());
+    EXPECT_EQ(forwardDone().wait().value(), 42);
 }
 
 TEST(Task, Create) {

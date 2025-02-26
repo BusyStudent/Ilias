@@ -18,6 +18,31 @@
 #include <coroutine>
 #include <chrono>
 
+#if defined(__GNUC__) || defined(__clang__) // Use Statement Expression, Zero Overhead
+    #define ilias_try_impl(...) ({                                             \
+        auto &&res = (__VA_ARGS__);                                            \
+        if (!res) {                                                            \
+            co_return ::ILIAS_NAMESPACE::Unexpected(std::move(res.error()));   \
+        }                                                                      \
+        std::forward<decltype(res)>(res).value();                              \
+    })
+#elif defined(__cpp_exceptions) // Fallback to the exception implement
+    #define ilias_try_impl(...) (co_await ::ILIAS_NAMESPACE::detail::TryAwaiter { (__VA_ARGS__) })
+#else
+    #define ilias_try_impl(...) (static_assert(false, "No exception support & compiler extension support, can't implement try"))
+    #define ILIAS_NO_TRY
+#endif // define(__GNUC__) || defined(__clang__)
+
+/**
+ * @brief The try macro, try to unwrap the expression's result, if failed, 
+ * @note The macro can only be used in the coroutine, and the expression's error type must same as the task's error type
+ * 
+ * @param ... The expression to try
+ * @return decltype(auto) The unwrapped value
+ */
+#define ilias_try(...) ilias_try_impl(__VA_ARGS__)
+
+
 ILIAS_NS_BEGIN
 
 namespace detail {
@@ -75,6 +100,59 @@ public:
         return TaskView<T>::cast(mTask).value();
     }
 };
+
+/**
+ * @brief Awaiter for impl the exception version of ilias_try
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class TryAwaiter final {
+public:
+    TryAwaiter(T &&value) : mValue(std::forward<T>(value)) {
+        static_assert(
+            requires {
+                value.error();
+                value.value();
+            },
+            "The type of the value must is Result<T, E>"
+        );
+    }
+
+    auto await_ready() const noexcept -> bool { return false; }
+    
+    /**
+     * @brief Get the type of the Task and check the error type is same
+     * 
+     * @tparam U 
+     * @return true 
+     * @return false 
+     */
+    template <typename U>
+    auto await_suspend([[may_unused]] std::coroutine_handle<TaskPromise<U> > ) noexcept -> bool {
+        static_assert(
+            requires(U &&u) {
+                { u.error() } -> std::same_as<decltype(mValue.error())>;
+            },
+            "The error type of the task and the return type of the callable must be the same"
+        );
+        return false;
+    }
+    
+    /**
+     * @brief Unwrap the value
+     * 
+     * @return decltype(auto) 
+     */
+    auto await_resume() -> decltype(auto) { 
+        return std::forward<T>(mValue).value(); 
+    }
+private:
+    T mValue;
+};
+
+template <typename T>
+TryAwaiter(T &&value) -> TryAwaiter<T>;
 
 /**
  * @brief The helper awaiter class for simplify the duplicate code of get the coroutine handle
