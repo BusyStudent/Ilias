@@ -18,7 +18,7 @@
 #include <coroutine>
 #include <chrono>
 
-#if defined(__GNUC__) || defined(__clang__) // Use Statement Expression, Zero Overhead
+#if   defined(__clang__) // Use Statement Expression, Zero Overhead
     #define ilias_try_impl(...) ({                                             \
         auto &&res = (__VA_ARGS__);                                            \
         if (!res) {                                                            \
@@ -31,7 +31,7 @@
 #else
     #define ilias_try_impl(...) (static_assert(false, "No exception support & compiler extension support, can't implement try"))
     #define ILIAS_NO_TRY
-#endif // define(__GNUC__) || defined(__clang__)
+#endif // defined(__clang__)
 
 /**
  * @brief The try macro, try to unwrap the expression's result, if failed, 
