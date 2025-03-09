@@ -132,10 +132,8 @@ template <MemContainer T = std::string>
 inline constexpr auto encode(std::span<const std::byte> in) -> T {
     T buf;
     buf.resize(encodeLength(in));
-    auto n = encodeTo(in, buf);
-    if (n != encodeLength(in)) {
-        ::abort(); // Impossible
-    }
+    size_t n = encodeTo(in, buf);
+    ILIAS_ASSERT(n == encodeLength(in)); // Impossible
     return buf;
 }
 
@@ -194,12 +192,12 @@ inline constexpr auto decodeTo(std::string_view in, std::span<std::byte> out) no
             std::to_integer<uint32_t>(c) << 6 |
             std::to_integer<uint32_t>(d);
 
-        out[outIdx++] = std::byte{(tmp >> 16) & 0xff};
+        out[outIdx++] = std::byte((tmp >> 16) & 0xff);
         if (in[idx + 2] != '=') {
-            out[outIdx++] = std::byte{(tmp >> 8) & 0xff};
+            out[outIdx++] = std::byte((tmp >> 8) & 0xff);
         }
         if (in[idx + 3] != '=') {
-            out[outIdx++] = std::byte{tmp & 0xff};
+            out[outIdx++] = std::byte(tmp & 0xff);
         }
     }
     return outIdx;
@@ -215,9 +213,13 @@ inline constexpr auto decodeTo(std::string_view in, std::span<std::byte> out) no
 template <MemContainer T = std::vector<std::byte> >
 inline constexpr auto decode(std::string_view in) -> T {
     T buf;
-    buf.resize(decodeLength(in));
-    auto n = decodeTo(in, makeBuffer(buf));
-    buf.resize(n);
+    size_t len = decodeLength(in);
+    if (len == 0) { // Not valid base64 string
+        return buf;
+    }
+    buf.resize(len);
+    size_t n = decodeTo(in, makeBuffer(buf));
+    ILIAS_ASSERT(n == len); // Impossible
     return buf;
 }
 
@@ -375,6 +377,8 @@ private:
 } // namespace bcrypt
 
 using bcrypt::CryptoHash;
+#else
+    #define ILIAS_NO_CRYPTOHASH
 #endif // defined(_WIN32)
 
 ILIAS_NS_END

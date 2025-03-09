@@ -913,4 +913,50 @@ concept IsResult = IsResultT<std::remove_cvref_t<T> >::value;
 template <typename T>
 using AddResultIf = std::conditional_t<IsResult<T>, T, Result<T> >;
 
+/**
+ * @brief Compare result with other value
+ * 
+ * @tparam T 
+ * @tparam E 
+ * @tparam Other 
+ * @param res 
+ * @param other 
+ * @return auto 
+ */
+template <typename T, typename E, typename Other>
+inline auto operator ==(const Result<T, E> &res, const Other &other) noexcept {
+    if (res) {
+        return res.value() == other;
+    }
+    return false;
+}
+
+template <typename T, typename E, typename Other>
+inline auto operator !=(const Result<T, E> &res, const Other &other) noexcept {
+    return !(res == other);
+}
+
+/**
+ * @brief Compare result with other unexpected
+ * 
+ * @tparam T 
+ * @tparam E 
+ * @tparam Other 
+ * @param res 
+ * @param other 
+ * @return auto 
+ */
+template <typename T, typename E, typename Other>
+inline auto operator ==(const Result<T, E> &res, const Unexpected<Other> &other) noexcept {
+    if (!res) {
+        return res.error() == other.error();
+    }
+    return false;
+}
+
+template <typename T, typename E, typename Other>
+inline auto operator !=(const Result<T, E> &res, const Unexpected<Other> &other) noexcept {
+    return !(res == other);
+}
+
 ILIAS_NS_END

@@ -146,6 +146,16 @@ inline auto SockInitializer::uninitialize() -> Result<void> {
 
 // Endianess
 /**
+ * @brief Check if the system is in network byte order
+ * 
+ * @return true 
+ * @return false 
+ */
+constexpr auto isNetworkOrder() noexcept -> bool {
+    return std::endian::native == std::endian::big;
+}
+
+/**
  * @brief Swap the bytes of the value
  * 
  * @tparam T 
@@ -158,6 +168,24 @@ constexpr auto byteswap(const T value) -> T { // std::byteswap is C++23, so we n
 }
 
 /**
+ * @brief Swap the bits of the value
+ * 
+ * @tparam T 
+ */
+template <std::integral T> requires(std::has_unique_object_representations_v<T>)
+constexpr auto bitswap(const T value) -> T {
+    using UT = std::make_unsigned_t<T>;
+    auto uvalue = std::bit_cast<UT>(value);
+    auto result = UT {0};
+    auto bits = sizeof(T) * 8;
+    for (size_t i = 0; i < bits; ++i) {
+        result |= (uvalue & 1) << (bits - i - 1);
+        uvalue >>= 1;
+    }
+    return std::bit_cast<T>(result);
+}
+
+/**
  * @brief Convert the value from host to network byte order
  * 
  * @tparam T 
@@ -166,7 +194,7 @@ constexpr auto byteswap(const T value) -> T { // std::byteswap is C++23, so we n
  */
 template <std::integral T>
 constexpr auto hostToNetwork(const T value) -> T {
-    if constexpr (std::endian::native == std::endian::big) { // Network is big endian
+    if constexpr (isNetworkOrder()) { // Network is big endian
         return value;
     }
     else {
@@ -183,7 +211,7 @@ constexpr auto hostToNetwork(const T value) -> T {
  */
 template <std::integral T>
 constexpr auto networkToHost(const T value) -> T {
-    if constexpr (std::endian::native == std::endian::big) { // Network is big endian
+    if constexpr (isNetworkOrder()) { // Network is big endian
         return value;
     }
     else {

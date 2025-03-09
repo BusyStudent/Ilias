@@ -400,10 +400,22 @@ public:
         }
     }
 
+    /**
+     * @brief Write data to the stream
+     * 
+     * @param buffer 
+     * @return IoTask<size_t> 
+     */
     auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
         return mStream.write(buffer);
     }
 
+    /**
+     * @brief Read data from the stream
+     * 
+     * @param buffer 
+     * @return IoTask<size_t> 
+     */
     auto read(std::span<std::byte> buffer) -> IoTask<size_t> {
         const auto n = buffer.size();
         while (true) {
@@ -482,6 +494,28 @@ public:
      */
     auto stream() -> T & {
         return mStream;
+    }
+
+    /**
+     * @brief Move another buffered stream into this one
+     * 
+     * @param other 
+     * @return BufferedStream& 
+     */
+    auto operator = (BufferedStream &&other) -> BufferedStream & {
+        mStream = std::move(other.mStream);
+        mBuf = std::move(other.mBuf);
+        return *this;
+    }
+
+    /**
+     * @brief Check the stream is valid or not
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept {
+        return bool(mStream);
     }
 private:
     T mStream;

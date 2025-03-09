@@ -18,3 +18,4 @@
 #include <ilias/http/session.hpp>
 #include <ilias/http/cookie.hpp>
 #include <ilias/http/reply.hpp>
+#include <ilias/http/ws.hpp>

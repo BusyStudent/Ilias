@@ -12,6 +12,7 @@
 
 #include <ilias/detail/mem.hpp>
 #include <ilias/ilias.hpp>
+#include <initializer_list>
 #include <vector>
 #include <map>
 
@@ -34,12 +35,23 @@ public:
         Connection,
         TransferEncoding,
         Location,
+        Origin,
+        Cookie,
+        Host,
+        Range,
     };
 
     HttpHeaders() = default;
     HttpHeaders(HttpHeaders &&) = default;
     HttpHeaders(const HttpHeaders &) = default;
     ~HttpHeaders() = default;
+
+    /**
+     * @brief Construct a new Http Headers object by init list
+     * 
+     * @param headers 
+     */
+    HttpHeaders(std::initializer_list<std::pair<std::string_view, std::string_view> > headers);
 
     /**
      * @brief Check this header contains this key
@@ -142,8 +154,11 @@ public:
      */
     auto empty() const -> bool;
 
-    auto operator =(const HttpHeaders &other) -> HttpHeaders& = default;
-    auto operator =(HttpHeaders &&other) -> HttpHeaders& = default;
+    auto operator =(const HttpHeaders &other) -> HttpHeaders & = default;
+    auto operator =(HttpHeaders &&other) -> HttpHeaders & = default;
+    auto operator ==(const HttpHeaders &other) const -> bool = default;
+    auto operator !=(const HttpHeaders &other) const -> bool = default;
+    auto operator <=>(const HttpHeaders &other) const noexcept = default;
 
     /**
      * @brief Get the string of the WellKnownHeader
@@ -155,6 +170,12 @@ public:
 private:
     std::multimap<std::string, std::string, mem::CaseCompare> mValues;
 };
+
+inline HttpHeaders::HttpHeaders(std::initializer_list<std::pair<std::string_view, std::string_view> > headers) : 
+    mValues(headers.begin(), headers.end()) 
+{
+
+}
 
 inline auto HttpHeaders::contains(std::string_view key) const -> bool {
     return mValues.contains(key);
@@ -199,6 +220,10 @@ inline auto HttpHeaders::stringOf(WellKnownHeader header) -> std::string_view {
         case SetCookie: return "Set-Cookie"sv;
         case Referer: return "Referer"sv;
         case Location: return "Location"sv;
+        case Origin: return "Origin"sv;
+        case Host: return "Host"sv;
+        case Cookie: return "Cookie"sv;
+        case Range: return "Range"sv;
         default: return ""sv;
     }
 }

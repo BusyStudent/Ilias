@@ -129,7 +129,7 @@ public:
      * @return false 
      */
     template <typename U>
-    auto await_suspend([[may_unused]] std::coroutine_handle<TaskPromise<U> > ) noexcept -> bool {
+    auto await_suspend([[maybe_unused]] std::coroutine_handle<TaskPromise<U> > ) noexcept -> bool {
         static_assert(
             requires(U &&u) {
                 { u.error() } -> std::same_as<decltype(mValue.error())>;

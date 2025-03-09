@@ -98,6 +98,24 @@ public:
                 mConsoleListenerHandle.wait();
             }
         });
+
+        connect(ui.wsOpenButton, &QPushButton::clicked, this, [this]() {
+            if (!mWsHandle) {
+                ui.wsOpenButton->setText("Close");
+                mWsHandle = spawn(wsOpen());
+            }
+            else {
+                ui.wsOpenButton->setText("Open");
+                mWsHandle.cancel();
+                mWsHandle.wait();
+            }
+        });
+
+        connect(ui.wsSendButton, &QPushButton::clicked, this, [this]() {
+            if (mWs) {
+                spawn(wsSend());
+            }
+        });
     } 
 
     ~App() {
@@ -108,6 +126,10 @@ public:
         if (mConsoleListenerHandle) {
             mConsoleListenerHandle.cancel();
             mConsoleListenerHandle.wait();
+        }
+        if (mWsHandle) {
+            mWsHandle.cancel();
+            mWsHandle.wait();
         }
     }
 
@@ -323,15 +345,49 @@ public:
             ui.consoleListWidget->addItem(QString::fromUtf8(*string));
         }
     }
+
+    auto wsOpen() -> Task<void> {
+        WebSocket ws { ui.wsUrlEdit->text().toUtf8().data() };
+        if (auto res = co_await ws.open(); !res) {
+            ui.statusbar->showMessage(QString::fromUtf8(res.error().toString()));
+            co_return;
+        }
+        mWs = &ws;
+        while (true) {
+            auto msg = co_await ws.recvMessage();
+            if (!msg) {
+                break;
+            }
+            auto [buffer, type] = std::move(*msg);
+            if (type == WebSocket::TextMessage) {
+                ui.wsReceivedWidget->addItem(QString::fromUtf8(reinterpret_cast<const char *>(buffer.data()), buffer.size()));
+            }
+            else {
+                ui.wsReceivedWidget->addItem(QByteArray::fromRawData(reinterpret_cast<const char *>(buffer.data()), buffer.size()).toHex());
+            }
+        }
+        co_await ws.shutdown();
+    }
+
+    auto wsSend() -> Task<void> {
+        auto text = ui.wsMessageEdit->text().toUtf8();
+        ui.wsMessageEdit->clear();
+        if (auto res = co_await mWs->sendMessage(text.data()); !res) {
+            ui.statusbar->showMessage(QString::fromUtf8(res.error().toString()));
+            co_return;
+        }
+    }
 private:
     QIoContext mCtxt;
     HttpCookieJar mCookieJar;
     HttpSession mSession {mCtxt};
     Ui::MainWindow ui;
     std::vector<std::byte> mContent;
+    WebSocket *mWs = nullptr; // WebSocket
 
     WaitHandle<void> mEchoServerHandle;
     WaitHandle<void> mConsoleListenerHandle;
+    WaitHandle<void> mWsHandle; // Handle for ws recving the message
 };
 
 auto main(int argc, char **argv) -> int {

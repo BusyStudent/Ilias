@@ -113,6 +113,11 @@ public:
         HttpBadReply,                //< A reply with bad format or another things
         HttpBadRequest,              //< The given request some field is not valid
 
+        // --- WebSocket
+        WebSocketBadHandshake,       //< Bad handshake
+        WebSocketBadFrame,           //< Bad frame
+        WebSocketClosed,             //< The peer close the connection, so operation cannot continue
+
         // --- Socks5
         Socks5AuthenticationFailed,  //< Authentication failed
         Socks5Unknown,               //< Unknown error

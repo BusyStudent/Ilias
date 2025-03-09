@@ -202,7 +202,7 @@ private:
     static auto onScheduleCallback(void *_self) -> void {
         auto self = static_cast<T*>(_self);
         self->mCallbackLatch.count_down();
-        self->mTask.resume();
+        self->mTask.schedule();
     }
 
     std::atomic_flag mFlags = ATOMIC_FLAG_INIT;
