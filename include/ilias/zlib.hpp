@@ -155,40 +155,45 @@ public:
         mStream.next_out = (Bytef*) output.data();
         mStream.avail_out = output.size_bytes();
 
-        if (mStream.avail_in == 0) {
-            // We need to fill the source buffer, all data in buffer was comsumed
-            mBuffer.consume(mBuffer.size()); // Cusume all data in buffer
-            auto n = co_await source.read(mBuffer.prepare(mBufferPrepareSize));
-            if (!n || *n == 0) { //< Error from lower layer or lower layer return 0, We can not continue
-                ILIAS_ERROR("Zlib", "Failed to read data from source stream");
-                co_return Unexpected(n.error_or(Error::ZeroReturn));
+        while (true) {
+            if (mStream.avail_in == 0) {
+                // We need to fill the source buffer, all data in buffer was comsumed
+                mBuffer.consume(mBuffer.size()); // Cusume all data in buffer
+                auto n = co_await source.read(mBuffer.prepare(mBufferPrepareSize));
+                if (!n || *n == 0) { //< Error from lower layer or lower layer return 0, We can not continue
+                    ILIAS_ERROR("Zlib", "Failed to read data from source stream => {}", n ? std::string("ZeroReturn") : n.error().toString());
+                    co_return Unexpected(n.error_or(Error::ZeroReturn));
+                }
+                mBuffer.commit(*n);
+                auto span = mBuffer.data();
+                mStream.next_in = (Bytef*) span.data();
+                mStream.avail_in = span.size_bytes();
+                if (*n == mBufferPrepareSize) {
+                    mBufferPrepareSize *= 2; // Double the buffer size for improve performance
+                }
+                if (*n < mBufferPrepareSize / 2) {
+                    mBufferPrepareSize = *n; // Set the buffer size to the size of the last read, to avoid waste too much memory
+                    mBuffer.shrinkToFit();
+                }
             }
-            mBuffer.commit(*n);
-            auto span = mBuffer.data();
-            mStream.next_in = (Bytef*) span.data();
-            mStream.avail_in = span.size_bytes();
-            if (*n == mBufferPrepareSize) {
-                mBufferPrepareSize *= 2; // Double the buffer size for improve performance
+            do {
+                auto ret = ::inflate(&mStream, Z_NO_FLUSH);
+                if (ret == Z_STREAM_ERROR || ret == Z_NEED_DICT || ret == Z_DATA_ERROR || ret == Z_MEM_ERROR) {
+                    ILIAS_ERROR("Zlib", "Inflate error: {}", mStream.msg);
+                    co_return Unexpected(ZError(ret));
+                }
+                if (ret == Z_STREAM_END) {
+                    mStreamEnd = true;
+                    break;
+                }
+            } // Output buffer is full or source buffer is empty or end of stream
+            while (mStream.avail_out != 0 && mStream.avail_in != 0);
+            auto readed = mStream.next_out - (Bytef*) output.data(); // Calculate the number of bytes readed
+            if (readed == 0 && !mStreamEnd) {
+                continue; // 0 mean EOF, but not on EOF, so we need to continue to read data from source
             }
-            if (*n < mBufferPrepareSize / 2) {
-                mBufferPrepareSize = *n; // Set the buffer size to the size of the last read, to avoid waste too much memory
-                mBuffer.shrinkToFit();
-            }
+            co_return readed;
         }
-        do {
-            auto ret = ::inflate(&mStream, Z_NO_FLUSH);
-            if (ret == Z_STREAM_ERROR || ret == Z_NEED_DICT || ret == Z_DATA_ERROR || ret == Z_MEM_ERROR) {
-                ILIAS_ERROR("Zlib", "inflate error: {}", mStream.msg);
-                co_return Unexpected(ZError(ret));
-            }
-            if (ret == Z_STREAM_END) {
-                mStreamEnd = true;
-                break;
-            }
-        } // Output buffer is full or source buffer is empty or end of stream
-        while (mStream.avail_out != 0 && mStream.avail_in != 0);
-        auto readed = mStream.next_out - (Bytef*) output.data(); // Calculate the number of bytes readed
-        co_return readed;
     }
 
     auto operator =(const Decompressor &) = delete;
@@ -223,6 +228,7 @@ public:
         if (mInitialized) {
             ::inflateEnd(&mStream);
         }
+        mBuffer.clear();
         mInitialized = false;
         return *this;
     }
