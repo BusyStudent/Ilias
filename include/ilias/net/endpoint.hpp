@@ -11,11 +11,12 @@
 
 #pragma once
 
-#include <ilias/detail/expected.hpp>
 #include <ilias/net/address.hpp>
 #include <ilias/net/system.hpp>
+#include <ilias/error.hpp>
 #include <charconv>
 #include <cstring>
+#include <compare>
 
 ILIAS_NS_BEGIN
 
@@ -207,7 +208,7 @@ public:
      * 
      * @param str The endpoint in string format (address4:port) or ([address6]:port)
      */
-    IPEndpoint(std::string_view str) : IPEndpoint(fromString(str).value_or(IPEndpoint {})) { }
+    IPEndpoint(std::string_view str) : IPEndpoint(fromString(str).value_or(IPEndpoint { })) { }
 
     /**
      * @brief Construct a new IPEndpoint object by string
@@ -404,7 +405,11 @@ public:
      * @return size_t 
      */
     auto bufsize() const -> size_t {
-        return sizeof(mData);
+        return std::max({
+            sizeof(::sockaddr),
+            sizeof(::sockaddr_in),
+            sizeof(::sockaddr_in6)
+        });
     }
 
     /**
@@ -433,35 +438,48 @@ public:
     }
 
     /**
+     * @brief Compare two ip endpoint
+     * 
+     * @param other
+     * @return std::strong_ordering
+     */
+    auto operator <=>(const IPEndpoint &other) const {
+        if (family() != other.family()) {
+            return family() <=> other.family();
+        }
+        if (isValid()) {
+            return ::memcmp(data(), other.data(), length()) <=> 0;
+        }
+        return std::strong_ordering::equal; // Both are invalid
+    }
+
+    /**
      * @brief Parse endpoint from string
      * 
-     * @param str The endpoint in string format (address4:port) or ([address6]:port)
+     * @param buffer The endpoint in string format (address4:port) or ([address6]:port)
      * @return Result<IPEndpoint> 
      */
-    static auto fromString(std::string_view str) -> Result<IPEndpoint> {
-        std::string buffer(str);
-
+    static auto fromString(std::string_view buffer) -> Result<IPEndpoint> {
         // Split to addr and port
         auto pos = buffer.find_last_of(':');
-        if (pos == buffer.npos || pos == 0) {
+        if (pos == buffer.npos || pos < 4) { // 4 is the minimum length of [::]:port
             return Unexpected(Error::InvalidArgument);
         }
-        buffer[pos] = '\0';
 
         // Parse the port
+        auto portStr = buffer.substr(pos + 1);
         uint16_t port = 0;
-        if (std::from_chars(buffer.c_str() + pos + 1, buffer.c_str() + buffer.size(), port).ec != std::errc()) {
+        if (std::from_chars(portStr.data(), portStr.data() + portStr.size(), port).ec != std::errc()) {
             return Unexpected(Error::InvalidArgument);
         }
 
         // Parse the address
-        const char *begin = buffer.c_str();
-        if (buffer.front() == '[' && buffer[pos - 1] == ']') {
+        auto addrStr = buffer.substr(0, pos);
+        if (addrStr.front() == '[' && addrStr[pos - 1] == ']') {
             // IPV6
-            buffer[pos - 1] = '\0';
-            begin = buffer.c_str() + 1;
+            addrStr = addrStr.substr(1, pos - 2);
         }
-        auto addr = IPAddress::fromString(begin);
+        auto addr = IPAddress::fromString(addrStr);
         if (!addr) {
             return Unexpected(addr.error());
         }

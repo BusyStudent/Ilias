@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cctype>
 #include <string>
+#include <span>
 
 ILIAS_NS_BEGIN
 
@@ -47,12 +48,21 @@ inline auto strcasecmp(std::string_view lhs, std::string_view rhs) {
  * @return auto 
  */
 inline auto memcmp(const void *lhs, const void *rhs, size_t n) {
-    switch (::memcmp(lhs, rhs, n)) {
-        case -1: return std::strong_ordering::less;
-        case 0: return std::strong_ordering::equal;
-        case 1: return std::strong_ordering::greater;
-        default: ::abort();
-    }
+    return ::memcmp(lhs, rhs, n) <=> 0;
+}
+
+/**
+ * @brief Do the memory comparison of two memories.
+ * 
+ * @param lhs
+ * @param rhs 
+ * @return auto 
+ */
+inline auto memcmp(std::span<const std::byte> lhs, std::span<const std::byte> rhs) {
+    return std::lexicographical_compare_three_way(
+        lhs.begin(), lhs.end(),
+        rhs.begin(), rhs.end()
+    );
 }
 
 /**

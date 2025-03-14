@@ -64,6 +64,10 @@ TEST(Endpoint, Parse6) {
     IPEndpoint endpoint5("[askasjajskajs]:8080");
     EXPECT_FALSE(endpoint5.isValid());
     std::cout << endpoint5.toString() << std::endl;
+
+    IPEndpoint endpoint6("[]:1145");
+    EXPECT_FALSE(endpoint6.isValid());
+    std::cout << endpoint6.toString() << std::endl;
 }
 
 TEST(Endpoint, Access4) {

@@ -46,18 +46,36 @@ TEST(Oneshot, Async) {
 }
 
 TEST(Oneshot, AsyncSenderClosed) {
-    auto [sender, receiver] = oneshot::channel<int>();
+    {
+        auto [sender, receiver] = oneshot::channel<int>();
 
-    auto task1 = [&]() -> IoTask<int> {
-        co_return co_await receiver;
-    };
-    auto task2 = [&]() -> IoTask<void> {
-        sender.close();
-        co_return {};
-    };
-    auto [result1, result2] = whenAll(task1(), task2()).wait();
-    ASSERT_TRUE(result1.error() == Error::ChannelBroken);
-    ASSERT_TRUE(result2);
+        auto task1 = [&]() -> IoTask<int> {
+            co_return co_await receiver;
+        };
+        auto task2 = [&]() -> IoTask<void> {
+            sender.close();
+            co_return {};
+        };
+        auto [result1, result2] = whenAll(task1(), task2()).wait();
+        ASSERT_TRUE(result1.error() == Error::ChannelBroken);
+        ASSERT_TRUE(result2);
+    }
+    {
+        auto [sender, receiver] = oneshot::channel<int>();
+
+        auto task1 = [&]() -> IoTask<int> {
+            co_return co_await receiver;
+        };
+        auto task2 = [&]() -> IoTask<void> {
+            sender.send(114514);
+            sender.close();
+            co_return {};
+        };
+
+        auto [result1, result2] = whenAll(task1(), task2()).wait();
+        ASSERT_TRUE(result1);
+        ASSERT_TRUE(result2);
+    }
 }
 
 TEST(Oneshot, AsyncReceiverClosed) {

@@ -62,7 +62,6 @@ struct WhenAnyRange {
     }
 };
 
-// TODO: May bug here, need to check
 /**
  * @brief Awaiter for when any on a tuple
  * 

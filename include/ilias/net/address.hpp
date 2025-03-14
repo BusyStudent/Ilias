@@ -11,9 +11,10 @@
 
 #pragma once
 
-#include <ilias/detail/expected.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/error.hpp>
+#include <charconv>
+#include <compare>
 #include <array>
 #include <span>
 
@@ -55,6 +56,15 @@ public:
      */
     auto toUint32NetworkOrder() const -> uint32_t {
         return s_addr;
+    }
+
+    /**
+     * @brief Convert the address to uint8_t array in network order
+     * 
+     * @return std::array<uint8_t, 4> 
+     */
+    auto toUint8Array() const -> std::array<uint8_t, 4> {
+        return std::bit_cast<std::array<uint8_t, 4> >(toUint32());
     }
 
     /**
@@ -121,7 +131,7 @@ public:
      * 
      */
     auto operator <=>(const IPAddress4 &addr) const {
-        return toUint32() <=> addr.toUint32();
+        return toUint8Array() <=> addr.toUint8Array();
     }
 
     /**
@@ -129,7 +139,7 @@ public:
      * 
      */
     auto operator ==(const IPAddress4 &addr) const {
-        return toUint32() == addr.toUint32();
+        return toUint8Array() == addr.toUint8Array();
     }
 
 
@@ -138,7 +148,7 @@ public:
      * 
      */
     auto operator !=(const IPAddress4 &addr) const {
-        return toUint32() != addr.toUint32();
+        return toUint8Array() != addr.toUint8Array();
     }
 
     /**
@@ -198,6 +208,7 @@ public:
     static auto fromUint32(uint32_t value)  -> IPAddress4 {
         return fromUint32NetworkOrder(hostToNetwork(value));
     }
+    
     /**
      * @brief Create ipv4 address from uint32, network order
      * 
@@ -211,17 +222,57 @@ public:
     }
 
     /**
+     * @brief Create ipv4 address from uint8 array, network order
+     * 
+     * @param array 
+     * @return IPAddress4 
+     */
+    static auto fromUint8Array(std::array<uint8_t, sizeof(::in_addr)> array) -> IPAddress4 {
+        return std::bit_cast<IPAddress4>(array);
+    }
+
+    /**
      * @brief Try to convert a string to an IPV4 address
      * 
      * @param str 
      * @return Result<IPAddress4> 
      */
-    static auto fromString(const char *str) -> Result<IPAddress4> {
+    static auto fromString(std::string_view value) -> Result<IPAddress4> {
+        if (value.size() >= INET_ADDRSTRLEN) {
+            return Unexpected(Error::InvalidArgument);
+        }
+
+#if 0
         ::in_addr addr;
-        if (auto res = ::inet_pton(AF_INET, str, &addr); res == 1) {
+        ::std::array<char, INET_ADDRSTRLEN> buf {0};
+        ::memcpy(buf.data(), value.data(), value.size());
+        if (auto res = ::inet_pton(AF_INET, buf.data(), &addr); res == 1) {
             return addr;
         }
         return Unexpected(Error::InvalidArgument);
+#else   // Parse on our own, for std::string_view, avoid copy
+        ::std::array<uint8_t, sizeof(::in_addr)> array;
+        auto end = value.data() + value.size();
+        auto ptr = value.data();
+        // Parse xxx.xxx.xxx.xxx
+        for (size_t idx = 0; idx < 4; ++idx) {
+            auto [cur, ec] = std::from_chars(ptr, end, array[idx]);
+            if (ec != std::errc()) {
+                return Unexpected(Error::InvalidArgument);
+            }
+            if (idx == 3) {
+                if (cur != end) { // Must be end of string
+                    return Unexpected(Error::InvalidArgument);                    
+                }
+                break;
+            }
+            if (cur == end || *cur != '.') { // End of string or next is not .
+                return Unexpected(Error::InvalidArgument);
+            }
+            ptr = cur + 1; // Skip .
+        }
+        return std::bit_cast<IPAddress4>(array);
+#endif
     }
 };
 
@@ -251,9 +302,7 @@ public:
      * @return std::array<uint8_t, 16>
      */
     auto toUint8Array() const -> std::array<uint8_t, 16> {
-        std::array<uint8_t, 16> array;
-        ::memcpy(array.data(), s6_addr, sizeof(::in6_addr));
-        return array;
+        return std::bit_cast<std::array<uint8_t, 16> >(*this);
     }
 
     /**
@@ -318,7 +367,7 @@ public:
      * 
      */
     auto operator ==(const IPAddress6 &other) const {
-        return ::memcmp(this, &other, sizeof(::in6_addr)) == 0;
+        return toUint8Array() == other.toUint8Array();
     }
 
     /**
@@ -326,7 +375,7 @@ public:
      * 
      */
     auto operator !=(const IPAddress6 &other) const {
-        return ::memcmp(this, &other, sizeof(::in6_addr)) != 0;
+        return toUint8Array() != other.toUint8Array();
     }
 
     /**
@@ -368,17 +417,36 @@ public:
     }
 
     /**
+     * @brief Create ipv6 address from uint8 array (uint8 * 16) in network order
+     * 
+     * @param arr 
+     * @return IPAddress6 
+     */
+    static auto fromUint8Array(std::array<uint8_t, 16> arr) -> IPAddress6 {
+        return std::bit_cast<IPAddress6>(arr);
+    }
+
+    /**
      * @brief Parse the ipv6 address from string
      * 
      * @param value 
      * @return IPAddress6 
      */
-    static auto fromString(const char *value) -> Result<IPAddress6> {
+    static auto fromString(std::string_view value) -> Result<IPAddress6> {
+        if (value.size() >= INET6_ADDRSTRLEN) {
+            return Unexpected(Error::InvalidArgument);
+        }
+
+#if 1
         ::in6_addr addr;
-        if (auto res = ::inet_pton(AF_INET6, value, &addr); res == 1) {
+        ::std::array<char, INET6_ADDRSTRLEN> buf {0};
+        ::memcpy(buf.data(), value.data(), value.size());
+        if (auto res = ::inet_pton(AF_INET6, buf.data(), &addr); res == 1) {
             return addr;
         }
         return Unexpected(Error::InvalidArgument);
+#endif
+        // TODO: Parse ipv6 address on own, avoid copy string
     }
 };
 
@@ -392,6 +460,20 @@ public:
     IPAddress(::in_addr addr) : mFamily(AF_INET) { mAddr.v4 = addr; }
     IPAddress(::in6_addr addr) : mFamily(AF_INET6) { mAddr.v6 = addr; }
     IPAddress(const IPAddress &other) = default;
+
+    /**
+     * @brief Construct a new IPAddress object
+     * 
+     * @param str The IPV4 or IPV6 address string, if failed, the family will be AF_UNSPEC
+     */
+    IPAddress(std::string_view str) : IPAddress(fromString(str).value_or(IPAddress{ })) { }
+
+    /**
+     * @brief Construct a new IPAddress object by string
+     * 
+     * @param str The IPV4 or IPV6 address string, if failed, the family will be AF_UNSPEC
+     */
+    IPAddress(const std::string &str) : IPAddress(fromString(str).value_or(IPAddress{ })) { }
 
     /**
      * @brief Construct a new IPAddress object by string
@@ -515,22 +597,60 @@ public:
     }
 
     /**
+     * @brief Compare this address with other
+     * 
+     */
+    auto operator <=>(const IPAddress &other) const -> std::strong_ordering {
+        if (mFamily != other.mFamily) {
+            return mFamily <=> other.mFamily;
+        }
+        if (mFamily == AF_UNSPEC) { // All invalid
+            return std::strong_ordering::equal;
+        }
+        return ::memcmp(&mAddr, &other.mAddr, length()) <=> 0;
+    }
+
+    /**
      * @brief Try parse the IP address from string
      * 
      * @param str The IPV4 or IPV6 address string
      * @return Result<IPAddress>, if has value, the family will be AF_INET or AF_INET6
      */
-    static auto fromString(const char *str) -> Result<IPAddress> {
+    static auto fromString(std::string_view str) -> Result<IPAddress> {
+        if (str.size() > INET6_ADDRSTRLEN) {
+            return Unexpected(Error::InvalidArgument);
+        }
+
+#if 0
         int family = AF_INET; //< Default try to parse IPV4 address
-        if (::strchr(str, ':')) {
+        if (str.find(':') != std::string_view::npos) {
             family = AF_INET6;
         }
         IPAddress ret;
-        if (auto res = ::inet_pton(family, str, &ret.mAddr); res == 1) {
+        ::std::array<char, INET6_ADDRSTRLEN> buf {0};
+        ::memcpy(buf.data(), str.data(), str.size());
+        if (auto res = ::inet_pton(family, buf.data(), &ret.mAddr); res == 1) {
             ret.mFamily = family;
             return ret;
         }
         return Unexpected(Error::InvalidArgument);
+#else
+        if (str.find(':') != std::string_view::npos) {
+            auto res = IPAddress6::fromString(str);
+            if (!res) {
+                return Unexpected(res.error());
+            }
+            return res.value();
+        }
+        else {
+            auto res = IPAddress4::fromString(str);
+            if (!res) {
+                return Unexpected(res.error());
+            }
+            return res.value();
+        }
+#endif
+
     }
 
     /**

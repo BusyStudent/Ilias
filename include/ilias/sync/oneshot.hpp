@@ -83,6 +83,9 @@ public:
     auto await_suspend(CoroHandle caller) -> void {
         mPtr->suspendedCaller = caller;
         mReg = caller.cancellationToken().register_([this]() {
+            if (!mPtr->suspendedCaller) { // Already resumed, such as the sender sended the value
+                return;
+            }
             mPtr->suspendedCaller.schedule();
             mPtr->suspendedCaller = nullptr; //< Clear the suspended caller
             mIsCanceled = true;
@@ -90,7 +93,7 @@ public:
     }
 
     auto await_resume() -> Result<T> {
-        mPtr->suspendedCaller = nullptr;
+        ILIAS_ASSERT(!mPtr->suspendedCaller); // This must be cleared, for prevent the caller is resumed twice
         if (mPtr->value) {
             return std::move(*mPtr->value);
         }
@@ -142,11 +145,11 @@ public:
     /**
      * @brief Get the value from the channel
      * 
-     * @return IoTask<T> 
+     * @return IoTask<T> like object
      */
     [[nodiscard("DO NOT FORGET TO USE co_await!!!")]]
     auto recv() -> IoTask<T> {
-        co_return co_await detail::RecvAwaiter<T>(mPtr.get());
+        return detail::RecvAwaiter<T>(mPtr.get());
     }
 
     auto tryRecv() -> Result<T> {
@@ -223,6 +226,7 @@ public:
         mPtr->sender = nullptr;
         if (mPtr->suspendedCaller) {
             mPtr->suspendedCaller.schedule();
+            mPtr->suspendedCaller = nullptr;
         }
         mPtr = nullptr;
     }
@@ -243,6 +247,7 @@ public:
         mPtr->sended = true;
         if (mPtr->suspendedCaller) {
             mPtr->suspendedCaller.schedule();
+            mPtr->suspendedCaller = nullptr;
         }
         return {};
     }

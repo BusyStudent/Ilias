@@ -86,6 +86,16 @@ enum Shutdown : int {
 };
 
 /**
+ * @brief The address family enum
+ * 
+ */
+enum AddressFamily : int {
+    IPv4 = AF_INET,
+    IPv6 = AF_INET6,
+    Unix = AF_UNIX,
+};
+
+/**
  * @brief RAII Guard for windows socket initialization
  * 
  */
