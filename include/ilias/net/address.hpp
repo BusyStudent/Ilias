@@ -64,7 +64,7 @@ public:
      * @return std::array<uint8_t, 4> 
      */
     auto toUint8Array() const -> std::array<uint8_t, 4> {
-        return std::bit_cast<std::array<uint8_t, 4> >(toUint32());
+        return std::bit_cast<std::array<uint8_t, 4> >(*this);
     }
 
     /**

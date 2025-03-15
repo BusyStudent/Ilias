@@ -86,7 +86,7 @@ public:
     QTimerAwaiter(QIoContext *context, uint64_t ms) : mCtxt(context), mMs(ms) { }
 
     auto await_ready() -> bool { return mMs == 0; }
-    auto await_suspend(CoroHandle caller) -> void;
+    auto await_suspend(CoroHandle caller) -> bool;
     auto await_resume() -> Result<void>;
 private:
     auto onTimeout() -> void;
@@ -581,10 +581,14 @@ inline auto QIoContext::cancelTimer(int id) -> void {
     mTimers.erase(id);
 }
 
-inline auto detail::QTimerAwaiter::await_suspend(CoroHandle caller) -> void {
+inline auto detail::QTimerAwaiter::await_suspend(CoroHandle caller) -> bool {
     mCaller = caller;
     mTimerId = mCtxt->submitTimer(mMs, this);
     mRegistration = caller.cancellationToken().register_(std::bind(&QTimerAwaiter::onCancel, this));
+    if (mTimerId == 0) {
+        ILIAS_WARN("QIo", "Timer could not be created");
+    }
+    return mTimerId != 0; // If the timer was not created, we can't suspend
 }
 
 inline auto detail::QTimerAwaiter::await_resume() -> Result<void> {

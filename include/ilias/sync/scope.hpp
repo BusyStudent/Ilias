@@ -239,7 +239,7 @@ public:
     }
 
     /**
-     * @brief Gets the number of tasks running in the scope.s
+     * @brief Gets the number of tasks running in the scope.
      * 
      * @return size_t 
      */

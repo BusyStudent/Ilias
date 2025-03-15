@@ -35,6 +35,30 @@ TEST(Endpoint, Parse4) {
     IPEndpoint endpoint6("127asdlllll:askasjajskajs");
     EXPECT_FALSE(endpoint6.isValid());
     std::cout << endpoint6.toString() << std::endl;
+
+    IPEndpoint endpoint7("127.0.0.1"); // Only IP address
+    EXPECT_FALSE(endpoint7.isValid());
+    std::cout << endpoint7.toString() << std::endl;
+
+    IPEndpoint endpoint8("127.0.0.1:"); // Only port
+    EXPECT_FALSE(endpoint8.isValid());
+    std::cout << endpoint8.toString() << std::endl;
+
+    IPEndpoint endpoint9(":8080"); // Only port
+    EXPECT_FALSE(endpoint9.isValid());
+    std::cout << endpoint9.toString() << std::endl;
+
+    IPEndpoint endpoint10("127.0.0.1:8080:8080"); // Too many colons
+    EXPECT_FALSE(endpoint10.isValid());
+    std::cout << endpoint10.toString() << std::endl;
+
+    IPEndpoint endpoint11("127.0.0.1.11.11.11.11.11.11.11.11:8080"); // Too long
+    EXPECT_FALSE(endpoint11.isValid());
+    std::cout << endpoint11.toString() << std::endl;
+
+    IPEndpoint endpoint12(":"); // Only :
+    EXPECT_FALSE(endpoint12.isValid());
+    std::cout << endpoint12.toString() << std::endl;
 }
 
 TEST(Endpoint, Parse6) {
@@ -68,6 +92,10 @@ TEST(Endpoint, Parse6) {
     IPEndpoint endpoint6("[]:1145");
     EXPECT_FALSE(endpoint6.isValid());
     std::cout << endpoint6.toString() << std::endl;
+
+    IPEndpoint endpoint7("[aslakkkkkkkkkkkkkkkkkkkkasllaskjlask伯纳斯卡扣设计::1]:8080:8080");
+    EXPECT_FALSE(endpoint7.isValid());
+    std::cout << endpoint7.toString() << std::endl;
 }
 
 TEST(Endpoint, Access4) {

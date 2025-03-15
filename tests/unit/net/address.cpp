@@ -10,10 +10,21 @@ TEST(Address4, Parse) {
     EXPECT_EQ(IPAddress4::fromString("255.255.255.255").value(), IPAddress4::broadcast());
     EXPECT_EQ(IPAddress4::fromString("127.0.0.1").value(), IPAddress4::loopback());
 
+    // Fail cases
     EXPECT_FALSE(IPAddress4::fromString("::1").has_value());
     EXPECT_FALSE(IPAddress4::fromString("::").has_value());
     EXPECT_FALSE(IPAddress4::fromString("127.0.0.1:8080").has_value());
     EXPECT_FALSE(IPAddress4::fromString("256.256.256.256").has_value());
+
+    EXPECT_FALSE(IPAddress4::fromString("127x0.0.1").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("127.0.0.1x").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("127.0.0x1").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("127.0x.1").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("127.x.0.1").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("127.0.0.1.").has_value());
+
+    EXPECT_FALSE(IPAddress4::fromString("的贷记卡就是").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("114.114.114.114.114.114.114.114").has_value());
 }
 
 TEST(Address4, ToString) {
@@ -57,6 +68,9 @@ TEST(Address6, Parse) {
     EXPECT_FALSE(IPAddress6::fromString("127.0.0.1").has_value());
     EXPECT_FALSE(IPAddress6::fromString("127.0.0.1:8080").has_value());
     EXPECT_FALSE(IPAddress6::fromString("256.256.256.256").has_value());
+    EXPECT_FALSE(IPAddress6::fromString("::ffff:256.256.256.256").has_value());
+    EXPECT_FALSE(IPAddress6::fromString("asdkljakldjasdnm,sa南萨摩").has_value());
+    EXPECT_FALSE(IPAddress6::fromString("::ffff:1121212121:121212:sa1212121211212121212121:12121212121:as2a1s2a1212").has_value());
 }
 
 TEST(Address6, Compare) {

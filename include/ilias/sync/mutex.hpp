@@ -4,12 +4,12 @@
 #include <ilias/task/executor.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/log.hpp>
-#include <mutex> //< for std::unique_lock
 #include <list>
 
 ILIAS_NS_BEGIN
 
 class Mutex;
+class MutexLock;
 
 namespace detail {
 
@@ -38,11 +38,28 @@ class MutexAwaiterEx : public MutexAwaiter {
 public:
     using MutexAwaiter::MutexAwaiter;
 
-    auto await_resume() -> Result<std::unique_lock<Mutex> >;
+    auto await_resume() -> Result<MutexLock>;
 };
 
 } // namespace detail
 
+
+/**
+ * @brief The mutex lock, unlock when the object is destroyed
+ * 
+ */
+class MutexLock {
+public:
+    explicit MutexLock(Mutex &m);
+    MutexLock(const MutexLock &) = delete;
+    MutexLock(MutexLock &&);
+    ~MutexLock();
+
+    auto unlock() -> void;
+    auto release() -> void;
+private:
+    Mutex *mMutex = nullptr;
+};
 
 /**
  * @brief The coroutine mutex, not thread-safe
@@ -55,7 +72,7 @@ public:
     Mutex(const Mutex &) = delete;
 
     ~Mutex() {
-        ILIAS_ASSERT(!mLocked);
+        ILIAS_CHECK(!mLocked);
         ILIAS_ASSERT(mAwaiters.empty());
     }
 
@@ -109,9 +126,9 @@ public:
     }
 
     /**
-     * @brief Lock the mutex and return a unique_lock
+     * @brief Lock the mutex and return a MutexLock object
      * 
-     * @return auto 
+     * @return MutexLock 
      */
     auto uniqueLock() noexcept {
         return detail::MutexAwaiterEx(*this);
@@ -120,7 +137,7 @@ public:
     /**
      * @brief Lock the mutex
      * 
-     * @return co_await 
+     * @return MutexLock 
      */
     auto operator co_await() noexcept {
         return detail::MutexAwaiter(*this);
@@ -130,6 +147,29 @@ private:
     bool mLocked = false;
 friend class detail::MutexAwaiter;
 };
+
+inline MutexLock::MutexLock(Mutex &m) : mMutex(&m) {
+    ILIAS_ASSERT(mMutex->isLocked());
+}
+
+inline MutexLock::MutexLock(MutexLock &&o) : mMutex(o.mMutex) {
+    o.mMutex = nullptr;
+}
+
+inline MutexLock::~MutexLock() {
+    unlock();
+}
+
+inline auto MutexLock::unlock() -> void {
+    if (mMutex) {
+        mMutex->unlock();
+        mMutex = nullptr;
+    }
+}
+
+inline auto MutexLock::release() -> void {
+    mMutex = nullptr;
+}
 
 inline auto detail::MutexAwaiter::await_ready() const -> bool {
     ILIAS_TRACE("Mutex", "Try to lock Mutex: {} Awaiter: {}", (void*) &mMutex, (void*) this);
@@ -169,11 +209,11 @@ inline auto detail::MutexAwaiter::onCancel() -> void {
     ILIAS_TRACE("Mutex", "Canceled Mutex: {} Awaiter: {}", (void*) &mMutex, (void*) this);
 }
 
-inline auto detail::MutexAwaiterEx::await_resume() -> Result<std::unique_lock<Mutex> > {
+inline auto detail::MutexAwaiterEx::await_resume() -> Result<MutexLock> {
     if (auto ret = MutexAwaiter::await_resume(); !ret) {
         return Unexpected(ret.error());
     }
-    return std::unique_lock<Mutex>(mMutex, std::adopt_lock);
+    return MutexLock {mMutex};
 }
 
 

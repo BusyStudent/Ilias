@@ -147,8 +147,7 @@ public:
      * 
      * @return IoTask<T> like object
      */
-    [[nodiscard("DO NOT FORGET TO USE co_await!!!")]]
-    auto recv() -> IoTask<T> {
+    auto recv() {
         return detail::RecvAwaiter<T>(mPtr.get());
     }
 
