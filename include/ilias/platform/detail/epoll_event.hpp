@@ -77,28 +77,28 @@ struct EpollEvent {
  */
 class EpollAwaiter {
 public:
-    EpollAwaiter(EpollEvent &epollEvent, uint32_t events) : mEpollEvent(epollEvent), mEvents(events) {}
+    EpollAwaiter(std::shared_ptr<EpollEvent> epollEvent, uint32_t events) : mEpollEvent(epollEvent), mEvents(events) {}
 
     auto await_ready() -> bool {
         epoll_event event;
         ::std::memset(&event, 0, sizeof(event));
-        event.data.fd    = mEpollEvent.fd;
-        event.events     = mEvents;
-        mEpollEvent.data = this;
-        auto ret         = 0;
-        ret              = ::epoll_ctl(mEpollEvent.epollfd, EPOLL_CTL_MOD, mEpollEvent.fd, &event);
+        event.data.fd     = mEpollEvent->fd;
+        event.events      = mEvents;
+        mEpollEvent->data = this;
+        auto ret          = 0;
+        ret               = ::epoll_ctl(mEpollEvent->epollfd, EPOLL_CTL_MOD, mEpollEvent->fd, &event);
         if (ret == -1) {
-            ILIAS_ERROR("Epoll", "awaiter<{}> epoll_ctl {} error: {}", (void *)this, mEpollEvent.fd, strerror(errno));
+            ILIAS_ERROR("Epoll", "awaiter<{}> epoll_ctl {} error: {}", (void *)this, mEpollEvent->fd, strerror(errno));
             mEpollError = errno;
             return true;
         }
         ILIAS_TRACE("Epoll", "ready awaiter<{}> event({}) on fd({})", (void *)this, toString(event.events),
-                    mEpollEvent.fd);
+                    mEpollEvent->fd);
         return false; //< Wating Epoll
     }
     auto await_suspend(TaskView<> caller) -> void {
         ILIAS_TRACE("Epoll", "suspend awaiter<{}> event({}) on fd({})", (void *)this, toString(mEvents),
-                    mEpollEvent.fd);
+                    mEpollEvent->fd);
         mCaller       = caller;
         mRegistration = mCaller.cancellationToken().register_(onCancel, this);
     }
@@ -112,26 +112,31 @@ public:
             ILIAS_ERROR("Epoll", "awaiter<{}> has error: {}", (void *)this, SystemError(mEpollError).toString());
             return Unexpected<Error>(SystemError(mEpollError));
         }
-        ILIAS_TRACE("Epoll", "resume awaiter<{}> event({}) on fd({})", (void *)this, toString(mEvents), mEpollEvent.fd);
+        ILIAS_TRACE("Epoll", "resume awaiter<{}> event({}) on fd({})", (void *)this, toString(mEvents),
+                    mEpollEvent->fd);
         return mRevents;
     }
 
     inline static auto onCompletion(uint32_t revents, void *data) -> void {
         auto self = static_cast<EpollAwaiter *>(data);
-        if (self == nullptr || self->mEpollEvent.isResumed) {
+        if (self == nullptr || self->mEpollEvent->isResumed) {
             ILIAS_ERROR("Epoll", "awaiter<{}> already resumed", data);
             return;
         }
-        self->mEpollEvent.isResumed = true;
-        self->mRevents              = revents;
+        if (self->mIsCancelled) {
+            ILIAS_TRACE("Epoll", "awaiter<{}> is cancelled", (void *)self);
+            return;
+        }
+        self->mEpollEvent->isResumed = true;
+        self->mRevents               = revents;
         self->mCaller.resume();
     }
 
     inline static auto onCancel(void *data) -> void {
         auto self = static_cast<EpollAwaiter *>(data);
         ILIAS_TRACE("Epoll", "awaiter<{}> cancel, evnt({}) on fd({})", data, toString(self->mEvents),
-                    self->mEpollEvent.fd);
-        if (self == nullptr || self->mEpollEvent.isResumed) {
+                    self->mEpollEvent->fd);
+        if (self == nullptr || self->mEpollEvent->isResumed || self->mIsCancelled) {
             ILIAS_ERROR("Epoll", "awaiter<{}> already resumed", data);
             return;
         }
@@ -146,7 +151,7 @@ private:
     bool                            mIsCancelled = false;
     TaskView<>                      mCaller;
     CancellationToken::Registration mRegistration;
-    EpollEvent                     &mEpollEvent;
+    std::shared_ptr<EpollEvent>     mEpollEvent;
 };
 
 } // namespace detail

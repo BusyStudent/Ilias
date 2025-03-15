@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <set>
 
 #include <ilias/platform/detail/epoll_event.hpp>
 #include <ilias/cancellation_token.hpp>
@@ -31,7 +32,7 @@
 #include <ilias/log.hpp>
 
 #if __has_include(<aio.h>)
-    #include <ilias/platform/detail/aio_core.hpp> //< For normal file
+#include <ilias/platform/detail/aio_core.hpp> //< For normal file
 #endif
 
 ILIAS_NS_BEGIN
@@ -56,8 +57,65 @@ public:
         int protocol = 0;
     };
 
-    ::std::unordered_map<uint32_t, ::std::list<detail::EpollEvent>> events;
+    // < For File data
+    struct EventReference {
+        uint32_t                                                   events;
+        ::std::list<std::shared_ptr<detail::EpollEvent>>::iterator iterator;
+
+        inline auto epollEvent() const -> std::shared_ptr<detail::EpollEvent> { return *iterator; }
+    };
+
+    ::std::unordered_map<uint32_t, ::std::list<std::shared_ptr<detail::EpollEvent>>> eventsMap;
+
+    auto makeEventReference(uint32_t events, std::shared_ptr<detail::EpollEvent> event) -> EventReference;
+    auto countEvents(uint32_t events) const -> size_t;
+    auto removeEvent(const EventReference &ref) -> void;
+    auto removeEvents(uint32_t events) -> void;
+    auto events() const -> uint32_t;
 };
+
+inline auto EpollDescriptor::makeEventReference(uint32_t events, std::shared_ptr<detail::EpollEvent> event)
+    -> EventReference {
+    auto it = eventsMap.find(events);
+    if (it == eventsMap.end()) {
+        it = eventsMap.emplace(events, ::std::list<std::shared_ptr<detail::EpollEvent>>()).first;
+    }
+
+    auto iter = it->second.emplace(it->second.end(), ::std::move(event));
+    return {events, iter};
+}
+
+inline auto EpollDescriptor::countEvents(uint32_t events) const -> size_t {
+    auto it = eventsMap.find(events);
+    if (it != eventsMap.end()) {
+        return it->second.size();
+    }
+    else {
+        return 0;
+    }
+}
+
+inline auto EpollDescriptor::removeEvent(const EventReference &ref) -> void {
+    auto it = eventsMap.find(ref.events);
+    if (it != eventsMap.end()) {
+        it->second.erase(ref.iterator);
+    }
+    if (it->second.empty()) {
+        eventsMap.erase(it);
+    }
+}
+
+inline auto EpollDescriptor::removeEvents(uint32_t events) -> void {
+    eventsMap.erase(events);
+}
+
+inline auto EpollDescriptor::events() const -> uint32_t {
+    uint32_t events = 0;
+    for (auto &[key, value] : eventsMap) {
+        events |= key;
+    }
+    return events;
+}
 
 } // namespace detail
 
@@ -232,14 +290,14 @@ inline auto EpollContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
     ILIAS_ASSERT(descriptor != nullptr);
     int ret = 0;
     if (descriptor->isPollable) { // if descriptor is pollable, cancel all pollable events
-        auto &epollevents = descriptor->events;
+        auto &epollevents = descriptor->eventsMap;
         for (auto &[event, epolleventawaiters] : epollevents) {
             for (auto &epolleventawaiter : epolleventawaiters) {
-                if (epolleventawaiter.isResumed) {
+                if (epolleventawaiter->isResumed) {
                     ret++;
                 }
                 else {
-                    detail::EpollAwaiter::onCancel(epolleventawaiter.data);
+                    detail::EpollAwaiter::onCancel(epolleventawaiter->data);
                 }
             }
         }
@@ -250,12 +308,11 @@ inline auto EpollContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
         ILIAS_WARN("Epoll", "Failed to remove fd {} from epoll: {}", descriptor->fd, strerror(errno));
     }
     descriptor->isRemoved = true; // make removed flag, ask poll this descriptor is removed.
-    if (descriptor->events.size() == 0) {
+    if (descriptor->eventsMap.size() == 0) {
         delete descriptor;
     }
     else {
-        post(
-            +[](void *descriptor) { delete static_cast<detail::EpollDescriptor *>(descriptor); }, descriptor);
+        post(+[](void *descriptor) { delete static_cast<detail::EpollDescriptor *>(descriptor); }, descriptor);
     }
     if (ret != 0) {
         return Unexpected<Error>(SystemError(EALREADY));
@@ -425,8 +482,8 @@ inline auto EpollContext::sendto(IoDescriptor *fd, ::std::span<const ::std::byte
     co_return Unexpected(Error::Unknown);
 }
 
-inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags, MutableEndpointView endpoint)
-    -> IoTask<size_t> {
+inline auto EpollContext::recvfrom(IoDescriptor *fd, ::std::span<::std::byte> buffer, int flags,
+                                   MutableEndpointView endpoint) -> IoTask<size_t> {
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_TRACE("Epoll", "start recvfrom on fd {}", descriptor->fd);
     ILIAS_ASSERT(descriptor != nullptr);
@@ -464,16 +521,11 @@ inline auto EpollContext::poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint3
     auto descriptor = static_cast<detail::EpollDescriptor *>(fd);
     ILIAS_ASSERT(descriptor != nullptr);
     ILIAS_TRACE("Epoll", "fd {} poll events {}", descriptor->fd, detail::toString(event));
-    // Build event queues based on different events
-    ::std::unordered_map<uint32_t, ::std::list<detail::EpollEvent>>::iterator eventsIt = descriptor->events.find(event);
-    if (eventsIt == descriptor->events.end()) {
-        eventsIt = descriptor->events.emplace_hint(descriptor->events.begin(), event, std::list<detail::EpollEvent> {});
-    }
-    // Add event to descriptor's event queue
-    auto &epollevent   = eventsIt->second.emplace_back(detail::EpollEvent {descriptor->fd, mEpollFd});
-    auto  epolleventIt = --eventsIt->second.end();
+    // make a epoll event struct and get the event reference
+    auto eventsref = descriptor->makeEventReference(
+        event, std::make_shared<detail::EpollEvent>(detail::EpollEvent {descriptor->fd, mEpollFd}));
     // if this is the first event, add the fd to the epoll
-    if (descriptor->events.size() == 1 && eventsIt->second.size() == 1) {
+    if (descriptor->eventsMap.size() == 1 && descriptor->countEvents(event) == 1) {
         epoll_event event = {0};
         event.events      = EPOLLRDHUP;
         auto ret          = ::epoll_ctl(mEpollFd, EPOLL_CTL_ADD, descriptor->fd, &event);
@@ -482,24 +534,18 @@ inline auto EpollContext::poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint3
         }
     }
     // Build epoll listener event tags based on existing events
-    uint32_t listenings_events = 0;
-    for (auto &[key, value] : descriptor->events) {
-        listenings_events |= key;
-    }
+    uint32_t listenings_events = descriptor->events();
     // Wait for events
-    auto ret = co_await detail::EpollAwaiter(epollevent, listenings_events);
+    auto ret = co_await detail::EpollAwaiter(eventsref.epollEvent(), listenings_events);
     ILIAS_TRACE("Epoll", "awaiter finished, return {}",
                 ret.has_value() ? detail::toString(ret.value()) : ret.error().message());
     if (descriptor->isRemoved) {
         co_return ret; // descriptor has been removed, this descriptor while deleted by next event.
     }
     // remove event from descriptor's event queue
-    eventsIt->second.erase(epolleventIt);
-    if (eventsIt->second.empty()) {
-        descriptor->events.erase(eventsIt);
-    }
+    descriptor->removeEvent(eventsref);
     // remove fd from epoll if no more events are listening
-    if (descriptor->events.empty()) {
+    if (descriptor->eventsMap.empty()) {
         auto ret = ::epoll_ctl(mEpollFd, EPOLL_CTL_DEL, descriptor->fd, nullptr);
         if (ret != 0) {
             ILIAS_WARN("Epoll", "Failed to remove fd {} from epoll: {}", descriptor->fd, strerror(errno));
@@ -578,20 +624,18 @@ inline auto EpollContext::processEvents(int fd, uint32_t events) -> void {
             ::epoll_ctl(mEpollFd, EPOLL_CTL_DEL, fd, &event);
         return;
     }
+    std::set<void *> datas;
     if ((events & EPOLLERR) || (events & EPOLLHUP)) {
+        // 出现错误，唤起所有正在等待的任务
         auto descriptorItem = mDescriptors.find(fd);
         if (descriptorItem == mDescriptors.end()) {
             return;
         }
-        auto               &epollevents = descriptorItem->second->events;
-        std::vector<void *> datas;
+        auto &epollevents = descriptorItem->second->eventsMap;
         for (auto &[event, epolleventawaiters] : epollevents) {
             for (auto &epolleventawaiter : epolleventawaiters) {
-                datas.push_back(epolleventawaiter.data);
+                datas.insert(epolleventawaiter->data);
             }
-        }
-        for (auto data : datas) {
-            detail::EpollAwaiter::onCompletion(events, data);
         }
     }
     if (events & EPOLLIN) {
@@ -599,11 +643,11 @@ inline auto EpollContext::processEvents(int fd, uint32_t events) -> void {
         if (descriptorItem == mDescriptors.end()) {
             return;
         }
-        auto &epollevents        = descriptorItem->second->events;
+        auto &epollevents        = descriptorItem->second->eventsMap;
         auto  epolleventawaiters = epollevents.find(EPOLLIN);
         if (epolleventawaiters != epollevents.end()) {
             if (epolleventawaiters->second.size() > 0) {
-                detail::EpollAwaiter::onCompletion(events, epolleventawaiters->second.begin()->data);
+                datas.insert((*epolleventawaiters->second.begin())->data);
             }
         }
     }
@@ -612,13 +656,19 @@ inline auto EpollContext::processEvents(int fd, uint32_t events) -> void {
         if (descriptorItem == mDescriptors.end()) {
             return;
         }
-        auto &epollevents        = descriptorItem->second->events;
+        auto &epollevents        = descriptorItem->second->eventsMap;
         auto  epolleventawaiters = epollevents.find(EPOLLOUT);
         if (epolleventawaiters != epollevents.end()) {
             if (epolleventawaiters->second.size() > 0) {
-                detail::EpollAwaiter::onCompletion(events, epolleventawaiters->second.begin()->data);
+                datas.insert((*epolleventawaiters->second.begin())->data);
             }
         }
+    }
+    if (datas.size() == 0) {
+        ILIAS_ERROR("Epoll", "events {} has no fd wait.", events);
+    }
+    for (auto data : datas) {
+        detail::EpollAwaiter::onCompletion(events, data);
     }
 }
 
