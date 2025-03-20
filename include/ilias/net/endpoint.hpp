@@ -500,6 +500,16 @@ public:
             default: return Unexpected(Error::InvalidArgument);
         }
     }
+
+    /**
+     * @brief Check if the endpoint is valid
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept {
+        return isValid();
+    }
 private:
     union {
         ::sockaddr     mData { .sa_family = AF_UNSPEC };

@@ -145,10 +145,10 @@ public:
     /**
      * @brief Get the value from the channel
      * 
-     * @return IoTask<T> like object
+     * @return IoTask<T>
      */
-    auto recv() {
-        return detail::RecvAwaiter<T>(mPtr.get());
+    auto recv() -> IoTask<T> {
+        co_return co_await detail::RecvAwaiter<T>(mPtr.get());
     }
 
     auto tryRecv() -> Result<T> {

@@ -18,6 +18,7 @@
 
 ILIAS_NS_BEGIN
 
+class MsgHdr;
 class IoContext;
 class EndpointView;
 class MutableEndpointView;
@@ -162,6 +163,31 @@ public:
      */
     virtual auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> = 0;
 
+    // Advanced Io Operations, Not required implementation for basic io context
+    /**
+     * @brief Send message to a socket
+     * 
+     * @param fd The fd must be a socket
+     * @param msg The message to send
+     * @param flags The flags to use, like MSG_DONTWAIT
+     * @return IoTask<size_t> 
+     */
+    virtual auto sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
+        co_return Unexpected(Error::OperationNotSupported); // Default Not implemented
+    }
+
+    /**
+     * @brief Receive message from a socket
+     * 
+     * @param fd The fd must be a socket
+     * @param msg The message to receive into
+     * @param flags The flags to use, like MSG_DONTWAIT
+     * @return IoTask<size_t> 
+     */
+    virtual auto recvmsg(IoDescriptor *fd, MsgHdr &msg, int flags) -> IoTask<size_t> {
+        co_return Unexpected(Error::OperationNotSupported); // Default Not implemented
+    }
+
     /**
      * @brief Get the current thread io context
      * 
@@ -172,6 +198,7 @@ public:
     }
 
 #if defined(_WIN32)
+    // Win32 Specific Io Operations
     /**
      * @brief Wrapping Win32 ConnectNamedPipe, The named pipe server wait for a client to connect
      * 
@@ -179,7 +206,7 @@ public:
      * @return IoTask<void> 
      */
     virtual auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
-        co_return Unexpected(Error::OperationNotSupported); //< Default Not implemented
+        co_return Unexpected(Error::OperationNotSupported); // Default Not implemented
     }
 #endif // defined(_WIN32)
 

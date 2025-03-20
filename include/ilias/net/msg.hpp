@@ -8,9 +8,9 @@
  * @copyright Copyright (c) 2024
  * 
  */
-
-#include <ilias/net/system.hpp>
+#pragma once
 #include <ilias/net/endpoint.hpp>
+#include <ilias/net/system.hpp>
 #include <span>
 
 #if defined(_WIN32) //< redirect the names to the windows ones
@@ -18,6 +18,9 @@
     #define msg_namelen namelen
     #define msg_iov lpBuffers
     #define msg_iovlen dwBufferCount
+    #define msg_control  Control.buf
+    #define msg_controllen Control.len
+    #define msg_flags dwFlags
     #define iov_base buf
     #define iov_len  len
 #endif
@@ -33,6 +36,7 @@ class IoVec : public iovec_t {
 public:
     IoVec() = default;
     IoVec(const IoVec &) = default;
+    IoVec(const iovec_t &v) : iovec_t(v) { }
 
     /**
      * @brief Construct a new Io Vec object
@@ -113,10 +117,12 @@ static_assert(sizeof(IoVec) == sizeof(iovec_t));
  */
 class MsgHdr : public msghdr_t {
 public:
+    MsgHdr(const msghdr_t &v) : msghdr_t(v) { }
+    MsgHdr(const MsgHdr &) = default;
     MsgHdr() {
         ::memset(this, 0, sizeof(msghdr_t));
     }
-
+    
     /**
      * @brief Set the endpoint buffer
      * 
@@ -125,6 +131,17 @@ public:
      */
     auto setEndpoint(::sockaddr *addr, ::socklen_t len) -> void {
         msg_name = addr;
+        msg_namelen = len;
+    }
+
+    /**
+     * @brief Set the Endpoint object
+     * 
+     * @param addr 
+     * @param len 
+     */
+    auto setEndpoint(const ::sockaddr *addr, ::socklen_t len) -> void {
+        msg_name = const_cast<::sockaddr*>(addr);
         msg_namelen = len;
     }
 
@@ -139,15 +156,45 @@ public:
     }
 
     /**
+     * @brief Set the Control buffer object
+     * 
+     * @param control 
+     */
+    auto setControl(std::span<std::byte> control) -> void {
+        msg_control = reinterpret_cast<char*>(control.data());
+        msg_controllen = control.size();
+    }
+
+    /**
+     * @brief Set the Control buffer object
+     * 
+     * @param control 
+     * @param len 
+     */
+    auto setControl(void *control, size_t len) -> void {
+        msg_control = reinterpret_cast<char*>(control);
+        msg_controllen = len;
+    }
+
+    /**
      * @brief Get the byte span of the endpoint in the message
      * 
      * @return std::span<std::byte> 
      */
-    auto endpoint() -> std::span<std::byte> {
+    auto endpoint() const -> std::span<std::byte> {
         return {
             reinterpret_cast<std::byte*>(msg_name),
             size_t(msg_namelen)
         };
+    }
+
+    /**
+     * @brief Get the flags of the message on receive
+     * 
+     * @return int 
+     */
+    auto flags() const -> int {
+        return msg_flags;
     }
 
     /**
@@ -165,7 +212,6 @@ public:
 
 static_assert(sizeof(MsgHdr) == sizeof(msghdr_t));
 
-
 ILIAS_NS_END
 
 
@@ -174,6 +220,8 @@ ILIAS_NS_END
     #undef msg_namelen
     #undef msg_iov
     #undef msg_iovlen
+    #undef msg_control
+    #undef msg_controllen
     #undef iov_base
     #undef iov_len
 #endif

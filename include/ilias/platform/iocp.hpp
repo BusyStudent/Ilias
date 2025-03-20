@@ -21,6 +21,7 @@
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/net/sockfd.hpp>
+#include <ilias/net/msg.hpp>
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/log.hpp>
@@ -88,7 +89,7 @@ public:
     auto post(void (*fn)(void *), void *args) -> void override;
     auto run(CancellationToken &token) -> void override;
 
-    // < For IoContext
+    //< For IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> Result<void> override;
 
@@ -103,6 +104,9 @@ public:
     auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> override;
     auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> override;
 
+    auto sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> override;
+    auto recvmsg(IoDescriptor *fd, MsgHdr &msg, int flags) -> IoTask<size_t> override;
+
     auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
     auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void> override;
 private:
@@ -115,7 +119,10 @@ private:
     detail::AfdDevice    mAfdDevice;
 
     // Batching
-    bool mBatching = false;
+    ULONG mEntriesIdx  = 0; // The index of the current entry (for dispatch)
+    ULONG mEntriesSize = 0; // The number of entries valid in the mBatchEntries array
+    ULONG mEntriesCapacity = 64; // The size of the mBatchEntries array
+    std::unique_ptr<::OVERLAPPED_ENTRY[]> mEntries;
 
     // NT Functions
     decltype(::RtlNtStatusToDosError) *mRtlNtStatusToDosError = nullptr;
@@ -127,7 +134,9 @@ inline IocpContext::IocpContext() {
         if (::CreateIoCompletionPort(mAfdDevice.handle(), mIocpFd, 0, 0) != mIocpFd) {
             ILIAS_WARN("IOCP", "Failed to add afd device handle to iocp: {}", ::GetLastError());
         }
-        ::SetFileCompletionNotificationModes(mAfdDevice.handle(), FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE);
+        if (!::SetFileCompletionNotificationModes(mAfdDevice.handle(), FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE)) {
+            ILIAS_WARN("IOCP", "Failed to set completion notification modes: {}", ::GetLastError());
+        }
     }
     if (auto mod = ::GetModuleHandleW(L"ntdll.dll"); mod) {
         mRtlNtStatusToDosError = reinterpret_cast<decltype(mRtlNtStatusToDosError)>(::GetProcAddress(mod, "RtlNtStatusToDosError"));
@@ -205,21 +214,27 @@ inline auto IocpContext::processCompletion(DWORD timeout) -> void {
 }
 
 inline auto IocpContext::processCompletionEx(DWORD timeout) -> void {
-    std::array<OVERLAPPED_ENTRY, 64> entries;
-    ULONG count = 0;
-    BOOL ok = ::GetQueuedCompletionStatusEx(mIocpFd, entries.data(), entries.size(), &count, timeout, TRUE);
-    if (!ok) {
-        auto error = ::GetLastError();
-        if (error == WAIT_TIMEOUT) {
+    if (mEntriesIdx >= mEntriesSize) { // We need more entries
+        if (!mEntries) [[unlikely]] {
+            mEntries = std::make_unique<::OVERLAPPED_ENTRY[]>(mEntriesCapacity);
+        }
+        if (!::GetQueuedCompletionStatusEx(mIocpFd, mEntries.get(), mEntriesCapacity, &mEntriesSize, timeout, TRUE)) {
+            mEntriesSize = 0;
+            mEntriesIdx = 0;
+            auto error = ::GetLastError();
+            if (error == WAIT_TIMEOUT) {
+                return;
+            }
+            ILIAS_WARN("IOCP", "GetQueuedCompletionStatusEx failed, Error {}", error);
             return;
         }
-        ILIAS_WARN("IOCP", "GetQueuedCompletionStatusEx failed, Error {}", error);
-        return;
+        mEntriesIdx = 0;
     }
-    for (ULONG i = 0; i < count; ++i) {
-        const auto &bytesTransferred = entries[i].dwNumberOfBytesTransferred;
-        const auto &overlapped = entries[i].lpOverlapped;
-        const auto &key = entries[i].lpCompletionKey;
+    // Dispatch the completion
+    for (; mEntriesIdx < mEntriesSize; ++mEntriesIdx) {
+        const auto &bytesTransferred = mEntries[mEntriesIdx].dwNumberOfBytesTransferred;
+        const auto &overlapped = mEntries[mEntriesIdx].lpOverlapped;
+        const auto &key = mEntries[mEntriesIdx].lpCompletionKey;
         if (key) {
             // When key is not 0, it means it is a function pointer
             ILIAS_TRACE("IOCP", "Call callback function ({}, {})", (void*)key, (void*)overlapped);
@@ -236,7 +251,7 @@ inline auto IocpContext::processCompletionEx(DWORD timeout) -> void {
             lap->onCompleteCallback(lap, error, bytesTransferred);
         }
         else {
-            ILIAS_WARN("IOCP", "GetQueuedCompletionStatusEx returned nullptr overlapped, idx {}", i);
+            ILIAS_WARN("IOCP", "GetQueuedCompletionStatusEx returned nullptr overlapped, idx {}", mEntriesIdx);
         }
     }
 }
@@ -392,6 +407,23 @@ inline auto IocpContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer,
     }
     co_return co_await detail::IocpRecvfromAwaiter(nfd->sockfd, buffer, flags, endpoint);
 }
+
+#pragma region Advance Net
+inline auto IocpContext::sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<detail::IocpDescriptor*>(fd);
+    if (nfd->type != IoDescriptor::Socket) {
+        co_return Unexpected(Error::OperationNotSupported);
+    }
+    co_return co_await detail::IocpSendmsgAwaiter(nfd->sockfd, msg, flags, nfd->sock.WSASendMsg);
+}
+
+inline auto IocpContext::recvmsg(IoDescriptor *fd, MsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<detail::IocpDescriptor*>(fd);
+    if (nfd->type != IoDescriptor::Socket) {
+        co_return Unexpected(Error::OperationNotSupported);
+    }
+    co_return co_await detail::IocpRecvmsgAwaiter(nfd->sockfd, msg, flags, nfd->sock.WSARecvMsg);
+} 
 
 #pragma region Poll
 inline auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {

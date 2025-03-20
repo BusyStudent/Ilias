@@ -34,6 +34,9 @@ public:
     auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> override;
     auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> override;
 
+    auto sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> override;
+    auto recvmsg(IoDescriptor *fd, MsgHdr &msg, int flags) -> IoTask<size_t> override;
+
     auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
 
 #if defined(_WIN32)
@@ -138,6 +141,16 @@ inline auto DelegateContext<T>::sendto(IoDescriptor *fd, std::span<const std::by
 template <typename T>
 inline auto DelegateContext<T>::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> {
     co_return co_await scheduleOn(*mContext, mContext->recvfrom(fd, buffer, flags, endpoint));
+}
+
+template <typename T>
+inline auto DelegateContext<T>::sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
+    co_return co_await scheduleOn(*mContext, mContext->sendmsg(fd, msg, flags));
+}
+
+template <typename T>
+inline auto DelegateContext<T>::recvmsg(IoDescriptor *fd, MsgHdr &msg, int flags) -> IoTask<size_t> {
+    co_return co_await scheduleOn(*mContext, mContext->recvmsg(fd, msg, flags));
 }
 
 template <typename T>

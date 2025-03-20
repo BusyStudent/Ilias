@@ -73,6 +73,10 @@ private:
     int               mAddrLen = 0;
 };
 
+/**
+ * @brief Awaiter wrapping WSARecvFrom
+ * 
+ */
 class IocpRecvfromAwaiter final : public IocpAwaiter<IocpRecvfromAwaiter> {
 public:
     IocpRecvfromAwaiter(SOCKET sock, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) :
@@ -119,6 +123,10 @@ private:
     int         mAddrLen = 0;
 };
 
+/**
+ * @brief Awaiter wrapping ConnectEx
+ * 
+ */
 class IocpConnectAwaiter final : public IocpAwaiter<IocpConnectAwaiter> {
 public:
     IocpConnectAwaiter(SOCKET sock, EndpointView endpoint, LPFN_CONNECTEX connectEx) :
@@ -175,6 +183,10 @@ private:
     LPFN_CONNECTEX mConnectEx = nullptr;
 };
 
+/**
+ * @brief Awaiter wrapping AcceptEx
+ * 
+ */
 class IocpAcceptAwaiter final : public IocpAwaiter<IocpAcceptAwaiter> {
 public:
     IocpAcceptAwaiter(SOCKET sock, MutableEndpointView endpoint, LPFN_ACCEPTEX acceptEx, LPFN_GETACCEPTEXSOCKADDRS getAcceptExSockaddrs) :
@@ -256,6 +268,10 @@ private:
     LPFN_GETACCEPTEXSOCKADDRS mGetAcceptExSockaddrs = nullptr;
 };
 
+/**
+ * @brief Awaiter wrapper for TransmitFile
+ * 
+ */
 class IocpSendfileAwaiter final : public IocpAwaiter<IocpSendfileAwaiter> {
 public:
     IocpSendfileAwaiter(SOCKET sock, HANDLE file, size_t offset, DWORD size, LPFN_TRANSMITFILE transmitFile) : 
@@ -287,6 +303,77 @@ private:
     DWORD  mSize;
 
     LPFN_TRANSMITFILE mTransmitFile;
+};
+
+/**
+ * @brief Awaiter wrapper for WSASendMsg
+ * 
+ */
+class IocpSendmsgAwaiter final : public IocpAwaiter<IocpSendmsgAwaiter> {
+public:
+    IocpSendmsgAwaiter(SOCKET sock, const WSAMSG &msg, DWORD flags, LPFN_WSASENDMSG sendMsg) :
+        IocpAwaiter(sock), mMsg(msg), mFlags(flags), mSendMsg(sendMsg)
+    {
+
+    }
+
+    auto onSubmit() -> bool {
+        return mSendMsg(
+            sockfd(),
+            &mMsg,
+            mFlags,
+            &bytesTransferred(),
+            overlapped(),
+            nullptr
+        ) == 0;
+    }
+
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+        if (error != ERROR_SUCCESS) {
+            return Unexpected(SystemError(error));
+        }
+        return bytesTransferred;
+    }
+private:
+    WSAMSG mMsg;
+    DWORD  mFlags;
+
+    LPFN_WSASENDMSG mSendMsg = nullptr;
+};
+
+/**
+ * @brief Awaiter wrapper for WSARecvMsg
+ * 
+ */
+class IocpRecvmsgAwaiter final : public IocpAwaiter<IocpRecvmsgAwaiter> {
+public:
+    IocpRecvmsgAwaiter(SOCKET sock, WSAMSG &msg, DWORD flags, LPFN_WSARECVMSG recvMsg) :
+        IocpAwaiter(sock), mMsg(msg), mFlags(flags), mRecvMsg(recvMsg)
+    {
+        mMsg.dwFlags = mFlags; // Acroding to the MSDN docs, the flags are put in the WSAMSG struct
+    }
+
+    auto onSubmit() -> bool {
+        return mRecvMsg(
+            sockfd(),
+            &mMsg,
+            &bytesTransferred(),
+            overlapped(),
+            nullptr
+        ) == 0;
+    }
+
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+        if (error != ERROR_SUCCESS) {
+            return Unexpected(SystemError(error));
+        }
+        return bytesTransferred;
+    }
+private:
+    WSAMSG &mMsg;
+    DWORD   mFlags;
+
+    LPFN_WSARECVMSG mRecvMsg = nullptr;
 };
 
 inline auto WSAGetExtensionFnPtr(SOCKET sockfd, GUID id, void *fnptr) -> Result<void> {

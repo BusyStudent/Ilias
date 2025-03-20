@@ -12,6 +12,7 @@
 
 #include <ilias/io/context.hpp>
 #include <ilias/net/sockfd.hpp>
+#include <ilias/net/msg.hpp>
 
 ILIAS_NS_BEGIN
 
@@ -92,6 +93,14 @@ public:
 
     auto recvfrom(std::span<std::byte> data, int flags, MutableEndpointView endpoint) const -> IoTask<size_t> {
         return mCtxt->recvfrom(mFd, data, flags, endpoint);
+    }
+
+    auto sendmsg(const MsgHdr &msg, int flags = 0) const -> IoTask<size_t> {
+        return mCtxt->sendmsg(mFd, msg, flags);
+    }
+
+    auto recvmsg(MsgHdr &msg, int flags = 0) const -> IoTask<size_t> {
+        return mCtxt->recvmsg(mFd, msg, flags);
     }
 
     auto connect(EndpointView endpoint) const -> IoTask<void> {

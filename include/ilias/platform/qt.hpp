@@ -26,6 +26,7 @@
 #include <map>
 
 #if defined(_WIN32)
+    #include <ilias/platform/detail/iocp_sock.hpp> // For extended socket functions
     #include <ilias/platform/detail/iocp_fs.hpp> // For read console
     #include <QWinEventNotifier>
 #endif // defined(_WIN32)
@@ -70,9 +71,9 @@ public:
 
 #if defined(_WIN32)
     struct {
-        QWinEventNotifier *readNotifier = nullptr;
-        QWinEventNotifier *writeNotifier = nullptr;
-    } win32;
+        LPFN_WSASENDMSG sendmsg = nullptr;
+        LPFN_WSARECVMSG recvmsg = nullptr;
+    } sock;
 #endif
 
 };
@@ -295,12 +296,20 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resul
         // Disable UDP NetReset and ConnReset
         SocketView sockfd(nfd->sockfd);
         if (auto info = sockfd.getOption<sockopt::ProtocolInfo>(); info && info->value().iSocketType == SOCK_DGRAM) {
-            if (auto ret = sockfd.setOption(sockopt::UdpConnReset(false)); !ret) {
-                ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to disable UDP NetReset, {}", ret.error());
+            if (auto res = sockfd.setOption(sockopt::UdpConnReset(false)); !res) {
+                ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to disable UDP NetReset, {}", res.error());
             }
-            if (auto ret = sockfd.setOption(sockopt::UdpNetReset(false)); !ret) {
-                ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to disable UDP ConnReset, {}", ret.error());
+            if (auto res = sockfd.setOption(sockopt::UdpNetReset(false)); !res) {
+                ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to disable UDP ConnReset, {}", res.error());
             }
+        }
+        // Get the extension of sendmsg and recvmsg
+        if (auto res = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSASENDMSG, &nfd->sock.sendmsg); !res) {
+            ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to get sendmsg extension, {}", res.error());
+        }
+
+        if (auto res = detail::WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSARECVMSG, &nfd->sock.recvmsg); !res) {
+            ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to get recvmsg extension, {}", res.error());
         }
     }
 #endif // defined(_WIN32)

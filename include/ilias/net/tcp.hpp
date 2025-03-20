@@ -74,6 +74,28 @@ public:
     }
 
     /**
+     * @brief Send a message to the socket.
+     * 
+     * @param msg The message to send.
+     * @param flags The flags to use. (like MSG_DONTWAIT)
+     * @return IoTask<size_t> 
+     */
+    auto sendmsg(const MsgHdr &msg, int flags) -> IoTask<size_t> {
+        return mBase.sendmsg(msg, flags);
+    }
+
+    /**
+     * @brief Receive a message from the socket.
+     * 
+     * @param msg The message to receive.
+     * @param flags The flags to use. (like MSG_DONTWAIT)
+     * @return IoTask<size_t> 
+     */
+    auto recvmsg(MsgHdr &msg, int flags) -> IoTask<size_t> {
+        return mBase.recvmsg(msg, flags);
+    }
+
+    /**
      * @brief Peek at the data in the socket.
      * 
      * @param data 

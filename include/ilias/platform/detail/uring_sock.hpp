@@ -26,7 +26,7 @@ namespace detail {
  */
 class UringSendmsgAwaiter final : public UringAwaiter<UringSendmsgAwaiter> {
 public:
-    UringSendmsgAwaiter(::io_uring &ring, int fd, ::msghdr &msg, int flags) : 
+    UringSendmsgAwaiter(::io_uring &ring, int fd, const ::msghdr &msg, int flags) : 
         UringAwaiter(ring), mMsg(msg), mFd(fd), mFlags(flags)
     {
         
