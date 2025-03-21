@@ -18,7 +18,9 @@
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/net/sockfd.hpp>
+#include <ilias/net/msg.hpp>
 #include <ilias/io/context.hpp>
+#include <sys/utsname.h>
 #include <liburing.h>
 
 ILIAS_NS_BEGIN
@@ -85,6 +87,9 @@ public:
     auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> override;
     auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> override;
 
+    auto sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> override;
+    auto recvmsg(IoDescriptor *fd, MsgHdr &msg, int flags) -> IoTask<size_t> override;
+
     auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
 private:
     auto processCompletion() -> void;
@@ -97,6 +102,11 @@ private:
     int mPipeSender = -1;
     int mPipeReceiver = -1;
     detail::UringCallbackEx mPipeCallback;
+
+    // For probe kernel, does it support?
+    struct {
+        bool cancelFd = false;
+    } probe;
 };
 
 inline UringContext::UringContext(UringConfig conf) {
@@ -131,6 +141,17 @@ inline UringContext::UringContext(UringConfig conf) {
     ILIAS_TRACE("Uring", "Using liburing {}.{}", IO_URING_VERSION_MAJOR, IO_URING_VERSION_MINOR);
 #endif
 
+    // Probe
+    ::utsname name;
+    if (::uname(&name) != 0) {
+        return;
+    }
+    int major = 0, minor = 0, patch = 0;
+    if (::sscanf(name.release, "%d.%d.%d", &major, &minor, &patch) < 2) {
+        return;
+    }
+    ILIAS_TRACE("Uring", "Kernel version {}.{}.{}", major, minor, patch);
+    probe.cancelFd = major >= 5 && minor >= 19; // At linux 5.19, io_uring support cancel_fd
 }
 
 inline UringContext::~UringContext() {
@@ -215,10 +236,12 @@ inline auto UringContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
     ILIAS_TRACE("Uring", "Removing fd {}", nfd->fd);
 
 #if IO_URING_VERSION_MINOR > 2
-    auto sqe = allocSqe();
-    ::io_uring_prep_cancel_fd(sqe, nfd->fd, 0);
-    ::io_uring_sqe_set_data(sqe, detail::UringCallback::noop());
-    ::io_uring_submit(&mRing);
+    if (probe.cancelFd) {
+        auto sqe = allocSqe();
+        ::io_uring_prep_cancel_fd(sqe, nfd->fd, 0);
+        ::io_uring_sqe_set_data(sqe, detail::UringCallback::noop());
+        ::io_uring_submit(&mRing);    
+    }
 #endif
 
     delete nfd;
@@ -226,7 +249,7 @@ inline auto UringContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
 }
 
 inline auto UringContext::sleep(uint64_t ms) -> IoTask<void> {
-    ::timespec ts { };
+    ::__kernel_timespec ts { };
     ts.tv_sec = ms / 1000;
     ts.tv_nsec = (ms % 1000) * 1000000;
     co_return co_await detail::UringTimeoutAwaiter {mRing, ts};
@@ -279,6 +302,16 @@ inline auto UringContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer
         .msg_iov = &vec,
         .msg_iovlen = 1,
     };
+    co_return co_await detail::UringRecvmsgAwaiter {mRing, nfd->fd, msg, flags};
+}
+
+inline auto UringContext::sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<detail::UringDescriptor*>(fd);
+    co_return co_await detail::UringSendmsgAwaiter {mRing, nfd->fd, msg, flags};
+}
+
+inline auto UringContext::recvmsg(IoDescriptor *fd, MsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<detail::UringDescriptor*>(fd);
     co_return co_await detail::UringRecvmsgAwaiter {mRing, nfd->fd, msg, flags};
 }
 

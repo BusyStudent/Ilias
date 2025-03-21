@@ -44,9 +44,9 @@ public:
         return size_t(ret);
     }
 private:
-    ::msghdr &mMsg;
-    int       mFd;
-    int       mFlags;
+    const ::msghdr &mMsg;
+    int             mFd;
+    int             mFlags;
 };
 
 /**

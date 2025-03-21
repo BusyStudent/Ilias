@@ -12,6 +12,6 @@ target("test_session")
     add_packages("zlib")
 
     if has_config("use_openssl") then
-        add_packages("openssl")
+        add_packages("openssl3")
     end
 target_end()

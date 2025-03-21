@@ -41,7 +41,7 @@ if has_config("task_trace") then
 end
 
 if has_config("use_openssl") then
-    add_requires("openssl")
+    add_requires("openssl3")
     add_defines("ILIAS_USE_OPENSSL")
 end
 

@@ -159,9 +159,8 @@ private:
  */
 class UringTimeoutAwaiter final : public UringAwaiter<UringTimeoutAwaiter> {
 public:
-    UringTimeoutAwaiter(::io_uring &ring, const ::timespec &spec) : UringAwaiter(ring) {
-        mSpec.tv_nsec = spec.tv_nsec;
-        mSpec.tv_sec = spec.tv_sec;
+    UringTimeoutAwaiter(::io_uring &ring, const ::__kernel_timespec &spec) : UringAwaiter(ring), mSpec(spec) {
+
     }
 
     auto onSubmit() {
@@ -176,7 +175,7 @@ public:
         return {};
     }
 private:
-    __kernel_timespec mSpec;
+    ::__kernel_timespec mSpec;
 };
 
 
