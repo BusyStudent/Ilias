@@ -62,7 +62,7 @@ struct UringConfig {
  * @brief The io context by using io_uring
  * 
  */
-class UringContext : public IoContext {
+class UringContext final : public IoContext {
 public:
     UringContext(UringConfig conf = {});
     UringContext(const UringContext &) = delete;
@@ -104,9 +104,7 @@ private:
     detail::UringCallbackEx mPipeCallback;
 
     // For probe kernel, does it support?
-    struct {
-        bool cancelFd = false;
-    } probe;
+    detail::UringProbe mProbe;
 };
 
 inline UringContext::UringContext(UringConfig conf) {
@@ -151,7 +149,7 @@ inline UringContext::UringContext(UringConfig conf) {
         return;
     }
     ILIAS_TRACE("Uring", "Kernel version {}.{}.{}", major, minor, patch);
-    probe.cancelFd = major >= 5 && minor >= 19; // At linux 5.19, io_uring support cancel_fd
+    mProbe.cancelFd = major > 5 || (major == 5 && minor >= 19); // At linux 5.19, io_uring support cancel_fd
 }
 
 inline UringContext::~UringContext() {
@@ -236,7 +234,7 @@ inline auto UringContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
     ILIAS_TRACE("Uring", "Removing fd {}", nfd->fd);
 
 #if IO_URING_VERSION_MINOR > 2
-    if (probe.cancelFd) {
+    if (mProbe.cancelFd) {
         auto sqe = allocSqe();
         ::io_uring_prep_cancel_fd(sqe, nfd->fd, 0);
         ::io_uring_sqe_set_data(sqe, detail::UringCallback::noop());

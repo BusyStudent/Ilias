@@ -377,21 +377,27 @@ public:
      * @return IoTask<std::string> 
      */
     auto getline(std::string_view delim) -> IoTask<std::string> {
+        size_t lastPos = 0; // Last position of we scanned
         while (true) {
             // Scanning current buffer
             auto buf = mBuf.data();
             if (buf.size() >= delim.size()) {
+                ILIAS_ASSERT_MSG(buf.size() >= lastPos, "Buffer size is smaller than last we scanned");
                 std::string_view view(reinterpret_cast<const char*>(buf.data()), buf.size());
-                size_t pos = view.find(delim);
+                size_t pos = view.find(delim, lastPos);
                 if (pos != std::string_view::npos) {
                     // Found the delimiter
                     auto content = view.substr(0, pos);
                     mBuf.consume(pos + delim.size());
                     co_return std::string(content);
                 }
+                lastPos = buf.size(); // We already scanned the whole buffer, so we start from the beginning
             }
             // Try fill the buffer
             auto wbuf = mBuf.prepare(1024 + delim.size());
+            if (wbuf.empty()) {
+                co_return Unexpected(Error::OutOfMemory);
+            }
             auto ret = co_await mStream.read(wbuf);
             if (!ret || *ret == 0) {
                 co_return Unexpected(ret.error_or(Error::ZeroReturn));
@@ -429,6 +435,9 @@ public:
             }
             // Try fill the buffer
             auto wbuf = mBuf.prepare(n);
+            if (wbuf.empty()) {
+                co_return Unexpected(Error::OutOfMemory);
+            }
             auto ret = co_await mStream.read(wbuf);
             if (!ret) {
                 co_return Unexpected(ret.error());
@@ -554,7 +563,7 @@ inline auto vsprintfTo(T &streamBuf, const char *fmt, va_list args) -> size_t {
  * @param stream 
  * @param fmt 
  * @param ... 
- * @return size_t 
+ * @return size_t The number of bytes written (0 on failed to prepare the space)
  */
 template <StreamBufferLike T>
 inline auto sprintfTo(T &streamBuf, const char *fmt, ...) -> size_t {

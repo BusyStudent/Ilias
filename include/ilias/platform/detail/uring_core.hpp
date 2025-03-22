@@ -59,6 +59,15 @@ public:
 };
 
 /**
+ * @brief The probe info we used for io_uring
+ * 
+ */
+class UringProbe {
+public:
+    bool cancelFd = false; // Does the kernel support io_uring_prep_cancel_fd ? (>= 5.19)
+};
+
+/**
  * @brief Generic Uring Submit / Compelete Template
  * 
  * @tparam T 

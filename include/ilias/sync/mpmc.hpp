@@ -28,17 +28,20 @@ using ChannelBase = channel_impl::Channel<
 
 template <typename T>
 class Channel final : public ChannelBase<T> {
-    using ChannelBase<T>::Channel;
+public:
+    Channel(size_t capacity) : ChannelBase<T>(capacity) { }
 };
 
 template <typename T>
 class Sender final : public channel_impl::Sender<Channel<T> > {
-
+public:
+    using channel_impl::Sender<Channel<T> >::Sender;
 };
 
 template <typename T>
 class Receiver final : public channel_impl::Receiver<Channel<T> > {
-    
+public:
+    using channel_impl::Receiver<Channel<T> >::Receiver;
 };
 
 template <typename T>

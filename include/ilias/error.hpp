@@ -100,6 +100,7 @@ public:
 
         // -- Misc
         ZeroReturn,                  //< This operation failed because the unlaying interface returned zero
+        OutOfMemory,                 //< Out of memory
 
         // --- DNS
         HostNotFound,                //< Host not found
