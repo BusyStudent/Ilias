@@ -119,7 +119,8 @@ private:
         }
         mTaskLeft -= 1;
         if (mTaskLeft == 0) {
-            mCaller.schedule(); // Resume the caller
+            task.setAwaitingCoroutine(mCaller); // Let the current task resume the caller
+            // mCaller.schedule();
         }
     }
 
@@ -238,7 +239,8 @@ private:
         }
         mTaskLeft -= 1;
         if (mTaskLeft == 0) {
-            mCaller.schedule(); // Resume the caller
+            task.setAwaitingCoroutine(mCaller); // Let the current task resume the caller
+            // mCaller.schedule();
         }
     }
 

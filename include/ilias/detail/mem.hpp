@@ -66,21 +66,28 @@ inline auto memcmp(std::span<const std::byte> lhs, std::span<const std::byte> rh
 }
 
 /**
- * @brief Make a string lowercase.
+ * @brief Search for a memory block in another memory block.
  * 
- * @param str 
- * @return auto 
+ * @param haystack 
+ * @param needle 
+ * @return std::optional<size_t> The offset of the needle in the haystack, or std::nullopt if not found.
  */
-inline auto lowercase(std::string_view str) {
-    std::string result(str);
-    std::transform(result.begin(), result.end(), result.begin(), [](char c) { return std::tolower(c); });
-    return result;
-}
+inline auto memmem(std::span<const std::byte> haystack, std::span<const std::byte> needle) -> std::optional<size_t> {
 
-inline auto uppercase(std::string_view str) {
-    std::string result(str);
-    std::transform(result.begin(), result.end(), result.begin(), [](char c) { return std::toupper(c); });
-    return result;
+#if defined(__linux__)
+    auto ptr = ::memmem(haystack.data(), haystack.size(), needle.data(), needle.size());
+    if (ptr == nullptr) {
+        return std::nullopt;
+    }
+    return ptr - haystack.data();
+#else
+    auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end());
+    if (it == haystack.end()) {
+        return std::nullopt;
+    }
+    return it - haystack.begin();
+#endif // defined(__linux__)
+
 }
 
 /**

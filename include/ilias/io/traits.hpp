@@ -66,6 +66,16 @@ concept Connectable = requires(T &t) {
 };
 
 /**
+ * @brief Concept for types that can be accept and create a new connection.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept Acceptable = requires(T &t) {
+    t.accept();
+};
+
+/**
  * @brief Concept for types that can get the file descriptor.
  * 
  * @tparam T 

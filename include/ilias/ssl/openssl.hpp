@@ -10,10 +10,45 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
+#undef min
+#undef max
+
 ILIAS_NS_BEGIN
 
 namespace openssl {
 
+/**
+ * @brief The Ssl Certificate class
+ * 
+ */
+class Certificate {
+public:
+    Certificate() = default;
+    Certificate(const Certificate &) = delete;
+    Certificate(Certificate &&other) : mCert(other.mCert) {
+        other.mCert = nullptr;
+    }
+    explicit Certificate(X509 *cert) : mCert(cert) { }
+    ~Certificate() {
+        X509_free(mCert);
+    }
+
+    auto nativeHandle() const noexcept {
+        return mCert;
+    }
+
+    static auto fromMem(std::span<const std::byte> buffer) -> Result<Certificate> {
+        auto buf = reinterpret_cast<const unsigned char *>(buffer.data());
+        auto cert = d2i_X509(nullptr, &buf, buffer.size());
+        if (!cert) {
+            return Unexpected(Error::InvalidArgument);
+        }
+        return Certificate(cert);
+    }
+private:
+    X509 *mCert = nullptr;
+};
+    
 /**
  * 
  * @brief Ssl Context
@@ -44,6 +79,18 @@ public:
     SslContext(const SslContext &) = delete;
     ~SslContext() {
         SSL_CTX_free(mCtxt);
+    }
+
+    auto useCertificateFromFile(const char *cert, int type = SSL_FILETYPE_PEM) -> bool {
+        return SSL_CTX_use_certificate_file(mCtxt, cert, type) == 1;
+    }
+
+    auto usePrivateKeyFromFile(const char *key, int type = SSL_FILETYPE_PEM) -> bool {
+        return SSL_CTX_use_PrivateKey_file(mCtxt, key, type) == 1;
+    }
+
+    auto useCertificate(const Certificate &cert) -> bool {
+        return SSL_CTX_use_certificate(mCtxt, cert.nativeHandle()) == 1;
     }
 
     auto nativeHandle() const noexcept {
@@ -183,15 +230,6 @@ public:
         delete mBio;
     }
 
-    /**
-     * @brief Get local endpoint
-     * 
-     * @return IPEndpoint 
-     */
-    auto localEndpoint() const -> IPEndpoint {
-        return mBio->mFd.localEndpoint();
-    }
-
 protected:
     auto _handleError(int errcode) -> IoTask<void> {
         if (errcode == SSL_ERROR_WANT_READ) {
@@ -276,7 +314,7 @@ protected:
  * @tparam T 
  */
 template <StreamClient T = DynStreamClient>
-class SslClient final : public SslSocket<T>, public StreamMethod<SslClient<T> > {    
+class SslClient final : private SslSocket<T>, public StreamMethod<SslClient<T> > {    
 public:
     SslClient() = default;
     SslClient(const SslClient &) = delete;
@@ -338,15 +376,37 @@ public:
     }
 
     /**
-     * @brief Get remote Endpoint
+     * @brief Get local endpoint
      * 
-     * @return IPEndpoint 
      */
-    auto remoteEndpoint() const -> Result<IPEndpoint> {
+    auto localEndpoint() const {
+        return this->mBio->mFd.localEndpoint();
+    }
+
+    /**
+     * @brief Get the remote Endpoint
+     * 
+     */
+    auto remoteEndpoint() const{
         return this->mBio->mFd.remoteEndpoint();
     }
 
-    auto connect(const IPEndpoint &endpoint) -> IoTask<void> {
+    /**
+     * @brief Get the native handle object
+     * 
+     * @return SSL *
+     */
+    auto nativeHandle() const noexcept {
+        return this->mSsl;
+    }
+
+    /**
+     * @brief Connect to the endpoint
+     * 
+     * @param endpoint 
+     * @return IoTask<void> 
+     */
+    auto connect(const auto &endpoint) -> IoTask<void> {
         auto ret = co_await this->mBio->mFd.connect(endpoint);
         if (!ret) {
             co_return ret;
@@ -354,6 +414,12 @@ public:
         co_return co_await handshake();
     }
 
+    /**
+     * @brief Read data from the ssl stream
+     * 
+     * @param buffer 
+     * @return IoTask<size_t> 
+     */
     auto read(std::span<std::byte> buffer) -> IoTask<size_t> {
         while (true) {
             size_t readed = 0;
@@ -372,6 +438,12 @@ public:
         }
     }
 
+    /**
+     * @brief Write data to the ssl stream
+     * 
+     * @param buffer 
+     * @return IoTask<size_t> 
+     */
     auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
         while (true) {
             size_t written = 0;
@@ -393,10 +465,18 @@ public:
         }
     }
 
+    /**
+     * @brief Shutdown the ssl stream
+     * 
+     * @return IoTask<void> 
+     */
     auto shutdown() -> IoTask<void> {
         while (true) {
             int ret = SSL_shutdown(this->mSsl);
             if (ret == 1) {
+                if constexpr (Shuttable<T>) { // Shutdown the underlying stream if shuttable
+                    co_return co_await this->mBio->mFd.shutdown();
+                }
                 co_return {};
             }
             int errcode = 0;
@@ -407,6 +487,11 @@ public:
         }
     }
 
+    /**
+     * @brief Handshake with the remote
+     * 
+     * @return IoTask<void> 
+     */
     auto handshake() -> IoTask<void> {
         while (true) {
             int sslCon = SSL_connect(this->mSsl);

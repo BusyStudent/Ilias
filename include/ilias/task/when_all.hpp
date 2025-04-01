@@ -103,7 +103,8 @@ private:
         ILIAS_TRACE("WhenAll", "[{}] Task {} completed, {} Left", sizeof ...(Types), task, mTaskLeft - 1);
         mTaskLeft -= 1;
         if (mTaskLeft == 0) {
-            mCaller.schedule(); // Resume the caller
+            task.setAwaitingCoroutine(mCaller); // Let the current task resume the caller
+            // mCaller.schedule();
         }
     }
 
@@ -219,7 +220,8 @@ private:
         ILIAS_TRACE("WhenAll", "Range [{}] Task {} completed, {} Left", mTaskLeft, task, mTaskLeft - 1);
         mTaskLeft -= 1;
         if (mTaskLeft == 0) {
-            mCaller.schedule(); // Resume the caller
+            task.setAwaitingCoroutine(mCaller); // Let the current task resume the caller
+            // mCaller.schedule();
         }
     }
 

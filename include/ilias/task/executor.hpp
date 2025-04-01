@@ -13,6 +13,7 @@
 #include <ilias/cancellation_token.hpp>
 #include <ilias/ilias.hpp>
 #include <coroutine>
+#include <memory>
 
 ILIAS_NS_BEGIN
 
@@ -98,10 +99,11 @@ private:
      * 
      * @param ptr 
      */
-    static auto scheduleImpl(void *ptr) -> void {
-        auto fn = static_cast<detail::MoveOnlyFunction<void()> *>(ptr);
+    static auto scheduleImpl(void *ptr) noexcept -> void {
+        std::unique_ptr<detail::MoveOnlyFunction<void()> > fn {
+            static_cast<detail::MoveOnlyFunction<void()> *>(ptr)
+        };
         (*fn)();
-        delete fn;
     }
 };
 

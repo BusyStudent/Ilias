@@ -76,11 +76,20 @@ public:
         if (mIsSet) {
             return;
         }
-        mIsSet = true;
         for (const auto &awaiter : mAwaiters) {
             awaiter->notifySet();
         }
         mAwaiters.clear();
+        mIsSet = !mAutoClear; // If auto clear, we don't set it
+    }
+
+    /**
+     * @brief Set the Auto Clear Attribute
+     * 
+     * @param autoClear true on auto clear, false on manual clear
+     */
+    auto setAutoClear(bool autoClear) -> void {
+        mAutoClear = autoClear;
     }
 
     /**
@@ -112,6 +121,7 @@ public:
 private:
     std::list<detail::EventAwaiter *> mAwaiters;
     bool mIsSet = false;
+    bool mAutoClear = false;
 friend detail::EventAwaiter;
 };
 

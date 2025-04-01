@@ -15,15 +15,16 @@
 #include <ilias/task/executor.hpp>
 #include <ilias/error.hpp>
 #include <ilias/log.hpp>
-#include <source_location>
 #include <concepts>
 #include <optional>
 #include <vector>
 
-#if defined(ILIAS_TASK_TRACE)
+#if defined(ILIAS_TASK_TRACE) && defined(__cpp_lib_source_location)
     #define ILIAS_CAPTURE_CALLER(name) std::source_location name = std::source_location::current()
+    #include <source_location>
 #else
     #define ILIAS_CAPTURE_CALLER(name) [[maybe_unused]] int name = 0
+    #undef ILIAS_TASK_TRACE
 #endif // defined(ILIAS_TASK_TRACE)
 
 

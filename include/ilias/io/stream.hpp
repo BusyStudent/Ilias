@@ -17,6 +17,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <limits>
 #include <array>
 #include <span>
 
@@ -51,6 +52,13 @@ public:
      * 
      */
     StreamBuffer() = default;
+
+    /**
+     * @brief Construct a new Stream Buffer object with a max capacity
+     * 
+     * @param maxCapacity The max capacity of the buffer
+     */
+    StreamBuffer(size_t maxCapacity) : mMaxCapacity(maxCapacity) { }
 
     /**
      * @brief Construct a new Stream Buffer object by moving another
@@ -90,9 +98,12 @@ public:
             mTail -= mPos;
             mPos = 0;
         }
+        if ((mTail - mPos) + size > mMaxCapacity) { //< Reach the limit
+            return {};
+        }
         auto space = mBuffer.size() - mTail; // The space left in the buffer
         if (space < size) { //< Reallocate the buffer if there is not enough space
-            auto newSize = (mBuffer.size() + size) * 2;
+            auto newSize = std::min((mBuffer.size() + size) * 2, mMaxCapacity);
             auto newBuffer = static_cast<std::byte *>(::realloc(mBuffer.data(), newSize));
             if (newBuffer == nullptr) { //< What?, failed to allocate memory
                 return {};
@@ -173,6 +184,15 @@ public:
     }
 
     /**
+     * @brief Get the maximum capacity of the stream buffer
+     * 
+     * @return size_t 
+     */
+    auto maxCapacity() const -> size_t {
+        return mMaxCapacity;
+    }
+
+    /**
      * @brief shrink the whole buffer to input window size, and drop the output window
      * 
      */
@@ -185,6 +205,15 @@ public:
         auto newBuffer = static_cast<std::byte *>(std::realloc(mBuffer.data(), mTail));
         ILIAS_ASSERT_MSG(newBuffer != nullptr, "Failed to allocate memory");
         mBuffer = {newBuffer, mTail};
+    }
+
+    /**
+     * @brief Set the Max Capacity of the stream buffer, it just set the limit of the buffer, won't shrink the buffer if it's already larger than the limit
+     * 
+     * @param capacity 
+     */
+    auto setMaxCapacity(size_t capacity) -> void {
+        mMaxCapacity = capacity;
     }
 
     /**
@@ -214,7 +243,6 @@ public:
         return *this;
     }
     auto operator = (const StreamBuffer &) = delete;
-    auto operator <=>(const StreamBuffer &) const noexcept = default;
 private:
     /**
      *  Memory Layout | Input Window  | Output Window | mCapacity
@@ -223,6 +251,7 @@ private:
     std::span<std::byte> mBuffer;
     size_t mPos = 0; //< Current position to read (input window)
     size_t mTail = 0; //< Current position to write (output window)
+    size_t mMaxCapacity = std::numeric_limits<size_t>::max(); //< The maximum capacity of the buffer
 };
 
 /**
@@ -342,8 +371,6 @@ public:
     auto capacity() const -> size_t {
         return N;
     }
-
-    auto operator <=>(const FixedStreamBuffer &) const noexcept = default;
 private:
     std::array<std::byte, N> mBuffer;
     size_t mPos = 0;
@@ -353,7 +380,7 @@ private:
 /**
  * @brief A Wrapper for buffered a stream
  * 
- * @tparam T 
+ * @tparam T The underlying stream
  */
 template <Stream T = DynStreamClient>
 class BufferedStream final : public StreamMethod<BufferedStream<T> > {
@@ -394,7 +421,7 @@ public:
                 lastPos = buf.size(); // We already scanned the whole buffer, so we start from the beginning
             }
             // Try fill the buffer
-            auto wbuf = mBuf.prepare(1024 + delim.size());
+            auto wbuf = mBuf.prepare(4096 + delim.size());
             if (wbuf.empty()) {
                 co_return Unexpected(Error::OutOfMemory);
             }
@@ -532,6 +559,42 @@ private:
 };
 
 // Utility functions
+
+/**
+ * @brief Read bytes from the stream into buffer until the delimiter is found
+ * 
+ * @tparam T 
+ * @tparam Stream 
+ * @param stream The stream to read from (must has readable concept)
+ * @param streamBuf The stream buffer to read into (must has stream buffer concept)
+ * @param delim The delimiter to stop reading
+ * @return IoTask<size_t> The position of the delimiter in the buffer
+ */
+template <StreamBufferLike T, Readable Stream>
+inline auto readUntil(Stream &stream, T &streamBuf, std::span<const std::byte> delim) -> IoTask<size_t> {
+    size_t lastPos = 0;
+    while (true) {
+        auto span = streamBuf.data();
+        if (span.size() >= delim.size()) { // We can scan it
+            auto pos = mem::memmem(span.subspan(lastPos), delim);
+            if (pos) { // Got it!
+                co_return *pos + lastPos;
+            }
+            lastPos = span.size();
+        }
+        // Try read more data!
+        auto wbuf = streamBuf.prepare(4096 + delim.size());
+        if (wbuf.empty()) {
+            co_return Unexpected(Error::OutOfMemory);
+        }
+        auto ret = co_await stream.read(wbuf);
+        if (!ret || *ret == 0) {
+            co_return Unexpected(ret.error_or(Error::ZeroReturn));
+        }
+        streamBuf.commit(*ret);
+    }
+}
+
 /**
  * @brief print the string into the stream buffer's input window
  * 
