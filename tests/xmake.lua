@@ -1,48 +1,19 @@
 add_requires("gtest")
 
-option("use_fmt")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Use fmt for logging")
-option_end()
-
-option("use_io_uring")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Use io uring as platform context")
-option_end()
-
-option("task_trace")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Add task stacktrace for debug use")
-option_end()
-
-option("use_openssl")
-    set_default(not is_host("windows"))
-    set_showmenu(true)
-    set_description("Use openssl for the ssl backend")
-option_end()
-
+-- Add packages if 
 if has_config("use_fmt") then
     add_requires("fmt")
     add_packages("fmt")
-    add_defines("ILIAS_USE_FMT")
 end
 
 if has_config("use_io_uring") then
-    add_requires("liburing");
-    add_packages("liburing");
-    add_defines("ILIAS_USE_IO_URING")
-end
-
-if has_config("task_trace") then 
-    add_defines("ILIAS_TASK_TRACE")
+    add_requires("liburing")
+    add_packages("liburing")
 end
 
 if has_config("use_openssl") then
     add_requires("openssl3")
-    add_defines("ILIAS_USE_OPENSSL")
+    add_packages("openssl3")
 end
 
 -- Make all files in the unit directory into targets
@@ -66,6 +37,7 @@ for _, file in ipairs(os.files("unit/**.cpp")) do
         add_tests(name, {run_timeout = 10000})
         add_packages("gtest")
         add_defines("ILIAS_ENABLE_LOG")
+        add_deps("ilias")
     target_end()
 
     ::continue::

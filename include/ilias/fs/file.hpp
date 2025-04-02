@@ -14,23 +14,12 @@
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/io/method.hpp>
-#include <cstdio>
 
 #if defined(__linux__)
     #include <sys/mman.h>
 #endif // defined(__linux__)
 
 ILIAS_NS_BEGIN
-
-/**
- * @brief The seek enum, taken from cstdio
- * 
- */
-enum class SeekFrom : int {
-    Begin   = SEEK_SET,
-    Current = SEEK_CUR,
-    End     = SEEK_END,
-};
 
 /**
  * @brief Concept for std::filesystem::path or another compatible path type

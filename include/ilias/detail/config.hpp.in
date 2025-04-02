@@ -1,0 +1,30 @@
+/**
+ * @file config.hpp.in
+ * @author BusyStudent (fyw90mc@gmail.com)
+ * @brief The configuration file for the library.
+ * @version 0.1
+ * @date 2025-04-02
+ * 
+ * @copyright Copyright (c) 2025
+ * 
+ */
+
+// Config from build system
+${define ILIAS_NAMESPACE}
+${define ILIAS_TASK_TRACE}
+${define ILIAS_USE_FMT}
+${define ILIAS_USE_IO_URING}
+${define ILIAS_USE_OPENSSL}
+
+// Config for libraries mode
+${define ILIAS_STATIC}
+${define ILIAS_DLL}
+
+// Git information
+#define ILIAS_GIT_COMMIT      "${GIT_COMMIT}"
+#define ILIAS_GIT_COMMIT_LONG "${GIT_COMMIT_LONG}"
+#define ILIAS_GIT_COMMIT_DATE "${GIT_COMMIT_DATE}"
+#define ILIAS_GIT_BRANCH      "${GIT_BRANCH}"
+#define ILIAS_GIT_TAG         "${GIT_TAG}"
+#define ILIAS_GIT_TAG_LONG    "${GIT_TAG_LONG}"
+#define ILIAS_GIT_CUSTOM      "${GIT_TAG}-${GIT_COMMIT}"

@@ -10,3 +10,4 @@ a.out
 *.so
 *.dll
 /vsxmake*
+/include/ilias/detail/config.hpp

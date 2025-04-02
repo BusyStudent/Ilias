@@ -120,18 +120,18 @@ public:
 
 #if defined(ILIAS_TASK_TRACE)
     /**
-     * @brief Forward the awaiter, it used to trace the await point
+     * @brief Forward the awaitable, it used to trace the await point
      * 
      * @tparam T 
-     * @param awaiter 
+     * @param awaitable 
      * @param loc The source location of the await point
      * @return decltype(auto) 
      */
     template <typename T>
-    auto await_transform(T &&awaiter, std::source_location loc = std::source_location::current()) -> decltype(auto) {
+    auto await_transform(T &&awaitable, std::source_location loc = std::source_location::current()) -> decltype(auto) {
         mAwaitLocation = loc;
         mChild.clear(); //< Clear previous await info
-        return std::forward<T>(awaiter);
+        return std::forward<T>(awaitable);
     }
 #endif // defined(ILIAS_TASK_TRACE)
 

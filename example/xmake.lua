@@ -1,3 +1,13 @@
+if has_config("use_fmt") then
+    add_requires("fmt")
+    add_packages("fmt")
+end
+
+if has_config("use_io_uring") then
+    add_requires("liburing")
+    add_packages("liburing")
+end
+
 target("httpserver")
     set_kind("binary")
     set_default(false)

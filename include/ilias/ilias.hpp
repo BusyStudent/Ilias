@@ -13,6 +13,7 @@
 
 #include <concepts>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <array>
 
@@ -106,12 +107,18 @@
 
 // --- Library mode
 // TODO:
+#if !defined(ILIAS_DLL) || !defined(ILIAS_STATIC)
+    #define ILIAS_HEADER_ONLY
+#endif
 
 
 // --- Version macro
-#define ILIAS_VERSION_MAJOR 0
-#define ILIAS_VERSION_MINOR 2
-#define ILIAS_VERSION_PATCH 1
+#if !defined(ILIAS_VERSION_MAJOR)
+    #define ILIAS_VERSION_MAJOR 0
+    #define ILIAS_VERSION_MINOR 2
+    #define ILIAS_VERSION_PATCH 3
+#endif
+
 #define ILIAS_VERSION_AT_LEAST(major, minor, patch)                  \
     (ILIAS_VERSION_MAJOR > major ||                                  \
     (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR > minor) || \
@@ -174,6 +181,21 @@ using IoTask = Task<Result<T, Error> >;
 template <typename T>
 using IoGenerator = Generator<Result<T> >;
 
+// --- Enums
+/**
+ * @brief The seek enum, taken from cstdio
+ * 
+ */
+enum class SeekFrom : int {
+    Begin   = SEEK_SET,
+    Current = SEEK_CUR,
+    End     = SEEK_END,
+#if defined(SEEK_HOLE)
+    Hole    = SEEK_HOLE,
+    Data    = SEEK_DATA,
+#endif // defined(SEEK_HOLE)
+};
+
 // --- Formatting namespace
 #if defined(ILIAS_FMT_NAMESPACE)
 namespace fmtlib = ILIAS_FMT_NAMESPACE;
@@ -186,7 +208,7 @@ struct DefaultFormatter {
     using format_parse_context = fmtlib::format_parse_context;
     using format_context = fmtlib::format_context;
 
-    constexpr auto parse(auto &ctxt) {
+    constexpr auto parse(auto &ctxt) const noexcept {
         return ctxt.begin();
     }
 

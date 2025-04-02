@@ -13,6 +13,7 @@
 #include <ilias/io/dyn_traits.hpp>
 #include <ilias/io/method.hpp>
 #include <ilias/io/traits.hpp>
+#include <ilias/detail/mem.hpp>
 #include <ilias/buffer.hpp>
 #include <cstring>
 #include <string>
@@ -636,5 +637,30 @@ inline auto sprintfTo(T &streamBuf, const char *fmt, ...) -> size_t {
     va_end(args);
     return size;
 }
+
+// Format support
+#if !defined(ILIAS_NO_FORMAT)
+/**
+ * @brief Format the string into the stream buffer's input window
+ * 
+ * @tparam T 
+ * @tparam Args 
+ * @param streamBuf 
+ * @param fmt 
+ * @param args 
+ * @return size_t The number of bytes written (0 on failed to prepare the space)
+ */
+template <StreamBufferLike T, typename ...Args>
+inline auto formatTo(T &streamBuf, fmtlib::format_string<Args...> fmt, Args &&...args) -> size_t {
+    auto size = fmtlib::formatted_size(fmt, std::forward<Args>(args)...);
+    auto buf = streamBuf.prepare(size);
+    if (buf.empty() || size == 0) {
+        return 0;
+    }
+    auto res = fmtlib::format_to_n(reinterpret_cast<char*>(buf.data()), buf.size(), fmt, std::forward<Args>(args)...);
+    buf.commit(res.size);
+    return res.size;
+}
+#endif // !defined(ILIAS_NO_FORMAT)
 
 ILIAS_NS_END
