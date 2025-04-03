@@ -92,6 +92,7 @@ public:
     //< For IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> Result<void> override;
+    auto cancel(IoDescriptor *fd) -> Result<void> override;
 
     auto sleep(uint64_t ms) -> IoTask<void> override;
 
@@ -351,6 +352,18 @@ inline auto IocpContext::removeDescriptor(IoDescriptor *descriptor) -> Result<vo
         }
     }
     delete nfd;
+    return {};
+}
+
+inline auto IocpContext::cancel(IoDescriptor *fd) -> Result<void> {
+    auto nfd = static_cast<detail::IocpDescriptor*>(fd);
+    ILIAS_TRACE("IOCP", "Cancelling fd: {}", nfd->handle);
+    if (!CancelIoEx(nfd->handle, nullptr)) {
+        auto err = ::GetLastError();
+        if (err != ERROR_NOT_FOUND) { //< It's ok if the Io is not found, no any pending IO
+            return Unexpected(SystemError(err));
+        }
+    }
     return {};
 }
 

@@ -22,6 +22,7 @@ public:
     // < For IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> Result<void> override;
+    auto cancel(IoDescriptor *fd) -> Result<void> override;
 
     auto sleep(uint64_t ms) -> IoTask<void> override;
 
@@ -89,6 +90,23 @@ inline auto DelegateContext<T>::removeDescriptor(IoDescriptor* fd) -> Result<voi
 
     auto callback = [&]() {
         ret = mContext->removeDescriptor(fd);
+        latch.count_down();
+    };
+    mContext->post([](void *callbackPtr) {
+        auto cb = reinterpret_cast<decltype(callback) *>(callbackPtr);
+        (*cb)();
+    }, &callback);
+    latch.wait();
+    return ret;
+}
+
+template <typename T>
+inline auto DelegateContext<T>::cancel(IoDescriptor *fd) -> Result<void> {
+    std::latch latch {1};
+    Result<void> ret;
+
+    auto callback = [&]() {
+        ret = mContext->cancel(fd);
         latch.count_down();
     };
     mContext->post([](void *callbackPtr) {

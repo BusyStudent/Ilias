@@ -75,6 +75,7 @@ public:
     // < For IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> Result<void> override;
+    auto cancel(IoDescriptor *fd) -> Result<void> override;
 
     auto sleep(uint64_t ms) -> IoTask<void> override;
 
@@ -232,6 +233,14 @@ inline auto UringContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Res
 inline auto UringContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
     auto nfd = static_cast<detail::UringDescriptor*>(fd);
     ILIAS_TRACE("Uring", "Removing fd {}", nfd->fd);
+    cancel(nfd);
+    delete nfd;
+    return {};
+}
+
+inline auto UringContext::cancel(IoDescriptor *fd) -> Result<void> {
+    auto nfd = static_cast<detail::UringDescriptor*>(fd);
+    ILIAS_TRACE("Uring", "Cancelling fd {}", nfd->fd);
 
 #if IO_URING_VERSION_MINOR > 2
     if (mProbe.cancelFd) {
@@ -241,8 +250,7 @@ inline auto UringContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
         ::io_uring_submit(&mRing);    
     }
 #endif
-
-    delete nfd;
+    
     return {};
 }
 

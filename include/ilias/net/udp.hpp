@@ -27,6 +27,7 @@ public:
     UdpClient(IoContext &ctxt, Socket &&sock) : mBase(ctxt, std::move(sock)) { }
 
     auto close() { return mBase.close(); }
+    auto cancel() { return mBase.cancel(); }
 
     /**
      * @brief Set if the socket should reuse the address.

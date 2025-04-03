@@ -78,6 +78,15 @@ public:
         mFd   = nullptr;
     }
 
+    /**
+     * @brief Cancel all pending operations on the socket
+     * 
+     * @return Result<void> 
+     */
+    auto cancel() -> Result<void> {
+        return mCtxt->cancel(mFd);
+    }
+
     // as same as sync system socket
     auto send(std::span<const std::byte> data, int flags = 0) const -> IoTask<size_t> {
         return mCtxt->sendto(mFd, data, flags, nullptr);

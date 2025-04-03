@@ -218,7 +218,7 @@ public:
         if (mInstances.empty()) {
             return; //< Nothing to wait for.
         }
-        ILIAS_ASSERT(!mWaitCallback && !mWaitData); // Ensure it's not called twice. or blocking wait and async wait at the same time.
+        ILIAS_ASSERT(!isWaiting()); // Ensure it's not called twice. or blocking wait and async wait at the same time.
         CancellationToken token;
         mWaitCallback = &detail::cancelTheTokenHelper;
         mWaitData = &token;
@@ -245,6 +245,16 @@ public:
      */
     auto runningTasks() const -> size_t {
         return mInstances.size();
+    }
+
+    /**
+     * @brief Checks if there is someone waiting for the scope to complete.
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isWaiting() const -> bool {
+        return mWaitCallback || mWaitData;
     }
 
     /**

@@ -95,6 +95,14 @@ public:
     virtual auto removeDescriptor(IoDescriptor *fd) -> Result<void> = 0;
 
     /**
+     * @brief Cancel all pending Io operations on a descriptor
+     * 
+     * @param fd
+     * @return Result<void> 
+     */
+    virtual auto cancel(IoDescriptor *fd) -> Result<void> = 0;
+
+    /**
      * @brief Read from a descriptor
      * 
      * @param fd 

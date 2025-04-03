@@ -28,6 +28,7 @@ public:
     TcpClient(IoContext &ctxt, Socket &&sock) : mBase(ctxt, std::move(sock)) { }
 
     auto close() { return mBase.close(); }
+    auto cancel() { return mBase.cancel(); }
 
     // Stream Concept
     /**
@@ -232,6 +233,7 @@ public:
     TcpListener(IoContext &ctxt, Socket &&sock) : mBase(ctxt, std::move(sock)) { }
 
     auto close() { return mBase.close(); }
+    auto cancel() { return mBase.cancel(); }
 
     /**
      * @brief Set the socket option.
@@ -277,11 +279,12 @@ public:
      */
     auto accept() -> IoTask<std::pair<TcpClient, IPEndpoint> > {
         IPEndpoint endpoint;
+        auto ctxt = mBase.context();
         auto sock = co_await mBase.accept(&endpoint);
         if (!sock) {
             co_return Unexpected(sock.error());
         }
-        TcpClient client(*(mBase.context()), Socket(sock.value()));
+        TcpClient client(*ctxt, Socket(sock.value()));
         co_return std::make_pair(std::move(client), endpoint);
     }
 
@@ -292,11 +295,12 @@ public:
      * @return IoTask<TcpClient> 
      */
     auto accept(IPEndpoint *endpoint) -> IoTask<TcpClient> {
+        auto ctxt = mBase.context();
         auto sock = co_await mBase.accept(endpoint);
         if (!sock) {
             co_return Unexpected(sock.error());
         }
-        co_return TcpClient(*(mBase.context()), Socket(sock.value()));
+        co_return TcpClient(*ctxt, Socket(sock.value()));
     }
 
     /**

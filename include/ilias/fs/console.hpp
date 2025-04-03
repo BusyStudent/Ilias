@@ -160,6 +160,15 @@ public:
         }
     }
 
+    /**
+     * @brief Cancel all pending operations on the console
+     * 
+     * @return Result<void> 
+     */
+    auto cancel() -> Result<void> {
+        return mCtxt->cancel(mDesc);
+    }
+
 
     auto operator <=>(const Console &) const = default;
 

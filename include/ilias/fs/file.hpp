@@ -71,6 +71,15 @@ public:
     }
 
     /**
+     * @brief Cancel all pending operations on the file
+     * 
+     * @return Result<void> 
+     */
+    auto cancel() -> Result<void> {
+        return mCtxt->cancel(mDesc);
+    }
+
+    /**
      * @brief Start read data from the file
      * 
      * @param buffer 

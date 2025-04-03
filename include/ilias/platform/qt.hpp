@@ -50,7 +50,7 @@ class QIoDescriptor final : public IoDescriptor, public QObject {
 public:
     QIoDescriptor(QObject *parent = nullptr) : QObject(parent) { }
     QIoDescriptor(const QIoDescriptor &) = delete;
-    ~QIoDescriptor() { Q_EMIT destroyed(); }
+    ~QIoDescriptor() { }
 
     union {
         fd_t     fd;                    //< Platform's fd
@@ -177,6 +177,7 @@ public:
     // < For IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> Result<void> override;
+    auto cancel(IoDescriptor* fd) -> Result<void> override;
 
     auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
     auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
@@ -328,7 +329,15 @@ inline auto QIoContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
         return {};
     }
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
+    cancel(nfd);
+    delete nfd;
+    --mNumOfDescriptors;
+    return {};
+}
 
+inline auto QIoContext::cancel(IoDescriptor *fd) -> Result<void> override {
+    auto nfd = static_cast<detail::QIoDescriptor*>(fd);
+    
 #if defined(_WIN32)
     if (!::CancelIoEx(nfd->fd, nullptr)) {
         if (auto err = ::GetLastError(); err != ERROR_NOT_FOUND) {
@@ -337,8 +346,7 @@ inline auto QIoContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
     }
 #endif // defined(_WIN32)
 
-    delete nfd;
-    --mNumOfDescriptors;
+    Q_EMIT nfd->destroyed(); // Using this signal to notify the operation is canceled
     return {};
 }
 

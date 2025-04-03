@@ -27,9 +27,8 @@ public:
     UnixClient(IoContext &ctxt, int type) : mBase(ctxt, Socket(AF_UNIX, type, 0)) { }
     UnixClient(IoContext &ctxt, Socket &&sock) : mBase(ctxt, std::move(sock)) { }
 
-    auto clsoe() { 
-        return mBase.close(); 
-    }
+    auto close() { return mBase.close(); }
+    auto cancel() { return mBase.cancel(); }
 
     /**
      * @brief Connect to a unix endpoint
@@ -251,11 +250,12 @@ public:
      */
     auto accept() const -> IoTask<std::pair<UnixClient, UnixEndpoint> > {
         UnixEndpoint endpoint;
+        auto ctxt = mBase.context();
         auto ret = co_await mBase.accept(endpoint);
         if (!ret) {
             co_return Unexpected(ret.error());
         }
-        co_return std::pair { UnixClient(*context(), Socket(*ret)), endpoint };
+        co_return std::pair { UnixClient(*ctxt, Socket(*ret)), endpoint };
     }
 
     /**
@@ -265,11 +265,12 @@ public:
      * @return IoTask<UnixClient> 
      */
     auto accept(UnixEndpoint *endpoint) const -> IoTask<UnixClient> {
+        auto ctxt = mBase.context();
         auto ret = co_await mBase.accept(endpoint);
         if (!ret) {
             co_return Unexpected(ret.error());
         }
-        co_return UnixClient(*context(), Socket(*ret));
+        co_return UnixClient(*ctxt, Socket(*ret));
     }
 
     /**

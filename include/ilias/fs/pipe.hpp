@@ -100,6 +100,15 @@ public:
     }
 
     /**
+     * @brief Cancel all pending operations on the pipe
+     * 
+     * @return Result<void> 
+     */
+    auto cancel() -> Result<void> {
+        return mCtxt->cancel(mDesc);
+    }
+
+    /**
      * @brief Clone the pipe, by using dup
      * 
      * @return Result<Pipe> 

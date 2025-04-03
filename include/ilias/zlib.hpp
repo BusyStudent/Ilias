@@ -165,9 +165,6 @@ public:
                     co_return Unexpected(n.error_or(Error::ZeroReturn));
                 }
                 mBuffer.commit(*n);
-                auto span = mBuffer.data();
-                mStream.next_in = (Bytef*) span.data();
-                mStream.avail_in = span.size_bytes();
                 if (*n == mBufferPrepareSize) {
                     mBufferPrepareSize *= 2; // Double the buffer size for improve performance
                 }
@@ -175,6 +172,9 @@ public:
                     mBufferPrepareSize = *n; // Set the buffer size to the size of the last read, to avoid waste too much memory
                     mBuffer.shrinkToFit();
                 }
+                auto span = mBuffer.data();
+                mStream.next_in = (Bytef*) span.data();
+                mStream.avail_in = span.size_bytes();
             }
             do {
                 auto ret = ::inflate(&mStream, Z_NO_FLUSH);
