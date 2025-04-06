@@ -11,8 +11,9 @@
 #pragma once
 
 #include <ilias/task/detail/promise.hpp>
+#include <ilias/task/detail/await.hpp>
+#include <ilias/task/detail/trace.hpp>
 #include <ilias/task/detail/view.hpp>
-#include <ilias/task/detail/wait.hpp>
 #include <ilias/task/executor.hpp>
 #include <ilias/log.hpp>
 #include <coroutine>
@@ -252,8 +253,15 @@ public:
      * @param executor The executor to run the task
      * @return T 
      */
-    auto wait(Executor &executor) const -> T {
+    auto wait(Executor &executor, ILIAS_CAPTURE_CALLER(loc)) const -> T {
         auto &promise = mHandle.promise();
+
+#if defined(ILIAS_TASK_TRACE)
+        detail::StackFrame frame;
+        frame.setLocation(loc);
+        promise.frame().parent = &frame;
+#endif // defined(ILIAS_TASK_TRACE)
+
         ILIAS_ASSERT(!promise.isStarted());
         promise.setExecutor(&executor);
         mHandle.resume(); //< Start it
@@ -270,8 +278,8 @@ public:
      * 
      * @return T 
      */
-    auto wait() const -> T {
-        return wait(*Executor::currentThread());
+    auto wait(ILIAS_CAPTURE_CALLER(loc)) const -> T {
+        return wait(*Executor::currentThread(), loc);
     }
 
     /**
@@ -283,6 +291,7 @@ public:
         return _view().setCancelPolicy(policy);
     }
 
+    // Internal functions
     /**
      * @brief Get the task's internal view, it provides a super set api of the coroutine handle and task
      * 
@@ -303,6 +312,18 @@ public:
         return std::exchange(mHandle, nullptr);
     }
 
+#if defined(ILIAS_TASK_TRACE)
+    /**
+     * @brief Do Trace on the await point, set the caller to parent, and add self to the caller's children
+     * 
+     * @internal not recommend to use it at the outside, see impl detail in TaskPromise::await_transform
+     * @param caller The caller handle
+     * @return void 
+     */
+    auto _trace(CoroHandle caller) const -> void {
+        caller.traceLink(mHandle);
+    }
+#endif // defined(ILIAS_TASK_TRACE)
 
     /**
      * @brief Assign the task by move
@@ -319,6 +340,21 @@ public:
             mHandle.destroy();
         }
         mHandle = other._leak();
+        return *this;
+    }
+
+    /**
+     * @brief Assign the task by null
+     * 
+     * @return Task& 
+     */
+    auto operator =(std::nullptr_t) -> Task & {
+        if (!mHandle) {
+            return *this;
+        }
+        ILIAS_ASSERT(_view().isSafeToDestroy());
+        mHandle.destroy();
+        mHandle = nullptr;
         return *this;
     }
 

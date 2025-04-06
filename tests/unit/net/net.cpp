@@ -107,6 +107,20 @@ TEST(Net, CloseCancel) {
     ASSERT_TRUE(val2);
 }
 
+TEST(Net, TestPoll) {
+    auto ctxt = IoContext::currentThread();
+    UdpClient client(*ctxt, AF_INET);
+    UdpClient client2(*ctxt, AF_INET);
+    ASSERT_TRUE(client.bind("127.0.0.1:0"));
+    ASSERT_TRUE(client2.bind("127.0.0.1:0"));
+
+    std::string hello = "hello world";
+    auto endpoint = client2.localEndpoint();
+    ASSERT_TRUE(endpoint);
+    ASSERT_TRUE(client.sendto(makeBuffer(hello), *endpoint).wait());
+    ASSERT_TRUE(client2.poll(PollEvent::In).wait());
+}
+
 TEST(Net, UnixTest) {
     auto ctxt = IoContext::currentThread();
     UnixClient client(*ctxt, SOCK_STREAM);

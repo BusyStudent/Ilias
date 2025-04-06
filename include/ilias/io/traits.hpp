@@ -71,7 +71,7 @@ concept Connectable = requires(T &t) {
  * @tparam T 
  */
 template <typename T>
-concept Acceptable = requires(T &t) {
+concept Listener = requires(T &t) {
     t.accept();
 };
 

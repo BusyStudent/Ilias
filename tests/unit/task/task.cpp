@@ -9,6 +9,13 @@ auto returnInput(T in) -> Task<T> {
     co_return in;
 }
 
+auto recursion(int depth) -> Task<void> {
+    if (depth > 0) {
+        co_return co_await recursion(depth - 1);
+    }
+    co_await backtrace();
+}
+
 TEST(Task, Wait) {
     auto value = []() -> Task<int> {
         co_return co_await returnInput(42);
@@ -77,6 +84,10 @@ TEST(Task, AwaitableToTask) {
         co_return 1;
     }());
     ASSERT_EQ(task2.wait(), 1);
+}
+
+TEST(Task, Backtrace) {
+    recursion(10).wait();
 }
 
 TEST(TaskDeathTest, Crash) {

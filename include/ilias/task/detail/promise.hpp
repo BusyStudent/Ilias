@@ -19,7 +19,7 @@
 #include <optional>
 #include <vector>
 
-#if defined(ILIAS_TASK_TRACE) && defined(__cpp_lib_source_location)
+#if defined(ILIAS_TASK_TRACE) && defined(__cpp_lib_source_location) && !defined(ILIAS_NO_FORMAT)
     #define ILIAS_CAPTURE_CALLER(name) std::source_location name = std::source_location::current()
     #include <source_location>
 #else
@@ -52,6 +52,32 @@ public:
     auto await_resume() noexcept { mStarted = true; }
 private:
     bool &mStarted;
+};
+
+/**
+ * @brief The virtual stack frame, used to trace the coroutine call stack
+ * 
+ * @
+ * 
+ */
+class StackFrame {
+public:
+    StackFrame *parent = nullptr;
+    std::vector<StackFrame *> children;
+
+    // Infomration about current frame
+    std::string_view name;
+    std::string_view file;
+    std::string msg; // < The extra information
+    uint32_t line = 0;
+
+#if defined(ILIAS_TASK_TRACE)
+    auto setLocation(std::source_location loc) -> void {
+        name = loc.function_name();
+        file = loc.file_name();
+        line = loc.line();
+    }
+#endif // defined(ILIAS_TASK_TRACE)
 };
 
 /**
@@ -117,21 +143,14 @@ public:
     }
 #endif // defined(__cpp_exceptions)
 
-
 #if defined(ILIAS_TASK_TRACE)
     /**
-     * @brief Forward the awaitable, it used to trace the await point
+     * @brief Get the Stack Frame object for tracing
      * 
-     * @tparam T 
-     * @param awaitable 
-     * @param loc The source location of the await point
-     * @return decltype(auto) 
+     * @return StackFrame& 
      */
-    template <typename T>
-    auto await_transform(T &&awaitable, std::source_location loc = std::source_location::current()) -> decltype(auto) {
-        mAwaitLocation = loc;
-        mChild.clear(); //< Clear previous await info
-        return std::forward<T>(awaitable);
+    auto frame() -> StackFrame & {
+        return mFrame;
     }
 #endif // defined(ILIAS_TASK_TRACE)
 
@@ -255,10 +274,7 @@ protected:
 #endif // defined(__cpp_exceptions)
 
 #if defined(ILIAS_TASK_TRACE) //< Used for debug and trace
-    std::source_location mCreateLocation;  //< The location of the creation
-    std::source_location mAwaitLocation;   //< The location of the await point
-    std::vector<CoroPromiseBase *> mChild; //< The Task we are await for
-    CoroPromiseBase *mParent = nullptr;    //< The Task who await us
+    StackFrame mFrame;
 #endif // defined(ILIAS_TASK_TRACE)
 };
 
@@ -381,10 +397,35 @@ public:
      */
     auto get_return_object(ILIAS_CAPTURE_CALLER(loc)) -> Task<T> {
 #if defined(ILIAS_TASK_TRACE)
-        this->mCreateLocation = loc; //< Store the location whe trace enable
+        this->mFrame.setLocation(loc);
 #endif // defined(ILIAS_TASK_TRACE)
         return {handle()};
     }
+
+#if defined(ILIAS_TASK_TRACE)
+    /**
+     * @brief Forward the awaitable, it used to trace the await point
+     * 
+     * @tparam U 
+     * @param awaitable 
+     * @param loc The source location of the await point
+     * @return decltype(auto) 
+     */
+    template <typename U>
+    auto await_transform(U &&awaitable, std::source_location loc = std::source_location::current()) -> decltype(auto) {
+        this->mFrame.file = loc.file_name(); // Store the file name
+        this->mFrame.line = loc.line(); // Store the line number
+        this->mFrame.children.clear(); // Clear previous await info
+        if constexpr( requires { awaitable._trace(handle()); } ) {
+            awaitable._trace(handle()); // Trace the await point
+        }
+        else {
+            this->mFrame.msg = fmtlib::format("(Suspend on {})", typeid(T).name()); // Store the awaitable info
+        }
+        return std::forward<U>(awaitable);
+    }
+#endif // defined(ILIAS_TASK_TRACE)
+
 };
 
 /**
@@ -430,10 +471,34 @@ public:
      */
     auto get_return_object(ILIAS_CAPTURE_CALLER(loc)) -> Generator<T> {
 #if defined(ILIAS_TASK_TRACE)
-        this->mCreateLocation = loc; //< Store the location whe trace enable
+        this->mFrame.setLocation(loc);
 #endif // defined(ILIAS_TASK_TRACE)
         return {handle()};
     }
+
+#if defined(ILIAS_TASK_TRACE) // TODO: Duplicate code with TaskPromise, try a way to merge it
+    /**
+     * @brief Forward the awaitable, it used to trace the await point
+     * 
+     * @tparam U 
+     * @param awaitable 
+     * @param loc The source location of the await point
+     * @return decltype(auto) 
+     */
+    template <typename U>
+    auto await_transform(U &&awaitable, std::source_location loc = std::source_location::current()) -> decltype(auto) {
+        this->mFrame.file = loc.file_name(); // Store the file name
+        this->mFrame.line = loc.line(); // Store the line number
+        this->mFrame.children.clear(); // Clear previous await info
+        if constexpr( requires { awaitable._trace(handle()); } ) {
+            awaitable._trace(handle()); // Trace the await point
+        }
+        else {
+            this->mFrame.msg = fmtlib::format("(Suspend on {})", typeid(T).name()); // Store the awaitable info
+        }
+        return std::forward<U>(awaitable);
+    }
+#endif // defined(ILIAS_TASK_TRACE)
 
     /**
      * @brief Get the coroutine handle of the promise

@@ -1,21 +1,5 @@
 add_requires("gtest")
 
--- Add packages if 
-if has_config("use_fmt") then
-    add_requires("fmt")
-    add_packages("fmt")
-end
-
-if has_config("use_io_uring") then
-    add_requires("liburing")
-    add_packages("liburing")
-end
-
-if has_config("use_openssl") then
-    add_requires("openssl3")
-    add_packages("openssl3")
-end
-
 -- Make all files in the unit directory into targets
 for _, file in ipairs(os.files("unit/**.cpp")) do
     local name = path.basename(file)

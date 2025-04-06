@@ -159,6 +159,7 @@ public:
         if (!ret.empty()) {
             ret.pop_back();
             ret.pop_back();
+            ret.pop_back();
         }
         return ret;
     }

@@ -33,6 +33,7 @@ TEST(TaskSpawn, Detach) {
 
 TEST(TaskSpawn, Await) {
     auto handle = spawn([]() -> Task<int> {
+        co_await backtrace();
         co_return 42;
     });
     auto value = [&]() -> Task<int> {

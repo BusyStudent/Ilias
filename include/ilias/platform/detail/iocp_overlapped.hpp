@@ -82,35 +82,23 @@ public:
 };
 
 /**
- * @brief The Generic Iocp Awatier template, used for CRTP
+ * @brief The common part of Generic Iocp Awatier template
  * 
- * @tparam T 
  */
-template <typename T>
-class IocpAwaiter : public IocpOverlapped {
+class IocpAwaiterBase : public IocpOverlapped {
 public:
-    IocpAwaiter(SOCKET sockfd) : IocpAwaiter(reinterpret_cast<HANDLE>(sockfd)) {}
-
-    IocpAwaiter(HANDLE handle) {
-        mHandle = handle;
+    IocpAwaiterBase(SOCKET sockfd) {
+        mSockfd = sockfd;
     }
 
-    auto await_ready() -> bool {
-        if (static_cast<T*>(this)->onSubmit()) {
-            return true;
-        }
-        mError = ::GetLastError();
-        return mError != ERROR_IO_PENDING; //< Pending means this job is still in progress
+    IocpAwaiterBase(HANDLE handle) {
+        mHandle = handle;
     }
 
     auto await_suspend(CoroHandle caller) -> void {
         mCaller = caller;
         onCompleteCallback = completeCallback;
         mRegistration = mCaller.cancellationToken().register_(onCancel, this);
-    }
-
-    auto await_resume() {
-        return static_cast<T*>(this)->onComplete(mError, mBytesTransferred);
     }
 
     auto sockfd() const -> SOCKET {
@@ -126,17 +114,17 @@ public:
     }
 private:
     static auto completeCallback(IocpOverlapped *_self, DWORD dwError, DWORD dwBytesTransferred) -> void {
-        auto self = static_cast<T*>(_self);
+        auto self = static_cast<IocpAwaiterBase*>(_self);
         ILIAS_TRACE("IOCP", "IOCP Compelete callbacked, Error: {}, Bytes Transferred: {}", err2str(dwError), dwBytesTransferred);
         self->mError = dwError;
         self->mBytesTransferred = dwBytesTransferred;
         self->mCaller.resume();
     }
     static auto onCancel(void *_self) -> void {
-        auto self = static_cast<T*>(_self);
+        auto self = static_cast<IocpAwaiterBase*>(_self);
         auto err = ::CancelIoEx(self->mHandle, self->overlapped());
         if (!err) {
-            ILIAS_WARN("IOCP", "CancelIoEx failed, Error: {}", ::GetLastError());
+            ILIAS_WARN("IOCP", "CancelIoEx failed, Error: {}", err2str(::GetLastError()));
         }
     }
 #if !defined(ILIAS_NO_FORMAT)
@@ -156,6 +144,33 @@ private:
     ::DWORD mBytesTransferred = 0;
     CoroHandle mCaller;
     CancellationToken::Registration mRegistration;
+template <typename T>
+friend class IocpAwaiter;
+};
+
+/**
+ * @brief The Generic Iocp Awatier template, used for CRTP
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class IocpAwaiter : public IocpAwaiterBase {
+public:
+    IocpAwaiter(SOCKET sockfd) : IocpAwaiterBase(sockfd) { }
+
+    IocpAwaiter(HANDLE handle) : IocpAwaiterBase(handle) { }
+
+    auto await_ready() -> bool {
+        if (static_cast<T*>(this)->onSubmit()) {
+            return true;
+        }
+        mError = ::GetLastError();
+        return mError != ERROR_IO_PENDING; //< Pending means this job is still in progress
+    }
+
+    auto await_resume() {
+        return static_cast<T*>(this)->onComplete(mError, mBytesTransferred);
+    }
 };
 
 } // namespace detail

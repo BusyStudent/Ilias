@@ -28,6 +28,9 @@ inline auto readAll(T &stream, std::span<std::byte> buffer) -> IoTask<size_t>;
 template <MemContainer Container, Readable T>
 inline auto readAll(T &stream, size_t firstReadedSize = 4096) -> IoTask<Container>;
 
+template <Readable T>
+inline auto readAtleast(T &stream, std::span<std::byte> buffer, size_t minSize) -> IoTask<size_t>;
+
 /**
  * @brief Writeable Helper Method
  * 
@@ -78,6 +81,18 @@ public:
     template <MemContainer Container>
     auto readAll(size_t firstReadedSize = 4096) -> IoTask<Container> {
         return ILIAS_NAMESPACE::readAll<Container>(static_cast<T &>(*this), firstReadedSize);
+    }
+
+    /**
+     * @brief Read at least minSize bytes from stream, if failed and has any bytes readed, ignore the error, return the read size, if not, return error
+     * 
+     * @tparam T 
+     * @param buffer The buffer to read into
+     * @param minSize The minimum size to read
+     * @return IoTask<size_t> 
+     */
+    auto readAtleast(std::span<std::byte> data, size_t minSize) -> IoTask<size_t> {
+        return ILIAS_NAMESPACE::readAtleast(static_cast<T &>(*this), data, minSize);
     }
 
     auto operator <=>(const ReadableMethod &rhs) const noexcept = default;
@@ -189,6 +204,34 @@ inline auto readAll(T &stream, size_t firstReadedSize) -> IoTask<Container> {
     }
     container.resize(readed); // Drop unused bytes
     co_return container;
+}
+
+/**
+ * @brief Read at least minSize bytes from stream, if failed and has any bytes readed, ignore the error, return the read size, if not, return error
+ * 
+ * @tparam T 
+ * @param stream The stream to read from
+ * @param buffer The buffer to read into
+ * @param minSize The minimum size to read
+ * @return IoTask<size_t> 
+ */
+template <Readable T>
+inline auto readAtleast(T &stream, std::span<std::byte> buffer, size_t minSize) -> IoTask<size_t> {
+    size_t readed = 0;
+    while (readed < minSize) {
+        auto n = co_await stream.read(buffer.subspan(readed));
+        if (!n && readed == 0) {
+            co_return Unexpected(n.error());
+        }
+        if (!n) {
+            break;
+        }
+        if (*n == 0) {
+            break;
+        }
+        readed += *n;
+    }
+    co_return readed;
 }
 
 ILIAS_NS_END

@@ -85,6 +85,17 @@ public:
     }
 
     /**
+     * @brief Destroy the coroutine later in the executor (thread safe)
+     * @warning Don't call this function if the coroutine is already scheduled to destroy
+     * 
+     * @return auto 
+     */
+    auto destroyLater() const noexcept {
+        ILIAS_ASSERT(isSafeToDestroy()); 
+        return executor()->post(destroyLaterImpl, mHandle.address());
+    }
+
+    /**
      * @brief Send a cancel request to the coroutine
      * 
      */
@@ -125,6 +136,26 @@ public:
      * @return Executor* 
      */
     auto executor() const noexcept -> Executor * { return mPromise->executor(); }
+
+#if defined(ILIAS_TASK_TRACE)
+    /**
+     * @brief Get the stack frame of the coroutine (used for tracing)
+     * 
+     * @internal 
+     * @return detail::StackFrame& 
+     */
+    auto frame() const noexcept -> detail::StackFrame & { return mPromise->frame(); }
+
+    /**
+     * @brief Link the stack frame of the coroutine (used for tracing)
+     * 
+     * @param child The child coroutine
+     */
+    auto traceLink(CoroHandle child) const noexcept -> void {
+        frame().children.push_back(&child.frame());
+        child.frame().parent = &frame();
+    }
+#endif // #if defined(ILIAS_TASK_TRACE)
 
     /**
      * @brief Set the Awaiting Coroutine object, the coroutine will resume it when self is done
@@ -212,6 +243,15 @@ protected:
      */
     static auto scheduleImpl(void *ptr) -> void {
         std::coroutine_handle<>::from_address(ptr).resume();
+    }
+
+    /**
+     * @brief The callback function to destroy a coroutine later
+     * 
+     * @param ptr 
+     */
+    static auto destroyLaterImpl(void *ptr) -> void {
+        std::coroutine_handle<>::from_address(ptr).destroy();
     }
 
     detail::CoroPromiseBase *mPromise = nullptr;

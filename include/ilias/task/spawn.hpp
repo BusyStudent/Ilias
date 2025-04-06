@@ -258,6 +258,13 @@ public:
     auto operator =(WaitHandle &&) -> WaitHandle & = default;
     auto operator <=>(const WaitHandle &) const noexcept = default;
 
+#if defined(ILIAS_TASK_TRACE)
+    // As same as Task
+    auto _trace(CoroHandle caller) const -> void {
+        caller.traceLink(mData->mTask);
+    }
+#endif // defined(ILIAS_TASK_TRACE)
+
     /**
      * @brief co-await the handle to complete. and return the result.
      * 

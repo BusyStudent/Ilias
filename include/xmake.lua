@@ -45,21 +45,21 @@ target("ilias")
 
     -- Set var if
     if has_config("use_fmt") then
-        add_packages("fmt")
-        set_configvar("ILIAS_USE_FMT", "1")
+        add_packages("fmt", {public = true})
+        set_configvar("ILIAS_USE_FMT", 1)
     end
 
     if has_config("use_io_uring") then
-        add_packages("liburing")
-        set_configvar("ILIAS_USE_IO_URING", "1")
+        add_packages("liburing", {public = true})
+        set_configvar("ILIAS_USE_IO_URING", 1)
     end
 
     if has_config("use_openssl") then
-        add_packages("openssl3")
-        set_configvar("ILIAS_USE_OPENSSL", "1")
+        add_packages("openssl3", {public = true})
+        set_configvar("ILIAS_USE_OPENSSL", 1)
     end
 
     if has_config("task_trace") then
-        set_configvar("ILIAS_TASK_TRACE", "1")
+        set_configvar("ILIAS_TASK_TRACE", 1)
     end
 target_end()

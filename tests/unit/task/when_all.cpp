@@ -35,6 +35,11 @@ TEST(WhenAll, Basic) {
         ASSERT_EQ(b, 2);
         ASSERT_EQ(c, 3);
     }
+    {
+        auto [a, b, c] = whenAll(sleep(1ms), backtrace(), returnInput(30ms)).wait();
+        ASSERT_TRUE(a);
+        ASSERT_EQ(c, 30ms);
+    }
 }
 
 TEST(WhenAll, Range) {

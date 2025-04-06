@@ -335,7 +335,7 @@ inline auto QIoContext::removeDescriptor(IoDescriptor *fd) -> Result<void> {
     return {};
 }
 
-inline auto QIoContext::cancel(IoDescriptor *fd) -> Result<void> override {
+inline auto QIoContext::cancel(IoDescriptor *fd) -> Result<void> {
     auto nfd = static_cast<detail::QIoDescriptor*>(fd);
     
 #if defined(_WIN32)

@@ -38,9 +38,23 @@ struct WhenAnyTuple {
      * 
      * @return std::tuple<std::optional<Types>...>
      */
-    auto wait() const {
-        return awaitableWrapperForward(*this).wait();
+    auto wait(ILIAS_CAPTURE_CALLER(loc)) const {
+        return awaitableWrapperForward(*this).wait(loc);
     }
+
+#if defined(ILIAS_TASK_TRACE)
+    /**
+     * @brief Trace the await point
+     * 
+     * @internal It is invoked when co_await is called, see more in Task<T>::_trace
+     * @param caller 
+     */
+    auto _trace(CoroHandle caller) const {
+        std::apply([&](auto &...task) {
+            (task._trace(caller), ...);
+        }, mTuple);
+    }
+#endif // defined(ILIAS_TASK_TRACE)
 };
 
 /**
@@ -57,9 +71,23 @@ struct WhenAnyRange {
      * 
      * @return T
      */
-    auto wait() const -> T {
-        return awaitableWrapperForward(*this).wait();
+    auto wait(ILIAS_CAPTURE_CALLER(loc)) const -> T {
+        return awaitableWrapperForward(*this).wait(loc);
     }
+
+#if defined(ILIAS_TASK_TRACE)
+    /**
+     * @brief Trace the await point
+     * 
+     * @internal It is invoked when co_await is called, see more in Task<T>::_trace
+     * @param caller 
+     */
+    auto _trace(CoroHandle caller) const {
+        for (auto &task : mRange) {
+            task._trace(caller);
+        }
+    }
+#endif // defined(ILIAS_TASK_TRACE)
 };
 
 /**

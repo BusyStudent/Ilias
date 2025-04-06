@@ -104,6 +104,30 @@ public:
     }
 };
 
+class IocpDeviceIoControlAwaiter final : public IocpAwaiter<IocpDeviceIoControlAwaiter> {
+public:
+    IocpDeviceIoControlAwaiter(HANDLE handle, DWORD controlCode, std::span<std::byte> inBuffer, std::span<std::byte> outBuffer) :
+        IocpAwaiter(handle), mControlCode(controlCode), mInBuffer(inBuffer), mOutBuffer(outBuffer) 
+    {
+        
+    }
+
+    auto onSubmit() -> bool {
+        return ::DeviceIoControl(handle(), mControlCode, mInBuffer.data(), mInBuffer.size(), mOutBuffer.data(), mOutBuffer.size(), &bytesTransferred(), overlapped());
+    }
+
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+        if (error != ERROR_SUCCESS) {
+            return Unexpected(SystemError(error));
+        }
+        return bytesTransferred;
+    }
+private:
+    DWORD mControlCode;
+    std::span<std::byte> mInBuffer;
+    std::span<std::byte> mOutBuffer;
+};
+
 
 /**
  * @brief Wrapping the Thread async operations, based on thread pool

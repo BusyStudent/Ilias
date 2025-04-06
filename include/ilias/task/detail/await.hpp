@@ -1,5 +1,5 @@
 /**
- * @file wait.hpp
+ * @file await.hpp
  * @author BusyStudent (fyw90mc@gmail.com)
  * @brief The header file for the wait function (useful when blocking wait the coroutine)
  * @version 0.1

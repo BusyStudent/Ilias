@@ -344,13 +344,7 @@ inline auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> Resu
 
 inline auto IocpContext::removeDescriptor(IoDescriptor *descriptor) -> Result<void> {
     auto nfd = static_cast<detail::IocpDescriptor*>(descriptor);
-    ILIAS_TRACE("IOCP", "Removing fd: {} from completion port", nfd->handle);
-    if (!CancelIoEx(nfd->handle, nullptr)) {
-        auto err = ::GetLastError();
-        if (err != ERROR_NOT_FOUND) { //< It's ok if the Io is not found, no any pending IO
-            ILIAS_WARN("IOCP", "Failed to cancel Io on fd: {}, error: {}", nfd->handle, err);
-        }
-    }
+    cancel(nfd);
     delete nfd;
     return {};
 }
@@ -361,6 +355,7 @@ inline auto IocpContext::cancel(IoDescriptor *fd) -> Result<void> {
     if (!CancelIoEx(nfd->handle, nullptr)) {
         auto err = ::GetLastError();
         if (err != ERROR_NOT_FOUND) { //< It's ok if the Io is not found, no any pending IO
+            ILIAS_WARN("IOCP", "Failed to cancel Io on fd: {}, error: {}", nfd->handle, err);
             return Unexpected(SystemError(err));
         }
     }

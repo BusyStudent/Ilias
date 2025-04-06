@@ -53,6 +53,13 @@ TEST(WhenAny, Basic1) {
         EXPECT_FALSE(b);
         EXPECT_FALSE(c);
     }
+
+    {
+        auto [a, b, c] = whenAny(sleep(10ms), backtrace(), returnInput(3)).wait();
+        EXPECT_FALSE(a);
+        EXPECT_TRUE(b);
+        EXPECT_FALSE(c);
+    }
 }
 
 TEST(WhenAny, Range) {

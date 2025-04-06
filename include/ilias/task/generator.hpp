@@ -11,8 +11,8 @@
 #pragma once
 
 #include <ilias/task/detail/promise.hpp>
+#include <ilias/task/detail/await.hpp>
 #include <ilias/task/detail/view.hpp>
-#include <ilias/task/detail/wait.hpp>
 #include <ilias/task/executor.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/log.hpp>
@@ -77,6 +77,14 @@ public:
     auto await_resume() const { 
         mView.rethrowIfException(); 
     }
+
+#if defined(ILIAS_TASK_TRACE)
+    // As same as Task
+    auto _trace(CoroHandle caller) const -> void {
+        caller.traceLink(mView);
+    }
+#endif // defined(ILIAS_TASK_TRACE)
+
 protected:
     CancellationToken::Registration mReg; //< The reg of we wait for cancel
     GeneratorView<T> mView; //< The generator we execute

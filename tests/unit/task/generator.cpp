@@ -11,6 +11,7 @@ TEST(Generator, Basic) {
             if (i % 2) co_await sleep(1ms);
             co_yield i;
         }
+        co_await backtrace();
     };
     auto fn = [&]() -> Task<> {
         ilias_foreach(const int &i, gen()) {
