@@ -266,7 +266,7 @@ public:
 protected:  
     bool mStarted = false;
     Executor *mExecutor = nullptr; //< The executor, doing the 
-    CancellationToken mToken { CancellationToken::AutoReset }; //< The cancellation token
+    CancellationToken mToken; //< The cancellation token
     std::coroutine_handle<> mAwaitingCoroutine { std::noop_coroutine() }; //< The coroutine handle that is waiting for us, we will resume it when done 
     std::vector<MoveOnlyFunction<void()> > mCallbacks; //< The callbacks that will be called when the coroutine is done
 #if defined(__cpp_exceptions)
@@ -416,11 +416,12 @@ public:
         this->mFrame.file = loc.file_name(); // Store the file name
         this->mFrame.line = loc.line(); // Store the line number
         this->mFrame.children.clear(); // Clear previous await info
+        this->mFrame.msg.clear();
         if constexpr( requires { awaitable._trace(handle()); } ) {
             awaitable._trace(handle()); // Trace the await point
         }
         else {
-            this->mFrame.msg = fmtlib::format("(Suspend on {})", typeid(T).name()); // Store the awaitable info
+            this->mFrame.msg = fmtlib::format("(suspend on {})", typeid(U).name()); // Store the awaitable info
         }
         return std::forward<U>(awaitable);
     }
@@ -490,11 +491,12 @@ public:
         this->mFrame.file = loc.file_name(); // Store the file name
         this->mFrame.line = loc.line(); // Store the line number
         this->mFrame.children.clear(); // Clear previous await info
+        this->mFrame.msg.clear();
         if constexpr( requires { awaitable._trace(handle()); } ) {
             awaitable._trace(handle()); // Trace the await point
         }
         else {
-            this->mFrame.msg = fmtlib::format("(Suspend on {})", typeid(T).name()); // Store the awaitable info
+            this->mFrame.msg = fmtlib::format("(suspend on {})", typeid(U).name()); // Store the awaitable info
         }
         return std::forward<U>(awaitable);
     }

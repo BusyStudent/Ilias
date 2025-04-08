@@ -53,6 +53,7 @@ struct WhenAnyTuple {
         std::apply([&](auto &...task) {
             (task._trace(caller), ...);
         }, mTuple);
+        caller.frame().msg = "whenAny";
     }
 #endif // defined(ILIAS_TASK_TRACE)
 };
@@ -86,6 +87,7 @@ struct WhenAnyRange {
         for (auto &task : mRange) {
             task._trace(caller);
         }
+        caller.frame().msg = "whenAny";
     }
 #endif // defined(ILIAS_TASK_TRACE)
 };

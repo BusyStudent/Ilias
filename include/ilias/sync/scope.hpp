@@ -264,7 +264,7 @@ public:
      * @param task The task to spawn (cannot be null).
      */
     template <typename T>
-    auto spawn(Task<T> &&task) -> WaitHandle<T> {
+    auto spawn(Task<T> &&task, ILIAS_CAPTURE_CALLER(loc)) -> WaitHandle<T> {
         ILIAS_ASSERT(task);
         auto handle = task._leak();
         auto instance = new detail::ScopedTask(handle, mInstances);
@@ -273,6 +273,11 @@ public:
         instance->mTask.setExecutor(&mExecutor);
         instance->mTask.schedule();
         ILIAS_TRACE("TaskScope", "Spawned a task {} in the scope.", (void*) instance);
+
+#if defined(ILIAS_TASK_TRACE)
+        detail::installTraceFrame(instance->mTask, "Scope::spawn", loc);
+#endif // defined(ILIAS_TASK_TRACE)
+
         return WaitHandle<T>(instance);
     }
 

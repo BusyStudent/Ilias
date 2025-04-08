@@ -124,6 +124,7 @@ public:
 
     auto onNotify(Result<uint32_t> revents) -> void;
     auto events() const -> uint32_t;
+    auto _trace(CoroHandle caller) -> void;
 private:
     auto onCancel() -> void;
 
@@ -145,11 +146,11 @@ inline auto EpollAwaiter::await_ready() -> bool {
     modevent.data.ptr = mFd;
     modevent.events   = mEvents | mFd->events | EPOLLONESHOT;
     if (::epoll_ctl(mFd->epollFd, EPOLL_CTL_MOD, mFd->fd, &modevent) == -1) {
-        mResult = Unexpected(SystemError(errno));
+        mResult = Unexpected(SystemError::fromErrno());
         return true;
     }
     mFd->events |= mEvents;
-    ILIAS_TRACE("Epoll", "Modify epoll event for fd: {}, events: {}", mFd->fd, epollToString(mFd->events));
+    ILIAS_TRACE("Epoll", "Modify epoll event for fd: {}, events: {}", mFd->fd, epollToString(mFd->events | EPOLLONESHOT));
     return false;
 }
 
@@ -185,6 +186,12 @@ inline auto EpollAwaiter::onCancel() -> void {
     mResult = Unexpected(Error::Canceled);
     mCaller.schedule();
 }
+
+#if defined(ILIAS_TASK_TRACE)
+inline auto EpollAwaiter::_trace(CoroHandle caller) -> void {
+    caller.frame().msg = fmtlib::format("poll fd: {}, events: {}", mFd->fd, epollToString(mEvents));
+}
+#endif // defined(ILIAS_TASK_TRACE)
 
 } // namespace detail
 
@@ -423,23 +430,32 @@ inline auto EpollContext::processEvents(std::span<const epoll_event> eventsArray
             pollCallbacks();
             continue;
         }
-        // Normal descriptor
+
+        // Normal descriptor, dispatch to the awaiters
         auto nfd = static_cast<detail::EpollDescriptor *>(ptr);
         ILIAS_TRACE("Epoll", "Got epoll event for fd: {}, events: {}", nfd->fd, detail::epollToString(events));
+        uint32_t newEvents = 0; // New interested events
         for (auto it = nfd->awaiters.begin(); it != nfd->awaiters.end();) {
-            auto &awaiter = *it;
-            if ((awaiter->events() & events) == 0) {
-                if (!(events & EPOLLERR) && !(events & EPOLLHUP)) { // Not interested and also not error or hup
-                    ++it;
-                    continue;
-                }
+            auto awaiter = *it;
+            bool isInterested = awaiter->events() & events;
+            bool isErrorOrHup = events & EPOLLERR || events & EPOLLHUP;
+            bool shouldNotify = isInterested || isErrorOrHup; // Notify if interested or error or hangup
+
+            if (shouldNotify) {
+                awaiter->onNotify(events);
+                it = nfd->awaiters.erase(it);    
             }
-            awaiter->onNotify(events);
-            it = nfd->awaiters.erase(it);
+            else {
+                newEvents |= awaiter->events(); // Collect the new interested events
+                ++it;
+            }
         }
-        nfd->events &= ~events; // Remove the got events
+
+        // Update the events we still interested
+        nfd->events = newEvents;
         if (nfd->events == 0) { // No more interested events
-            ILIAS_TRACE("Epoll", "Fd {} no more interested events, current awaiters size {}", nfd->fd, nfd->awaiters.size());
+            ILIAS_ASSERT(nfd->awaiters.empty()); // No more interested events, no more awaiters
+            ILIAS_TRACE("Epoll", "Fd {} no more interested events", nfd->fd);
             continue; // Because oneshot, we don't need to modify the epoll event, just do nothing
         }
 
@@ -457,7 +473,9 @@ inline auto EpollContext::processEvents(std::span<const epoll_event> eventsArray
             }
             nfd->awaiters.clear();
         }
-        ILIAS_TRACE("Epoll", "Modify epoll event for fd: {}, events: {}", nfd->fd, detail::epollToString(nfd->events));
+        else {
+            ILIAS_TRACE("Epoll", "Modify epoll event for fd: {}, events: {}", nfd->fd, detail::epollToString(nfd->events | EPOLLONESHOT));            
+        }
     }
 }
 

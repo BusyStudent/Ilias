@@ -41,6 +41,7 @@ struct WhenAllTuple {
         std::apply([&](auto &...task) {
             (task._trace(caller), ...);
         }, mTuple);
+        caller.frame().msg = "whenAll";
     }
 #endif // defined(ILIAS_TASK_TRACE)
 };
@@ -74,6 +75,7 @@ struct WhenAllRange {
         for (auto &task : mRange) {
             task._trace(caller);
         }
+        caller.frame().msg = "whenAll";
     }
 #endif // defined(ILIAS_TASK_TRACE)
 };

@@ -257,9 +257,7 @@ public:
         auto &promise = mHandle.promise();
 
 #if defined(ILIAS_TASK_TRACE)
-        detail::StackFrame frame;
-        frame.setLocation(loc);
-        promise.frame().parent = &frame;
+        detail::installTraceFrame(mHandle, "wait",loc);
 #endif // defined(ILIAS_TASK_TRACE)
 
         ILIAS_ASSERT(!promise.isStarted());

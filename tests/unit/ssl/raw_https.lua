@@ -9,8 +9,6 @@ if is_plat("windows") then
         add_packages("gtest")
         add_defines("ILIAS_ENABLE_LOG")
 
-        if has_config("use_openssl") then
-            add_packages("openssl3")
-        end
+        add_deps("ilias")
     target_end()
 end

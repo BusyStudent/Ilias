@@ -302,11 +302,16 @@ private:
  * @return WaitHandle<T> The handle to wait for the task to complete
  */
 template <typename T>
-inline auto spawn(Executor &executor, Task<T> &&task) -> WaitHandle<T> {
+inline auto spawn(Executor &executor, Task<T> &&task, ILIAS_CAPTURE_CALLER(loc)) -> WaitHandle<T> {
     auto ref = detail::SpawnDataRef(new detail::SpawnData);
     ref->mTask = task._leak();
     ref->mTask.setExecutor(&executor);
     ref->mTask.schedule(); //< Start it on the event loop
+
+#if defined(ILIAS_TASK_TRACE)
+    detail::installTraceFrame(ref->mTask, "spawn");
+#endif // defined(ILIAS_TASK_TRACE)
+
     return WaitHandle<T>(ref);
 }
 
@@ -341,6 +346,11 @@ inline auto spawn(Executor &executor, Callable callable, Args &&...args) {
         );
         ref->mTask.setExecutor(&executor);
         ref->mTask.schedule(); //< Start it on the event loop
+
+#if defined(ILIAS_TASK_TRACE)
+    detail::installTraceFrame(ref->mTask, "spawn");
+#endif // defined(ILIAS_TASK_TRACE)
+
         return WaitHandle<typename std::invoke_result_t<Callable, Args...>::value_type>(ref);
     }
 }

@@ -10,8 +10,5 @@ target("test_session")
     add_packages("gtest")
     add_defines("ILIAS_ENABLE_LOG")
     add_packages("zlib")
-
-    if has_config("use_openssl") then
-        add_packages("openssl3")
-    end
+    add_deps("ilias")
 target_end()
