@@ -190,18 +190,6 @@ public:
 };
 
 /**
- * @brief Wrapp T into BIO
- * 
- * @tparam T 
- */
-template <typename T>
-class SslWrap final : public SslBio {
-public:
-    SslWrap(T &&f) : mFd(std::move(f)) { }
-    T mFd;
-};
-
-/**
  * @brief Generic Ssl Class
  * 
  * @tparam T 
@@ -210,26 +198,49 @@ template <typename T>
 class SslSocket {
 public:
     SslSocket() = default;
-    SslSocket(SSL_CTX *ctxt, T &&f) {
-        mBio = new SslWrap<T>(std::move(f));
-        mSsl = SSL_new(ctxt);
-        mCtxt = ctxt;
+    SslSocket(SSL_CTX *ctxt, T &&f) : mCtxt(ctxt), mSsl(SSL_new(ctxt)), mBio(new SslBio), mFd(std::move(f)) {
         SSL_set_bio(mSsl, mBio->mBio, mBio->mBio);
         SSL_set_mode(mSsl, SSL_MODE_AUTO_RETRY);
     }
     SslSocket(SslContext &ctxt, T &&f) : SslSocket(ctxt.nativeHandle(), std::move(f)) { }
-    SslSocket(SslSocket &&sock) {
-        mBio = sock.mBio;
-        sock.mBio = nullptr;
-
-        mSsl = sock.mSsl;
-        sock.mSsl = nullptr;
+    SslSocket(SslSocket &&other) : 
+        mCtxt(std::exchange(other.mCtxt, nullptr)), 
+        mSsl(std::exchange(other.mSsl, nullptr)), 
+        mBio(std::exchange(other.mBio, nullptr)), 
+        mFd(std::move(other.mFd))
+    {
+        
     }
     ~SslSocket() {
         SSL_free(mSsl);
         delete mBio;
     }
 
+    auto operator =(SslSocket &&other) -> SslSocket & {
+        if (this == other) {
+            return *this;
+        }
+        // Cleanup the old stuff
+        SSL_free(mSsl);
+        delete mBio;
+
+        // Move the new stuff
+        mCtxt = std::exchange(other.mCtxt, nullptr);
+        mSsl = std::exchange(other.mSsl, nullptr);
+        mBio = std::exchange(other.mBio, nullptr);
+        mFd = std::move(other.mFd);
+        return *this;
+    }
+    
+    /**
+     * @brief Check if the socket is valid
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept {
+        return mSsl != nullptr;
+    }
 protected:
     auto _handleError(int errcode) -> IoTask<void> {
         if (errcode == SSL_ERROR_WANT_READ) {
@@ -262,7 +273,7 @@ protected:
         // Flush the data
         auto data = mBio->mWriteBuffer.data();
         while (!data.empty()) {
-            auto ret = co_await mBio->mFd.write(data);
+            auto ret = co_await mFd.write(data);
             if (!ret) {
                 co_return Unexpected(ret.error()); //< Send Error
             }
@@ -282,7 +293,7 @@ protected:
         }
         auto left = mBio->mReadBuffer.capacity() - mBio->mReadBuffer.size();
         auto data = mBio->mReadBuffer.prepare(left);
-        auto ret = co_await mBio->mFd.read(data);
+        auto ret = co_await mFd.read(data);
         if (!ret) {
             co_return Unexpected(ret.error());
         }
@@ -303,9 +314,10 @@ protected:
         }
     }
 
-    SSL *mSsl = nullptr;
-    SslWrap<T> *mBio = nullptr;
     SSL_CTX *mCtxt = nullptr;
+    SSL     *mSsl = nullptr;
+    SslBio  *mBio = nullptr;
+    T        mFd;
 };
 
 /**
@@ -380,7 +392,7 @@ public:
      * 
      */
     auto localEndpoint() const {
-        return this->mBio->mFd.localEndpoint();
+        return this->mFd.localEndpoint();
     }
 
     /**
@@ -388,7 +400,7 @@ public:
      * 
      */
     auto remoteEndpoint() const{
-        return this->mBio->mFd.remoteEndpoint();
+        return this->mFd.remoteEndpoint();
     }
 
     /**
@@ -407,7 +419,7 @@ public:
      * @return IoTask<void> 
      */
     auto connect(const auto &endpoint) -> IoTask<void> {
-        auto ret = co_await this->mBio->mFd.connect(endpoint);
+        auto ret = co_await this->mFd.connect(endpoint);
         if (!ret) {
             co_return ret;
         }
@@ -475,7 +487,7 @@ public:
             int ret = SSL_shutdown(this->mSsl);
             if (ret == 1) {
                 if constexpr (Shuttable<T>) { // Shutdown the underlying stream if shuttable
-                    co_return co_await this->mBio->mFd.shutdown();
+                    co_return co_await this->mFd.shutdown();
                 }
                 co_return {};
             }
@@ -513,7 +525,7 @@ public:
  * 
  * @tparam T 
  */
-template <StreamListener T = IStreamListener>
+template <Listener T>
 class SslListener final : public SslSocket<T> {
 public:
     using RawClient = typename T::Client;
@@ -528,7 +540,7 @@ public:
 #if defined(__cpp_impl_coroutine)
     auto accept() -> IoTask<std::pair<Client, IPEndpoint> > {
         // TODO 
-        auto val = co_await this->mBio->mFd.accept();
+        auto val = co_await this->mFd.accept();
         if (!val) {
             co_return Unexpected(val.error());            
         }

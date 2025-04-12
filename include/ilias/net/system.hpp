@@ -229,4 +229,34 @@ constexpr auto networkToHost(const T value) -> T {
     }
 }
 
+// toString
+/**
+ * @brief Convert the events to a string
+ * 
+ * @param events The poll events combined with bitwise
+ * @return std::string 
+ */
+inline auto toString(const PollEvent events) -> std::string {
+    std::string res;
+    if (events & PollEvent::In)  res += "In |";
+    if (events & PollEvent::Out) res += "Out |";
+    if (events & PollEvent::Pri) res += "Pri |";
+    if (events & PollEvent::Err) res += "Err |";
+    if (events & PollEvent::Hup) res += "Hup |";
+    if (!res.empty()) {
+        res.pop_back();
+        res.pop_back(); // Remove the last " |"
+    }
+    return res;
+}
+
 ILIAS_NS_END
+
+// Formatter for PollEvent
+#if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(PollEvent) {
+    auto format(const auto &events, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", toString(events));
+    }
+};
+#endif

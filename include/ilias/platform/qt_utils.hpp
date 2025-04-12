@@ -100,7 +100,7 @@ private:
         mDestroyCon = QObject::connect(object, &QObject::destroyed, onDestroy, type);
     }
     
-    auto doDisconnect() {
+    auto doDisconnect() -> void {
         if (mCon) {
             QObject::disconnect(mCon);
         }
@@ -109,7 +109,7 @@ private:
         }
     }
 
-    static auto onCancel(void *+self) -> void {
+    static auto onCancel(void *self) -> void {
         auto self = reinterpret_cast<QSignal *>(self);
         self->doDisconnect();
         self->mCaller.schedule();
@@ -122,5 +122,52 @@ private:
     std::optional<ReturnType> mResult;
     CancellationToken::Registration mReg;
 };
+
+/**
+ * @brief The Slot with coroutine support, it will execute immediately on the slot was invoke
+ * 
+ * @code
+ *  class MyQClass : public QObject {
+ *  public:
+ *      auto onButtonClicked() -> QAsyncSlot<void> {
+ *          co_await xxx;
+ *          co_return;
+ *      }
+ *  }
+ * @endcode
+ * @tparam T 
+ */
+template <typename T = void>
+class QAsyncSlot {
+public:
+    using promise_type = typename Task<T>::promise_type;
+
+    QAsyncSlot(Task<T> task) : mTask(std::move(task)) {
+        auto view = mTask._view();
+        view.setExecutor(Executor::currentThread());
+        view.resume();
+    }
+
+    QAsyncSlot(QAsyncSlot &&) = default;
+
+    ~QAsyncSlot() {
+        auto view = mTask._view();
+        if (view.done()) {
+            return;
+        }
+        // If not done, detach the task, let it destroy self after done
+        mTask._leak();
+        view.registerCallback([view]() {
+            view.destroyLater();
+        });
+    }
+
+    auto operator co_await() && noexcept {
+        return std::move(mTask).operator co_await();
+    }
+private:
+    Task<T> mTask;
+};
+
 
 ILIAS_NS_END

@@ -113,6 +113,7 @@ public:
     auto await_ready() -> bool { return false; }
     auto await_suspend(CoroHandle caller) -> void;
     auto await_resume() -> Result<uint32_t>;
+    auto _trace(CoroHandle caller) -> void;
 private:
     auto onNotifierActivated(QSocketDescriptor, QSocketNotifier::Type type) -> void;
     auto onFdDestroyed() -> void;
@@ -633,7 +634,7 @@ inline auto detail::QTimerAwaiter::onTimeout() -> void {
 
 // Poll
 inline auto detail::QPollAwaiter::await_suspend(CoroHandle caller) -> void {
-    ILIAS_TRACE("QIo", "poll fd {}", mFd->sockfd);
+    ILIAS_TRACE("QIo", "poll fd {} for event {}", mFd->sockfd, PollEvent(mEvent));
     mCaller = caller;
     doConnect(); //< Connect the signal
     mRegistration = caller.cancellationToken().register_(std::bind(&QPollAwaiter::onCancel, this));
@@ -643,6 +644,12 @@ inline auto detail::QPollAwaiter::await_resume() -> Result<uint32_t> {
     ILIAS_ASSERT(!mReadCon && !mWriteCon && !mExceptCon && !mDestroyCon);
     return mResult;
 }
+
+#if defined(ILIAS_TASK_TRACE)
+inline auto detail::QPollAwaiter::_trace(CoroHandle caller) -> void {
+    caller.frame().msg = fmtlib::format("poll fd {} for event {}", mFd->sockfd, PollEvent(mEvent));
+}
+#endif
 
 inline auto detail::QPollAwaiter::onCancel() -> void {
     ILIAS_TRACE("QIo", "poll fd {} was canceled", mFd->sockfd);
@@ -677,7 +684,7 @@ inline auto detail::QPollAwaiter::onNotifierActivated(QSocketDescriptor, QSocket
         mResult = PollEvent::Out;
     }
     else {
-        mResult = PollEvent::Err;
+        mResult = PollEvent::Hup;
     }
     mCaller.schedule();
 }

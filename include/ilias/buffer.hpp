@@ -19,8 +19,21 @@
 
 ILIAS_NS_BEGIN
 
-// --- Concepts
+// --- Buffer
+/**
+ * @brief The byte const buffer view
+ * 
+ */
+using Buffer        = std::span<const std::byte>;
 
+/**
+ * @brief The byte mutable buffer view
+ * 
+ */
+using MutableBuffer = std::span<std::byte>;
+
+
+// --- Concepts
 /**
  * @brief Concept for types that can be converted to std::span
  * 
@@ -71,15 +84,34 @@ concept MemReadable = requires(T &t) {
 template <typename T>
 concept MemContainer = MemExpendable<T> && MemWritable<T> && MemReadable<T>;
 
-// --- Utils for std::span<std::byte>
+/**
+ * @brief Concept for types that can be iterated, like (std::array<Buffer> or std::vector<Buffer> or std::span<const Buffer>)
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept BufferSequence = requires(T &t) {
+    { *std::begin(t) } -> std::convertible_to<Buffer>;
+    { *std::end(t)  } -> std::convertible_to<Buffer>;
+    {  std::size(t) } -> std::convertible_to<size_t>;
+};
+
+template <typename T>
+concept MutableBufferSequence = requires(T &t) {
+    { *std::begin(t) } -> std::convertible_to<MutableBuffer>;
+    { *std::end(t)  } -> std::convertible_to<MutableBuffer>;
+    {  std::size(t) } -> std::convertible_to<size_t>;
+};
+
+// --- Utils for Buffer(std::span<const std::byte>) & MutableBuffer(std::span<std::byte>)
 /**
  * @brief Make a const buffer from void pointer and size
  * 
  * @param buf 
  * @param n 
- * @return std::span<const std::byte> 
+ * @return Buffer 
  */
-inline auto makeBuffer(const void *buf, size_t n) -> std::span<const std::byte> {
+inline auto makeBuffer(const void *buf, size_t n) -> Buffer {
     return std::span(reinterpret_cast<const std::byte *>(buf), n);
 }
 
@@ -88,9 +120,9 @@ inline auto makeBuffer(const void *buf, size_t n) -> std::span<const std::byte> 
  * 
  * @param buf 
  * @param n 
- * @return std::span<std::byte> 
+ * @return MutableBuffer 
  */
-inline auto makeBuffer(void *buf, size_t n) -> std::span<std::byte> {
+inline auto makeBuffer(void *buf, size_t n) -> MutableBuffer {
     return std::span(reinterpret_cast<std::byte *>(buf), n);
 }
 
@@ -99,6 +131,7 @@ inline auto makeBuffer(void *buf, size_t n) -> std::span<std::byte> {
  * 
  * @tparam T 
  * @param object 
+ * @return auto 
  */
 template <CanToSpan T>
 inline auto makeBuffer(const T &object) {
@@ -147,7 +180,7 @@ inline auto spanCast(std::span<In> in) -> std::span<T> {
  * @return std::basic_string_view<T> 
  */
 template <typename T = char> requires(sizeof(T) == sizeof(std::byte))
-inline auto asStringView(std::span<const std::byte> span) -> std::basic_string_view<T> {
+inline auto asStringView(Buffer span) -> std::basic_string_view<T> {
     return {
         reinterpret_cast<const T *>(span.data()),
         span.size_bytes()

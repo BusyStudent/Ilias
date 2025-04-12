@@ -3,6 +3,11 @@
 
 using namespace ILIAS_NAMESPACE;
 
+static_assert(BufferSequence<std::vector<Buffer> >);
+static_assert(BufferSequence<std::vector<MutableBuffer> >); // Also for non-const
+static_assert(MutableBufferSequence<std::vector<MutableBuffer> >);
+static_assert(!MutableBufferSequence<std::vector<Buffer> >); // Mutable can to non-mutable, but not vice versa
+
 TEST(StringPrintf, sprintfSize) {
     EXPECT_EQ(sprintfSize("Hello, %s", "world"), 12);
     EXPECT_EQ(sprintfSize("%d", 123), 3);

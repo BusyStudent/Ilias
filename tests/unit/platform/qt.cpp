@@ -1,3 +1,4 @@
+#include <ilias/platform/qt_utils.hpp>
 #include <ilias/platform/qt.hpp>
 #include <ilias/fs/console.hpp>
 #include <ilias/fs/file.hpp>
@@ -37,33 +38,7 @@ public:
             spawn(sendGetAddrInfo());
         });
 
-        connect(ui.httpSaveButton, &QPushButton::clicked, this, [this]() {
-            if (mContent.empty()) {
-                QMessageBox::information(this, "No content", "No content to save");
-                return;
-            }
-            auto filename = QFileDialog::getSaveFileName(this, "Save file", "", "All Files (*)");
-            if (filename.isEmpty()) {
-                return;
-            }
-#if 0
-            QFile file(filename);
-            if (!file.open(QIODevice::WriteOnly)) {
-                QMessageBox::critical(this, "Error", "Could not open file for writing");
-                return;
-            }
-            file.write(reinterpret_cast<const char*>(mContent.data()), mContent.size());
-            file.close();
-#else
-            spawn([this, filename]() -> Task<void> {
-                auto file = co_await File::open(filename.toStdString(), "wb");
-                if (!file) {
-                    co_return;
-                }
-                auto n = co_await file->writeAll(makeBuffer(mContent));
-            });
-#endif
-        });
+        connect(ui.httpSaveButton, &QPushButton::clicked, this, &App::onHttpSaveButtonClicked);
 
         connect(ui.httpProxyButton, &QPushButton::clicked, this, [this]() {
             auto prevProxy = mSession.proxy();
@@ -131,6 +106,33 @@ public:
             mWsHandle.cancel();
             mWsHandle.wait();
         }
+    }
+
+    auto onHttpSaveButtonClicked() -> QAsyncSlot<void> {
+        co_await backtrace();
+        if (mContent.empty()) {
+            QMessageBox::information(this, "No content", "No content to save");
+            co_return;
+        }
+        auto filename = QFileDialog::getSaveFileName(this, "Save file", "", "All Files (*)");
+        if (filename.isEmpty()) {
+            co_return;
+        }
+#if 0
+        QFile file(filename);
+        if (!file.open(QIODevice::WriteOnly)) {
+            QMessageBox::critical(this, "Error", "Could not open file for writing");
+            co_return;
+        }
+        file.write(reinterpret_cast<const char*>(mContent.data()), mContent.size());
+        file.close();
+#else
+        auto file = co_await File::open(filename.toStdString(), "wb");
+        if (!file) {
+            co_return;
+        }
+        auto n = co_await file->writeAll(makeBuffer(mContent));
+#endif
     }
 
     auto sendHttpRequest() -> IoTask<void> {

@@ -197,7 +197,7 @@
 	<DisplayString Condition="mBio">{(*mBio).mFd}</DisplayString>
 	<DisplayString Condition="!mBio">empty</DisplayString>
 	<Expand>
-		<Item Name="[fd]" Condition="mBio">(*mBio).mFd</Item>
+		<Item Name="[fd]">mFd</Item>
 		<Item Name="[readBuffer]" Condition="mBio">(*mBio).mReadBuffer</Item>
 		<Item Name="[writeBuffer]" Condition="mBio">(*mBio).mWriteBuffer</Item>
 	</Expand>
