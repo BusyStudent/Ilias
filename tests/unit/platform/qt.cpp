@@ -26,17 +26,9 @@ public:
         mSession.setCookieJar(&mCookieJar);
 
         // Prep signals
-        connect(ui.httpSendButton, &QPushButton::clicked, this, [this]() {
-            spawn([this]() -> Task<> {
-                ui.httpSendButton->setEnabled(false);
-                co_await sendHttpRequest();
-                ui.httpSendButton->setEnabled(true);
-            });
-        });
+        connect(ui.httpSendButton, &QPushButton::clicked, this, &App::onHttpSendButtonClicked);
 
-        connect(ui.addrinfoButton, &QPushButton::clicked, this, [this]() {
-            spawn(sendGetAddrInfo());
-        });
+        connect(ui.addrinfoButton, &QPushButton::clicked, this, &App::onAddrinfoButtonClicked);
 
         connect(ui.httpSaveButton, &QPushButton::clicked, this, &App::onHttpSaveButtonClicked);
 
@@ -86,11 +78,7 @@ public:
             }
         });
 
-        connect(ui.wsSendButton, &QPushButton::clicked, this, [this]() {
-            if (mWs) {
-                spawn(wsSend());
-            }
-        });
+        connect(ui.wsSendButton, &QPushButton::clicked, this, &App::onWsSendButtonClicked);
     } 
 
     ~App() {
@@ -108,8 +96,13 @@ public:
         }
     }
 
-    auto onHttpSaveButtonClicked() -> QAsyncSlot<void> {
+    auto testSlot() -> QAsyncSlot<void> {
         co_await backtrace();
+        co_await yield();
+    }
+
+    auto onHttpSaveButtonClicked() -> QAsyncSlot<void> {
+        co_await testSlot();
         if (mContent.empty()) {
             QMessageBox::information(this, "No content", "No content to save");
             co_return;
@@ -133,6 +126,25 @@ public:
         }
         auto n = co_await file->writeAll(makeBuffer(mContent));
 #endif
+    }
+
+    auto onHttpSendButtonClicked() -> QAsyncSlot<void> {
+        ui.httpSendButton->setEnabled(false);
+        co_await sendHttpRequest();
+        ui.httpSendButton->setEnabled(true);
+    }
+
+    auto onAddrinfoButtonClicked() -> QAsyncSlot<void> {
+        ui.addrinfoListWidget->clear();
+        ui.statusbar->clearMessage();
+        auto addrinfo = co_await AddressInfo::fromHostnameAsync(ui.addrinfoEdit->text().toUtf8().data());
+        if (!addrinfo) {
+            ui.statusbar->showMessage(QString::fromUtf8(addrinfo.error().toString()));
+            co_return;
+        }
+        for (const auto &addr : addrinfo->addresses()) {
+            ui.addrinfoListWidget->addItem(QString::fromUtf8(addr.toString()));
+        }
     }
 
     auto sendHttpRequest() -> IoTask<void> {
@@ -189,20 +201,6 @@ public:
             QString("HTTP %1 %2").arg(reply->statusCode()).arg(QString::fromUtf8(reply->status()))
         );
         updateCookieJar();
-        co_return {};
-    }
-
-    auto sendGetAddrInfo() -> IoTask<void> {
-        ui.addrinfoListWidget->clear();
-        ui.statusbar->clearMessage();
-        auto addrinfo = co_await AddressInfo::fromHostnameAsync(ui.addrinfoEdit->text().toUtf8().data());
-        if (!addrinfo) {
-            ui.statusbar->showMessage(QString::fromUtf8(addrinfo.error().toString()));
-            co_return {};
-        }
-        for (const auto &addr : addrinfo->addresses()) {
-            ui.addrinfoListWidget->addItem(QString::fromUtf8(addr.toString()));
-        }
         co_return {};
     }
 
@@ -371,7 +369,10 @@ public:
         co_await ws.shutdown();
     }
 
-    auto wsSend() -> Task<void> {
+    auto onWsSendButtonClicked() -> QAsyncSlot<void> {
+        if (!mWs) {
+            co_return;
+        }
         auto text = ui.wsMessageEdit->text().toUtf8();
         ui.wsMessageEdit->clear();
         if (auto res = co_await mWs->sendMessage(text.data()); !res) {

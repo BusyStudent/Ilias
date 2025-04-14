@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/io/vec.hpp>
 #include <ilias/ilias.hpp>
 #include <cstddef>
 #include <span>
@@ -32,7 +33,7 @@ struct AnyType {
  */
 template <typename T>
 concept Readable = requires(T &t) {
-    t.read(std::span<std::byte> {});
+    t.read(MutableBuffer {});
 };
 
 /**
@@ -42,7 +43,27 @@ concept Readable = requires(T &t) {
  */
 template <typename T>
 concept Writable = requires(T &t) {
-    t.write(std::span<const std::byte> {});
+    t.write(Buffer {});
+};
+
+/**
+ * @brief Concept for types that support vectorized/gathered read operations
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept ScatterReadable = requires(T &t) {
+    t.read(std::span<const IoVec> {});  
+};
+
+/**
+ * @brief Concept for types that support vectorized/gathered write operations
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept GatherWritable = requires(T &t) {
+    t.write(std::span<const IoVec> {});  
 };
 
 /**
@@ -92,6 +113,14 @@ concept HasFileDescriptor = requires(T &t) {
  */
 template <typename T>
 concept Stream = Readable<T> && Writable<T>;
+
+/**
+ * @brief Concept for types that can be read, written in vectorized/gathered operations.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept StreamExt = GatherWritable<T> && ScatterReadable<T>;
 
 /**
  * @brief Concept for types that can be read, written to a byte span and shutdown.

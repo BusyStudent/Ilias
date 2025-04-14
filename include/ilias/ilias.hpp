@@ -161,6 +161,9 @@ using socket_t = ILIAS_SOCKET_T;
 class Error;
 class SystemError;
 
+// --- Forward declaration for IoVec
+class IoVec;
+
 // --- Forward declaration for Task<T>
 template <typename T = void>
 class Task;

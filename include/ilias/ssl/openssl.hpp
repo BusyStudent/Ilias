@@ -274,8 +274,8 @@ protected:
         auto data = mBio->mWriteBuffer.data();
         while (!data.empty()) {
             auto ret = co_await mFd.write(data);
-            if (!ret) {
-                co_return Unexpected(ret.error()); //< Send Error
+            if (!ret || *ret == 0) {
+                co_return Unexpected(ret.error_or(Error::ZeroReturn)); //< Send Error
             }
             mBio->mWriteBuffer.consume(*ret);
             data = mBio->mWriteBuffer.data();
@@ -294,8 +294,8 @@ protected:
         auto left = mBio->mReadBuffer.capacity() - mBio->mReadBuffer.size();
         auto data = mBio->mReadBuffer.prepare(left);
         auto ret = co_await mFd.read(data);
-        if (!ret) {
-            co_return Unexpected(ret.error());
+        if (!ret || *ret == 0) {
+            co_return Unexpected(ret.error_or(Error::ZeroReturn));
         }
         mBio->mReadBuffer.commit(*ret);
         co_return {};

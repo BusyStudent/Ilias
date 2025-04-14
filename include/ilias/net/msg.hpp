@@ -11,6 +11,7 @@
 #pragma once
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/system.hpp>
+#include <ilias/io/vec.hpp>
 #include <span>
 
 #if defined(_WIN32) //< redirect the names to the windows ones
@@ -21,101 +22,16 @@
     #define msg_control  Control.buf
     #define msg_controllen Control.len
     #define msg_flags dwFlags
-    #define iov_base buf
-    #define iov_len  len
 #endif
 
 
 ILIAS_NS_BEGIN
 
 /**
- * @brief Wrapper for system iovec on linux, WSABUF on windows
- * 
- */
-class IoVec : public iovec_t {
-public:
-    IoVec() = default;
-    IoVec(const IoVec &) = default;
-    IoVec(const iovec_t &v) : iovec_t(v) { }
-
-    /**
-     * @brief Construct a new Io Vec object
-     * 
-     * @param buf The buffer to be used
-     * @param size The size of the buffer
-     */
-    IoVec(void *buf, size_t size) {
-        iov_base = static_cast<char*>(buf); //< In Windows this field is a char*
-        iov_len = size;
-    }
-
-    /**
-     * @brief Construct a new Io Vec object from std::span<std::byte>
-     * 
-     * @param buffer 
-     */
-    IoVec(std::span<std::byte> buffer) {
-        iov_base = reinterpret_cast<char*>(buffer.data());
-        iov_len = buffer.size();
-    }
-
-    /**
-     * @brief Explicit Construct a new Io Vec object from std::span<const std::byte>
-     * @note This is need explicitly because of the const_cast
-     * @param buffer 
-     */
-    explicit IoVec(std::span<const std::byte> buffer) {
-        iov_base = const_cast<char*>(reinterpret_cast<const char*>(buffer.data()));
-        iov_len = buffer.size();
-    }
-
-    /**
-     * @brief Get the data pointer
-     * 
-     * @return void* 
-     */
-    auto data() const -> void* { return iov_base; }
-
-    /**
-     * @brief Get the size of the buffer
-     * 
-     * @return size_t 
-     */
-    auto size() const -> size_t { return iov_len; }
-
-    /**
-     * @brief Allow conversion to std::span<std::byte>
-     * 
-     * @return std::span<std::byte> 
-     */
-    operator std::span<std::byte>() const noexcept {
-        return {
-            reinterpret_cast<std::byte*>(iov_base),
-            iov_len
-        };
-    }
-
-    /**
-     * @brief Allow conversion to std::span<const std::byte>
-     * 
-     * @return std::span<const std::byte> 
-     */
-    operator std::span<const std::byte>() const noexcept {
-        return {
-            reinterpret_cast<const std::byte*>(iov_base),
-            iov_len
-        };
-    }
-};
-
-static_assert(sizeof(IoVec) == sizeof(iovec_t));
-
-
-/**
  * @brief Wrapper for system msghdr on linux, WSAMSG on windows
  * 
  */
-class MsgHdr : public msghdr_t {
+class MsgHdr final : public msghdr_t {
 public:
     MsgHdr(const msghdr_t &v) : msghdr_t(v) { }
     MsgHdr(const MsgHdr &) = default;
@@ -150,8 +66,8 @@ public:
      * 
      * @param buffers 
      */
-    auto setBuffers(std::span<IoVec> buffers) -> void {
-        msg_iov = buffers.data();
+    auto setBuffers(std::span<const IoVec> buffers) -> void {
+        msg_iov = const_cast<IoVec*>(buffers.data()); // It should fine ? the recvmsg and sendmsg should not modify the buffer's pointers values
         msg_iovlen = buffers.size();
     }
 
@@ -200,9 +116,9 @@ public:
     /**
      * @brief Get the span of the buffers in the message
      * 
-     * @return std::span<IoVec> 
+     * @return std::span<const IoVec> 
      */
-    auto buffers() -> std::span<IoVec> {
+    auto buffers() -> std::span<const IoVec> {
         return {
             static_cast<IoVec*>(msg_iov),
             msg_iovlen

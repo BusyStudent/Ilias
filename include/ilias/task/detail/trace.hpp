@@ -82,7 +82,8 @@ inline auto installTraceFrame(CoroHandle handle, std::string_view msg, std::sour
     frame->setLocation(where);
     frame->msg.assign(msg);
     handle.frame().parent = frame.get();
-    handle.registerCallback([f = std::move(frame), it]() { // Install the cleanup callback
+    handle.registerCallback([f = frame.release(), it]() { // Install the cleanup callback
+        std::unique_ptr<StackFrame> fptr(f);
         runningCoroutines().erase(it);
     });
 }

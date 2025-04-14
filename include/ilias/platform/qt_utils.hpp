@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <ilias/detail/functional.hpp>
+#include <ilias/task/spawn.hpp>
 #include <ilias/task/task.hpp>
 #include <QMetaObject>
 #include <QObject>
@@ -49,7 +51,9 @@ public:
      */
     template <typename Class, typename RetT, typename SignalClass>
     QSignal(Class *object, RetT (SignalClass::*signal)(Args...), Qt::ConnectionType type = Qt::AutoConnection) {
-        doConnect(object, signal, type);
+        mFn = [this, object, signal, type]() {
+            doConnect(object, signal, type);
+        };
     }
 
     /**
@@ -61,10 +65,13 @@ public:
      */
     template <typename Class, typename Signal>
     QSignal(Class *object, Signal signal, Qt::ConnectionType type = Qt::AutoConnection) {
-        doConnect(object, signal, type);
+        mFn = [this, object, signal, type]() {
+            doConnect(object, signal, type);
+        };
     }
 
     QSignal(const QSignal &) = delete;
+    QSignal(QSignal &&) = default;
 
     ~QSignal() {
         doDisconnect();
@@ -73,6 +80,8 @@ public:
     auto await_ready() -> bool { return false; }
     
     auto await_suspend(TaskView<> caller) { 
+        mFn(); // Do connect the signal
+        mFn = nullptr;
         mCaller = caller; 
         mReg = mCaller.cancellationToken().register_(onCancel, this); 
     }
@@ -115,6 +124,9 @@ private:
         self->mCaller.schedule();
     }
 
+    // Connect function
+    detail::MoveOnlyFunction<void()> mFn;
+
     // Status Block
     QMetaObject::Connection mCon;
     QMetaObject::Connection mDestroyCon;
@@ -125,6 +137,7 @@ private:
 
 /**
  * @brief The Slot with coroutine support, it will execute immediately on the slot was invoke
+ * @note The argument should not be reference, it will be de danglinged when coroutine was suspended
  * 
  * @code
  *  class MyQClass : public QObject {
@@ -142,31 +155,20 @@ class QAsyncSlot {
 public:
     using promise_type = typename Task<T>::promise_type;
 
-    QAsyncSlot(Task<T> task) : mTask(std::move(task)) {
-        auto view = mTask._view();
-        view.setExecutor(Executor::currentThread());
-        view.resume();
-    }
-
+    QAsyncSlot(Task<T> task) : mHandle(spawn(std::move(task))) { }
     QAsyncSlot(QAsyncSlot &&) = default;
+    QAsyncSlot() = default;
 
-    ~QAsyncSlot() {
-        auto view = mTask._view();
-        if (view.done()) {
-            return;
-        }
-        // If not done, detach the task, let it destroy self after done
-        mTask._leak();
-        view.registerCallback([view]() {
-            view.destroyLater();
-        });
+    auto operator =(QAsyncSlot &&other) -> QAsyncSlot & {
+        mHandle = std::move(other.mHandle);
+        return *this;
     }
 
     auto operator co_await() && noexcept {
-        return std::move(mTask).operator co_await();
+        return std::move(mHandle).operator co_await();
     }
 private:
-    Task<T> mTask;
+    WaitHandle<T> mHandle;
 };
 
 

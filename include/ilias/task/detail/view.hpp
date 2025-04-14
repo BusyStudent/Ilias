@@ -91,7 +91,6 @@ public:
      * @return auto 
      */
     auto destroyLater() const noexcept {
-        ILIAS_ASSERT(isSafeToDestroy()); 
         return executor()->post(destroyLaterImpl, mHandle.address());
     }
 

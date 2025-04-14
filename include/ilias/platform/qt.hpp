@@ -13,9 +13,10 @@
 #include <ilias/cancellation_token.hpp>
 #include <ilias/task/executor.hpp>
 #include <ilias/task/task.hpp>
-#include <ilias/net/sockfd.hpp>
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
+#include <ilias/net/sockfd.hpp>
+#include <ilias/net/msg.hpp>
 #include <ilias/log.hpp>
 #include <QSocketNotifier>
 #include <QMetaObject>
@@ -188,6 +189,9 @@ public:
 
     auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> override;
     auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> override;
+
+    auto sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> override;
+    auto recvmsg(IoDescriptor *fd, MsgHdr &msg, int flags) -> IoTask<size_t> override;
 
     auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
 
@@ -472,7 +476,7 @@ inline auto QIoContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -
     while (true) {
         auto ret = sock.accept<socket_t>(endpoint);
         if (ret) {
-            co_return ret;
+            co_return *ret;
         }
         // Error Handling
         if (ret.error() != Error::WouldBlock) {
@@ -514,7 +518,7 @@ inline auto QIoContext::sendto(IoDescriptor *fd, std::span<const std::byte> buff
     while (true) {
         auto ret = sock.sendto(buffer, flags, endpoint);
         if (ret) {
-            co_return ret.value();
+            co_return *ret;
         }
         // Error Handling
         if (ret.error() != Error::WouldBlock) {
@@ -532,7 +536,79 @@ inline auto QIoContext::recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, 
     while (true) {
         auto ret = sock.recvfrom(buffer, flags, endpoint);
         if (ret) {
-            co_return ret.value();
+            co_return *ret;
+        }
+        // Error Handling
+        if (ret.error() != Error::WouldBlock) {
+            co_return Unexpected(ret.error());
+        }
+        if (auto pollret = co_await poll(fd, PollEvent::In); !pollret) {
+            co_return Unexpected(pollret.error());
+        }
+    }
+}
+
+inline auto QIoContext::sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<detail::QIoDescriptor*>(fd);
+    auto sendmsg = [&](socket_t sockfd, const MsgHdr &msg, int flags) -> Result<size_t> {
+
+#if defined(_WIN32)
+        if (!nfd->sock.sendmsg) {
+            return Unexpected(Error::OperationNotSupported);
+        }
+        auto msgcpy = msg; // Copy the message to avoid modifying the original
+        DWORD bytesSent = 0;
+        if (nfd->sock.sendmsg(sockfd, &msgcpy, flags, &bytesSent, nullptr, nullptr) == 0) {
+            return bytesSent;
+        }
+#else
+        if (auto ret = ::sendmsg(sockfd, &msg, flags); ret >= 0) {
+            return ret;
+        }
+#endif // defined(_WIN32)
+        return Unexpected(SystemError::fromErrno());
+    };
+
+    while (true) {
+        auto ret = sendmsg(nfd->sockfd, msg, flags);
+        if (ret) {
+            co_return *ret;
+        }
+        // Error Handling
+        if (ret.error() != Error::WouldBlock) {
+            co_return Unexpected(ret.error());
+        }
+        if (auto pollret = co_await poll(fd, PollEvent::Out); !pollret) {
+            co_return Unexpected(pollret.error());
+        }
+    }
+}
+
+inline auto QIoContext::recvmsg(IoDescriptor *fd, MsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<detail::QIoDescriptor*>(fd);
+    auto recvmsg = [&](socket_t sockfd, MsgHdr &msg, int flags) -> Result<size_t> {
+
+#if defined(_WIN32)
+        if (!nfd->sock.recvmsg) {
+            return Unexpected(Error::OperationNotSupported);
+        }
+        DWORD bytesReceived = 0;
+        msg.dwFlags = flags;
+        if (nfd->sock.recvmsg(sockfd, &msg, &bytesReceived, nullptr, nullptr) == 0) {
+            return bytesReceived;
+        }
+#else
+        if (auto ret = ::recvmsg(sockfd, &msg, flags); ret >= 0) {
+            return ret;
+        }
+#endif // defined(_WIN32)
+        return Unexpected(SystemError::fromErrno());
+    };
+
+    while (true) {
+        auto ret = recvmsg(nfd->sockfd, msg, flags);
+        if (ret) {
+            co_return *ret;
         }
         // Error Handling
         if (ret.error() != Error::WouldBlock) {

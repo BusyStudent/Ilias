@@ -25,7 +25,6 @@
     #define ILIAS_SHUT_RD          SD_RECEIVE
     #define ILIAS_SHUT_WR          SD_SEND
     #define ILIAS_SHUT_RDWR        SD_BOTH
-    #define ILIAS_IOVEC_T          ::WSABUF
     #define ILIAS_MSGHDR_T         ::WSAMSG
 
     #include <WinSock2.h>
@@ -43,7 +42,6 @@
     #define ILIAS_SHUT_RD          SHUT_RD
     #define ILIAS_SHUT_WR          SHUT_WR
     #define ILIAS_SHUT_RDWR        SHUT_RDWR
-    #define ILIAS_IOVEC_T          ::iovec
     #define ILIAS_MSGHDR_T         ::msghdr
 
     #include <sys/socket.h>
@@ -59,7 +57,6 @@
 
 ILIAS_NS_BEGIN
 
-using iovec_t  = ILIAS_IOVEC_T;
 using msghdr_t = ILIAS_MSGHDR_T;
 
 /**
