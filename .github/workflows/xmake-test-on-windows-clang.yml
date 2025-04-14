@@ -1,4 +1,4 @@
-name: CI for windows by xmake
+name: CI for windows by xmake with clang-cl
 
 on:
   push:
@@ -18,14 +18,8 @@ jobs:
       # The version to use. Should be a semver range or 'latest'. Or use branch@{branch_name} to select a branch.
         xmake-version: latest
     - name: Configure
-      run: xmake f -m coverage --toolchain=clang-cl -y
+      run: xmake f -m debug --toolchain=clang-cl -y
     - name: Build
       run: xmake -y
-    - name: Run Test and collect coverage
+    - name: Run Test
       run: xmake test -v
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        verbose: true
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
