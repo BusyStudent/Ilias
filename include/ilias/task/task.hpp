@@ -98,6 +98,7 @@ public:
      * @return T>
      */
     auto await_resume() const -> T {
+        ILIAS_ASSERT_MSG(mTask.done(), "The task is not done, maybe call resume() twice");
         return TaskView<T>::cast(mTask).value();
     }
 };
