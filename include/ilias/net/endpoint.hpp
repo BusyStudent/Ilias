@@ -736,24 +736,3 @@ private:
 
 
 ILIAS_NS_END
-
-// --- Formatter for Endpoint
-#if !defined(ILIAS_NO_FORMAT)
-ILIAS_FORMATTER(UnixEndpoint) {
-    auto format(const auto &endpoint, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", endpoint.toString());
-    }
-};
-
-ILIAS_FORMATTER(IPEndpoint) {
-    auto format(const auto &endpoint, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", endpoint.toString());
-    }
-};
-
-ILIAS_FORMATTER(EndpointView) {
-    auto format(const auto &endpoint, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", endpoint.toString());
-    }
-};
-#endif

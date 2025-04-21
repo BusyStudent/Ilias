@@ -253,12 +253,3 @@ inline auto toString(IoDescriptor::Type type) -> std::string_view {
 }
 
 ILIAS_NS_END
-
-// Formatter for IoDescriptor::Type
-#if !defined(ILIAS_NO_FORMAT)
-ILIAS_FORMATTER(IoDescriptor::Type) {
-    auto format(const auto &type, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", toString(type));
-    }
-};
-#endif

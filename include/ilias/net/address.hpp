@@ -677,25 +677,3 @@ private:
 
 
 ILIAS_NS_END
-
-
-// --- Formatter for IPAddress4, IPAddress6, IPAddress
-#if !defined(ILIAS_NO_FORMAT)
-ILIAS_FORMATTER(IPAddress4) {
-    auto format(const auto &addr, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", addr.toString());
-    }
-};
-
-ILIAS_FORMATTER(IPAddress6) {
-    auto format(const auto &addr, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", addr.toString());
-    }
-};
-
-ILIAS_FORMATTER(IPAddress) {
-    auto format(const auto &addr, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", addr.toString());
-    }
-};
-#endif

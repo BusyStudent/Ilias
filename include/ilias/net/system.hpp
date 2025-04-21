@@ -248,12 +248,3 @@ inline auto toString(const PollEvent events) -> std::string {
 }
 
 ILIAS_NS_END
-
-// Formatter for PollEvent
-#if !defined(ILIAS_NO_FORMAT)
-ILIAS_FORMATTER(PollEvent) {
-    auto format(const auto &events, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", toString(events));
-    }
-};
-#endif

@@ -260,15 +260,14 @@ inline auto HttpHeaders::empty() const -> bool {
     return mValues.empty();
 }
 
+inline auto toString(HttpHeaders::WellKnownHeader header) -> std::string_view {
+    return HttpHeaders::stringOf(header);
+}
+
 ILIAS_NS_END
 
 // --- Formatter for HttpHeaders
 #if !defined(ILIAS_NO_FORMAT)
-ILIAS_FORMATTER(HttpHeaders::WellKnownHeader) {
-    auto format(const auto &header, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", ILIAS_NAMESPACE::HttpHeaders::stringOf(header));
-    }
-};
 
 ILIAS_FORMATTER(HttpHeaders) {
     auto format(const auto &headers, auto &ctxt) const {

@@ -291,6 +291,15 @@ public:
     explicit operator bool() const noexcept {
         return mDesc != nullptr;
     }
+
+    /**
+     * @brief Cast to the file descriptor
+     * 
+     * @return fd_t 
+     */
+    explicit operator fd_t() const noexcept {
+        return mFd;
+    }
 private:
     IoDescriptor *mDesc = nullptr;
     IoContext *mCtxt = nullptr;
@@ -399,6 +408,7 @@ public:
         // Get the size of the mapping
         ::MEMORY_BASIC_INFORMATION info { };
         if (!::VirtualQuery(ptr, &info, sizeof(info))) {
+            ::UnmapViewOfFile(ptr);
             co_return Unexpected(SystemError::fromErrno());
         }
         FileMapping mapping;

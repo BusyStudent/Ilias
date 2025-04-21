@@ -525,22 +525,14 @@ inline auto HttpCookieJar::allCookies() const -> std::vector<HttpCookie> {
     return ret;
 }
 
-ILIAS_NS_END
-
-// --- Formatter for HttpCookie 
-#if !defined(ILIAS_NO_FORMAT)
-ILIAS_FORMATTER(HttpCookie::SameSite) {
-    using SameSite = ILIAS_NAMESPACE::HttpCookie::SameSite;
-
-    auto format(const SameSite &ss, auto &ctx) {    
-        std::string_view content;
-        switch (ss) {
-            case SameSite::Strict: content = "Strict"; break;
-            case SameSite::Lax:     content = "Lax"; break;
-            case SameSite::None:    content = "None"; break;
-            default: ::abort();
-        }
-        return format_to(ctx.out(), "{}", content);
+// --- toString
+inline auto toString(HttpCookie::SameSite ss) noexcept -> std::string_view {
+    switch (ss) {
+        case HttpCookie::SameSite::Strict: return "Strict";
+        case HttpCookie::SameSite::Lax:    return "Lax";
+        case HttpCookie::SameSite::None:   return "None";
+        default: ::abort();
     }
-};
-#endif
+}
+
+ILIAS_NS_END

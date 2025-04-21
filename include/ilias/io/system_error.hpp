@@ -249,13 +249,4 @@ inline auto SystemError::translate() const -> Error::Code {
 
 ILIAS_NS_END
 
-// --- Formatter for SystemError
-#if !defined(ILIAS_NO_FORMAT)
-ILIAS_FORMATTER(SystemError) {
-    auto format(const auto &err, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", err.toString());
-    }
-};
-#endif
-
 #undef MAP

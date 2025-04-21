@@ -446,12 +446,3 @@ inline auto Url::decodeComponent(std::string_view str) -> std::string {
 }
 
 ILIAS_NS_END
-
-// --- Formatter for Url
-#if !defined(ILIAS_NO_FORMAT)
-ILIAS_FORMATTER(Url) {
-    auto format(const auto &url, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", url.toString());
-    }
-};
-#endif

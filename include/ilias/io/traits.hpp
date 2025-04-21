@@ -97,13 +97,13 @@ concept Listener = requires(T &t) {
 };
 
 /**
- * @brief Concept for types that can get the file descriptor.
+ * @brief Concept for types that cast into the file descriptor.
  * 
  * @tparam T 
  */
 template <typename T>
-concept HasFileDescriptor = requires(T &t) {
-    t.fd();
+concept IntoFileDescriptor = requires(T &t) {
+    static_cast<fd_t>(t);
 };
 
 /**

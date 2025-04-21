@@ -149,6 +149,11 @@
     struct ILIAS_FMT_NAMESPACE::formatter<ILIAS_NAMESPACE::type> : \
         ILIAS_NAMESPACE::detail::DefaultFormatter
 
+#define ILIAS_FORMATTER_T_RAW(T, type)                             \
+    template <T>                                                   \
+    struct ILIAS_FMT_NAMESPACE::formatter<type> :                  \
+        ILIAS_NAMESPACE::detail::DefaultFormatter    
+
 
 ILIAS_NS_BEGIN
 
@@ -199,6 +204,12 @@ enum class SeekFrom : int {
 #endif // defined(SEEK_HOLE)
 };
 
+// --- Concepts
+template <typename T>
+concept IntoString = requires (const T &t) {
+    toString(t);
+};
+
 // --- Formatting namespace
 #if defined(ILIAS_FMT_NAMESPACE)
 namespace fmtlib = ILIAS_FMT_NAMESPACE;
@@ -231,4 +242,19 @@ struct DefaultFormatter {
 } // namespace detail
 #endif // ILIAS_FMT_NAMESPACE
 
+// --- Utils
+template <typename T> requires requires(const T &t) { t.toString(); }
+inline auto toString(const T &t) {
+    return t.toString();
+}
+
 ILIAS_NS_END
+
+// --- Make formatter for all type with InfoString concept
+#if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER_T_RAW(ILIAS_NAMESPACE::IntoString T, T) {
+    auto format(const auto &value, auto &ctxt) const {
+        return std::format_to(ctxt.out(), "{}", toString(value));
+    }
+};
+#endif // ILIAS_NO_FORMAT
