@@ -63,6 +63,7 @@ public:
      * @return false 
      */
     auto await_suspend(CoroHandle caller) noexcept -> bool {
+        mTask.setCancellationToken(caller.cancellationToken()); // Let the caller's cancel request cancel the current task
         mTask.setExecutor(caller.executor());
         mTask.resume();
         if (mTask.done()) { //< Done, resume the caller
@@ -70,15 +71,11 @@ public:
         }
 
         mTask.setAwaitingCoroutine(caller); //< When the task is done, resume the caller
-        mReg = caller.cancellationToken().register_( //< Forward the caller's cancel request cancel to the current task
-            &cancelTheTokenHelper, &mTask.cancellationToken()
-        );
         return true;
     }
 protected:
     TaskAwaiterBase(TaskView<> task) : mTask(task) { }
 
-    CancellationToken::Registration mReg; //< The reg of we wait for cancel
     TaskView<> mTask; //< The task we wait for
 };
 
@@ -262,7 +259,9 @@ public:
 #endif // defined(ILIAS_TASK_TRACE)
 
         ILIAS_ASSERT(!promise.isStarted());
-        promise.setExecutor(&executor);
+        CancellationToken token;
+        promise.setCancellationToken(token);
+        promise.setExecutor(executor);
         mHandle.resume(); //< Start it
         if (!mHandle.done()) {
             CancellationToken token;
@@ -406,11 +405,10 @@ inline auto currentTask() noexcept {
  * @return std::reference_wrapper<Executor>
  */
 inline auto currentExecutor() noexcept {
-    struct Awaiter {
-        auto await_ready() { return false; }
-        auto await_suspend(CoroHandle handle) -> bool { mExecutor = handle.executor(); return false; }
-        auto await_resume() -> std::reference_wrapper<Executor> { ILIAS_ASSERT(mExecutor); return *mExecutor; }
-        Executor *mExecutor;
+    struct Awaiter : detail::GetHandleAwaiter {
+        auto await_resume() -> std::reference_wrapper<Executor> {
+            return handle().executor();
+        }
     };
     return Awaiter {};
 }

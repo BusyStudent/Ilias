@@ -57,8 +57,8 @@ struct SpawnData {
     }
 
     static auto compeleteCallback(void *self) -> void {
-        auto executor = static_cast<SpawnData *>(self)->mTask.executor();
-        executor->post(destroyCallback, self);
+        auto &executor = static_cast<SpawnData *>(self)->mTask.executor();
+        executor.post(destroyCallback, self);
     }
 
     /**
@@ -70,6 +70,7 @@ struct SpawnData {
         static_cast<SpawnData *>(self)->destroy();
     }
 
+    CancellationToken mToken;
     TaskView<> mTask;
     uint32_t mRefcount = 0;
     void (*mDeleteSelf)(SpawnData *) = nullptr;
@@ -104,17 +105,14 @@ public:
     auto await_ready() const -> bool { return mTask.done(); }
 
     auto await_suspend(TaskView<> caller) -> void {
+        mTask.setCancellationToken(caller.cancellationToken()); //< Let the caller's cancel request cancel the current task
         mTask.setAwaitingCoroutine(caller); //< When the task is done, resume the caller
-        mReg = caller.cancellationToken().register_( //< Let the caller's cancel request cancel the current task
-            &cancelTheTokenHelper, &mTask.cancellationToken()
-        );
     }
 
     auto await_resume() const -> T {
         return mTask.value();
     }
 private:
-    CancellationToken::Registration mReg; //< The reg of we wait for cancel
     TaskView<T> mTask;
 };
 
@@ -129,35 +127,30 @@ public:
     auto await_suspend(TaskView<> caller) noexcept {
         mCaller = caller;
         mTask.registerCallback(onComplete, this);
+        mTask.setCancellationToken(mToken);
         mTask.schedule();
         mReg = mCaller.cancellationToken().register_(onCancel, this);
     }
 private:
     static auto onComplete(void *_self) -> void { 
-        //< Because in this callback, the task is not completed done yet
-        //< We need to schedule the caller in the eventloop
-        auto self = static_cast<ScheduleOnAwaiterBase*>(_self);
-        auto executor = self->mTask.executor();
-        executor->post(doSchedule, self);
+        // May in different thread, use schedule to post to the executor
+        auto self = static_cast<ScheduleOnAwaiterBase *>(_self);
+        self->mCaller.schedule();
     }
     
     static auto onCancel(void *_self) -> void {
-        auto self = static_cast<ScheduleOnAwaiterBase*>(_self);
-        auto executor = self->mTask.executor();
-        auto task = self->mTask;
-        executor->post(cancelTheTokenHelper, &task.cancellationToken());
-    }
-
-    static auto doSchedule(void *_self) -> void {
-        auto self = static_cast<ScheduleOnAwaiterBase*>(_self);
-        self->mCaller.schedule();
+        auto  self = static_cast<ScheduleOnAwaiterBase *>(_self);
+        auto &executor = self->mTask.executor();
+        auto  task = self->mTask;
+        executor.post(cancelTheTokenHelper, &task.cancellationToken());
     }
 protected:
     ScheduleOnAwaiterBase(Executor &executor, TaskView<> task) : mTask(task) {
-        mTask.setExecutor(&executor);
+        mTask.setExecutor(executor);
     }
 
     CancellationToken::Registration mReg;
+    CancellationToken mToken; //< The token for task
     TaskView<> mTask; //< The target task want to executed on another executor
     TaskView<> mCaller; //< The caller task
 };
@@ -248,7 +241,7 @@ public:
             // Wait until done
             CancellationToken token;
             mData->mTask.registerCallback(detail::cancelTheTokenHelper, &token);
-            mData->mTask.executor()->run(token);
+            mData->mTask.executor().run(token);
         }
         auto data = std::move(mData);
         return TaskView<T>::cast(data->mTask).value();
@@ -305,7 +298,8 @@ template <typename T>
 inline auto spawn(Executor &executor, Task<T> &&task, ILIAS_CAPTURE_CALLER(loc)) -> WaitHandle<T> {
     auto ref = detail::SpawnDataRef(new detail::SpawnData);
     ref->mTask = task._leak();
-    ref->mTask.setExecutor(&executor);
+    ref->mTask.setCancellationToken(ref->mToken);
+    ref->mTask.setExecutor(executor);
     ref->mTask.schedule(); //< Start it on the event loop
 
 #if defined(ILIAS_TASK_TRACE)
@@ -344,7 +338,8 @@ inline auto spawn(Executor &executor, Callable callable, Args &&...args) {
                 std::forward<Args>(args)...
             )
         );
-        ref->mTask.setExecutor(&executor);
+        ref->mTask.setCancellationToken(ref->mToken);
+        ref->mTask.setExecutor(executor);
         ref->mTask.schedule(); //< Start it on the event loop
 
 #if defined(ILIAS_TASK_TRACE)

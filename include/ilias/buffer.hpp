@@ -40,7 +40,7 @@ using MutableBuffer = std::span<std::byte>;
  * @tparam T 
  */
 template <typename T>
-concept CanToSpan = requires(T &t) {
+concept IntoSpan = requires(T &t) {
     std::span(t);
 };
 
@@ -133,7 +133,7 @@ inline auto makeBuffer(void *buf, size_t n) -> MutableBuffer {
  * @param object 
  * @return auto 
  */
-template <CanToSpan T>
+template <IntoSpan T>
 inline auto makeBuffer(const T &object) {
     auto span = std::span(object);
     return makeBuffer(span.data(), span.size_bytes());
@@ -146,7 +146,7 @@ inline auto makeBuffer(const T &object) {
  * @param object 
  * @return auto 
  */
-template <CanToSpan T>
+template <IntoSpan T>
 inline auto makeBuffer(T &object) {
     auto span = std::span(object);
     return makeBuffer(span.data(), span.size_bytes());

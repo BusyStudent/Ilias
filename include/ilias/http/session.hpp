@@ -376,7 +376,7 @@ inline auto HttpSession::connect(const Url &url) -> IoTask<std::unique_ptr<HttpS
 inline auto HttpSession::make() {
     struct Awaiter : detail::GetContextAwaiter {
         auto await_resume() const -> HttpSession {
-            return HttpSession(*context());
+            return HttpSession(context());
         }
     };
     return Awaiter {};

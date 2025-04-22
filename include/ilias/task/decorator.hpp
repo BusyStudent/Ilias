@@ -54,8 +54,9 @@ template <typename T>
 struct IgnoreCancellationAwaiter {
     auto await_ready() const noexcept { return false; }
 
-    auto await_suspend(CoroHandle caller) const -> bool {
+    auto await_suspend(CoroHandle caller) -> bool {
         auto task = mTask._view();
+        task.setCancellationToken(mToken);
         task.setExecutor(caller.executor());
         task.resume();
         if (task.done()) {
@@ -70,6 +71,7 @@ struct IgnoreCancellationAwaiter {
     }
 
     Task<T> mTask;
+    CancellationToken mToken; // The dummy token
 };
 
 /**

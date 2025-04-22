@@ -160,10 +160,7 @@ private:
      */
     auto cancelAll() -> void {
         ILIAS_TRACE("WhenAny", "[{}] Cancel all tasks", sizeof ...(Types));
-        auto cancel = [](auto ...tasks) {
-            (tasks.cancel(), ...);
-        };
-        std::apply(cancel, mTasks);
+        mToken.cancel();
     }
 
     template <size_t I>
@@ -189,20 +186,19 @@ private:
     }
 
     auto startTask(TaskView<> task) -> void {
+        task.setCancellationToken(mToken);
         task.setExecutor(mCaller.executor());
         task.registerCallback(
             std::bind(&WhenAnyTupleAwaiter::completeCallback, this, task)
         );
         task.resume();
-        if (mGot && mGot != task) { //< Another task has already got the result, send a cancel
-            task.cancel();
-        }
     }
 
     InTuple mTasks;
     CoroHandle mCaller;
     TaskView<> mGot; // The task that got the result
     size_t mTaskLeft = sizeof...(Types);
+    CancellationToken mToken; // The local cancellation token (caller -> whenAny(mToken) [child1, child2...])
     CancellationToken::Registration mRegistration;
 };
 
@@ -228,14 +224,12 @@ public:
         // Start all tasks
         for (auto &task : mTasks) {
             auto view = task._view();
+            view.setCancellationToken(mToken);
             view.setExecutor(caller.executor());
             view.registerCallback(
                 std::bind(&WhenAnyRangeAwaiter::completeCallback, this, view)
             ); // Register the completion callback, wait for the task to complete
             view.resume();
-            if (mGot && mGot != view) { //< Another task has already got the result, send a cancel
-                view.cancel();
-            }
         }
 
         // Register caller cancel callback
@@ -280,15 +274,14 @@ private:
      */
     auto cancelAll() -> void {
         ILIAS_TRACE("WhenAny", "[{}] Cancel all tasks", mTasks.size());
-        for (auto &task : mTasks) {
-            task._view().cancel();
-        }
+        mToken.cancel();
     }
 
     std::span<const Task<T> > mTasks;
     size_t mTaskLeft;
     CoroHandle mCaller;
     TaskView<T> mGot;
+    CancellationToken mToken;
     CancellationToken::Registration mRegistration;
 };
 

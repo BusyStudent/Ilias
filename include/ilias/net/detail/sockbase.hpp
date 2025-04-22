@@ -247,7 +247,7 @@ public:
     static auto make(int family, int type, int protocol = 0) {
         struct Awaiter : public GetContextAwaiter {
             auto await_resume() -> Result<T> {
-                auto base = SocketBase::make(*context(), family, type, protocol);
+                auto base = SocketBase::make(context(), family, type, protocol);
                 if (!base) {
                     return Unexpected(base.error());
                 }

@@ -33,7 +33,7 @@ struct ScopedTask {
         mTask(task), mList(&list), 
         mIt(list.insert(list.end(), this)) 
     {
-
+        mTask.setCancellationToken(mToken);
     }
 
     ScopedTask(const ScopedTask &) = delete;
@@ -62,6 +62,7 @@ struct ScopedTask {
     }
 
     TaskView<> mTask; //< Task instance.
+    CancellationToken mToken;
     std::list<ScopedTask*> *mList; //< List containing the task.
     std::list<ScopedTask*>::iterator mIt; //< Iterator for the task in the list.
     int mRefcount = 1; //< Reference count.
@@ -144,7 +145,7 @@ public:
             // Wait until done
             CancellationToken token;
             mData->mTask.registerCallback(detail::cancelTheTokenHelper, &token);
-            mData->mTask.executor()->run(token);
+            mData->mTask.executor().run(token);
         }
         auto data = std::move(mData);
         return TaskView<T>::cast(data->mTask).value();
@@ -270,7 +271,7 @@ public:
         auto instance = new detail::ScopedTask(handle, mInstances);
         // Start and add the complete callback.
         instance->mTask.registerCallback(std::bind(&TaskScope::onTaskComplete, this, instance));
-        instance->mTask.setExecutor(&mExecutor);
+        instance->mTask.setExecutor(mExecutor);
         instance->mTask.schedule();
         ILIAS_TRACE("TaskScope", "Spawned a task {} in the scope.", (void*) instance);
 
@@ -346,7 +347,7 @@ public:
     static auto make() {
         struct Awaiter : detail::GetHandleAwaiter {
             auto await_resume() -> T {
-                return T(*handle().executor()); // MUST NRVO
+                return T(handle().executor()); // MUST NRVO
             }
         };
         return Awaiter{};

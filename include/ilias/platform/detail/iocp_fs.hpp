@@ -195,7 +195,7 @@ private:
             ILIAS_TRACE("IOCP", "Thread I/O {} marked cancelled, skip the I/O operation", (void*) this);
             mThreadError = ERROR_OPERATION_ABORTED;
         }
-        mTask.executor()->post(&onScheduleCallback, this);
+        mTask.executor().post(&onScheduleCallback, this);
         mCallbackLatch.wait(); //< Wait for the callback to be called, avoid the thread to run another I/O operation
         ILIAS_TRACE("IOCP", "Thread I/O {} done", (void*) this);
     }

@@ -34,15 +34,15 @@ public:
     /**
      * @brief Get the io context
      * 
-     * @return IoContext* 
+     * @return IoContext &
      */
     template <typename T = IoContext>
-    auto context() const -> T * {
-        auto executor = handle().executor();
+    auto context() const -> T & {
+        auto &executor = handle().executor();
 #if defined(__cpp_rtti)
-        ILIAS_ASSERT(dynamic_cast<T *>(executor)); // Check that the executor impl the IoContext
+        ILIAS_ASSERT(dynamic_cast<T *>(&executor)); // Check that the executor impl the IoContext
 #endif // defined(__cpp_rtti)
-        return static_cast<T *>(executor);
+        return static_cast<T &>(executor);
     }
 };
 
@@ -228,7 +228,7 @@ public:
 inline auto currentIoContext() {
     struct Awaiter : detail::GetContextAwaiter {
         auto await_resume() const -> std::reference_wrapper<IoContext> {
-            return *context();
+            return context();
         }
     };
     return Awaiter {};

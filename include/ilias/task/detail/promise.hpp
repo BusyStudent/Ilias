@@ -180,17 +180,19 @@ public:
      * 
      * @return CancellationToken & 
      */
-    auto cancellationToken() -> CancellationToken & {
-        return mToken;
+    auto cancellationToken() const -> CancellationToken & {
+        ILIAS_ASSERT(mToken);
+        return *mToken;
     }
 
     /**
      * @brief Get the executor object
      * 
-     * @return Executor* 
+     * @return Executor &
      */
-    auto executor() -> Executor * {
-        return mExecutor;
+    auto executor() const -> Executor & {
+        ILIAS_ASSERT(mExecutor);
+        return *mExecutor;
     }
 
     /**
@@ -206,10 +208,19 @@ public:
     /**
      * @brief Set the Executor object
      * 
-     * @param executor The executor, executing the coroutine (can't be nullptr)
+     * @param executor The executor
      */
-    auto setExecutor(Executor *executor) -> void {
-        mExecutor = executor;
+    auto setExecutor(Executor &executor) -> void {
+        mExecutor = &executor;
+    }
+
+    /**
+     * @brief Set the Cancellation Token object
+     * 
+     * @param token The token 
+     */
+    auto setCancellationToken(CancellationToken &token) -> void {
+        mToken = &token;
     }
 
     /**
@@ -266,7 +277,7 @@ public:
 protected:  
     bool mStarted = false;
     Executor *mExecutor = nullptr; //< The executor, doing the 
-    CancellationToken mToken; //< The cancellation token
+    CancellationToken *mToken = nullptr; //< The cancellation token
     std::coroutine_handle<> mAwaitingCoroutine { std::noop_coroutine() }; //< The coroutine handle that is waiting for us, we will resume it when done 
     std::vector<MoveOnlyFunction<void()> > mCallbacks; //< The callbacks that will be called when the coroutine is done
 #if defined(__cpp_exceptions)

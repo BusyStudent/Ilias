@@ -110,11 +110,6 @@ public:
         if (mTaskLeft == 0) {
             return false; //< All tasks are done, resume the caller
         }
-
-        // Save the status for cancel and resume
-        mRegistration = caller.cancellationToken().register_(
-            std::bind(&WhenAllTupleAwaiter::cancelAll, this)
-        );
         return true;
     }
 
@@ -138,13 +133,6 @@ private:
         }
     }
 
-    auto cancelAll() {
-        auto cancel = [](auto ...tasks) {
-            (tasks.cancel(), ...);
-        };
-        std::apply(cancel, mTasks);
-    }
-
     template <size_t I>
     auto makeResult() -> std::tuple_element_t<I, OutTuple> {
         using RetT = std::tuple_element_t<I, OutTuple>;
@@ -165,6 +153,7 @@ private:
     }
 
     auto startTask(TaskView<> task) -> void {
+        task.setCancellationToken(mCaller.cancellationToken());
         task.setExecutor(mCaller.executor());
         task.resume();
         if (task.done()) {
@@ -180,7 +169,6 @@ private:
     InTuple mTasks;
     CoroHandle mCaller;
     size_t mTaskLeft = sizeof...(Types);
-    CancellationToken::Registration mRegistration;
 };
 
 /**
@@ -202,9 +190,10 @@ public:
     auto await_suspend(CoroHandle caller) noexcept -> bool {
         ILIAS_TRACE("WhenAll", "Range [{}] Begin", mTaskLeft);
         // Start all tasks
-        auto executor = caller.executor();
+        auto &executor = caller.executor();
         for (auto &task : mTasks) {
             auto view = task._view();
+            view.setCancellationToken(caller.cancellationToken());
             view.setExecutor(executor);
             view.resume();
             if (view.done()) {
@@ -222,9 +211,6 @@ public:
 
         // Save the status for cancel and resume
         mCaller = caller;
-        mRegistration = caller.cancellationToken().register_(
-            std::bind(&WhenAllRangeAwaiter::cancelAll, this)
-        );
         return true;
     }
 
@@ -255,17 +241,9 @@ private:
         }
     }
 
-    auto cancelAll() -> void {
-        for (auto &task : mTasks) {
-            auto view = task._view();
-            view.cancel();
-        }
-    }
-
     std::span<const Task<T> > mTasks;
     CoroHandle mCaller;
     size_t mTaskLeft;
-    CancellationToken::Registration mRegistration;
 };
 
 /**

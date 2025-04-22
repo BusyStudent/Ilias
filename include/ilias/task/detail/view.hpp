@@ -59,7 +59,6 @@ public:
      * 
      */
     auto resume() const noexcept { 
-        ILIAS_ASSERT(executor()); 
         return mHandle.resume();
     }
 
@@ -70,8 +69,7 @@ public:
      * @return auto 
      */
     auto schedule() const noexcept { 
-        ILIAS_ASSERT(executor());  
-        return executor()->post(scheduleImpl, mHandle.address());
+        return executor().post(scheduleImpl, mHandle.address());
     }
 
     /**
@@ -91,7 +89,7 @@ public:
      * @return auto 
      */
     auto destroyLater() const noexcept {
-        return executor()->post(destroyLaterImpl, mHandle.address());
+        return executor().post(destroyLaterImpl, mHandle.address());
     }
 
     /**
@@ -105,7 +103,7 @@ public:
      * 
      * @return CancellationToken& 
      */
-    auto cancellationToken() const -> CancellationToken & { return mPromise->cancellationToken(); }
+    auto cancellationToken() const noexcept -> CancellationToken & { return mPromise->cancellationToken(); }
 
     /**
      * @brief Check if the coroutine is cancellation requested
@@ -132,9 +130,9 @@ public:
     /**
      * @brief Get the executor of the coroutine
      * 
-     * @return Executor* 
+     * @return Executor &
      */
-    auto executor() const noexcept -> Executor * { return mPromise->executor(); }
+    auto executor() const noexcept -> Executor & { return mPromise->executor(); }
 
 #if defined(ILIAS_TASK_TRACE)
     /**
@@ -179,8 +177,17 @@ public:
      * 
      * @param executor 
      */
-    auto setExecutor(Executor *executor) const noexcept -> void { 
+    auto setExecutor(Executor &executor) const noexcept -> void { 
         return mPromise->setExecutor(executor); 
+    }
+
+    /**
+     * @brief Set the Cancellation Token object, the coroutine will use this token to receive the cancellation request
+     * 
+     * @param token 
+     */
+    auto setCancellationToken(CancellationToken &token) const noexcept -> void {
+        return mPromise->setCancellationToken(token);
     }
 
     /**
@@ -214,7 +221,6 @@ public:
      * 
      */
     auto operator ()() const noexcept {
-        ILIAS_ASSERT(executor()); 
         return mHandle();
     }
 

@@ -69,9 +69,6 @@ public:
 
     auto await_suspend(CoroHandle caller) -> void {
         mView.setAwaitingCoroutine(caller);
-        mReg = caller.cancellationToken().register_(
-            &cancelTheTokenHelper, &mView.cancellationToken()
-        );
     }
 
     auto await_resume() const { 
@@ -86,7 +83,6 @@ public:
 #endif // defined(ILIAS_TASK_TRACE)
 
 protected:
-    CancellationToken::Registration mReg; //< The reg of we wait for cancel
     GeneratorView<T> mView; //< The generator we execute
 };
 
@@ -149,6 +145,7 @@ public:
     auto await_ready() const noexcept { return false; }
 
     auto await_suspend(CoroHandle caller) -> bool {
+        this->mView.setCancellationToken(caller.cancellationToken());
         this->mView.setExecutor(caller.executor());
         if (Base::await_ready()) {
             return false;

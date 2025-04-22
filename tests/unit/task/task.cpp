@@ -120,14 +120,14 @@ TEST(TaskDeathTest, Crash) {
     EXPECT_DEATH_IF_SUPPORTED({
         auto task = fn();
         auto view = task._view();
-        view.setExecutor(Executor::currentThread());
+        view.setExecutor(*Executor::currentThread());
         view.resume();  //< When task destroys, this will cause a crash, destroy a started and not finished task
     }, "");
 
     EXPECT_DEATH_IF_SUPPORTED({
         auto task = fnThrowInt();
         auto view = task._view();
-        view.setExecutor(Executor::currentThread());
+        view.setExecutor(*Executor::currentThread());
         view.resume(); //< Resume, but the task throws and not handled, it will crash
     }, "");
 }
