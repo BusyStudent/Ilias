@@ -154,6 +154,9 @@
     struct ILIAS_FMT_NAMESPACE::formatter<type> :                  \
         ILIAS_NAMESPACE::detail::DefaultFormatter    
 
+// --- Expected
+#include <ilias/detail/expected.hpp>
+
 
 ILIAS_NS_BEGIN
 
@@ -179,7 +182,7 @@ class Generator;
 
 // --- Forward declaration for Result<T, E>
 template <typename T = void, typename E = Error>
-class Result;
+using Result = Expected<T, E>;
 
 // --- Types for io operation task
 template <typename T = void, typename E = Error>

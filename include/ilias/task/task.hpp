@@ -280,15 +280,6 @@ public:
         return wait(*Executor::currentThread(), loc);
     }
 
-    /**
-     * @brief Set the task's cancel policy
-     * 
-     * @param policy 
-     */
-    auto setCancelPolicy(CancelPolicy policy) -> void {
-        return _view().setCancelPolicy(policy);
-    }
-
     // Internal functions
     /**
      * @brief Get the task's internal view, it provides a super set api of the coroutine handle and task

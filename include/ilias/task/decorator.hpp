@@ -31,7 +31,13 @@ struct TimeoutTags {
     }
 
     template <typename T>
-    static auto impl(Task<T> task, TimeoutTags tags) -> Task<AddResultIf<T> > {
+    static auto select(const Task<T> &) -> Task<Result<T> >;
+
+    template <typename T>
+    static auto select(const Task<Result<T> > &) -> Task<Result<T> >;
+
+    template <typename T>
+    static auto impl(Task<T> task, TimeoutTags tags) -> decltype(select(task)) {
         auto [res, timeout] = co_await whenAny(std::move(task), sleep(tags.mMs));
         if (timeout) {
             co_return Unexpected(Error::TimedOut);

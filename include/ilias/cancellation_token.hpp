@@ -84,15 +84,7 @@ friend class CancellationToken;
  */
 class CancellationToken {
 public:
-    enum Flags : uint32_t {
-        None      = 0,
-        AutoReset = 1 << 0,
-    };
-
     CancellationToken() = default;
-    CancellationToken(uint32_t flags) {
-        if (flags & AutoReset) { mAutoReset = true; }
-    }
     CancellationToken(const CancellationToken &) = delete;
     ~CancellationToken() {
         ILIAS_ASSERT(!mIsInCancelling); //< It is ill-formed to destroy the token in the callback
@@ -142,15 +134,6 @@ public:
     }
 
     /**
-     * @brief Set the token auto reset, let the token be reset after invoke the callbacks
-     * 
-     * @param autoReset 
-     */
-    auto setAutoReset(bool autoReset) -> void {
-        mAutoReset = autoReset;
-    }
-
-    /**
      * @brief Check if the cancellation is requested
      * 
      * @return true 
@@ -189,23 +172,10 @@ public:
         
         mIsInCancelling = false;
         mCallbacks.clear();
-
-        if (mAutoReset) {
-            mIsCancellationRequested = false;
-        }
-    }
-
-    /**
-     * @brief Reset the token, back to the initial state
-     * 
-     */
-    auto reset() -> void {
-        mIsCancellationRequested = false;
     }
 private:
     bool mIsCancellationRequested = false;
     bool mIsInCancelling = false;
-    bool mAutoReset = false;
     std::list<detail::CancellationCallback*> mCallbacks; //< Invoke when token is cancelled
 };
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <ilias/detail/expected.hpp>
 #include <ilias/error.hpp>
 #include "huffman.hpp"
 #include "integer.hpp"

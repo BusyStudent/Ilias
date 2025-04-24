@@ -11,32 +11,35 @@
  * 
  */
 
-#include <exception>
-#include <functional>
-#include <type_traits>
-#include <utility>
 #include <version>
 
-#include <ilias/ilias.hpp>
-
 #if defined(__cpp_lib_expected)
-#if __cpp_lib_expected >= 202211L && __cpp_deduction_guides >= 201907L
-#include <expected>
-#define ILIAS_STD_EXPECTED_HPP
-#endif
+    #if __cpp_lib_expected >= 202211L && __cpp_deduction_guides >= 201907L
+        #include <expected>
+        #define ILIAS_STD_EXPECTED
+    #endif
+#else
+    #include <exception>
+    #include <functional>
+    #include <type_traits>
+    #include <concepts>
+    #include <utility>
 #endif
 
 ILIAS_NS_BEGIN
 
-#if defined(ILIAS_STD_EXPECTED_HPP)
+#if defined(ILIAS_STD_EXPECTED)
 
 template <typename T, typename E>
 using Expected = ::std::expected<T, E>;
 template <typename E>
 using Unexpected = ::std::unexpected<E>;
+using Unexpect_t        = ::std::unexpect_t;
+
+#if defined(__cpp_exceptions)
 template <typename E = void>
 using BadExpectedAccess = ::std::bad_expected_access<E>;
-using Unexpect_t        = std::unexpect_t;
+#endif // defined(__cpp_exceptions)
 
 #else
 
@@ -866,19 +869,33 @@ private:
     bool mHasValue;
 };
 
-#endif
+template <typename T, typename E, typename Other> requires (std::equality_comparable_with<T, Other>)
+inline auto operator ==(const Expected<T, E> &lhs, const Other &other) -> bool {
+    if (lhs) {
+        return *lhs == other;
+    }
+    return false;
+}
 
-/**
- * @brief A helper class for wrapping result T and error Error
- *
- * @tparam T
- */
-template <typename T, typename E>
-class Result final : public Expected<T, E> {
-public:
-    using Expected<T, E>::Expected;
-    using Expected<T, E>::operator=;
-};
+template <typename T, typename E, typename Other> requires (std::equality_comparable_with<T, Other>)
+inline auto operator !=(const Expected<T, E> &lhs, const Other &other) -> bool {
+    return !(lhs == other);
+}
+
+template <typename T, typename E, typename Other> requires (std::equality_comparable_with<E, Other>)
+inline auto operator ==(const Expected<T, E> &lhs, const Unexpected<Other> &other) -> bool {
+    if (!lhs) {
+        return lhs.error() == other.error();
+    }
+    return false;
+}
+
+template <typename T, typename E, typename Other> requires (std::equality_comparable_with<E, Other>)
+inline auto operator !=(const Expected<T, E> &lhs, const Unexpected<Other> &other) -> bool {
+    return !(lhs == other);
+}
+
+#endif
 
 /**
  * @brief Create a Unexpected object, function version
@@ -890,73 +907,6 @@ public:
 template <typename T>
 inline auto unexpected(T &&value) {
     return Unexpected(std::forward<T>(value));
-}
-
-template <typename T>
-struct IsResultT : std::false_type { };
-
-template <typename T>
-struct IsResultT<Result<T> > : std::true_type { };
-
-/**
- * @brief Check if T is a Result<Any>
- * 
- */
-template <typename T>
-concept IsResult = IsResultT<std::remove_cvref_t<T> >::value;
-
-/**
- * @brief Add Result to T if T is not a Result
- * 
- * @tparam T 
- */
-template <typename T>
-using AddResultIf = std::conditional_t<IsResult<T>, T, Result<T> >;
-
-/**
- * @brief Compare result with other value
- * 
- * @tparam T 
- * @tparam E 
- * @tparam Other 
- * @param res 
- * @param other 
- * @return auto 
- */
-template <typename T, typename E, typename Other>
-inline auto operator ==(const Result<T, E> &res, const Other &other) noexcept {
-    if (res) {
-        return res.value() == other;
-    }
-    return false;
-}
-
-template <typename T, typename E, typename Other>
-inline auto operator !=(const Result<T, E> &res, const Other &other) noexcept {
-    return !(res == other);
-}
-
-/**
- * @brief Compare result with other unexpected
- * 
- * @tparam T 
- * @tparam E 
- * @tparam Other 
- * @param res 
- * @param other 
- * @return auto 
- */
-template <typename T, typename E, typename Other>
-inline auto operator ==(const Result<T, E> &res, const Unexpected<Other> &other) noexcept {
-    if (!res) {
-        return res.error() == other.error();
-    }
-    return false;
-}
-
-template <typename T, typename E, typename Other>
-inline auto operator !=(const Result<T, E> &res, const Unexpected<Other> &other) noexcept {
-    return !(res == other);
 }
 
 ILIAS_NS_END

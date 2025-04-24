@@ -94,32 +94,6 @@ TEST(CancellationToken, MultipleUnregistered) {
     ASSERT_TRUE(token.isCancellationRequested());
 }
 
-TEST(CancellationToken, AutoReset) {
-    CancellationToken token;
-    {
-        auto reg1 = token.register_([&]() {
-           ILIAS_ASSERT(token.isCancellationRequested()); 
-        });
-        token.cancel();
-        ASSERT_TRUE(token.isCancellationRequested());
-    }
-    token.reset();
-    token.setAutoReset(true);
-    {
-        ASSERT_FALSE(token.isCancellationRequested());
-        auto reg2 = token.register_([&]() {
-            ILIAS_ASSERT(token.isCancellationRequested());
-        });
-        token.cancel();
-        ASSERT_FALSE(token.isCancellationRequested()); //< Because auto reset enabled, the token is reset immediately after cancel
-        bool value = false;
-        auto reg3 = token.register_([&]() {
-            value = true;
-        });
-        ASSERT_FALSE(value); //< It woun't be called
-    }
-}
-
 auto main(int argc, char **argv) -> int {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

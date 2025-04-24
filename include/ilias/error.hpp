@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include <ilias/detail/expected.hpp>
 #include <ilias/ilias.hpp>
 
 /**
@@ -22,7 +21,7 @@
  * 
  */
 #define ILIAS_DECLARE_ERROR(errc, category)             \
-    inline auto _MakeError_Ilias(errc e) noexcept {     \
+    inline auto _ilias_makeError_(errc e) noexcept {     \
         using ::ILIAS_NAMESPACE::Error;                 \
         return Error{int64_t(e), category::instance()}; \
     }
@@ -34,13 +33,13 @@ class ErrorCategory;
 class Error;
 
 /**
- * @brief Check is error code, can be put into Error class
+ * @brief Check is error code, can be cast into Error class
  * 
  * @tparam T 
  */
 template <typename T>
-concept ErrorCode = requires(T t) {
-    { _MakeError_Ilias(t) } -> std::same_as<Error>;
+concept IntoError = requires(T t) {
+    { _ilias_makeError_(t) } -> std::same_as<Error>;
 };
 
 
@@ -134,7 +133,7 @@ public:
      * @tparam T 
      * @param err 
      */
-    template <ErrorCode T>
+    template <IntoError T>
     Error(T err);
 
     /**
@@ -306,8 +305,8 @@ inline auto ErrorCategory::equivalent(int64_t value, const Error &other) const -
 }
 
 // --- Error
-template <ErrorCode T>
-inline Error::Error(T err) : Error(_MakeError_Ilias(err)) { }
+template <IntoError T>
+inline Error::Error(T err) : Error(_ilias_makeError_(err)) { }
 inline Error::Error(int64_t err, const ErrorCategory &c) : mErr(err), mCategory(&c) { }
 inline Error::Error() : mErr(Ok), mCategory(&IliasCategory::instance()) { }
 inline Error::Error(const Error &) = default;

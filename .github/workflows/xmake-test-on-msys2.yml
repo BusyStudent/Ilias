@@ -1,0 +1,33 @@
+name: CI for msys2 by xmake
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ "*" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: msys2/setup-msys2@v2
+      with:
+        update: true
+        msystem: MINGW64
+        install: mingw-w64-x86_64-gcc mingw-w64-xmake
+    - name: Configure
+      run: xmake f -m coverage -y
+    - name: Build
+      run: xmake -y
+    - name: Run Test and collect coverage
+      run: xmake test -v
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        verbose: true
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

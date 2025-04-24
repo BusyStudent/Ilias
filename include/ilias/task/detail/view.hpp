@@ -20,15 +20,6 @@ namespace detail {
 }
 
 /**
- * @brief The cancellation policy for the coroutine
- * 
- */
-enum class CancelPolicy {
-    Once,         // Cancels only the current await point; subsequent co_await operations proceed normally (default)
-    Persistent,   // Cancellation persists; all subsequent co_await operations will receive cancellation notifications
-};
-
-/**
  * @brief The type erased coroutine, it can observe the coroutine, 
  *  it is a superset of std::coroutine_handle<> and has interface to access the coroutine's promise field
  * 
@@ -161,15 +152,6 @@ public:
      */
     auto setAwaitingCoroutine(std::coroutine_handle<> handle) const noexcept -> void { 
         return mPromise->setAwaitingCoroutine(handle); 
-    }
-
-    /**
-     * @brief Set the Cancel Policy object, the coroutine will follow this policy when self is cancelled
-     * 
-     * @param policy 
-     */
-    auto setCancelPolicy(CancelPolicy policy) const noexcept -> void { 
-        return cancellationToken().setAutoReset(policy == CancelPolicy::Once); 
     }
 
     /**
