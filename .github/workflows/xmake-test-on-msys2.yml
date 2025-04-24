@@ -3,8 +3,11 @@ name: CI for msys2 by xmake
 on:
   push:
     branches: [ "*" ]
+    paths-ignore:
+      - '**/*.md'
   pull_request:
     branches: [ "*" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,7 +21,7 @@ jobs:
       with:
         update: true
         msystem: MINGW64
-        install: mingw-w64-x86_64-gcc mingw-w64-x86_64-xmake
+        install: mingw-w64-x86_64-gcc mingw-w64-x86_64-xmake git unzip
     - name: Configure
       run: xmake f -m coverage -y
     - name: Build
