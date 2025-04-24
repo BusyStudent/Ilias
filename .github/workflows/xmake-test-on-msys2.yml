@@ -18,7 +18,7 @@ jobs:
       with:
         update: true
         msystem: MINGW64
-        install: mingw-w64-x86_64-gcc mingw-w64-xmake
+        install: mingw-w64-x86_64-gcc mingw-w64-x86_64-xmake
     - name: Configure
       run: xmake f -m coverage -y
     - name: Build

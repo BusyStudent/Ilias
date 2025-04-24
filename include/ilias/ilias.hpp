@@ -12,6 +12,7 @@
  */
 
 #include <concepts>
+#include <utility>
 #include <cstdint>
 #include <cstdio>
 #include <string>
