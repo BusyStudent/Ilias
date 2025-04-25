@@ -205,7 +205,7 @@ public:
      * @return true 
      * @return false 
      */
-    operator bool() const { return bool(mData); }
+    explicit operator bool() const { return bool(mData); }
 private:
     detail::SpawnDataRef mData;
 template <typename T>
@@ -274,7 +274,7 @@ public:
      * @return true 
      * @return false 
      */
-    operator bool() const { return bool(mData); }
+    explicit operator bool() const { return bool(mData); }
 
     /**
      * @brief implicitly convert to CancelHandle

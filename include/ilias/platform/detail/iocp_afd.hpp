@@ -178,16 +178,17 @@ inline AfdDevice::AfdDevice() {
     wchar_t path [] = L"\\Device\\Afd\\Ilias";
     ::HANDLE device = nullptr;
     ::UNICODE_STRING deviceName {
-        sizeof(path) - sizeof(path[0]),
-        sizeof(path),
-        path
+        .Length = sizeof(path) - sizeof(path[0]),
+        .MaximumLength = sizeof(path),
+        .Buffer = path
     };
     ::OBJECT_ATTRIBUTES objAttr {
-        sizeof(OBJECT_ATTRIBUTES),
-        nullptr,
-        &deviceName,
-        0,
-        nullptr
+        .Length = sizeof(OBJECT_ATTRIBUTES),
+        .RootDirectory = nullptr,
+        .ObjectName = &deviceName,
+        .Attributes = 0,
+        .SecurityDescriptor = nullptr,
+        .SecurityQualityOfService = nullptr
     };
     ::IO_STATUS_BLOCK statusBlock {};
     auto status = NtCreateFile(

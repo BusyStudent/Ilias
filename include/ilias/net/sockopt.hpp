@@ -17,6 +17,10 @@
 
 #if defined(_WIN32)
     #include <MSWSock.h>
+
+    #if !defined(SIO_UDP_CONNRESET) // Polyfill for SIO_UDP_CONNRESET in minGW
+        #define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR,12)
+    #endif // defined(SIO_UDP_CONNRESET)
 #else
     #include <netinet/tcp.h>
 #endif // defined(_WIN32)

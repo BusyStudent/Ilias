@@ -159,7 +159,7 @@ inline auto SockInitializer::uninitialize() -> Result<void> {
  * @return true 
  * @return false 
  */
-constexpr auto isNetworkOrder() noexcept -> bool {
+consteval auto isNetworkOrder() noexcept -> bool {
     return std::endian::native == std::endian::big;
 }
 

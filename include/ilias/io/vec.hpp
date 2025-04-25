@@ -19,7 +19,7 @@
     #define ILIAS_IOVEC_T ::WSABUF
     #define iov_base buf
     #define iov_len  len
-    #define NOMINMAX
+    #define NOMINMAX 1
     #include <WinSock2.h>
 #else
     #define ILIAS_IOVEC_T ::iovec
