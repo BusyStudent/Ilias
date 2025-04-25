@@ -405,11 +405,8 @@ public:
      * @return size_t 
      */
     auto bufsize() const -> size_t {
-        return std::max({
-            sizeof(::sockaddr),
-            sizeof(::sockaddr_in),
-            sizeof(::sockaddr_in6)
-        });
+        static_assert(sizeof(::sockaddr_in6) >= sizeof(::sockaddr_in));
+        return sizeof(::sockaddr_in6);
     }
 
     /**

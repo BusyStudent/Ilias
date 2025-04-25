@@ -13,6 +13,7 @@
 
 #include <ilias/io/system_error.hpp>
 #include <ilias/error.hpp>
+#include <algorithm>
 #include <array>
 #include <bit>
 

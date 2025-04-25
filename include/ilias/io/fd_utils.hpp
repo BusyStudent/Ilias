@@ -10,7 +10,6 @@
  */
 #pragma once
 
-#include <ilias/detail/expected.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/context.hpp> // For IoDescriptor::Type
 #include <string>
