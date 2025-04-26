@@ -43,6 +43,11 @@ target("ilias")
     add_configfiles("ilias/detail/config.hpp.in")
     add_headerfiles("(ilias/**.hpp)")
 
+    -- Add links by platform
+    if is_plat("windows") or is_plat("mingw") or is_plat("msys") then 
+        add_syslinks("ws2_32")
+    end
+
     -- Set var if
     if has_config("use_fmt") then
         add_packages("fmt", {public = true})
