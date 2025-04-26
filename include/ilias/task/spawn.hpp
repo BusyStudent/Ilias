@@ -23,7 +23,7 @@ ILIAS_NS_BEGIN
 namespace detail {
 
 struct SpawnData {
-    SpawnData() {}
+    SpawnData(TaskView<> task) : mTask(task) { mTask.setCancellationToken(mToken); }
     SpawnData(const SpawnData &) = delete;
     ~SpawnData() {
         ILIAS_ASSERT(mTask.isSafeToDestroy());
@@ -79,9 +79,11 @@ struct SpawnData {
 template <typename T>
 struct SpawnDataWithCallable final : SpawnData {
     template <typename ...Args>
-    SpawnDataWithCallable(T callable, Args &&...args) : mCallable(std::move(callable)) {
+    SpawnDataWithCallable(T callable, Args &&...args) : 
+        SpawnData(std::invoke(mCallable, std::forward<Args>(args)...)._leak()),
+        mCallable(std::move(callable)) 
+    {
         mDeleteSelf = &deleteSelf;
-        mTask = std::invoke(mCallable, std::forward<Args>(args)...)._leak();
     }
     static auto deleteSelf(SpawnData *self) -> void {
         delete static_cast<SpawnDataWithCallable<T> *>(self);
@@ -131,6 +133,15 @@ public:
         mTask.schedule();
         mReg = mCaller.cancellationToken().register_(onCancel, this);
     }
+
+#if defined(ILIAS_TASK_TRACE)
+    // As same as Task
+    auto _trace(CoroHandle caller) const -> void {
+        caller.traceLink(mTask);
+        caller.frame().msg = fmtlib::format("shedule on {}", (void*) &mTask.executor());
+    }
+#endif // defined(ILIAS_TASK_TRACE)
+
 private:
     static auto onComplete(void *_self) -> void { 
         // May in different thread, use schedule to post to the executor
@@ -296,9 +307,7 @@ private:
  */
 template <typename T>
 inline auto spawn(Executor &executor, Task<T> &&task, ILIAS_CAPTURE_CALLER(loc)) -> WaitHandle<T> {
-    auto ref = detail::SpawnDataRef(new detail::SpawnData);
-    ref->mTask = task._leak();
-    ref->mTask.setCancellationToken(ref->mToken);
+    auto ref = detail::SpawnDataRef(new detail::SpawnData(task._leak()));
     ref->mTask.setExecutor(executor);
     ref->mTask.schedule(); //< Start it on the event loop
 
@@ -338,7 +347,6 @@ inline auto spawn(Executor &executor, Callable callable, Args &&...args) {
                 std::forward<Args>(args)...
             )
         );
-        ref->mTask.setCancellationToken(ref->mToken);
         ref->mTask.setExecutor(executor);
         ref->mTask.schedule(); //< Start it on the event loop
 

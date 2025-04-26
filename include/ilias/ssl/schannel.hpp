@@ -109,7 +109,24 @@ public:
     SslData(::PSecurityFunctionTableW t) : table(t) { }
     SslData(const SslData &) = delete;
     ~SslData() {
+        // Apply the shutdown token, to prevent the wrong state in schannel internal 
+        if (!shutdown) {
+            applyControlToken(SCHANNEL_SHUTDOWN);
+        }
         table->DeleteSecurityContext(&ssl);
+    }
+
+    auto applyControlToken(DWORD type) -> Result<void> {
+        ::SecBuffer inbuffer { };
+        inbuffer.BufferType = SECBUFFER_TOKEN;
+        inbuffer.pvBuffer = &type;
+        inbuffer.cbBuffer = sizeof(type);
+        ::SecBufferDesc indesc { SECBUFFER_VERSION, 1, &inbuffer };
+        if (auto status = table->ApplyControlToken(&ssl, &indesc); status != SEC_E_OK) {
+            ILIAS_WARN("Schannel", "Failed to ApplyControlToken {}", status);
+            return Unexpected(SslCategory::makeError(status));
+        }
+        return {};
     }
 
     ::PSecurityFunctionTableW table = nullptr;
@@ -432,27 +449,18 @@ protected:
         // https://learn.microsoft.com/zh-cn/windows/win32/secauthn/shutting-down-an-schannel-connection
         ILIAS_TRACE("Schannel", "Shutdown for {}", win32::toUtf8(mHost));
 
-        // Send say goodbye 
-        DWORD type = SCHANNEL_SHUTDOWN;
-        
-        ::SecBuffer inbuffer { };
-        inbuffer.BufferType = SECBUFFER_TOKEN;
-        inbuffer.pvBuffer = &type;
-        inbuffer.cbBuffer = sizeof(type);
-
+        // Send say goodbye         
         ::SecBuffer outbuffer { };
         outbuffer.BufferType = SECBUFFER_EMPTY;
         outbuffer.pvBuffer = nullptr;
         outbuffer.cbBuffer = 0;
 
-        ::SecBufferDesc indesc { SECBUFFER_VERSION, 1, &inbuffer };
         ::SecBufferDesc outdesc { SECBUFFER_VERSION, 1, &outbuffer };
 
         auto table = mCtxt->table();
         auto credHandle = mCtxt->credHandle();
-        if (auto status = table->ApplyControlToken(&mData->ssl, &indesc); status != SEC_E_OK) {
-            ILIAS_WARN("Schannel", "Failed to ApplyControlToken {}", status);
-            co_return Unexpected(SslCategory::makeError(status));
+        if (auto res = mData->applyControlToken(SCHANNEL_SHUTDOWN); !res) {
+            co_return Unexpected(res.error());
         }
         DWORD flags = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT 
             | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
@@ -492,6 +500,7 @@ protected:
                 size -= *n;
             }
         }
+        mData->shutdown = true;
 
         // Shutdown fd below us
         if constexpr (Shuttable<T>) {

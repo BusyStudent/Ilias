@@ -325,7 +325,7 @@ public:
         ILIAS_TRACE("Http1.1", "Recv header End");
 
         // Check keep alive
-        mKeepAlive = headers.value(HttpHeaders::Connection) == "keep-alive";
+        mKeepAlive = headers.value(HttpHeaders::Connection) != "close";
 
         // Check transfer encoding
         auto contentLength = headers.value(HttpHeaders::ContentLength);

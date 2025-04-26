@@ -45,7 +45,7 @@ target("ilias")
 
     -- Add links by platform
     if is_plat("windows") or is_plat("mingw") or is_plat("msys") then 
-        add_syslinks("ws2_32")
+        add_syslinks("ws2_32", "bcrypt")
     end
 
     -- Set var if
