@@ -17,11 +17,9 @@
 #include <bit>
 
 #if defined(_WIN32)
-    #define _WINSOCKAPI_ // Avoid windows.h to include winsock.h
-    #define NOMINMAX 1
-    #include <Windows.h>
-    #include <bcrypt.h>
+    #include <ilias/detail/win32defs.hpp>
     #include <VersionHelpers.h>
+    #include <bcrypt.h>
 
     #if defined(_MSC_VER)
         #pragma comment(lib, "bcrypt.lib")

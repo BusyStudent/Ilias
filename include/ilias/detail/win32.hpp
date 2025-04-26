@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/detail/win32defs.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/task/executor.hpp>
 #include <ilias/task/task.hpp>

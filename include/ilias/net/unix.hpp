@@ -15,6 +15,8 @@
 #include <ilias/io/context.hpp>
 #include <ilias/io/method.hpp>
 
+#if !defined(ILIAS_NO_AF_UNIX) // In minGW or older version of Windows, AF_UNIX is not supported
+
 ILIAS_NS_BEGIN
 
 /**
@@ -380,3 +382,5 @@ friend class detail::SocketBase;
 };
 
 ILIAS_NS_END
+
+#endif // defined(ILIAS_NO_AF_UNIX)

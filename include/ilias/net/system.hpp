@@ -30,7 +30,12 @@
 
     #include <WinSock2.h>
     #include <WS2tcpip.h>
-    #include <afunix.h>
+
+    #if __has_include(<afunix.h>)
+        #include <afunix.h>
+    #else // minGW :( It doesn't have afunix.h
+        #define ILIAS_NO_AF_UNIX
+    #endif
 
     #ifdef _MSC_VER
         #pragma comment(lib, "Ws2_32.lib")

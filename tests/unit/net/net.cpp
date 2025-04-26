@@ -121,10 +121,12 @@ TEST(Net, TestPoll) {
     ASSERT_TRUE(client2.poll(PollEvent::In).wait());
 }
 
+#if !defined(ILIAS_NO_AF_UNIX)
 TEST(Net, UnixTest) {
     auto ctxt = IoContext::currentThread();
     UnixClient client(*ctxt, SOCK_STREAM);
 }
+#endif // defined(ILIAS_NO_AF_UNIX)
 
 auto main(int argc, char **argv) -> int {
 

@@ -37,6 +37,9 @@ concept MutableEndpoint = requires(T t) {
     t.bufsize();
 };
 
+
+#if !defined(ILIAS_NO_AF_UNIX)
+
 /**
  * @brief The endpoint of a unix domain socket
  * 
@@ -180,6 +183,8 @@ public:
         return UnixEndpoint(path);
     }
 };
+
+#endif // defined(ILIAS_NO_AF_UNIX)
 
 /**
  * @brief The endpoint of a internet socket
@@ -730,6 +735,5 @@ private:
     ::sockaddr *mAddr = nullptr;
     ::socklen_t mBufSize = 0;
 };
-
 
 ILIAS_NS_END

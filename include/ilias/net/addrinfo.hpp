@@ -21,6 +21,13 @@
     #define ILIAS_ADDRINFO ::ADDRINFOEXW
     #include <ilias/detail/win32.hpp> //< EventOverlapped
     #include <VersionHelpers.h>
+
+    #if defined(__MINGW32__) || defined(__MINGW64__) // Polyfill for MinGW
+        extern "C" {
+            __declspec(dllimport) INT WSAAPI GetAddrInfoExCancel(LPHANDLE);
+            __declspec(dllimport) INT WSAAPI GetAddrInfoExOverlappedResult(LPOVERLAPPED);
+        }
+    #endif // defined(__MINGW32__)
 #else
     #define ILIAS_ADDRINFO ::addrinfo
     #include <csignal>

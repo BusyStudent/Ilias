@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/detail/win32defs.hpp>
 #include <ilias/cancellation_token.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/task/task.hpp>
@@ -17,7 +18,6 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #include <MSWSock.h>
-#include <Windows.h>
 
 ILIAS_NS_BEGIN
 

@@ -15,12 +15,10 @@
 #include <ilias/error.hpp>
 #include <cerrno>
 
-#if defined(_WIN32)
-    #define _WINSOCKAPI_ // Avoid windows.h to include winsock.h
-    #define NOMINMAX 1
-    #include <Windows.h>
+#if   defined(_WIN32)
+    #include <ilias/detail/win32defs.hpp>
     #define MAP(x) WSA##x
-    #elif defined(__unix__)
+#elif defined(__unix__)
     #include <errno.h>
     #include <string.h>
     #define MAP(x) x
