@@ -12,6 +12,10 @@
 #pragma once
 
 #include <ilias/ilias.hpp>
+#include <concepts>
+#include <utility>
+#include <string>
+#include <array>
 
 /**
  * @brief Macro to declare a error category
@@ -21,14 +25,62 @@
  * 
  */
 #define ILIAS_DECLARE_ERROR(errc, category)             \
-    inline auto _ilias_makeError_(errc e) noexcept {     \
+    inline auto _ilias_makeError_(errc e) noexcept {    \
         using ::ILIAS_NAMESPACE::Error;                 \
         return Error{int64_t(e), category::instance()}; \
     }
 
 ILIAS_NS_BEGIN
 
-// --- Error
+/**
+ * @brief The utility namespace for reflection
+ * 
+ */
+namespace reflect {
+
+/**
+ * @brief Get the name of the type in compile time
+ * 
+ * @tparam T 
+ * @return std::string_view 
+ */
+template <auto T>
+consteval auto nameof() {
+#ifdef _MSC_VER
+    constexpr std::string_view name(__FUNCSIG__);
+    constexpr size_t nsEnd = name.find_last_of("::");
+    constexpr size_t end = name.find('>', nsEnd);
+    // size_t dotBegin = name.find_first_of(',');
+    // size_t end = name.find_last_of('>');
+    // return name.substr(dotBegin + 1, end - dotBegin - 1);
+    return name.substr(nsEnd + 1, end - nsEnd - 1);
+#else
+    std::string_view name(__PRETTY_FUNCTION__);
+    size_t eqBegin = name.find_last_of(' ');
+    size_t end = name.find_last_of(']');
+    return name.substr(eqBegin + 1, end - eqBegin - 1);
+#endif
+}
+
+/**
+ * @brief Get the array of the name of the type in compile time
+ * 
+ * @tparam T 
+ * @return std::array<char,?> (no null terminator)
+ */
+template <auto T>
+consteval auto nameof2() {
+    constexpr auto name = nameof<T>();
+    std::array<char, name.size()> buffer {0};
+    for (size_t i = 0; i < name.size(); ++i) {
+        buffer[i] = name[i];
+    }
+    return buffer;
+}
+
+} // namespace refl
+
+// Error forward declaration
 class ErrorCategory;
 class Error;
 
@@ -204,6 +256,16 @@ public:
      * @return Error& 
      */
     auto operator =(const Error &) -> Error & = default;
+
+    /**
+     * @brief Check if the error cod
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const {
+        return !isOk();
+    }
 private:
     int64_t mErr = Ok;
     const ErrorCategory *mCategory = nullptr;
@@ -253,49 +315,37 @@ public:
 
     static auto instance() -> const IliasCategory &;
 private:
-    template <Error::Code>
-    static consteval auto _errMessage();
     template <size_t ...N>
-    static consteval auto _errTable(std::index_sequence<N...>);
+    static auto messageImpl(std::index_sequence<N...>, int64_t i) -> std::string_view;
 };
 
 ILIAS_DECLARE_ERROR(Error::Code, IliasCategory);
 
 // --- Error Impl
-template <Error::Code c>
-inline consteval auto IliasCategory::_errMessage() {
-#ifdef _MSC_VER
-    constexpr std::string_view name(__FUNCSIG__);
-    constexpr size_t nsEnd = name.find_last_of("::");
-    constexpr size_t end = name.find('>', nsEnd);
-    // size_t dotBegin = name.find_first_of(',');
-    // size_t end = name.find_last_of('>');
-    // return name.substr(dotBegin + 1, end - dotBegin - 1);
-    return name.substr(nsEnd + 1, end - nsEnd - 1);
-#else
-    std::string_view name(__PRETTY_FUNCTION__);
-    size_t eqBegin = name.find_last_of(' ');
-    size_t end = name.find_last_of(']');
-    return name.substr(eqBegin + 1, end - eqBegin - 1);
-#endif
-}
 template <size_t ...N>
-inline consteval auto IliasCategory::_errTable(std::index_sequence<N...>) {
-    constexpr std::array<std::string_view, sizeof ...(N)> table = {
-        _errMessage<Error::Code(N)>()...
+inline auto IliasCategory::messageImpl(std::index_sequence<N...>, int64_t i) -> std::string_view {
+    constinit static auto data = std::tuple {
+        reflect::nameof2<Error::Code(N)>()...
     };
-    return table;
+    std::array<std::string_view, sizeof...(N)> table {
+        std::string_view(
+            std::get<N>(data).data(),
+            std::get<N>(data).size()
+        )...
+    };
+    if (i < 0 || i >= int64_t(table.size())) {
+        return "Unknown error";
+    }
+    return table[i];
 }
 inline auto IliasCategory::instance() -> const IliasCategory & {
     static IliasCategory c;
     return c;
 }
 inline auto IliasCategory::message(int64_t err) const -> std::string {
-    constexpr auto table = _errTable(std::make_index_sequence<size_t(Error::User)>());
-    if (err > table.size()) {
-        return "Unknown error";
-    }
-    return std::string(table[err]);
+    return std::string(
+        messageImpl(std::make_index_sequence<size_t(Error::User)>(), err)
+    );
 }
 inline auto IliasCategory::name() const -> std::string_view {
     return "ilias";

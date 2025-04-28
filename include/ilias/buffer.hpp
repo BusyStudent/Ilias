@@ -44,6 +44,27 @@ concept IntoSpan = requires(T &t) {
     std::span(t);
 };
 
+
+/**
+ * @brief Concept for types that can be converted to Buffer
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept IntoBuffer = requires(T &t) {
+    { makeBuffer(t) } -> std::convertible_to<Buffer>;
+};
+
+/**
+ * @brief Concept for types that can be converted to MutableBuffer
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept IntoMutableBuffer = requires(T &t) {
+    { makeBuffer(t) } -> std::convertible_to<MutableBuffer>;
+};
+
 /**
  * @brief Concept for types that can be resized
  * 
