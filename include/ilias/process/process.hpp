@@ -23,6 +23,7 @@
     #include <sys/syscall.h> // We need to directly use syscall for pidfd
     #include <sys/poll.h>
     #include <unistd.h>
+    #include <spawn.h>
 #endif
 
 ILIAS_NS_BEGIN
@@ -60,6 +61,15 @@ public:
     auto join() const;
 
     /**
+     * @brief Get the descriptor for the process
+     * 
+     * @return fd_t 
+     */
+    auto fd() const -> fd_t;
+
+    auto operator =(Process &&other) -> Process &;
+
+    /**
      * @brief Spawn a process with the specified command line arguments.s
      * 
      * @param exec The executable path
@@ -68,7 +78,7 @@ public:
      */
     static auto spawn(std::string_view exec, std::vector<std::string_view> args = {});
     static auto spawn(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args = {}) -> Result<Process>;
-    static auto spawnLinux(IoContext &ctxt, char **args) -> Result<Process>;
+    static auto spawnLinux(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args) -> Result<Process>;
     static auto spawnWin32(IoContext &ctxt, std::wstring args) -> Result<Process>;
 
     /**
@@ -124,6 +134,15 @@ inline auto Process::kill() const -> Result<void> {
     if (::TerminateProcess(mHandle, 0)) {
         return {};
     }
+#elif defined(SYS_pidfd_send_signal)
+    auto send_signal = [](int pidfd, int sig, siginfo_t *info, unsigned int flags) {
+        return ::syscall(SYS_pidfd_send_signal, pidfd, sig, info, flags);
+    };
+    if (send_signal(mHandle, SIGKILL, nullptr, 0) == 0) {
+        return {};
+    }
+#else
+    return Unexpected(SystemError::OperationNotSupported);
 #endif
 
     return Unexpected(SystemError::fromErrno());
@@ -139,6 +158,21 @@ inline auto Process::join() const {
     return mCtxt->poll(mDesc, POLLIN); // I don't want to include network module here, so just use the platform defines
 #endif
 
+}
+
+inline auto Process::fd() const -> fd_t {
+    return mHandle;
+}
+
+inline auto Process::operator=(Process &&other) -> Process & {
+    if (this == &other) {
+        return *this;
+    }
+    detach();
+    mCtxt = std::exchange(other.mCtxt, nullptr);
+    mDesc = std::exchange(other.mDesc, nullptr);
+    mHandle = std::exchange(other.mHandle, fd_t(-1));
+    return *this;
 }
 
 inline auto Process::spawn(std::string_view exec, std::vector<std::string_view> args) {
@@ -178,10 +212,38 @@ inline auto Process::spawn(IoContext &ctxt, std::string_view exec, std::vector<s
     }
     return spawnWin32(ctxt, std::move(cmdline));
 #else
-    return spawnLinux(ctxt, std::move(args));
+    return spawnLinux(ctxt, exec, std::move(args));
 #endif
 }
 
+#if defined(SYS_pidfd_open) // We need this system call
+inline auto Process::spawnLinux(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args) -> Result<Process> {
+    auto open = [](pid_t pid, unsigned int flags) {
+        return ::syscall(SYS_pidfd_open, pid, flags);
+    };
+    // Dup it on the stack
+    auto program = strndupa(exec.data(), exec.size());
+    // Allocate argv array with space for program name + args + nullptr
+    auto vec = (char**) alloca((args.size() + 2) * sizeof(char*));
+    vec[0] = program;
+    for (size_t i = 0; i < args.size(); i++) {
+        vec[i + 1] = strndupa(args[i].data(), args[i].size());
+    }
+    vec[args.size() + 1] = nullptr;
+    // Spawn it
+    pid_t pid = 0;
+    if (::posix_spawnp(&pid, program, nullptr, nullptr, vec, nullptr) != 0) {
+        return Unexpected(SystemError::fromErrno());
+    }
+    
+    if (int fd = open(pid, 0); fd >= 0) {
+        return Process(ctxt, fd);
+    }
+    return Unexpected(SystemError::fromErrno());
+}
+#endif // defined(SYS_pidfd_open)
+
+#if defined(_WIN32)
 inline auto Process::spawnWin32(IoContext &ctxt, std::wstring args) -> Result<Process> {
     ::STARTUPINFOW si {
         .cb = sizeof(::STARTUPINFOW),
@@ -205,5 +267,6 @@ inline auto Process::spawnWin32(IoContext &ctxt, std::wstring args) -> Result<Pr
     ::CloseHandle(pi.hThread); // We don't need the thread handle
     return Process(ctxt, pi.hProcess);
 }
+#endif // defined(_WIN32)
 
 ILIAS_NS_END

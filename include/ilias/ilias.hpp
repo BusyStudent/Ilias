@@ -258,7 +258,7 @@ ILIAS_NS_END
 #if !defined(ILIAS_NO_FORMAT)
 ILIAS_FORMATTER_T_RAW(ILIAS_NAMESPACE::IntoString T, T) {
     auto format(const auto &value, auto &ctxt) const {
-        return std::format_to(ctxt.out(), "{}", toString(value));
+        return format_to(ctxt.out(), "{}", toString(value));
     }
 };
 #endif // ILIAS_NO_FORMAT

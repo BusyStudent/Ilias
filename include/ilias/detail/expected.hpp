@@ -18,7 +18,9 @@
         #include <expected>
         #define ILIAS_STD_EXPECTED
     #endif
-#else
+#endif
+
+#if !defined(ILIAS_STD_EXPECTED)
     #include <exception>
     #include <functional>
     #include <type_traits>
