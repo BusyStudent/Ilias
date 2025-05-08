@@ -43,6 +43,17 @@ TEST(TaskSpawn, Await) {
     ASSERT_EQ(value, 42);
 }
 
+TEST(TaslSpawn, Immediate) {
+    int value = 0;
+    auto fn = [&]() -> Task<int> {
+        value = 1;
+        co_return 42;
+    };
+    auto handle = spawn(SpawnPolicy::Immediate, fn);
+    ASSERT_EQ(value, 1);
+    handle.wait();
+}
+
 TEST(TaskSpawn, Macro) {
     auto fn = []() -> Task<int> {
         co_return 42;

@@ -22,18 +22,31 @@ ILIAS_NS_BEGIN
 namespace win32 {
 
 /**
+ * @brief The default cancel tags for wait object, default cancel is unregister wait
+ * 
+ */
+struct DefaultCancel {
+    auto operator ()() const noexcept -> void; // No-implementation, never called
+};
+
+/**
  * @brief Waiting for a object to be signaled (wrapping RegisterWaitForSingleObject)
  * 
  */
+template <std::invocable T = DefaultCancel>
 class WaitObject {
 public:
-    WaitObject(HANDLE handle, ULONG timeout = INFINITE) : mHandle(handle), mMillseconds(timeout) { }
+    WaitObject(HANDLE handle, ULONG timeout = INFINITE, T op = {}) : 
+        mHandle(handle), mMillseconds(timeout), mCancelOperation(std::move(op))
+    {
+
+    }
 
     auto await_ready() const noexcept {
         return false;
     }
 
-    auto await_suspend(TaskView<> caller) -> bool {
+    auto await_suspend(CoroHandle caller) -> bool {
         mCaller = caller;
         auto v = ::RegisterWaitForSingleObject(
             &mWaitHandle,
@@ -55,7 +68,7 @@ public:
         if (mCanceled) {
             return Unexpected(Error::Canceled);
         }
-        if (!mWaitHandle) { //< FAiled to register
+        if (!mWaitHandle) { // Failed to register
             return Unexpected(SystemError::fromErrno());
         }
         if (!::UnregisterWaitEx(mWaitHandle, nullptr)) {
@@ -70,22 +83,31 @@ private:
     static auto CALLBACK completeCallback(void *_self, BOOLEAN waitOrTimeout) -> void {
         auto self = static_cast<WaitObject*>(_self);
         if (self->mFlag.test_and_set()) {
-            return; //< Cancel already
+            return; // Cancel already
         }
         self->mTimedout = waitOrTimeout;
         self->mCaller.schedule();
     }
     static auto cancelCallback(void *_self) -> void {
         auto self = static_cast<WaitObject*>(_self);
-        if (self->mFlag.test_and_set()) {
-            return; //< Completed already
+        if constexpr (std::is_same_v<T, DefaultCancel>) {
+            self->doUnregisterCancellation();
         }
-        if (!::UnregisterWaitEx(self->mWaitHandle, nullptr)) {
+        else {
+            self->mCancelOperation();
+        }
+    }
+
+    auto doUnregisterCancellation() -> void {
+        if (mFlag.test_and_set()) {
+            return; // Completed already
+        }
+        if (!::UnregisterWaitEx(mWaitHandle, nullptr)) {
             ILIAS_ERROR("Win32", "Failed to unregister wait handle {}", ::GetLastError());
         }
-        self->mWaitHandle = nullptr;
-        self->mCanceled = true;
-        self->mCaller.schedule();
+        mWaitHandle = nullptr;
+        mCanceled = true;
+        mCaller.schedule();
     }
 
     HANDLE mHandle;     //< The handle we want to wait on
@@ -93,9 +115,16 @@ private:
     ULONG  mMillseconds = INFINITE; // The timeout for the wait
     BOOLEAN mTimedout = FALSE; // Whether the wait timed out
     BOOLEAN mCanceled = FALSE; // Whether the wait was canceled
-    TaskView<> mCaller;
+    CoroHandle mCaller;
     std::atomic_flag mFlag = ATOMIC_FLAG_INIT; //< Does the operation complete?
     CancellationToken::Registration mRegistration;
+
+#if defined(_MSC_VER) // https://en.cppreference.com/w/cpp/language/attributes/no_unique_address
+    [[msvc::no_unique_address]] // MUST use it on msvc :(
+#else
+    [[no_unique_address]]
+#endif
+    T mCancelOperation; //< The cancel operation, default is unregister wait
 };
 
 class EventOverlapped : public ::OVERLAPPED {
@@ -111,6 +140,19 @@ public:
         if (hEvent) {
             ::CloseHandle(hEvent);
         }
+    }
+
+    /**
+     * @brief Make the awaiter with custom cancel operation
+     * 
+     * @tparam T 
+     * @param cancelOperation 
+     * @param timeout The timeout for the wait, default is INFINITE
+     * @return auto 
+     */
+    template <std::invocable T>
+    auto makeAwaiter(T cancelOperation, ULONG timeout = INFINITE) const noexcept {
+        return WaitObject(hEvent, timeout, cancelOperation);
     }
 
     auto operator co_await() const noexcept {

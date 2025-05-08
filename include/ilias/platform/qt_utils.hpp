@@ -118,8 +118,8 @@ private:
         }
     }
 
-    static auto onCancel(void *self) -> void {
-        auto self = reinterpret_cast<QSignal *>(self);
+    static auto onCancel(void *_self) -> void {
+        auto self = reinterpret_cast<QSignal *>(_self);
         self->doDisconnect();
         self->mCaller.schedule();
     }
@@ -155,7 +155,7 @@ class QAsyncSlot {
 public:
     using promise_type = typename Task<T>::promise_type;
 
-    QAsyncSlot(Task<T> task) : mHandle(spawn(std::move(task))) { }
+    QAsyncSlot(Task<T> task) : mHandle(spawnImmediate(std::move(task))) { }
     QAsyncSlot(QAsyncSlot &&) = default;
     QAsyncSlot() = default;
 

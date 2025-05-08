@@ -192,6 +192,15 @@ struct SpawnTags {
 } // namespace detail
 
 /**
+ * @brief The spawn policy for the task
+ * 
+ */
+enum class SpawnPolicy {
+    Deferred,   // The task will be scheduled on the executor
+    Immediate,  // The task will be started immediately
+};
+
+/**
  * @brief The handle for a spawned task. used to cancel the task. copyable.
  * 
  */
@@ -297,25 +306,46 @@ private:
     detail::SpawnDataRef mData;
 };
 
+// TODO: Cleanup this overloads?, it is too much overloads
 /**
  * @brief Spawn a task and return a handle.
  * 
  * @tparam T 
  * @param executor The executor to schedule the task on
+ * @param policy The spawn policy, Deferred or Immediate
  * @param task The task to spawn
  * @return WaitHandle<T> The handle to wait for the task to complete
  */
 template <typename T>
-inline auto spawn(Executor &executor, Task<T> &&task, ILIAS_CAPTURE_CALLER(loc)) -> WaitHandle<T> {
+inline auto spawn(Executor &executor, SpawnPolicy policy, Task<T> &&task, ILIAS_CAPTURE_CALLER(loc)) -> WaitHandle<T> {
     auto ref = detail::SpawnDataRef(new detail::SpawnData(task._leak()));
     ref->mTask.setExecutor(executor);
-    ref->mTask.schedule(); //< Start it on the event loop
 
 #if defined(ILIAS_TASK_TRACE)
     detail::installTraceFrame(ref->mTask, "spawn");
 #endif // defined(ILIAS_TASK_TRACE)
 
+    if (policy == SpawnPolicy::Deferred) {
+        ref->mTask.schedule(); // Start it on the event loop
+    }
+    else {
+        ref->mTask.resume(); // Start it immediately
+    }
+
     return WaitHandle<T>(ref);
+}
+
+/**
+ * @brief Spawn a task and return a handle. (default to Deferred)
+ * 
+ * @tparam T 
+ * @param executor The executor to schedule the task on
+ * @param task The task to spawn
+ * @return WaitHandle<T> 
+ */
+template <typename T>
+inline auto spawn(Executor &executor, Task<T> &&task, ILIAS_CAPTURE_CALLER(loc)) -> WaitHandle<T> {
+    return spawn(executor, SpawnPolicy::Deferred, std::move(task), loc);
 }
 
 /**
@@ -325,13 +355,14 @@ inline auto spawn(Executor &executor, Task<T> &&task, ILIAS_CAPTURE_CALLER(loc))
  * @tparam Args The arguments to pass to the callable
  * 
  * @param executor The executor to schedule the task on
+ * @param policy The spawn policy, Deferred or Immediate
  * @param callable The callable to invoke, invoke_result must be a Task<T>
  * @param args The arguments to pass to the callable
  * @return WaitHandle<T> The handle to wait for the task to complete
  */
 template <typename Callable, typename ...Args> 
     requires (detail::TaskGenerator<Callable, Args...>)
-inline auto spawn(Executor &executor, Callable callable, Args &&...args) {
+inline auto spawn(Executor &executor, SpawnPolicy policy, Callable callable, Args &&...args) {
     // Normal function or empty class
     if constexpr (std::is_empty_v<Callable> || 
                   std::is_function_v<Callable> || 
@@ -348,14 +379,36 @@ inline auto spawn(Executor &executor, Callable callable, Args &&...args) {
             )
         );
         ref->mTask.setExecutor(executor);
-        ref->mTask.schedule(); //< Start it on the event loop
 
 #if defined(ILIAS_TASK_TRACE)
     detail::installTraceFrame(ref->mTask, "spawn");
 #endif // defined(ILIAS_TASK_TRACE)
 
+        if (policy == SpawnPolicy::Deferred) {
+            ref->mTask.schedule(); // Start it on the event loop
+        }
+        else {
+            ref->mTask.resume(); // Start it immediately
+        }
+
         return WaitHandle<typename std::invoke_result_t<Callable, Args...>::value_type>(ref);
     }
+}
+
+/**
+ * @brief Spawn a task from a callable and args (default to Deferred)
+ * 
+ * @tparam Callable 
+ * @tparam Args 
+ * @param executor The executor to schedule the task on
+ * @param callable The callable to invoke, invoke_result must be a Task<T>
+ * @param args The arguments to pass to the callable
+ * @return WaitHandle<T> The handle to wait for the task to complete
+ */
+template <typename Callable, typename ...Args> 
+    requires (detail::TaskGenerator<Callable, Args...>)
+inline auto spawn(Executor &executor, Callable callable, Args &&...args) {
+    return spawn(executor, SpawnPolicy::Deferred, std::forward<Callable>(callable), std::forward<Args>(args)...);
 }
 
 /**
@@ -367,7 +420,12 @@ inline auto spawn(Executor &executor, Callable callable, Args &&...args) {
  */
 template <typename T>
 inline auto spawn(Task<T> &&task) -> WaitHandle<T> {
-    return spawn(*Executor::currentThread(), std::move(task));
+    return spawn(*Executor::currentThread(), SpawnPolicy::Deferred, std::move(task));
+}
+
+template <typename T>
+inline auto spawn(SpawnPolicy policy, Task<T> &&task) -> WaitHandle<T> {
+    return spawn(*Executor::currentThread(), policy, std::move(task));
 }
 
 /**
@@ -383,7 +441,38 @@ inline auto spawn(Task<T> &&task) -> WaitHandle<T> {
 template <typename Callable, typename ...Args>
     requires (detail::TaskGenerator<Callable, Args...>)
 inline auto spawn(Callable callable, Args &&...args) {
-    return spawn(*Executor::currentThread(), std::forward<Callable>(callable), std::forward<Args>(args)...);
+    return spawn(*Executor::currentThread(), SpawnPolicy::Deferred, std::forward<Callable>(callable), std::forward<Args>(args)...);
+}
+
+template <typename Callable, typename ...Args>
+    requires (detail::TaskGenerator<Callable, Args...>)
+inline auto spawn(SpawnPolicy policy, Callable callable, Args &&...args) {
+    return spawn(*Executor::currentThread(), policy, std::forward<Callable>(callable), std::forward<Args>(args)...);
+}
+
+/**
+ * @brief Spawn a task from task or callable immediately by using current thread executor in global scope.
+ * 
+ * @tparam Args 
+ * @param args 
+ * @return auto 
+ */
+template <typename ...Args>
+inline auto spawnImmediate(Args &&...args) {
+    return spawn(*Executor::currentThread(), SpawnPolicy::Immediate, std::forward<Args>(args)...);
+}
+
+/**
+ * @brief Spawn a task from task or callable immediately by using another executor in global scope.
+ * 
+ * @tparam Args 
+ * @param executor 
+ * @param args 
+ * @return auto 
+ */
+template <typename ...Args>
+inline auto spawnImmediate(Executor &executor, Args &&...args) {
+    return spawn(executor, SpawnPolicy::Immediate, std::forward<Args>(args)...);
 }
 
 /**

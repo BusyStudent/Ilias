@@ -111,6 +111,10 @@ inline auto backtrace(FILE *stream = stderr) noexcept {
     return Awaiter { stream };
 }
 
+inline auto backtrace(CoroHandle handle) noexcept {
+    return detail::backtraceImpl(handle);
+}
+
 /**
  * @brief Dump the stack trace to the stderr.
  * 
@@ -128,6 +132,10 @@ ILIAS_NS_BEGIN
 
 inline auto backtrace([[maybe_unused]] FILE *stream = nullptr) noexcept {
     return std::suspend_never { };
+}
+
+inline auto backtrace([[maybe_unused]] CoroHandle handle) noexcept {
+    return "";
 }
 
 inline auto dumpCoroutines([[maybe_unused]] FILE *stream = nullptr) noexcept -> void { }

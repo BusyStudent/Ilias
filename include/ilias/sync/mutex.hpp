@@ -172,12 +172,13 @@ inline auto MutexLock::release() -> void {
 }
 
 inline auto detail::MutexAwaiter::await_ready() const -> bool {
-    ILIAS_TRACE("Mutex", "Try to lock Mutex: {} Awaiter: {}", (void*) &mMutex, (void*) this);
+    // ILIAS_TRACE("Mutex", "Try to lock Mutex: {} Awaiter: {}", (void*) &mMutex, (void*) this);
     return mMutex.tryLock();
 }
 
 inline auto detail::MutexAwaiter::await_suspend(CoroHandle caller) -> void {
     // Add self to the waiting list
+    ILIAS_TRACE("Mutex", "Waiting Mutex: {} Awaiter: {}, Calling stack: {}", (void*) &mMutex, (void*) this, backtrace(caller));
     mCaller = caller;
     mRegistration = mCaller.cancellationToken().register_([this]() { onCancel(); });
     mMutex.mAwaiters.push_back(this);
@@ -189,7 +190,7 @@ inline auto detail::MutexAwaiter::await_resume() -> Result<void> {
     if (mCanceled) {
         return Unexpected(Error::Canceled);
     }
-    ILIAS_TRACE("Mutex", "Got lock Mutex: {} Awaiter: {}", (void*) &mMutex, (void*) this);
+    // ILIAS_TRACE("Mutex", "Got lock Mutex: {} Awaiter: {}", (void*) &mMutex, (void*) this);
     return {};
 }
 

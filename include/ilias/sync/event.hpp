@@ -52,10 +52,14 @@ private:
  */
 class Event {
 public:
-    Event() = default;
+    enum Flag : uint32_t {
+        None      = 0,
+        AutoClear = 1, //< Auto clear the event when set
+    };
 
+    Event() = default;
+    Event(Flag flag) : mAutoClear(flag & AutoClear) { }
     Event(const Event &) = delete;
-    
     ~Event() {
         ILIAS_ASSERT(mAwaiters.empty());
     }

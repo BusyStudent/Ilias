@@ -276,8 +276,10 @@ inline auto AddressInfo::fromHostnameAsync(const char *name, const char *service
     if (err != ERROR_IO_PENDING) { //< FAILED to start overlapped
         co_return Unexpected(Error(err, GaiCategory::instance()));
     }
-    if (auto ret = co_await overlapped; !ret) {
+    auto cancelOperation = [&namedHandle]() {
         ::GetAddrInfoExCancel(&namedHandle);
+    };
+    if (auto ret = co_await overlapped.makeAwaiter(cancelOperation); !ret) {
         co_return Unexpected(ret.error());
     }
     err = ::GetAddrInfoExOverlappedResult(&overlapped);
@@ -325,7 +327,10 @@ inline auto AddressInfo::fromHostnameAsync(const char *name, const char *service
     };
     co_return co_await Awaiter { .mRequest = &request };
 #else
-    co_return fromHostname(name, service, hints); //< fallback to sync version
+    // Fallback to the synchronous version for platforms other than Windows and GNU/Linux.
+    // This is because no native asynchronous implementation is available for these platforms.
+    // Maybe we start a thread to avoid blocking the current thread. ?
+    co_return fromHostname(name, service, hints);
 #endif
 }
 

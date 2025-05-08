@@ -262,24 +262,44 @@ public:
      * @brief Spawns a task in the scope. The result of the task will be discarded.
      * 
      * @tparam T 
+     * @param policy The spawn policy, Deferred or Immediate.
      * @param task The task to spawn (cannot be null).
+     * @return WaitHandle<T> 
      */
     template <typename T>
-    auto spawn(Task<T> &&task, ILIAS_CAPTURE_CALLER(loc)) -> WaitHandle<T> {
+    auto spawn(SpawnPolicy policy, Task<T> &&task, ILIAS_CAPTURE_CALLER(loc)) -> WaitHandle<T> {
         ILIAS_ASSERT(task);
         auto handle = task._leak();
         auto instance = new detail::ScopedTask(handle, mInstances);
         // Start and add the complete callback.
         instance->mTask.registerCallback(std::bind(&TaskScope::onTaskComplete, this, instance));
         instance->mTask.setExecutor(mExecutor);
-        instance->mTask.schedule();
         ILIAS_TRACE("TaskScope", "Spawned a task {} in the scope.", (void*) instance);
 
 #if defined(ILIAS_TASK_TRACE)
         detail::installTraceFrame(instance->mTask, "Scope::spawn", loc);
 #endif // defined(ILIAS_TASK_TRACE)
 
+        if (policy == SpawnPolicy::Deferred) {
+            instance->mTask.schedule(); // Start it on the event loop
+        }
+        else {
+            instance->mTask.resume(); // Start it immediately
+        }
+
         return WaitHandle<T>(instance);
+    }
+
+    /**
+     * @brief Spawns a task in the scope. The result of the task will be discarded. (default to Deferred)
+     * 
+     * @tparam T 
+     * @param task The task to spawn (cannot be null).
+     * @return WaitHandle<T> 
+     */
+    template <typename T>
+    auto spawn(Task<T> &&task, ILIAS_CAPTURE_CALLER(loc)) -> WaitHandle<T> {
+        return spawn(SpawnPolicy::Deferred, std::move(task), loc);
     }
 
     /**
@@ -287,26 +307,53 @@ public:
      * 
      * @tparam Callable 
      * @tparam Args 
+     * @param policy The spawn policy, Deferred or Immediate.
      * @param callable 
      * @param args 
      */
-    template <typename Callable, typename ...Args> requires detail::TaskGenerator<Callable, Args...>
-    auto spawn(Callable callable, Args &&...args) {
+    template <typename Callable, typename ...Args> 
+        requires (detail::TaskGenerator<Callable, Args...>)
+    auto spawn(SpawnPolicy policy, Callable callable, Args &&...args) {
         // Normal function or empty class
         if constexpr (std::is_empty_v<Callable> || 
                     std::is_function_v<Callable> || 
                     std::is_member_function_pointer_v<Callable>) 
         {
-            return spawn(std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...));
+            return spawn(policy, std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...));
         }
         else {
             // Callable has members, store it.
             using TaskType = std::invoke_result_t<Callable, Args...>;
-            return spawn([](Callable callable, Args ...args) -> TaskType {
+            return spawn(policy, [](Callable callable, Args ...args) -> TaskType {
                 co_return co_await std::invoke(std::forward<Callable>(callable), std::forward<Args>(args)...);
             }(std::forward<Callable>(callable), std::forward<Args>(args)...));
         }
+    }
 
+    /**
+     * @brief Spawns a task in the scope using a callable. (default to Deferred)
+     * 
+     * @tparam Callable 
+     * @tparam Args 
+     * @param callable 
+     * @param args 
+     */
+    template <typename Callable, typename ...Args> 
+        requires (detail::TaskGenerator<Callable, Args...>)
+    auto spawn(Callable callable, Args &&...args) {
+        return spawn(SpawnPolicy::Deferred, std::forward<Callable>(callable), std::forward<Args>(args)...);
+    }
+
+    /**
+     * @brief Spawns a task in the scope using a callable or tasks. (default to Immediate)
+     * 
+     * @tparam Args 
+     * @param args 
+     * @return auto 
+     */
+    template <typename ...Args>
+    auto spawnImmediate(Args &&...args) {
+        return spawn(SpawnPolicy::Immediate, std::forward<Args>(args)...);
     }
 
     /**

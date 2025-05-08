@@ -429,4 +429,18 @@ inline auto yield() noexcept {
     return Awaiter {};
 }
 
+/**
+ * @brief Check current task is cancellation requested
+ * 
+ * @return bool 
+ */
+inline auto isCancellationRequested() noexcept {
+    struct Awaiter : detail::GetHandleAwaiter {
+        auto await_resume() -> bool {
+            return handle().isCancellationRequested();
+        }
+    };
+    return Awaiter {};
+}
+
 ILIAS_NS_END

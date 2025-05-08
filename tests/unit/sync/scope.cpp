@@ -40,6 +40,18 @@ TEST(Scope, Wait) {
     ASSERT_TRUE(handle.done());
 }
 
+TEST(Scope, Immediate) {
+    bool value = false;
+    TaskScope scope;
+    auto handle = scope.spawnImmediate([&]() -> Task<void> {
+        value = true;
+        co_return;
+    });
+    ASSERT_TRUE(value);
+    ASSERT_TRUE(handle);
+    ASSERT_TRUE(handle.done());
+}
+
 TEST(Scope, Await) {
     auto task = []() -> Task<void> {
         auto scope = co_await TaskScope::make();
