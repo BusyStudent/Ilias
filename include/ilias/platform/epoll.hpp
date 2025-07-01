@@ -249,7 +249,7 @@ private:
         void (*fn)(void *);
         void *args;
     };
-    auto processCompletion(CancellationToken &, int timeout) -> void;
+    auto processCompletion(CancellationToken &) -> void;
     auto processEvents(std::span<const epoll_event> events) -> void;
     auto pollCallbacks() -> void;
     auto readTty(IoDescriptor *fd, ::std::span<::std::byte> buffer) -> IoTask<size_t>;
@@ -376,16 +376,9 @@ inline auto EpollContext::post(void (*fn)(void *), void *args) -> void {
 }
 
 inline auto EpollContext::run(CancellationToken &token) -> void {
-    int timeout = -1; // Wait forever
     while (!token.isCancellationRequested()) {
-        auto nextTimepoint = mService.nextTimepoint();
-        if (nextTimepoint) {
-            auto diffRaw = *nextTimepoint - ::std::chrono::steady_clock::now();
-            auto diffMs  = ::std::chrono::duration_cast<::std::chrono::milliseconds>(diffRaw).count();
-            timeout      = ::std::clamp<int64_t>(diffMs, 0, ::std::numeric_limits<int>::max() - 1);
-        }
         mService.updateTimers();
-        processCompletion(token, timeout);
+        processCompletion(token);
     }
 }
 
@@ -393,18 +386,26 @@ inline auto EpollContext::sleep(uint64_t ms) -> IoTask<void> {
     return mService.sleep(ms);
 }
 
-inline auto EpollContext::processCompletion(CancellationToken &token, int timeout) -> void {
+inline auto EpollContext::processCompletion(CancellationToken &token) -> void {
     while (!mCallbacks.empty()) { // Process all callbacks in the current thread queue
         auto cb = mCallbacks.front();
         mCallbacks.pop_front();
         cb.fn(cb.args);
+        mService.updateTimers(); // Update timers after each callback, TODO: Make an better way
     }
     // No callbacks available and non exit requested, process epoll events
     if (token.isCancellationRequested()) {
         return;
     }
+    // Time to wait
     std::array<epoll_event, 64> events;
     std::span view { events };
+    int timeout = -1; // Wait forever        
+    if (auto nextTimepoint = mService.nextTimepoint(); nextTimepoint) {
+        auto diffRaw = *nextTimepoint - ::std::chrono::steady_clock::now();
+        auto diffMs  = ::std::chrono::duration_cast<::std::chrono::milliseconds>(diffRaw).count();
+        timeout = ::std::clamp<int64_t>(diffMs, 0, ::std::numeric_limits<int>::max() - 1);
+    }
     if (auto res = ::epoll_wait(mEpollFd, view.data(), view.size(), timeout); res > 0) { // Got any events
         processEvents(view.subspan(0, res));
     }
