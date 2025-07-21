@@ -10,7 +10,7 @@
  */
 #pragma once
 
-#include <ilias/ilias.hpp>
+#include <ilias/defines.hpp>
 #include <cstring> //< for memcpy
 #include <cstdarg>
 #include <cstdio>  //< for sprintf
@@ -19,7 +19,6 @@
 
 ILIAS_NS_BEGIN
 
-// --- Buffer
 /**
  * @brief The byte const buffer view
  * 
@@ -33,7 +32,6 @@ using Buffer        = std::span<const std::byte>;
 using MutableBuffer = std::span<std::byte>;
 
 
-// --- Concepts
 /**
  * @brief Concept for types that can be converted to std::span
  * 
@@ -174,25 +172,6 @@ inline auto makeBuffer(T &object) {
 }
 
 /**
- * @brief Cast std::span<In> to std::span<T>
- * 
- * @tparam T The target type 
- * @tparam In 
- * @param in 
- * @return std::span<T> 
- */
-template <typename T, typename In>
-inline auto spanCast(std::span<In> in) -> std::span<T> {
-    if constexpr(sizeof(T) != sizeof(In)) {
-        ILIAS_ASSERT(in.size_bytes() % sizeof(T) == 0); // The size must be aligned
-    }
-    return std::span {
-        reinterpret_cast<T *>(in.data()),
-        in.size_bytes() / sizeof(T)
-    };
-}
-
-/**
  * @brief Cast the any byte span to the string view
  * 
  * @tparam T 
@@ -318,6 +297,16 @@ inline auto sprintfTo(std::basic_string<T, Traits, Alloc> &buf, const char *fmt,
     auto n = vsprintfTo(buf, fmt, args);
     va_end(args);
     return n;
+}
+
+namespace literals {
+    inline auto operator"" _bin(const char *buf, size_t len) -> Buffer {
+        return {reinterpret_cast<const std::byte *>(buf), len - 1}; // remove the last '\0'
+    }
+
+    inline auto operator"" _bin(unsigned long long val) -> std::byte {
+        return static_cast<std::byte>(val);
+    }
 }
 
 ILIAS_NS_END

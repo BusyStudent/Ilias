@@ -1,7 +1,7 @@
 add_requires("gtest")
 
 -- Make all files in the unit directory into targets
-for _, file in ipairs(os.files("unit/**.cpp")) do
+for _, file in ipairs(os.files("**.cpp")) do
     local name = path.basename(file)
     local dir = path.directory(file)
     local conf_path = dir .. "/" .. name .. ".lua"
@@ -20,7 +20,6 @@ for _, file in ipairs(os.files("unit/**.cpp")) do
         add_files(file)
         add_tests(name, {run_timeout = 10000})
         add_packages("gtest")
-        add_defines("ILIAS_ENABLE_LOG")
         add_deps("ilias")
     target_end()
 

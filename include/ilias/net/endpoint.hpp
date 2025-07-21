@@ -13,7 +13,7 @@
 
 #include <ilias/net/address.hpp>
 #include <ilias/net/system.hpp>
-#include <ilias/error.hpp>
+#include <ilias/result.hpp>
 #include <charconv>
 #include <cstring>
 #include <compare>
@@ -176,9 +176,9 @@ public:
      * @param path 
      * @return Result<UnixEndpoint> 
      */
-    static auto fromString(std::string_view path) -> Result<UnixEndpoint> {
+    static auto fromString(std::string_view path) -> Result<UnixEndpoint, std::errc> {
         if (path.size() >= sizeof(sun_path)) {
-            return Unexpected(Error::InvalidArgument);
+            return Err(std::errc::invalid_argument);
         }
         return UnixEndpoint(path);
     }
@@ -461,18 +461,18 @@ public:
      * @param buffer The endpoint in string format (address4:port) or ([address6]:port)
      * @return Result<IPEndpoint> 
      */
-    static auto fromString(std::string_view buffer) -> Result<IPEndpoint> {
+    static auto fromString(std::string_view buffer) -> Result<IPEndpoint, std::errc> {
         // Split to addr and port
         auto pos = buffer.find_last_of(':');
         if (pos == buffer.npos || pos < 4) { // 4 is the minimum length of [::]:port
-            return Unexpected(Error::InvalidArgument);
+            return Err(std::errc::invalid_argument);
         }
 
         // Parse the port
         auto portStr = buffer.substr(pos + 1);
         uint16_t port = 0;
-        if (std::from_chars(portStr.data(), portStr.data() + portStr.size(), port).ec != std::errc()) {
-            return Unexpected(Error::InvalidArgument);
+        if (auto ec = std::from_chars(portStr.data(), portStr.data() + portStr.size(), port).ec; ec != std::errc()) {
+            return Err(ec);
         }
 
         // Parse the address
@@ -483,7 +483,7 @@ public:
         }
         auto addr = IPAddress::fromString(addrStr);
         if (!addr) {
-            return Unexpected(addr.error());
+            return Err(addr.error());
         }
         return IPEndpoint(*addr, port);
     }
@@ -495,11 +495,11 @@ public:
      * @param size The size of the data, must be sizeof(::sockaddr_in) or sizeof(::sockaddr_in6)
      * @return IPEndpoint 
      */
-    static auto fromRaw(const void *mem, size_t n) -> Result<IPEndpoint> {
+    static auto fromRaw(const void *mem, size_t n) -> Result<IPEndpoint, std::errc> {
         switch (n) {
             case sizeof(::sockaddr_in): return *reinterpret_cast<const ::sockaddr_in *>(mem);
             case sizeof(::sockaddr_in6): return *reinterpret_cast<const ::sockaddr_in6 *>(mem);
-            default: return Unexpected(Error::InvalidArgument);
+            default: return Err(std::errc::invalid_argument);
         }
     }
 

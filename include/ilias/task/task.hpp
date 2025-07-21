@@ -2,7 +2,7 @@
  * @file task.hpp
  * @author BusyStudent (fyw90mc@gmail.com)
  * @brief The task class, provide the coroutine support
- * @version 0.1
+ * @version 0.3
  * @date 2024-08-09
  * 
  * @copyright Copyright (c) 2024
@@ -10,84 +10,168 @@
  */
 #pragma once
 
-#include <ilias/task/detail/promise.hpp>
-#include <ilias/task/detail/await.hpp>
-#include <ilias/task/detail/trace.hpp>
-#include <ilias/task/detail/view.hpp>
-#include <ilias/task/executor.hpp>
+#include <ilias/runtime/executor.hpp>
+#include <ilias/runtime/await.hpp>
+#include <ilias/runtime/coro.hpp>
 #include <ilias/log.hpp>
 #include <coroutine>
-#include <chrono>
-
-#if   defined(__clang__) // Use Statement Expression, Zero Overhead
-    #define ilias_try_impl(...) ({                                             \
-        auto &&res = (__VA_ARGS__);                                            \
-        if (!res) {                                                            \
-            co_return ::ILIAS_NAMESPACE::Unexpected(std::move(res.error()));   \
-        }                                                                      \
-        std::forward<decltype(res)>(res).value();                              \
-    })
-#elif defined(__cpp_exceptions) // Fallback to the exception implement
-    #define ilias_try_impl(...) (co_await ::ILIAS_NAMESPACE::detail::TryAwaiter { (__VA_ARGS__) })
-#else
-    #define ilias_try_impl(...) (static_assert(false, "No exception support & compiler extension support, can't implement try"))
-    #define ILIAS_NO_TRY
-#endif // defined(__clang__)
-
-/**
- * @brief The try macro, try to unwrap the expression's result, if failed, 
- * @note The macro can only be used in the coroutine, and the expression's error type must same as the task's error type
- * 
- * @param ... The expression to try
- * @return decltype(auto) The unwrapped value
- */
-#define ilias_try(...) ilias_try_impl(__VA_ARGS__)
-
+#include <optional> // std::optional
+#include <variant> // std::monostate
+#include <chrono> // std::chrono::duration
 
 ILIAS_NS_BEGIN
 
-namespace detail {
+namespace task::option {
 
-/**
- * @brief The common part of the task awaiter
- * 
- */
-class TaskAwaiterBase {
-public:
-    auto await_ready() const noexcept -> bool { return false; }
-
-    /**
-     * @brief Try to start the task and check if it is done
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto await_suspend(CoroHandle caller) noexcept -> bool {
-        mTask.setCancellationToken(caller.cancellationToken()); // Let the caller's cancel request cancel the current task
-        mTask.setExecutor(caller.executor());
-        mTask.resume();
-        if (mTask.done()) { //< Done, resume the caller
-            return false;
-        }
-
-        mTask.setAwaitingCoroutine(caller); //< When the task is done, resume the caller
-        return true;
-    }
-protected:
-    TaskAwaiterBase(TaskView<> task) : mTask(task) { }
-
-    TaskView<> mTask; //< The task we wait for
+template <typename T>
+struct ReplaceVoid {
+    using type = T;  
 };
 
-/**
- * @brief The awaiter of the task
- * 
- * @tparam T 
- */
+template <>
+struct ReplaceVoid<void> {
+    using type = std::monostate;
+};
+
+// For replace the fucking void to std::monostate :(
+template <typename T>
+using Option = std::optional<typename ReplaceVoid<T>::type>;
+
+// Create an option with 'value'
+template <std::invocable Fn>
+auto makeOption(Fn &&fn) -> Option<std::invoke_result_t<Fn> > {
+    if  constexpr (std::is_same_v<std::invoke_result_t<Fn>, void>) {
+        fn();
+        return std::monostate{};
+    }
+    else {
+        return fn();
+    }
+}
+
+} // namespace task::option
+
+namespace task {
+
+using runtime::CoroHandle;
+using runtime::CoroPromise;
+using runtime::CoroContext;
+using runtime::StopSource;
+using option::makeOption;
+using option::Option;
+
+// The return value part of the task promise
+template <typename T>
+class TaskPromiseBase : public CoroPromise {
+public:
+    auto return_value(T value) noexcept {
+        mValue.emplace(std::move(value));
+    }
+
+    auto value() {
+        rethrowIfNeeded();
+        return std::move(*mValue);
+    }
+private:
+    std::optional<T> mValue;
+};
+
+template <>
+class TaskPromiseBase<void> : public CoroPromise {
+public:
+    auto return_void() noexcept {}
+    auto value() { rethrowIfNeeded(); }
+};
+
+template <typename T>
+class TaskPromise final : public TaskPromiseBase<T> {
+public:
+    using handle_type = std::coroutine_handle<TaskPromise<T> >;
+
+    auto get_return_object() noexcept -> Task<T> {
+        return {handle()};
+    }
+
+    auto handle() noexcept -> handle_type {
+        return handle_type::from_promise(*this);
+    }
+};
+
+
+// The task handle
+class Null {};
+template <typename T = Null>
+class TaskHandle; // Forward declaration
+
+// The type erased task handle
+template <>
+class TaskHandle<Null> : public CoroHandle {
+public:
+    template <typename T>
+    TaskHandle(std::coroutine_handle<TaskPromise<T> > h) : CoroHandle(h) {}
+    TaskHandle(std::nullptr_t) {}
+    TaskHandle(const TaskHandle &) = default;
+};
+
+template <typename T>
+class TaskHandle final : public TaskHandle<Null> {
+public:
+    using promise_type = TaskPromise<T>;
+
+    TaskHandle(std::coroutine_handle<promise_type> h) : TaskHandle<Null>(h) {}
+    TaskHandle(std::nullptr_t) {}
+    TaskHandle(const TaskHandle &) = default;
+
+    auto value() const -> T {
+        return promise<promise_type>().value();
+    }
+
+    /**
+     * @brief Cast the task handle to another type
+     * @note It is UB if the task is not the same type
+     * 
+     * @param h 
+     * @return TaskHandle<T> 
+     */
+    static auto cast(TaskHandle<> h) -> TaskHandle<T> {
+        auto &promise = h.promise<promise_type>();
+        auto handle = std::coroutine_handle<promise_type>::from_promise(promise);
+        return TaskHandle<T>(handle);
+    }
+};
+
+// Awaiter
+class TaskAwaiterBase {
+public:
+    TaskAwaiterBase(TaskAwaiterBase &&other) : 
+        mTask(std::exchange(other.mTask, nullptr)) 
+    {
+
+    }
+
+    auto await_ready() const noexcept -> bool {
+        mTask.resume();
+        return mTask.done();
+    }
+
+    auto await_suspend(CoroHandle caller) noexcept {
+        mTask.setPrevAwaiting(caller);
+    }
+protected:
+    TaskAwaiterBase(TaskHandle<> task) : mTask(task) { }
+    ~TaskAwaiterBase() {
+        if (mTask) {
+            mTask.destroy();
+        }
+    }
+
+    TaskHandle<> mTask; // The task we use to wait for (take ownership)
+};
+
 template <typename T>
 class TaskAwaiter final : public TaskAwaiterBase {
 public:
-    TaskAwaiter(TaskView<T> task) : TaskAwaiterBase(task) { }
+    TaskAwaiter(TaskHandle<T> task) : TaskAwaiterBase(task) { }
 
     /**
      * @brief Get the result of the task
@@ -96,91 +180,101 @@ public:
      */
     auto await_resume() const -> T {
         ILIAS_ASSERT_MSG(mTask.done(), "The task is not done, maybe call resume() twice");
-        return TaskView<T>::cast(mTask).value();
+        return TaskHandle<T>::cast(mTask).value();
     }
 };
 
-/**
- * @brief Awaiter for impl the exception version of ilias_try
- * 
- * @tparam T 
- */
-template <typename T>
-class TryAwaiter final {
+// Environment for the blocking wait task
+class TaskBlockingContext final : public CoroContext {
 public:
-    TryAwaiter(T &&value) : mValue(std::forward<T>(value)) {
-        static_assert(
-            requires {
-                value.error();
-                value.value();
-            },
-            "The type of the value must is Result<T, E>"
-        );
+    TaskBlockingContext(TaskHandle<> task) : mTask(task) {
+        mTask.setCompletionHandler(TaskBlockingContext::onComplete);
+        mTask.setContext(*this);
+        this->executor = runtime::Executor::currentThread();
+        this->stoppedHandler = [](auto) {
+            std::terminate(); // The blocking unsupport cancelled
+        };
+        ILIAS_ASSERT_MSG(this->executor, "The current thread has no executor");
     }
 
-    auto await_ready() const noexcept -> bool { return false; }
-    
-    /**
-     * @brief Get the type of the Task and check the error type is same
-     * 
-     * @tparam U 
-     * @return true 
-     * @return false 
-     */
-    template <typename U>
-    auto await_suspend([[maybe_unused]] std::coroutine_handle<TaskPromise<U> > ) noexcept -> bool {
-        static_assert(
-            requires(U &&u) {
-                { u.error() } -> std::same_as<decltype(mValue.error())>;
-            },
-            "The error type of the task and the return type of the callable must be the same"
-        );
-        return false;
-    }
-    
-    /**
-     * @brief Unwrap the value
-     * 
-     * @return decltype(auto) 
-     */
-    auto await_resume() -> decltype(auto) { 
-        return std::forward<T>(mValue).value(); 
+    auto enter() -> void {
+        mTask.resume();
+        if (!mTask.done()) {
+            this->executor->run(mStopExecutor.get_token());            
+        }
+        ILIAS_ASSERT_MSG(mTask.done(), "??? INTERNAL BUG");
     }
 private:
-    T mValue;
+    static auto onComplete(CoroContext &_self) -> void { // Break the event loop
+        static_cast<TaskBlockingContext &>(_self).mStopExecutor.request_stop();
+    }
+    
+    TaskHandle<> mTask; // The task we use to wait for (doesn't take ownership)
+    StopSource mStopExecutor; // The stop source of the executor
 };
 
-template <typename T>
-TryAwaiter(T &&value) -> TryAwaiter<T>;
-
-/**
- * @brief The helper awaiter class for simplify the duplicate code of get the coroutine handle
- * 
- */
-class GetHandleAwaiter {
+// Environment for the spawn task
+class TaskSpawnContext final : public CoroContext {
 public:
-    auto await_ready() const -> bool { return false; }
-    auto await_suspend(CoroHandle caller) -> bool { mHandle = caller; return false; }
-protected:
-    auto handle() const -> CoroHandle { return mHandle; }
+    TaskSpawnContext(TaskHandle<> task) : mTask(task) {
+        mTask.setContext(*this);
+        mTask.setCompletionHandler(TaskSpawnContext::onComplete);
+        this->stoppedHandler = TaskSpawnContext::onComplete;
+        this->executor = runtime::Executor::currentThread();
+        ILIAS_ASSERT_MSG(this->executor, "The current thread has no executor");
+    }
+    ~TaskSpawnContext() {
+        mTask.destroy();
+    }
+
+    // Blocking enter the executor
+    auto enter() -> void {
+        if (!mCompleted) {
+            this->executor->run(mStopExecutor.get_token());
+        }
+    }
+
+    // Get the value of the task, nullopt if the task is stopped
+    template <typename T>
+    auto value() -> Option<T> {
+        ILIAS_ASSERT_MSG(mCompleted, "??? INTERNAL BUG");
+        if (isStopped()) {
+            return std::nullopt;
+        }
+        return makeOption([&]() {
+            return TaskHandle<T>::cast(mTask).value();
+        });
+    }
+
+    static auto make(TaskHandle<> task) -> std::shared_ptr<TaskSpawnContext> {
+        auto ptr = std::make_shared<TaskSpawnContext>(task);
+        ptr->mSelf = ptr;
+        ptr->mTask.schedule(); // Schedule the task
+        return ptr;
+    }
 private:
-    CoroHandle mHandle;
+    static auto onComplete(CoroContext &_self) -> void { 
+        auto &self = static_cast<TaskSpawnContext &>(_self);
+
+        // Done..
+        self.mCompleted = true;
+        self.executor->post(TaskSpawnContext::derefSelf, &self);
+    }
+
+    // deref self in event loop
+    static auto derefSelf(void *_self) -> void {
+        auto ptr = std::move(static_cast<TaskSpawnContext *>(_self)->mSelf);
+        ptr->mStopExecutor.request_stop();
+        ptr.reset();
+    }
+
+    std::shared_ptr<TaskSpawnContext> mSelf; // Used to avoid free self dur execution
+    TaskHandle<> mTask; // The task we use to wait for (take ownership)
+    StopSource mStopExecutor; // The stop source of the executor
+    bool mCompleted = false;
 };
 
-/**
- * @brief Check if callable and args can be used to create a task.
- * 
- * @tparam Callable 
- * @tparam Args 
- */
-template <typename Callable, typename ...Args>
-concept TaskGenerator = requires(Callable &&callable, Args &&...args) {
-    std::invoke(callable, args...)._view();
-    std::invoke(callable, args...)._leak();
-};
-
-} // namespace detail
-
+} // namespace task
 
 /**
  * @brief The lazy task class, it take the ownership of the coroutine
@@ -190,257 +284,129 @@ concept TaskGenerator = requires(Callable &&callable, Args &&...args) {
 template <typename T>
 class Task {
 public:
-    using promise_type = detail::TaskPromise<T>;
+    using promise_type = task::TaskPromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
     using value_type = T;
 
-    /**
-     * @brief Construct a new empty Task object
-     * 
-     */
     Task() = default;
-
-    /**
-     * @brief Construct a new empty Task object
-     * 
-     */
     Task(std::nullptr_t) { }
-
-    /**
-     * @brief Construct a new Task object, disable copy
-     * 
-     */
     Task(const Task &) = delete;
-
-    /**
-     * @brief Construct a new Task object by move
-     * 
-     * @param other 
-     */
     Task(Task &&other) noexcept : mHandle(other._leak()) { }
-
-    /**
-     * @brief Construct a new Task object by any awaitable, the result of the awaitable must be convertible to T
-     * 
-     * @tparam U The 
-     * @param awaitable 
-     */
-    template <typename U> requires(
-        Awaitable<U> &&
-        std::convertible_to<AwaitableResult<U>, T>
-    )
-    explicit Task(U &&awaitable) {
-        mHandle = detail::awaitableWrapper<U, T>(std::forward<U>(awaitable))._leak();
-    }
-
-    /**
-     * @brief Destroy the Task object, destroy the coroutine
-     * 
-     */
     ~Task() noexcept { 
-        if (!mHandle) {
-            return;
+        if (mHandle) {
+            mHandle.destroy();
         }
-        ILIAS_ASSERT(_view().isSafeToDestroy());
-        mHandle.destroy();
     }
 
     /**
-     * @brief Run the task and block until the task is done, return the value
+     * @brief Leak the std coroutine handle
+     * @note It is internal function, you should not use it
      * 
-     * @param executor The executor to run the task
-     * @return T 
-     */
-    auto wait(Executor &executor, ILIAS_CAPTURE_CALLER(loc)) const -> T {
-        auto &promise = mHandle.promise();
-
-#if defined(ILIAS_TASK_TRACE)
-        detail::installTraceFrame(mHandle, "wait",loc);
-#endif // defined(ILIAS_TASK_TRACE)
-
-        ILIAS_ASSERT(!promise.isStarted());
-        CancellationToken token;
-        promise.setCancellationToken(token);
-        promise.setExecutor(executor);
-        mHandle.resume(); //< Start it
-        if (!mHandle.done()) {
-            CancellationToken token;
-            promise.registerCallback(detail::cancelTheTokenHelper, &token);
-            executor.run(token);
-        }
-        return promise.value();
-    }
-
-    /**
-     * @brief Run the task on current thread executor and block until the task is done, return the value
-     * 
-     * @return T 
-     */
-    auto wait(ILIAS_CAPTURE_CALLER(loc)) const -> T {
-        return wait(*Executor::currentThread(), loc);
-    }
-
-    // Internal functions
-    /**
-     * @brief Get the task's internal view, it provides a super set api of the coroutine handle and task
-     * 
-     * @internal not recommend to use it at the outside
-     * @return TaskView<T> 
-     */
-    auto _view() const -> TaskView<T> {
-        return TaskView<T>(mHandle);
-    }
-
-    /**
-     * @brief Release the ownership of the task, return the coroutine handle
-     * 
-     * @internal not recommend to use it at the outside
      * @return handle_type 
      */
     auto _leak() -> handle_type {
         return std::exchange(mHandle, nullptr);
     }
 
-#if defined(ILIAS_TASK_TRACE)
-    /**
-     * @brief Do Trace on the await point, set the caller to parent, and add self to the caller's children
-     * 
-     * @internal not recommend to use it at the outside, see impl detail in TaskPromise::await_transform
-     * @param caller The caller handle
-     * @return void 
-     */
-    auto _trace(CoroHandle caller) const -> void {
-        caller.traceLink(mHandle);
+    // Set the context of the task, call on await_transform
+    auto setContext(runtime::CoroContext &context) -> void {
+        auto handle = task::TaskHandle<T>(mHandle);
+        handle.setContext(context);
     }
-#endif // defined(ILIAS_TASK_TRACE)
 
     /**
-     * @brief Assign the task by move
+     * @brief Run the task and block until the task is done, return the value
      * 
-     * @param other 
-     * @return Task& 
+     * @return T 
      */
+    auto wait() && -> T {
+        auto context = task::TaskBlockingContext(mHandle);
+        context.enter();
+        return mHandle.promise().value();
+    }
+
     auto operator =(Task<T> &&other) -> Task & {
         if (&other == this) {
             return *this;
         }
         if (mHandle) {
-            ILIAS_ASSERT(_view().isSafeToDestroy());
             mHandle.destroy();
         }
         mHandle = other._leak();
         return *this;
     }
 
-    /**
-     * @brief Assign the task by null
-     * 
-     * @return Task& 
-     */
-    auto operator =(std::nullptr_t) -> Task & {
-        if (!mHandle) {
-            return *this;
-        }
-        ILIAS_ASSERT(_view().isSafeToDestroy());
-        mHandle.destroy();
-        mHandle = nullptr;
-        return *this;
-    }
-
-    /**
-     * @brief Check the task is valid
-     * 
-     * @return true 
-     * @return false 
-     */
     explicit operator bool() const noexcept {
         return bool(mHandle);
     }
 
-    /**
-     * @brief Get the awaiter of the task
-     * 
-     * @tparam T 
-     * @param task 
-     * @return detail::TaskAwaiter<T> 
-     */
-    auto operator co_await() && -> detail::TaskAwaiter<T> {
-        return detail::TaskAwaiter<T>(mHandle);
+    auto operator co_await() && -> task::TaskAwaiter<T> {
+        return task::TaskAwaiter<T>(_leak());
     }
 private:
-    Task(handle_type handle) : mHandle(handle) { }
+    Task(handle_type handle) : mHandle(handle) {}
 
     handle_type mHandle;
-friend class detail::TaskPromise<T>;
+friend class task::TaskPromise<T>;
 };
 
-
+// Spawn...
 /**
- * @brief Get the current task view
+ * @brief The handle of an spawned task
  * 
- * @return TaskView<>
  */
-inline auto currentTask() noexcept {
-    struct Awaiter {
-        auto await_ready() { return false; }
-        auto await_suspend(TaskView<> task) -> bool { mTask = task; return false; }
-        auto await_resume() -> TaskView<> { return mTask; }
-        TaskView<> mTask;
-    };
-    return Awaiter {};
+class StopHandle {
+public:
+    StopHandle() = default;
+    StopHandle(std::nullptr_t) {}
+
+    // Request the stop of the task
+    auto stop() const { return mPtr->stop(); }
+    auto isStopped() const { return mPtr->isStopped(); }
+protected:
+    std::shared_ptr<task::TaskSpawnContext> mPtr;
+};
+
+template <typename T>
+class WaitHandle {
+public:
+    WaitHandle() = default;
+    WaitHandle(std::nullptr_t) {}
+
+    auto stop() const { return mPtr->stop(); }
+    auto isStopped() const { return mPtr->isStopped(); }
+
+    // Blocking wait for the task to be done, nullopt on task stopped
+    auto wait() && -> task::Option<T> { 
+        auto ptr = std::exchange(mPtr, nullptr);
+        ptr->enter();
+        return ptr->value<T>();
+    }
+private:
+    std::shared_ptr<task::TaskSpawnContext> mPtr;
+template <typename U>
+friend auto spawn(Task<U> task) -> WaitHandle<U>;
+};
+
+// Spawn a task running on the current thread executor
+template <typename T>
+inline auto spawn(Task<T> task) -> WaitHandle<T> {
+    auto handle = WaitHandle<T>();
+    handle.mPtr = task::TaskSpawnContext::make(task._leak());
+    return handle;
 }
 
-/**
- * @brief Get the current executor in the task
- * 
- * @return std::reference_wrapper<Executor>
- */
-inline auto currentExecutor() noexcept {
-    struct Awaiter : detail::GetHandleAwaiter {
-        auto await_resume() -> std::reference_wrapper<Executor> {
-            return handle().executor();
-        }
-    };
-    return Awaiter {};
-}
-
-/**
- * @brief Sleep the current task for a period of time
- * 
- * @param ms 
- * @return IoTask<void> 
- */
-inline auto sleep(std::chrono::milliseconds ms) -> IoTask<void> {
-    auto executor = co_await currentExecutor();
-    co_return co_await executor.get().sleep(ms.count());
-}
-
-/**
- * @brief Suspend the current coroutine, and queue self to the executor
- * 
- * @return Awaiter 
- */
-inline auto yield() noexcept {
-    struct Awaiter {
-        auto await_ready() { return false; }
-        auto await_suspend(CoroHandle handle) { handle.schedule(); }
-        auto await_resume() { }
-    };
-    return Awaiter {};
-}
-
-/**
- * @brief Check current task is cancellation requested
- * 
- * @return bool 
- */
-inline auto isCancellationRequested() noexcept {
-    struct Awaiter : detail::GetHandleAwaiter {
-        auto await_resume() -> bool {
-            return handle().isCancellationRequested();
-        }
-    };
-    return Awaiter {};
+// Sleep for a duration
+inline auto sleep(std::chrono::milliseconds duration) -> Task<void> {
+    return runtime::Executor::currentThread()->sleep(duration.count());
 }
 
 ILIAS_NS_END
+
+// Interop with std...
+template <typename T>
+struct std::hash<ILIAS_NAMESPACE::task::TaskHandle<T> > {
+    auto operator()(const ILIAS_NAMESPACE::task::TaskHandle<T> &handle) const -> std::size_t {
+        return std::hash<ILIAS_NAMESPACE::runtime::CoroHandle>()(handle);
+    }
+};

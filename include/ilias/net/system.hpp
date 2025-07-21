@@ -12,7 +12,7 @@
 #pragma once
 
 #include <ilias/io/system_error.hpp>
-#include <ilias/error.hpp>
+#include <ilias/result.hpp>
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -73,8 +73,6 @@ enum PollEvent : uint32_t {
     In  = POLLIN,  //< When fd can be read (similar to readfds in select)
     Out = POLLOUT, //< When fd can be written (similar to writefds in select)
     Pri = POLLPRI, //< When fd has urgent data (similar to exceptfds in select)
-
-    Err = POLLERR, //< When fd has an error condition (not passed to poll, only in revents)
     Hup = POLLHUP, //< When fd is hung up (not passed to poll, only in revents)
 };
 
@@ -120,10 +118,10 @@ public:
      * 
      * @return Result<void> 
      */
-    static auto initialize() -> Result<void>;
-    static auto uninitialize() -> Result<void>;
+    static auto initialize() -> IoResult<void>;
+    static auto uninitialize() -> IoResult<void>;
 private:
-    Result<void> mInited { initialize() };
+    IoResult<void> mInited { initialize() };
 };
 
 // Platform initialization
@@ -136,22 +134,22 @@ inline SockInitializer::~SockInitializer() {
     }
 }
 
-inline auto SockInitializer::initialize() -> Result<void> {
+inline auto SockInitializer::initialize() -> IoResult<void> {
 
 #if defined(_WIN32)
     ::WSADATA data { };
     if (::WSAStartup(WINSOCK_VERSION, &data) != 0) {
-        return Unexpected(SystemError::fromErrno());
+        return Err(SystemError::fromErrno());
     }
 #endif
     return {};
 }
 
-inline auto SockInitializer::uninitialize() -> Result<void> {
+inline auto SockInitializer::uninitialize() -> IoResult<void> {
 
 #if defined(_WIN32)
     if (::WSACleanup() != 0) {
-        return Unexpected(SystemError::fromErrno());
+        return Err(SystemError::fromErrno());
     }
 #endif
     return {};
@@ -230,27 +228,6 @@ constexpr auto networkToHost(const T value) -> T {
     else {
         return byteswap(value);
     }
-}
-
-// toString
-/**
- * @brief Convert the events to a string
- * 
- * @param events The poll events combined with bitwise
- * @return std::string 
- */
-inline auto toString(const PollEvent events) -> std::string {
-    std::string res;
-    if (events & PollEvent::In)  res += "In |";
-    if (events & PollEvent::Out) res += "Out |";
-    if (events & PollEvent::Pri) res += "Pri |";
-    if (events & PollEvent::Err) res += "Err |";
-    if (events & PollEvent::Hup) res += "Hup |";
-    if (!res.empty()) {
-        res.pop_back();
-        res.pop_back(); // Remove the last " |"
-    }
-    return res;
 }
 
 ILIAS_NS_END

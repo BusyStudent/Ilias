@@ -37,12 +37,12 @@ public:
      * 
      * @param buf 
      * @param flags 
-     * @return Result<size_t> 
+     * @return IoResult<size_t> 
      */
-    auto recv(std::span<std::byte> buf, int flags = 0) const -> Result<size_t> {
+    auto recv(std::span<std::byte> buf, int flags = 0) const -> IoResult<size_t> {
         auto ret = ::recv(mFd, reinterpret_cast<char*>(buf.data()), buf.size_bytes(), flags);
         if (ret < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return ret;
     }
@@ -52,12 +52,12 @@ public:
      * 
      * @param buf 
      * @param flags 
-     * @return Result<size_t> 
+     * @return IoResult<size_t> 
      */
-    auto send(std::span<const std::byte> buf, int flags = 0) const -> Result<size_t> {
+    auto send(std::span<const std::byte> buf, int flags = 0) const -> IoResult<size_t> {
         auto ret = ::send(mFd, reinterpret_cast<const char*>(buf.data()), buf.size_bytes(), flags);
         if (ret < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return ret;
     }
@@ -68,14 +68,14 @@ public:
      * @param buf 
      * @param flags 
      * @param endpoint 
-     * @return Result<size_t> 
+     * @return IoResult<size_t> 
      */
-    auto sendto(std::span<const std::byte> buf, int flags, EndpointView endpoint) const -> Result<size_t> {
+    auto sendto(std::span<const std::byte> buf, int flags, EndpointView endpoint) const -> IoResult<size_t> {
         const ::sockaddr *addr = endpoint.data();
         const ::socklen_t addrLen = endpoint.length();
         auto ret = ::sendto(mFd, reinterpret_cast<const char*>(buf.data()), buf.size_bytes(), flags, addr, addrLen);
         if (ret < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return ret;
     }
@@ -86,14 +86,14 @@ public:
      * @param buf 
      * @param flags 
      * @param endpoint 
-     * @return Result<size_t> 
+     * @return IoResult<size_t> 
      */
-    auto recvfrom(std::span<std::byte> buf, int flags, MutableEndpointView endpoint) const -> Result<size_t> {
+    auto recvfrom(std::span<std::byte> buf, int flags, MutableEndpointView endpoint) const -> IoResult<size_t> {
         ::sockaddr *addr = endpoint.data();
         ::socklen_t addrLen = endpoint.bufsize();
         auto ret = ::recvfrom(mFd, reinterpret_cast<char*>(buf.data()), buf.size_bytes(), flags, addr, &addrLen);
         if (ret < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return ret;
     }
@@ -102,12 +102,12 @@ public:
      * @brief Start listening on the socket
      * 
      * @param backlog 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto listen(int backlog = 0) const -> Result<void> {
+    auto listen(int backlog = 0) const -> IoResult<void> {
         auto ret = ::listen(mFd, backlog);
         if (ret < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return {};
     }
@@ -116,12 +116,12 @@ public:
      * @brief Shutdown the socket by how, default shutdown buth read and write
      * 
      * @param how 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto shutdown(int how = Shutdown::Both) const -> Result<void> {
+    auto shutdown(int how = Shutdown::Both) const -> IoResult<void> {
         auto ret = ::shutdown(mFd, how);
         if (ret < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return {};
     }
@@ -130,12 +130,12 @@ public:
      * @brief Connect to the specified endpoint
      * 
      * @param endpoint 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto connect(EndpointView endpoint) const -> Result<void> {
+    auto connect(EndpointView endpoint) const -> IoResult<void> {
         auto ret = ::connect(mFd, endpoint.data(), endpoint.length());
         if (ret < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return {};
     }
@@ -144,9 +144,9 @@ public:
      * @brief Connect to the specified ip endpoint
      * 
      * @param endpoint 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto connect(const IPEndpoint &endpoint) const -> Result<void> {
+    auto connect(const IPEndpoint &endpoint) const -> IoResult<void> {
         return connect(EndpointView(endpoint));
     }
 
@@ -154,12 +154,12 @@ public:
      * @brief Bind the socket to the specified endpoint
      * 
      * @param endpoint The endpoint view to bind to
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto bind(EndpointView endpoint) const -> Result<void> {
+    auto bind(EndpointView endpoint) const -> IoResult<void> {
         auto ret = ::bind(mFd, endpoint.data(), endpoint.length());
         if (ret < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return {};
     }
@@ -168,9 +168,9 @@ public:
      * @brief Bind the socket to the specified ip endpoint
      * 
      * @param endpoint The const IPEndpoint to bind to
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto bind(const IPEndpoint &endpoint) const -> Result<void> {
+    auto bind(const IPEndpoint &endpoint) const -> IoResult<void> {
         return bind(EndpointView(endpoint));
     }
 
@@ -178,9 +178,9 @@ public:
      * @brief Set blocking mode for the socket
      * 
      * @param blocking 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto setBlocking(bool blocking) const -> Result<void> {
+    auto setBlocking(bool blocking) const -> IoResult<void> {
 
 #if defined(_WIN32)
     u_long block = blocking ? 0 : 1;
@@ -188,7 +188,7 @@ public:
 #else
     int flags = ::fcntl(mFd, F_GETFL, 0);
     if (flags < 0) {
-        return Unexpected(SystemError::fromErrno());
+        return Err(SystemError::fromErrno());
     }
     if (blocking) {
         flags &= ~O_NONBLOCK;
@@ -197,9 +197,9 @@ public:
         flags |= O_NONBLOCK;
     }
     if (::fcntl(mFd, F_SETFL, flags) < 0) {
-        return Unexpected(SystemError::fromErrno());
+        return Err(SystemError::fromErrno());
     }
-    return Result<void>();
+    return IoResult<void>();
 #endif
 
     }
@@ -208,9 +208,9 @@ public:
      * @brief Set reuse address option for the socket
      * 
      * @param reuse 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto setReuseAddr(bool reuse) const -> Result<void> {
+    auto setReuseAddr(bool reuse) const -> IoResult<void> {
         int opt = reuse ? 1 : 0;
         return setOption(SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     }
@@ -222,12 +222,12 @@ public:
      * @param optname 
      * @param optval 
      * @param optlen 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto setOption(int level, int optname, const void *optval, socklen_t optlen) const -> Result<void> {
+    auto setOption(int level, int optname, const void *optval, socklen_t optlen) const -> IoResult<void> {
         auto ret = ::setsockopt(mFd, level, optname, static_cast<const char*>(optval), optlen);
         if (ret < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return {};
     }
@@ -237,10 +237,10 @@ public:
      * 
      * @tparam T 
      * @param opt 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
     template <SetSockOption T>
-    auto setOption(const T &opt) const -> Result<void> {
+    auto setOption(const T &opt) const -> IoResult<void> {
         return opt.setopt(mFd);
     }
 
@@ -251,12 +251,12 @@ public:
      * @param optname 
      * @param optval 
      * @param optlen 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto getOption(int level, int optname, void *optval, socklen_t *optlen) const -> Result<void> {
+    auto getOption(int level, int optname, void *optval, socklen_t *optlen) const -> IoResult<void> {
         auto ret = ::getsockopt(mFd, level, optname, static_cast<char*>(optval), optlen);
         if (ret < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return {};
     }
@@ -265,10 +265,10 @@ public:
      * @brief Get the socket option by option object type
      * 
      * @tparam T 
-     * @return Result<T> 
+     * @return IoResult<T> 
      */
     template <GetSockOption T>
-    auto getOption() const -> Result<T> {
+    auto getOption() const -> IoResult<T> {
         return T::getopt(mFd);
     }
 
@@ -278,12 +278,12 @@ public:
      * 
      * @param cmd 
      * @param args 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto ioctl(long cmd, u_long *args) const -> Result<void> {
+    auto ioctl(long cmd, u_long *args) const -> IoResult<void> {
         auto ret = ::ioctlsocket(mFd, cmd, args);
         if (ret < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return {};
     }
@@ -301,22 +301,22 @@ public:
     /**
      * @brief Get the family of the socket
      * 
-     * @return Result<int> 
+     * @return IoResult<int> 
      */
-    auto family() const -> Result<int> {
+    auto family() const -> IoResult<int> {
 
 #if defined(_WIN32)
         ::WSAPROTOCOL_INFO info;
         ::socklen_t len = sizeof(info);
         if (::getsockopt(mFd, SOL_SOCKET, SO_PROTOCOL_INFO, (char*) &info, &len) != 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return info.iAddressFamily;
 #else
         int family = 0;
         ::socklen_t len = sizeof(family);
         if (::getsockopt(mFd, SOL_SOCKET, SO_DOMAIN, &family, &len) != 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return family;
 #endif
@@ -326,22 +326,22 @@ public:
     /**
      * @brief Get the type of the socket
      * 
-     * @return Result<int> 
+     * @return IoResult<int> 
      */
-    auto type() const -> Result<int> {
+    auto type() const -> IoResult<int> {
 
 #if defined(_WIN32)
         ::WSAPROTOCOL_INFO info;
         ::socklen_t len = sizeof(info);
         if (::getsockopt(mFd, SOL_SOCKET, SO_PROTOCOL_INFO, (char*) &info, &len) != 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return info.iSocketType;
 #else
         int type = 0;
         ::socklen_t len = sizeof(type);
         if (::getsockopt(mFd, SOL_SOCKET, SO_TYPE, &type, &len) != 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return type;
 #endif
@@ -351,13 +351,13 @@ public:
     /**
      * @brief Get the error associated with the socket
      * 
-     * @return Result<Error> 
+     * @return IoResult<Error> 
      */
-    auto error() const -> Result<Error> {
+    auto error() const -> IoResult<IoError> {
         error_t err = 0;
         socklen_t len = sizeof(err);
         if (auto val = getOption(SOL_SOCKET, SO_ERROR, &err, &len); !val) {
-            return Unexpected(val.error());
+            return Err(val.error());
         }
         return SystemError(err);
     }
@@ -367,15 +367,15 @@ public:
      * 
      * @tparam T 
      * @param endpoint The endpoint of the remote peer (optional, can be nullptr)
-     * @return Result<T> 
+     * @return IoResult<T> 
      */
     template <typename T>
-    auto accept(MutableEndpointView endpoint) const -> Result<T> {
+    auto accept(MutableEndpointView endpoint) const -> IoResult<T> {
         ::sockaddr *addr = endpoint.data();
         ::socklen_t len = endpoint.bufsize();
         auto fd = ::accept(mFd, addr, &len);
         if (fd == Invalid) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return T(fd);
     }
@@ -385,14 +385,14 @@ public:
      * 
      * @tparam T 
      * @tparam Endpoint must has MutableEndpoint concept like IPEndpoint
-     * @return Result<std::pair<T, IPEndpoint> > 
+     * @return IoResult<std::pair<T, IPEndpoint> > 
      */
     template <typename T, MutableEndpoint Endpoint = IPEndpoint>
-    auto accept() const -> Result<std::pair<T, Endpoint> > {
+    auto accept() const -> IoResult<std::pair<T, Endpoint> > {
         Endpoint endpoint;
         auto fd = accept<T>(&endpoint);
         if (!fd) {
-            return Unexpected(fd.error());
+            return Err(fd.error());
         }
         return std::make_pair(T(std::move(*fd)), endpoint);
     }
@@ -401,15 +401,15 @@ public:
      * @brief Get the local endpoint of the socket
      * 
      * @tparam T must has MutableEndpoint concept like IPEndpoint
-     * @return Result<IPEndpoint> 
+     * @return IoResult<IPEndpoint> 
      */
     template <MutableEndpoint T = IPEndpoint>
-    auto localEndpoint() const -> Result<T> {
+    auto localEndpoint() const -> IoResult<T> {
         T endpoint;
         ::sockaddr *addr = reinterpret_cast<::sockaddr*>(endpoint.data());
         ::socklen_t len = endpoint.bufsize();
         if (::getsockname(mFd, addr, &len) < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return endpoint;
     }
@@ -418,15 +418,15 @@ public:
      * @brief Get the remote endpoint of the socket
      * 
      * @tparam T must has MutableEndpoint concept like IPEndpoint
-     * @return Result<IPEndpoint> 
+     * @return IoResult<IPEndpoint> 
      */
     template <MutableEndpoint T = IPEndpoint>
-    auto remoteEndpoint() const -> Result<T> {
+    auto remoteEndpoint() const -> IoResult<T> {
         T endpoint;
         ::sockaddr *addr = reinterpret_cast<::sockaddr*>(endpoint.data());
         ::socklen_t len = endpoint.bufsize();
         if (::getpeername(mFd, addr, &len) < 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return endpoint;
     }
@@ -550,10 +550,10 @@ public:
      * 
      * @tparam T 
      * @tparam Endpoint
-     * @return Result<std::pair<T, IPEndpoint> > 
+     * @return IoResult<std::pair<T, IPEndpoint> > 
      */
     template <typename T = Socket, MutableEndpoint Endpoint = IPEndpoint>
-    auto accept() -> Result<std::pair<T, Endpoint> > {
+    auto accept() -> IoResult<std::pair<T, Endpoint> > {
         return SocketView::accept<T, Endpoint>();
     }
 
@@ -571,14 +571,14 @@ public:
      * @param family The address family
      * @param type The socket type
      * @param protocol The protocol
-     * @return Result<Socket> 
+     * @return IoResult<Socket> 
      */
-    static auto make(int family, int type, int protocol) -> Result<Socket> {
+    static auto make(int family, int type, int protocol) -> IoResult<Socket> {
         auto sockfd = ::socket(family, type, protocol);
         if (sockfd != Invalid) {
             return Socket(sockfd);
         }
-        return Unexpected(SystemError::fromErrno());
+        return Err(SystemError::fromErrno());
     }
     
 };

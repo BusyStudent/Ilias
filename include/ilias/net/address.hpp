@@ -12,7 +12,7 @@
 #pragma once
 
 #include <ilias/net/system.hpp>
-#include <ilias/error.hpp>
+#include <ilias/result.hpp>
 #include <charconv>
 #include <compare>
 #include <array>
@@ -237,9 +237,9 @@ public:
      * @param str 
      * @return Result<IPAddress4> 
      */
-    static auto fromString(std::string_view value) -> Result<IPAddress4> {
+    static auto fromString(std::string_view value) -> Result<IPAddress4, std::errc> {
         if (value.size() >= INET_ADDRSTRLEN) {
-            return Unexpected(Error::InvalidArgument);
+            return Err(std::errc::invalid_argument);
         }
 
 #if 0
@@ -249,7 +249,7 @@ public:
         if (auto res = ::inet_pton(AF_INET, buf.data(), &addr); res == 1) {
             return addr;
         }
-        return Unexpected(Error::InvalidArgument);
+        return Err(std::errc::invalid_argument);
 #else   // Parse on our own, for std::string_view, avoid copy
         ::std::array<uint8_t, sizeof(::in_addr)> array;
         auto end = value.data() + value.size();
@@ -258,16 +258,16 @@ public:
         for (size_t idx = 0; idx < 4; ++idx) {
             auto [cur, ec] = std::from_chars(ptr, end, array[idx]);
             if (ec != std::errc()) {
-                return Unexpected(Error::InvalidArgument);
+                return Err(ec);
             }
             if (idx == 3) {
                 if (cur != end) { // Must be end of string
-                    return Unexpected(Error::InvalidArgument);                    
+                    return Err(std::errc::invalid_argument);                    
                 }
                 break;
             }
             if (cur == end || *cur != '.') { // End of string or next is not .
-                return Unexpected(Error::InvalidArgument);
+                return Err(std::errc::invalid_argument);
             }
             ptr = cur + 1; // Skip .
         }
@@ -432,9 +432,9 @@ public:
      * @param value 
      * @return IPAddress6 
      */
-    static auto fromString(std::string_view value) -> Result<IPAddress6> {
+    static auto fromString(std::string_view value) -> Result<IPAddress6, std::errc> {
         if (value.size() >= INET6_ADDRSTRLEN) {
-            return Unexpected(Error::InvalidArgument);
+            return Err(std::errc::invalid_argument);
         }
 
 #if 1
@@ -444,7 +444,7 @@ public:
         if (auto res = ::inet_pton(AF_INET6, buf.data(), &addr); res == 1) {
             return addr;
         }
-        return Unexpected(Error::InvalidArgument);
+        return Err(std::errc::invalid_argument);
 #endif
         // TODO: Parse ipv6 address on own, avoid copy string
     }
@@ -616,9 +616,9 @@ public:
      * @param str The IPV4 or IPV6 address string
      * @return Result<IPAddress>, if has value, the family will be AF_INET or AF_INET6
      */
-    static auto fromString(std::string_view str) -> Result<IPAddress> {
+    static auto fromString(std::string_view str) -> Result<IPAddress, std::errc> {
         if (str.size() > INET6_ADDRSTRLEN) {
-            return Unexpected(Error::InvalidArgument);
+            return Err(std::errc::invalid_argument);
         }
 
 #if 0
@@ -633,19 +633,19 @@ public:
             ret.mFamily = family;
             return ret;
         }
-        return Unexpected(Error::InvalidArgument);
+        return Err(std::errc::invalid_argument);
 #else
         if (str.find(':') != std::string_view::npos) {
             auto res = IPAddress6::fromString(str);
             if (!res) {
-                return Unexpected(res.error());
+                return Err(res.error());
             }
             return res.value();
         }
         else {
             auto res = IPAddress4::fromString(str);
             if (!res) {
-                return Unexpected(res.error());
+                return Err(res.error());
             }
             return res.value();
         }
@@ -660,11 +660,11 @@ public:
      * @param length 
      * @return Result<IPAddress> 
      */
-    static auto fromRaw(const void *data, size_t length) -> Result<IPAddress> {
+    static auto fromRaw(const void *data, size_t length) -> Result<IPAddress, std::errc> {
         switch (length) {
             case sizeof(::in_addr): return *reinterpret_cast<const ::in_addr *>(data);
             case sizeof(::in6_addr): return *reinterpret_cast<const ::in6_addr *>(data);
-            default: return Unexpected(Error::InvalidArgument);
+            default: return Err(std::errc::invalid_argument);
         }
     }
 private:

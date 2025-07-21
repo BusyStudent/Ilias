@@ -11,14 +11,9 @@
 
 // Config from build system
 ${define ILIAS_NAMESPACE}
-${define ILIAS_TASK_TRACE}
+${define ILIAS_CORO_TRACE}
 ${define ILIAS_USE_FMT}
 ${define ILIAS_USE_IO_URING}
-${define ILIAS_USE_OPENSSL}
-
-// Config for libraries mode
-${define ILIAS_STATIC}
-${define ILIAS_DLL}
 
 // Git information
 #define ILIAS_GIT_COMMIT      "${GIT_COMMIT}"

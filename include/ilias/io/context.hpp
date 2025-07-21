@@ -10,9 +10,10 @@
  */
 #pragma once
 
-#include <ilias/task/executor.hpp>
+#include <ilias/runtime/executor.hpp>
 #include <ilias/task/task.hpp>
-#include <optional>
+#include <ilias/io/error.hpp>
+#include <ilias/buffer.hpp>
 #include <cstddef>
 #include <span>
 
@@ -22,31 +23,6 @@ class MsgHdr;
 class IoContext;
 class EndpointView;
 class MutableEndpointView;
-
-namespace detail {
-
-/**
- * @brief The helper awaiter for getting the io context
- * 
- */
-class GetContextAwaiter : public GetHandleAwaiter {
-public:
-    /**
-     * @brief Get the io context
-     * 
-     * @return IoContext &
-     */
-    template <typename T = IoContext>
-    auto context() const -> T & {
-        auto &executor = handle().executor();
-#if defined(__cpp_rtti)
-        ILIAS_ASSERT(dynamic_cast<T *>(&executor)); // Check that the executor impl the IoContext
-#endif // defined(__cpp_rtti)
-        return static_cast<T &>(executor);
-    }
-};
-
-} // namespace detail    
 
 /**
  * @brief The IoDescriptor class, user should only take the pointer to this class, it is opaque to the user
@@ -75,7 +51,7 @@ protected:
  * @brief The IoContext class, provides the context for io operations, such as file io, socket io, timer, etc.
  * 
  */
-class IoContext : public Executor {
+class ILIAS_API IoContext : public runtime::Executor {
 public:
     /**
      * @brief Add a new system descriptor to the context
@@ -84,7 +60,7 @@ public:
      * @param type 
      * @return Result<IoDescriptor*> 
      */
-    virtual auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> Result<IoDescriptor*> = 0;
+    virtual auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor*> = 0;
 
     /**
      * @brief Remove a descriptor from the context, it will cancel all async operations on this descriptor
@@ -92,7 +68,7 @@ public:
      * @param fd
      * @return Result<void> 
      */
-    virtual auto removeDescriptor(IoDescriptor *fd) -> Result<void> = 0;
+    virtual auto removeDescriptor(IoDescriptor *fd) -> IoResult<void> = 0;
 
     /**
      * @brief Cancel all pending Io operations on a descriptor
@@ -100,7 +76,7 @@ public:
      * @param fd
      * @return Result<void> 
      */
-    virtual auto cancel(IoDescriptor *fd) -> Result<void> = 0;
+    virtual auto cancel(IoDescriptor *fd) -> IoResult<void> = 0;
 
     /**
      * @brief Read from a descriptor
@@ -110,7 +86,7 @@ public:
      * @param offset The offset in the file, std::nullopt means on ignore
      * @return IoTask<size_t> 
      */
-    virtual auto read(IoDescriptor *fd, std::span<std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> = 0;
+    virtual auto read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> = 0;
 
     /**
      * @brief Write to a descriptor
@@ -120,7 +96,7 @@ public:
      * @param offset The offset in the file, std::nullopt means on ignore
      * @return IoTask<size_t> 
      */
-    virtual auto write(IoDescriptor *fd, std::span<const std::byte> buffer, std::optional<size_t> offset) -> IoTask<size_t> = 0;
+    virtual auto write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t> = 0;
 
     /**
      * @brief Connect to a remote endpoint
@@ -149,7 +125,7 @@ public:
      * @param endpoint The endpoint to send to, if nullptr, the fd must be connected
      * @return IoTask<size_t> 
      */
-    virtual auto sendto(IoDescriptor *fd, std::span<const std::byte> buffer, int flags, EndpointView endpoint) -> IoTask<size_t> = 0;
+    virtual auto sendto(IoDescriptor *fd, Buffer buffer, int flags, EndpointView endpoint) -> IoTask<size_t> = 0;
 
     /**
      * @brief Receive data from a remote endpoint
@@ -160,41 +136,7 @@ public:
      * @param endpoint The endpoint to receive from
      * @return IoTask<size_t> 
      */
-    virtual auto recvfrom(IoDescriptor *fd, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> = 0;
-
-    /**
-     * @brief Poll a descriptor for events
-     * 
-     * @param fd The fd must suport polling (like socket or pipe)
-     * @param event The event to poll for (like PollEvent::In)
-     * @return IoTask<uint32_t> The event we actualy got
-     */
-    virtual auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> = 0;
-
-    // Advanced Io Operations, Not required implementation for basic io context
-    /**
-     * @brief Send message to a socket
-     * 
-     * @param fd The fd must be a socket
-     * @param msg The message to send
-     * @param flags The flags to use, like MSG_DONTWAIT
-     * @return IoTask<size_t> 
-     */
-    virtual auto sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
-        co_return Unexpected(Error::OperationNotSupported); // Default Not implemented
-    }
-
-    /**
-     * @brief Receive message from a socket
-     * 
-     * @param fd The fd must be a socket
-     * @param msg The message to receive into
-     * @param flags The flags to use, like MSG_DONTWAIT
-     * @return IoTask<size_t> 
-     */
-    virtual auto recvmsg(IoDescriptor *fd, MsgHdr &msg, int flags) -> IoTask<size_t> {
-        co_return Unexpected(Error::OperationNotSupported); // Default Not implemented
-    }
+    virtual auto recvfrom(IoDescriptor *fd, MutableBuffer buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> = 0;
 
     /**
      * @brief Get the current thread io context
@@ -213,26 +155,18 @@ public:
      * @param fd The fd must be a named pipe
      * @return IoTask<void> 
      */
-    virtual auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
-        co_return Unexpected(Error::OperationNotSupported); // Default Not implemented
-    }
+    virtual auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void>;
+
+    /**
+     * @brief Wrapping Win32 WaitForSingleObject, wait for a object to be signaled
+     * 
+     * @param object 
+     * @return IoTask<void> 
+     */
+    virtual auto waitObject(void *object) -> IoTask<void>;
 #endif // defined(_WIN32)
 
 };
-
-/**
- * @brief Get the current io context in the coroutine
- * 
- * @return std::reference_wrapper<IoContext>
- */
-inline auto currentIoContext() {
-    struct Awaiter : detail::GetContextAwaiter {
-        auto await_resume() const -> std::reference_wrapper<IoContext> {
-            return context();
-        }
-    };
-    return Awaiter {};
-}
 
 /**
  * @brief Convert an IoDescriptor::Type to a string

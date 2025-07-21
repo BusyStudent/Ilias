@@ -1,0 +1,83 @@
+#include <ilias/runtime/executor.hpp>
+#include <ilias/runtime/timer.hpp>
+#include <ilias/task/task.hpp>
+#include <condition_variable>
+#include <queue>
+#include <mutex>
+
+ILIAS_NS_BEGIN
+
+using namespace runtime;
+
+static thread_local Executor *currentExecutor = nullptr;
+
+Executor::~Executor() {
+    if (currentExecutor == this) {
+        currentExecutor = nullptr;
+    }
+}
+
+auto Executor::currentThread() -> Executor * {
+    return currentExecutor;
+}
+
+auto Executor::install() -> void {
+    if (currentExecutor && currentExecutor != this) {
+        ::fprintf(stderr, "A different executor already installed\n");
+        ::abort();
+    }
+    currentExecutor = this;
+}
+
+// EventLoop
+struct EventLoop::Impl {
+    std::queue<std::pair<void (*)(void *), void *> > queue;
+    std::condition_variable cond;
+    std::mutex mutex;
+    TimerService service;
+    bool running = false;
+};
+
+EventLoop::EventLoop() : d(std::make_unique<Impl>()) {}
+EventLoop::~EventLoop() = default;
+
+auto EventLoop::post(void (*fn)(void *), void *args) -> void {
+    std::lock_guard locker(d->mutex);
+    d->queue.emplace(fn, args);
+    d->cond.notify_one();
+}
+
+auto EventLoop::run(StopToken token) -> void {
+    StopCallback callback(token, [&]() {
+        d->cond.notify_one();
+    });
+    while (!token.stop_requested()) {
+        std::unique_lock locker(d->mutex);
+        auto timepoint = d->service.nextTimepoint();
+        if (!timepoint) {
+            timepoint = std::chrono::steady_clock::now() + std::chrono::hours(60);
+        }
+        d->cond.wait_until(locker, *timepoint, [&]() {
+            return !d->queue.empty() || token.stop_requested();
+        });
+        if (token.stop_requested()) {
+            return;
+        }
+        if (!d->queue.empty()) {
+            auto fn = d->queue.front();
+            d->queue.pop();
+            locker.unlock();
+            fn.first(fn.second);
+        }
+        if (locker.owns_lock()) {
+            locker.unlock();
+        }
+        d->service.updateTimers();
+    }
+}
+
+auto EventLoop::sleep(uint64_t ms) -> Task<void> {
+    co_return co_await d->service.sleep(ms);
+}
+
+ILIAS_NS_END

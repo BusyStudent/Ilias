@@ -11,8 +11,10 @@
  * 
  */
 
-#include <ilias/ilias.hpp>
-#include <ilias/error.hpp>
+#include <ilias/io/error.hpp>
+#include <ilias/defines.hpp>
+#include <ilias/result.hpp>
+#include <system_error>
 #include <cerrno>
 
 #if   defined(_WIN32)
@@ -27,10 +29,23 @@
 ILIAS_NS_BEGIN
 
 /**
+ * @brief The system error category, 
+ * 
+ */
+class ILIAS_API SystemCategory final : public std::error_category {
+public:
+    auto name() const noexcept -> const char* override;
+    auto message(int value) const -> std::string override;
+    auto default_error_condition(int value) const noexcept -> std::error_condition override;
+    
+    static auto instance() -> SystemCategory &;
+};
+
+/**
  * @brief System Error class, wrapping the system error (Win32 or POSIX)
  * 
  */
-class SystemError {
+class ILIAS_API SystemError {
 public:
     /**
      * @brief The known system dependent error codes
@@ -97,11 +112,11 @@ public:
     auto toString() const -> std::string;
 
     /**
-     * @brief Translate to bultin error code
+     * @brief Translate to std::errc
      * 
      * @return Error::Code 
      */
-    auto translate() const -> Error::Code;
+    auto translate() const -> std::errc;
 
     /**
      * @brief Compare with another SystemError
@@ -110,11 +125,11 @@ public:
     auto operator <=>(const SystemError &other) const noexcept = default;
 
     /**
-     * @brief cast to int64_t
+     * @brief cast to error_t
      * 
      * @return Error 
      */
-    explicit operator int64_t() const { return mErr; }
+    explicit operator error_t() const { return mErr; }
 
     /**
      * @brief Get the system error from the errno
@@ -127,50 +142,11 @@ private:
     error_t mErr = 0;
 };
 
-/**
- * @brief A Error category from (system os, like win32, linux, etc)
- * 
- */
-class SystemCategory final : public ErrorCategory {
-public:
-    auto name() const -> std::string_view override;
-    auto message(int64_t code) const -> std::string override;
-    auto equivalent(int64_t self, const Error &other) const -> bool override;
-
-    static auto instance() -> SystemCategory &;
-};
-
 ILIAS_DECLARE_ERROR(SystemError, SystemCategory);
 ILIAS_DECLARE_ERROR(SystemError::Code, SystemCategory);
 
-// --- SystemCategory
-inline auto SystemCategory::name() const -> std::string_view {
-    return "os";
-}
 
-inline auto SystemCategory::message(int64_t code) const -> std::string {
-    return SystemError(code).toString();
-}
-
-inline auto SystemCategory::equivalent(int64_t value, const Error &other) const -> bool {
-    if (this == &other.category() && value == other.value()) {
-        // Category is same, value is same
-        return true;
-    }
-    if (other.category() == IliasCategory::instance()) {
-        // Is bultin error code
-        return SystemError(value).translate() == other.value();
-    }
-    return false;
-}
-
-inline auto SystemCategory::instance() -> SystemCategory & {
-    static SystemCategory c;
-    return c;
-}
-
-
-// --- SystemError
+// SystemError
 inline auto SystemError::fromErrno() -> SystemError {
 
 #if defined(_WIN32)
@@ -183,66 +159,6 @@ inline auto SystemError::fromErrno() -> SystemError {
 
 inline auto SystemError::isOk() const noexcept -> bool {
     return mErr == 0;
-}
-
-inline auto SystemError::toString() const -> std::string {
-
-#ifdef _WIN32
-    wchar_t *args = nullptr;
-    ::FormatMessageW(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, mErr, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        reinterpret_cast<wchar_t*>(&args), 0, nullptr
-    );
-    auto len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, nullptr, 0, nullptr, nullptr);
-    std::string buf(len - 1, '\0'); //< This len includes the null terminator
-    len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, &buf[0], len, nullptr, nullptr);
-    ::LocalFree(args);
-    return buf;
-#else
-    return ::strerror(mErr);
-#endif
-
-}
-
-inline auto SystemError::translate() const -> Error::Code {
-    switch (mErr) {
-        case SystemError::Ok                        : return Error::Ok;
-        case SystemError::AccessDenied              : return Error::AccessDenied;
-        case SystemError::AddressInUse              : return Error::AddressInUse;
-        case SystemError::AddressNotAvailable       : return Error::AddressNotAvailable;
-        case SystemError::AddressFamilyNotSupported : return Error::AddressFamilyNotSupported;
-        case SystemError::AlreadyInProgress         : return Error::AlreadyInProgress;
-        case SystemError::BadFileDescriptor         : return Error::BadFileDescriptor;
-        case SystemError::ConnectionAborted         : return Error::ConnectionAborted;
-        case SystemError::ConnectionRefused         : return Error::ConnectionRefused;
-        case SystemError::ConnectionReset           : return Error::ConnectionReset;
-        case SystemError::DestinationAddressRequired: return Error::DestinationAddressRequired;
-        case SystemError::BadAddress                : return Error::BadAddress;
-        case SystemError::HostDown                  : return Error::HostDown;
-        case SystemError::HostUnreachable           : return Error::HostUnreachable;
-        case SystemError::InProgress                : return Error::InProgress;
-        case SystemError::InvalidArgument           : return Error::InvalidArgument;
-        case SystemError::SocketIsConnected         : return Error::SocketIsConnected;
-        case SystemError::TooManyOpenFiles          : return Error::TooManyOpenFiles;
-        case SystemError::MessageTooLarge           : return Error::MessageTooLarge;
-        case SystemError::NetworkDown               : return Error::NetworkDown;
-        case SystemError::NetworkReset              : return Error::NetworkReset;
-        case SystemError::NetworkUnreachable        : return Error::NetworkUnreachable;
-        case SystemError::NoBufferSpaceAvailable    : return Error::NoBufferSpaceAvailable;
-        case SystemError::ProtocolOptionNotSupported: return Error::ProtocolOptionNotSupported;
-        case SystemError::SocketIsNotConnected      : return Error::SocketIsNotConnected;
-        case SystemError::NotASocket                : return Error::NotASocket;
-        case SystemError::OperationNotSupported     : return Error::OperationNotSupported;
-        case SystemError::ProtocolFamilyNotSupported: return Error::ProtocolFamilyNotSupported;
-        case SystemError::ProtocolNotSupported      : return Error::ProtocolNotSupported;
-        case SystemError::SocketShutdown            : return Error::SocketShutdown;
-        case SystemError::SocketTypeNotSupported    : return Error::SocketTypeNotSupported;
-        case SystemError::TimedOut                  : return Error::TimedOut;
-        case SystemError::WouldBlock                : return Error::WouldBlock;
-        case SystemError::Canceled                  : return Error::Canceled;
-        default                                     : return Error::Unknown;
-    }
 }
 
 ILIAS_NS_END

@@ -38,7 +38,7 @@ ILIAS_NS_BEGIN
  */
 template <typename T>
 concept SetSockOption = requires(const T t) {
-    { t.setopt(socket_t{}) } -> std::convertible_to<Result<void> >;
+    { t.setopt(socket_t{}) } -> std::convertible_to<IoResult<void> >;
 };
 
 /**
@@ -48,7 +48,7 @@ concept SetSockOption = requires(const T t) {
  */
 template <typename T>
 concept GetSockOption = requires(T t) {
-    { T::getopt(socket_t{}) } -> std::convertible_to<Result<T> >;
+    { T::getopt(socket_t{}) } -> std::convertible_to<IoResult<T> >;
 };
 
 /**
@@ -145,25 +145,25 @@ public:
 
     constexpr WSAOptionT(T value) : mValue(value) { }
 
-    auto setopt(socket_t sock) const -> Result<void> {
+    auto setopt(socket_t sock) const -> IoResult<void> {
         static_assert(Access & OptionAccess::Write);
         DWORD bytes = 0;
         auto in = mValue;
         auto out = mValue;
         auto ret = ::WSAIoctl(sock, Opcode, &in, sizeof(in), &out, sizeof(out), &bytes, nullptr, nullptr);
         if (ret != 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return {};
     }
 
-    static auto getopt(socket_t sock) -> Result<WSAOptionT> {
+    static auto getopt(socket_t sock) -> IoResult<WSAOptionT> {
         static_assert(Access & OptionAccess::Read);
         DWORD bytes = 0;
         auto out = T { };
         auto ret = ::WSAIoctl(sock, Opcode, nullptr, 0, &out, sizeof(out), &bytes, nullptr, nullptr);
         if (ret != 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return out;
     }

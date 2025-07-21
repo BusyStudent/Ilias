@@ -10,7 +10,7 @@
  */
 #pragma once
 
-#include <ilias/ilias.hpp>
+#include <ilias/defines.hpp>
 
 // --- Check headers
 #if defined(ILIAS_NO_FORMAT)

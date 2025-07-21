@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include <ilias/io/vec.hpp>
-#include <ilias/ilias.hpp>
+#include <ilias/defines.hpp>
+#include <ilias/buffer.hpp>
 #include <cstddef>
 #include <span>
 
@@ -44,36 +44,8 @@ concept Readable = requires(T &t) {
 template <typename T>
 concept Writable = requires(T &t) {
     t.write(Buffer {});
-};
-
-/**
- * @brief Concept for types that support vectorized/gathered read operations
- * 
- * @tparam T 
- */
-template <typename T>
-concept ScatterReadable = requires(T &t) {
-    t.read(std::span<const IoVec> {});  
-};
-
-/**
- * @brief Concept for types that support vectorized/gathered write operations
- * 
- * @tparam T 
- */
-template <typename T>
-concept GatherWritable = requires(T &t) {
-    t.write(std::span<const IoVec> {});  
-};
-
-/**
- * @brief Concept for types that can be shutdown, performing any necessary cleanup.
- * 
- * @tparam T 
- */
-template <typename T>
-concept Shuttable = requires(T &t) {
     t.shutdown();
+    t.flush();
 };
 
 /**
@@ -114,21 +86,8 @@ concept IntoFileDescriptor = requires(T &t) {
 template <typename T>
 concept Stream = Readable<T> && Writable<T>;
 
-/**
- * @brief Concept for types that can be read, written in vectorized/gathered operations.
- * 
- * @tparam T 
- */
+// For compatibility with old code
 template <typename T>
-concept StreamExt = GatherWritable<T> && ScatterReadable<T>;
-
-/**
- * @brief Concept for types that can be read, written to a byte span and shutdown.
- * 
- * @tparam T 
- */
-template <typename T>
-concept StreamClient = Stream<T> && Shuttable<T>;
-
+concept StreamClient = Stream<T>;
 
 ILIAS_NS_END
