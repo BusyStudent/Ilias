@@ -10,8 +10,10 @@
  */
 #pragma once
 
+#include <ilias/io/error.hpp>
 #include <ilias/defines.hpp>
 #include <ilias/buffer.hpp>
+#include <concepts>
 #include <cstddef>
 #include <span>
 
@@ -24,7 +26,7 @@ ILIAS_NS_BEGIN
  */
 template <typename T>
 concept Readable = requires(T &t) {
-    t.read(MutableBuffer {});
+    { t.read(MutableBuffer {}) } -> std::same_as<IoTask<size_t> >;
 };
 
 /**
@@ -34,9 +36,9 @@ concept Readable = requires(T &t) {
  */
 template <typename T>
 concept Writable = requires(T &t) {
-    t.write(Buffer {});
-    t.shutdown();
-    t.flush();
+    { t.write(Buffer {}) } -> std::same_as<IoTask<size_t> >;
+    { t.shutdown() }       -> std::same_as<IoTask<void> >;
+    { t.flush() }          -> std::same_as<IoTask<void> >;
 };
 
 /**

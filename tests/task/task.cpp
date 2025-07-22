@@ -75,7 +75,7 @@ TEST(Task, SpawnAwait) {
 TEST(Task, Generator) {
     auto fn = []() -> Task<void> {
         ilias_for_await(int i, range(0, 10)) {
-            assert(i >= 0 && i < 10);
+            EXPECT_TRUE(i >= 0 && i < 10);
         }
     };
     fn().wait();

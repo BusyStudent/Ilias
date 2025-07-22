@@ -12,8 +12,15 @@
 // Config from build system
 ${define ILIAS_NAMESPACE}
 ${define ILIAS_CORO_TRACE}
+${define ILIAS_USE_LOG}
 ${define ILIAS_USE_FMT}
+${define ILIAS_USE_SPDLOG}
 ${define ILIAS_USE_IO_URING}
+
+// Version from build system
+${define ILIAS_VERSION_MAJOR}
+${define ILIAS_VERSION_MINOR}
+${define ILIAS_VERSION_PATCH}
 
 // Git information
 #define ILIAS_GIT_COMMIT      "${GIT_COMMIT}"

@@ -120,8 +120,8 @@ ILIAS_DECLARE_ERROR(IoError::Code, IoCategory);
 ILIAS_DECLARE_ERROR(IoError, IoCategory);
 
 template <typename T>
-inline auto make_error_code(T t) -> std::error_code {
-    return IoError(static_cast<int>(t), _ilias_error_category_of(t));
+inline auto make_error_code(T t) noexcept -> std::error_code {
+    return {static_cast<int>(t), _ilias_error_category_of(t)};
 }
 
 ILIAS_NS_END

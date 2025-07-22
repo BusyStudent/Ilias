@@ -239,7 +239,7 @@ public:
     template <typename Container = std::vector<T> >
     auto collect() -> Task<Container> {
         Container ret;
-        ilias_foreach(T &var, *this) {
+        ilias_for_await(T &var, *this) {
             ret.emplace_back(std::move(var));
         }
         co_return ret;

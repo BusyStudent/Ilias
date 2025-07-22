@@ -60,7 +60,7 @@ auto enum2str(std::index_sequence<N...>, T i) -> std::string_view {
             std::get<N>(data).size()
         )...
     };
-    if (i < 0 || int(i) >= int(table.size())) {
+    if (i < 0 || int64_t(i) >= int64_t(table.size())) {
         return "Unknown";
     }
     return table[i];

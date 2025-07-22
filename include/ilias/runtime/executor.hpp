@@ -74,7 +74,7 @@ public:
 class ILIAS_API EventLoop : public Executor {
 public:
     EventLoop();
-    EventLoop(EventLoop &&) = default;
+    EventLoop(EventLoop &&) = delete;
     ~EventLoop();
 
     auto post(void (*fn)(void *), void *args) -> void override;
@@ -89,11 +89,11 @@ private:
 } // namespace runtime
 
 namespace runtime::threadpool {
-    auto ILIAS_API submit(std::move_only_function<void(StopToken)> fn) -> void;
+    extern auto ILIAS_API submit(std::move_only_function<void(StopToken)> fn) -> void;
 } // namespace runtime::threadpool
 
 namespace runtime::utils {
-    auto ILIAS_API setThreadName(std::string_view name) -> void;
+    extern auto ILIAS_API setThreadName(std::string_view name) -> void;
 }
 
 ILIAS_NS_END

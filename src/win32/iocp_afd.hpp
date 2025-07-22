@@ -10,17 +10,15 @@
  */
 #pragma once
 
-#include <ilias/platform/detail/iocp_overlapped.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/log.hpp>
-#include <winternl.h>
+#include "overlapped.hpp"
+#include "ntdll.hpp"
 
 ILIAS_NS_BEGIN
 
-namespace detail {
-
-#define NT_IMPORT(func) decltype(::func) *func = reinterpret_cast<decltype(::func)*>(::GetProcAddress(mNtDll, #func))
+namespace win32 {
 
 enum AfdPoll {
     AFD_POLL_RECEIVE           = 0x0001,
@@ -51,32 +49,12 @@ typedef struct _AFD_POLL_INFO {
 #define IOCTL_AFD_POLL 0x00012024
 
 /**
- * @brief The afd device class, using the windows //Device/Afd device.
- * 
- */
-class AfdDevice {
-public:
-    AfdDevice();
-    AfdDevice(const AfdDevice &) = delete;
-    ~AfdDevice();
-
-    auto isOpen() const noexcept -> bool { return mDevice != INVALID_HANDLE_VALUE; }
-    auto handle() const noexcept -> HANDLE { return mDevice; }
-private:
-    HANDLE mDevice = INVALID_HANDLE_VALUE;
-    HMODULE mNtDll = ::GetModuleHandleW(L"ntdll.dll");
-    NT_IMPORT(NtCreateFile);
-    NT_IMPORT(NtDeviceIoControlFile);
-    NT_IMPORT(RtlNtStatusToDosError);
-};
-
-/**
  * @brief The awaiter used to poll the fd
  * 
  */
 class AfdPollAwaiter final : public IocpAwaiter<AfdPollAwaiter> {
 public:
-    AfdPollAwaiter(AfdDevice &device, SOCKET sock, uint32_t events) : IocpAwaiter(sock), mDevice(device.handle()) {
+    AfdPollAwaiter(HANDLE device, SOCKET sock, uint32_t events) : IocpAwaiter(sock), mDevice(device) {
         // Fill the info
         mInfo.Exclusive = FALSE; //< Try false?
         mInfo.NumberOfHandles = 1; //< Only one socket
@@ -102,16 +80,16 @@ public:
         return ::DeviceIoControl(mDevice, IOCTL_AFD_POLL, &mInfo, sizeof(mInfo), &mRInfo, sizeof(mRInfo), nullptr, overlapped());
     }
 
-    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<uint32_t> {
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<uint32_t> {
         ILIAS_TRACE("IOCP", "Poll {} on sockfd {} completed, Error {}", afdToString(mInfo.Handles[0].Events), sockfd(), error);
         if (error != ERROR_SUCCESS) {
-            return Unexpected(SystemError(error));
+            return Err(SystemError(error));
         }
         uint32_t revents = 0;
         ULONG afdEvents = mRInfo.Handles[0].Events;
         if (afdEvents & (AFD_POLL_LOCAL_CLOSE)) {
             // User close the socket
-            return Unexpected(Error::Canceled);
+            return Err(IoError::Canceled);
         }
         if (afdEvents & (AFD_POLL_RECEIVE | AFD_POLL_DISCONNECT | AFD_POLL_ACCEPT | AFD_POLL_ABORT)) {
             revents |= PollEvent::In;
@@ -120,7 +98,7 @@ public:
             revents |= PollEvent::Out;
         }
         if (afdEvents & (AFD_POLL_ABORT | AFD_POLL_CONNECT_FAIL)) {
-            revents |= PollEvent::Err;
+            revents |= PollEvent::Error;
         }
         // It think disconnect is Hup
         if (afdEvents & (AFD_POLL_DISCONNECT)) {
@@ -169,11 +147,8 @@ private:
     AFD_POLL_INFO mRInfo; //< Result
 };
 
-
-inline AfdDevice::AfdDevice() {
-    if (!NtCreateFile) {
-        return;
-    }
+// Open the afd device for impl poll
+inline auto afdOpenDevice(NtDll &dll) -> Result<HANDLE, SystemError> {
     // Open the afd device for impl poll
     wchar_t path [] = L"\\Device\\Afd\\Ilias";
     ::HANDLE device = nullptr;
@@ -191,7 +166,7 @@ inline AfdDevice::AfdDevice() {
         .SecurityQualityOfService = nullptr
     };
     ::IO_STATUS_BLOCK statusBlock {};
-    auto status = NtCreateFile(
+    auto status = dll.NtCreateFile(
         &device,
         SYNCHRONIZE,
         &objAttr,
@@ -205,21 +180,12 @@ inline AfdDevice::AfdDevice() {
         0
     );
     if (status != 0) {
-        auto winerr = RtlNtStatusToDosError(status);
-        ::SetLastError(winerr);
-        return;
+        auto winerr = dll.RtlNtStatusToDosError(status);
+        return Err(SystemError(winerr));
     }
-    mDevice = device;
+    return device;
 }
 
-inline AfdDevice::~AfdDevice() {
-    if (isOpen()) {
-        ::CloseHandle(mDevice);
-    }
-}
-
-} // namespace detail
+} // namespace win32
 
 ILIAS_NS_END
-
-#undef NT_IMPORT

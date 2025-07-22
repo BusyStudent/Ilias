@@ -57,7 +57,7 @@ public:
      * 
      * @param fd 
      * @param type 
-     * @return Result<IoDescriptor*> 
+     * @return IoResult<IoDescriptor*> 
      */
     virtual auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor*> = 0;
 
@@ -65,7 +65,7 @@ public:
      * @brief Remove a descriptor from the context, it will cancel all async operations on this descriptor
      * 
      * @param fd
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
     virtual auto removeDescriptor(IoDescriptor *fd) -> IoResult<void> = 0;
 
@@ -73,7 +73,7 @@ public:
      * @brief Cancel all pending Io operations on a descriptor
      * 
      * @param fd
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
     virtual auto cancel(IoDescriptor *fd) -> IoResult<void> = 0;
 
@@ -97,8 +97,6 @@ public:
      */
     virtual auto write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t> = 0;
 
-
-#if defined(ILIAS_NET)
     /**
      * @brief Connect to a remote endpoint
      * 
@@ -138,7 +136,15 @@ public:
      * @return IoTask<size_t> 
      */
     virtual auto recvfrom(IoDescriptor *fd, MutableBuffer buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> = 0;
-#endif
+
+    /**
+     * @brief Poll a descriptor for events
+     * 
+     * @param fd The fd must be pollable (socket on most systems)
+     * @param events The events to poll, like POLLIN, POLLOUT, etc
+     * @return IoTask<uint32_t> 
+     */
+    virtual auto poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> = 0;
 
     /**
      * @brief Get the current thread io context

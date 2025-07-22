@@ -74,6 +74,7 @@ enum PollEvent : uint32_t {
     Out = POLLOUT, //< When fd can be written (similar to writefds in select)
     Pri = POLLPRI, //< When fd has urgent data (similar to exceptfds in select)
     Hup = POLLHUP, //< When fd is hung up (not passed to poll, only in revents)
+    Error = POLLERR, //< When fd has an error condition (not passed to poll, only in revents)
 };
 
 /**

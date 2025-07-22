@@ -1,26 +1,11 @@
-/**
- * @file iocp_sock.hpp
- * @author BusyStudent (fyw90mc@gmail.com)
- * @brief Impl the basic socket operations using IOCP
- * @version 0.1
- * @date 2024-08-17
- * 
- * @copyright Copyright (c) 2024
- * 
- */
 #pragma once
-
-#include <ilias/platform/detail/iocp_overlapped.hpp>
-#include <ilias/io/system_error.hpp>
 #include <ilias/net/endpoint.hpp>
-#include <ilias/log.hpp>
-#include <WinSock2.h>
-#include <MSWSock.h>
-#include <span>
+#include <ilias/io/error.hpp>
+#include "overlapped.hpp"
 
 ILIAS_NS_BEGIN
 
-namespace detail {
+namespace win32 {
 
 /**
  * @brief Awaiter wrapping WSASendTo
@@ -58,10 +43,10 @@ public:
         ) == 0;
     }
 
-    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<size_t> {
         ILIAS_TRACE("IOCP", "WSASendTo {} bytes on sockfd {} completed, Error {}", bytesTransferred, sockfd(), error);
         if (error != ERROR_SUCCESS) {
-            return Unexpected(SystemError(error));
+            return Err(SystemError(error));
         }
         return bytesTransferred;
     }
@@ -108,10 +93,10 @@ public:
         ) == 0;
     }
 
-    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<size_t> {
         ILIAS_TRACE("IOCP", "WSARecvFrom {} bytes on sockfd {} completed, Error {}", bytesTransferred, sockfd(), error);
         if (error != ERROR_SUCCESS) {
-            return Unexpected(SystemError(error));
+            return Err(SystemError(error));
         }
         return bytesTransferred;
     }
@@ -167,10 +152,10 @@ public:
         );
     }
 
-    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<void> {
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<void> {
         ILIAS_TRACE("IOCP", "Connect To {} on sockfd {} completed, Error {}", mEndpoint, sockfd(), error);
         if (error != ERROR_SUCCESS) {
-            return Unexpected(SystemError(error));
+            return Err(SystemError(error));
         }
         // Update Connection context
         if (::setsockopt(sockfd(), SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0) != 0) {
@@ -226,10 +211,10 @@ public:
         );
     }
 
-    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<socket_t> {
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<socket_t> {
         ILIAS_TRACE("IOCP", "Accept on sockfd {} completed, acceptedSock {} Error {}", sockfd(), mAcceptedSock, error);
         if (error != ERROR_SUCCESS) {
-            return Unexpected(SystemError(error));
+            return Err(SystemError(error));
         }
         // Get the accepted connection address
         ::sockaddr_storage *localAddr = nullptr, *remoteAddr = nullptr;
@@ -251,7 +236,7 @@ public:
 
         if (mEndpoint) {
             if (remoteAddrLen > mEndpoint.bufsize()) { //< Endpoint buffer is too small
-                return Unexpected(Error::InvalidArgument);
+                return Err(IoError::InvalidArgument);
             }
             ::memcpy(mEndpoint.data(), remoteAddr, remoteAddrLen);
         }
@@ -292,9 +277,9 @@ public:
         );
     }
 
-    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<size_t> {
         if (error != ERROR_SUCCESS) {
-            return Unexpected(SystemError(error));
+            return Err(SystemError(error));
         }
         return bytesTransferred;
     }
@@ -328,9 +313,9 @@ public:
         ) == 0;
     }
 
-    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<size_t> {
         if (error != ERROR_SUCCESS) {
-            return Unexpected(SystemError(error));
+            return Err(SystemError(error));
         }
         return bytesTransferred;
     }
@@ -363,9 +348,9 @@ public:
         ) == 0;
     }
 
-    auto onComplete(DWORD error, DWORD bytesTransferred) -> Result<size_t> {
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<size_t> {
         if (error != ERROR_SUCCESS) {
-            return Unexpected(SystemError(error));
+            return Err(SystemError(error));
         }
         return bytesTransferred;
     }
@@ -376,7 +361,114 @@ private:
     LPFN_WSARECVMSG mRecvMsg = nullptr;
 };
 
-inline auto WSAGetExtensionFnPtr(SOCKET sockfd, GUID id, void *fnptr) -> Result<void> {
+/**
+ * @brief Wrapping the iocp async read operations
+ * 
+ */
+class IocpReadAwaiter final : public IocpAwaiter<IocpReadAwaiter> {
+public:
+    IocpReadAwaiter(HANDLE handle, std::span<std::byte> buffer, std::optional<size_t> offset) :
+        IocpAwaiter(handle), mBuffer(buffer) 
+    {
+        if (offset) {
+            overlapped()->setOffset(offset.value());
+        }
+    }
+
+    auto onSubmit() -> bool {
+        ILIAS_TRACE("IOCP", "ReadFile {} bytes on handle {}", mBuffer.size(), handle());
+        return ::ReadFile(handle(), mBuffer.data(), mBuffer.size(), &bytesTransferred(), overlapped());
+    }
+
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<size_t> {
+        ILIAS_TRACE("IOCP", "ReadFile {} bytes on handle {} completed, Error {}", bytesTransferred, handle(), error);
+        if (error != ERROR_SUCCESS) {
+            return Err(SystemError(error));
+        }
+        return bytesTransferred;
+    }
+private:
+    std::span<std::byte> mBuffer;
+};
+
+/**
+ * @brief Wrapping the iocp async write operations
+ * 
+ */
+class IocpWriteAwaiter final : public IocpAwaiter<IocpWriteAwaiter> {
+public:
+    IocpWriteAwaiter(HANDLE handle, std::span<const std::byte> buffer, std::optional<size_t> offset) :
+        IocpAwaiter(handle), mBuffer(buffer)
+    {
+        if (offset) {
+            overlapped()->setOffset(offset.value());
+        }
+    }
+
+    auto onSubmit() -> bool {
+        ILIAS_TRACE("IOCP", "WriteFile {} bytes on handle {}", mBuffer.size(), handle());
+        return ::WriteFile(handle(), mBuffer.data(), mBuffer.size(), &bytesTransferred(), overlapped());
+    }
+
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<size_t> {
+        ILIAS_TRACE("IOCP", "WriteFile {} bytes on handle {} completed, Error {}", bytesTransferred, handle(), error);
+        if (error != ERROR_SUCCESS) {
+            return Err(SystemError(error));
+        }
+        return bytesTransferred;
+    }
+private:
+    std::span<const std::byte> mBuffer;
+};
+
+/**
+ * @brief Wrapping the ConnectNamedPipe async operations
+ * 
+ */
+class IocpConnectPipeAwaiter final : public IocpAwaiter<IocpConnectPipeAwaiter> {
+public:
+    IocpConnectPipeAwaiter(HANDLE handle) : IocpAwaiter(handle) { }
+
+    auto onSubmit() -> bool {
+        ILIAS_TRACE("IOCP", "ConnectNamedPipe on handle {}", handle());
+        return ::ConnectNamedPipe(handle(), overlapped());
+    }
+
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<void> {
+        ILIAS_TRACE("IOCP", "ConnectNamedPipe on handle {} completed, Error {}", handle(), error);
+        if (error != ERROR_SUCCESS) {
+            return Err(SystemError(error));
+        }
+        return {};
+    }
+};
+
+class IocpDeviceIoControlAwaiter final : public IocpAwaiter<IocpDeviceIoControlAwaiter> {
+public:
+    IocpDeviceIoControlAwaiter(HANDLE handle, DWORD controlCode, std::span<std::byte> inBuffer, std::span<std::byte> outBuffer) :
+        IocpAwaiter(handle), mControlCode(controlCode), mInBuffer(inBuffer), mOutBuffer(outBuffer) 
+    {
+        
+    }
+
+    auto onSubmit() -> bool {
+        return ::DeviceIoControl(handle(), mControlCode, mInBuffer.data(), mInBuffer.size(), mOutBuffer.data(), mOutBuffer.size(), &bytesTransferred(), overlapped());
+    }
+
+    auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<size_t> {
+        if (error != ERROR_SUCCESS) {
+            return Err(SystemError(error));
+        }
+        return bytesTransferred;
+    }
+private:
+    DWORD mControlCode;
+    std::span<std::byte> mInBuffer;
+    std::span<std::byte> mOutBuffer;
+};
+
+
+inline auto WSAGetExtensionFnPtr(SOCKET sockfd, GUID id, void *fnptr) -> Result<void, SystemError> {
     DWORD bytes = 0;
     auto ret = ::WSAIoctl(
         sockfd,
@@ -390,11 +482,11 @@ inline auto WSAGetExtensionFnPtr(SOCKET sockfd, GUID id, void *fnptr) -> Result<
         nullptr
     );
     if (ret != 0) {
-        return Unexpected(SystemError::fromErrno());
+        return Err(SystemError::fromErrno());
     }
     return {};
 }
 
-} // namespace detail
+}
 
 ILIAS_NS_END

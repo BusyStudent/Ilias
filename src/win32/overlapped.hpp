@@ -1,17 +1,6 @@
-/**
- * @file iocp_overlapped.hpp
- * @author BusyStudent (fyw90mc@gmail.com)
- * @brief Provides a public api set for IOCP Interop
- * @version 0.1
- * @date 2024-08-17
- * 
- * @copyright Copyright (c) 2024
- * 
- */
 #pragma once
 
 #include <ilias/detail/win32defs.hpp>
-#include <ilias/cancellation_token.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/log.hpp>
@@ -21,7 +10,7 @@
 
 ILIAS_NS_BEGIN
 
-namespace detail {
+namespace win32 {
 
 /**
  * @brief A Dispatchable IOCP Object, we add a callback to it
@@ -95,10 +84,10 @@ public:
         mHandle = handle;
     }
 
-    auto await_suspend(CoroHandle caller) -> void {
+    auto await_suspend(runtime::CoroHandle caller) -> void {
         mCaller = caller;
         onCompleteCallback = completeCallback;
-        mRegistration = mCaller.cancellationToken().register_(onCancel, this);
+        mRegistration = runtime::StopRegistration(caller.stopToken(), std::bind(onStopRequest, this));
     }
 
     auto sockfd() const -> SOCKET {
@@ -116,13 +105,20 @@ private:
     static auto completeCallback(IocpOverlapped *_self, DWORD dwError, DWORD dwBytesTransferred) -> void {
         auto self = static_cast<IocpAwaiterBase*>(_self);
         ILIAS_TRACE("IOCP", "IOCP Compelete callbacked, Error: {}, Bytes Transferred: {}", err2str(dwError), dwBytesTransferred);
+        if (dwError == ERROR_OPERATION_ABORTED && self->mStopRequested) {
+            ILIAS_TRACE("IOCP", "IOCP Operation Aborted, Stop Requested");
+            self->mCaller.setStopped();
+            return;
+        }
+
         self->mError = dwError;
         self->mBytesTransferred = dwBytesTransferred;
         self->mCaller.resume();
     }
-    static auto onCancel(void *_self) -> void {
+    static auto onStopRequest(void *_self) -> void {
         auto self = static_cast<IocpAwaiterBase*>(_self);
         auto err = ::CancelIoEx(self->mHandle, self->overlapped());
+        self->mStopRequested = true;
         if (!err) {
             ILIAS_WARN("IOCP", "CancelIoEx failed, Error: {}", err2str(::GetLastError()));
         }
@@ -142,8 +138,9 @@ private:
     };
     ::DWORD mError = 0;
     ::DWORD mBytesTransferred = 0;
-    CoroHandle mCaller;
-    CancellationToken::Registration mRegistration;
+    ::BOOL  mStopRequested = false;
+    runtime::CoroHandle mCaller;
+    runtime::StopRegistration mRegistration;
 template <typename T>
 friend class IocpAwaiter;
 };

@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include <ilias/net/system.hpp>
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/sockopt.hpp>
+#include <ilias/net/system.hpp>
 #include <ilias/log.hpp>
 #include <span>
 
@@ -351,9 +351,9 @@ public:
     /**
      * @brief Get the error associated with the socket
      * 
-     * @return IoResult<Error> 
+     * @return IoResult<SystemError> 
      */
-    auto error() const -> IoResult<IoError> {
+    auto error() const -> IoResult<SystemError> {
         error_t err = 0;
         socklen_t len = sizeof(err);
         if (auto val = getOption(SOL_SOCKET, SO_ERROR, &err, &len); !val) {
@@ -484,17 +484,6 @@ public:
      * @param other 
      */
     Socket(Socket &&other) : SocketView(std::exchange(other.mFd, Invalid)) { }
-
-    /**
-     * @brief Construct a new Socket object
-     * 
-     * @param family The address family
-     * @param type The socket type
-     * @param protocol The protocol
-     */
-    Socket(int family, int type, int protocol) {
-        mFd = ::socket(family, type, protocol);
-    }
 
     /**
      * @brief Destroy the Socket object
