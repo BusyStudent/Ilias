@@ -112,9 +112,9 @@ public:
     auto toString() const -> std::string;
 
     /**
-     * @brief Translate to std::errc
+     * @brief Translate to IoError
      * 
-     * @return Error::Code 
+     * @return IoError 
      */
     auto translate() const -> std::errc;
 

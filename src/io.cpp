@@ -3,6 +3,91 @@
 
 ILIAS_NS_BEGIN
 
+/**
+ * @brief The utility namespace for reflection
+ * 
+ */
+namespace reflect {
+
+/**
+ * @brief Get the name of the type in compile time
+ * 
+ * @tparam T 
+ * @return std::string_view 
+ */
+template <auto T>
+consteval auto nameof() {
+#ifdef _MSC_VER
+    constexpr std::string_view name(__FUNCSIG__);
+    constexpr size_t nsEnd = name.find_last_of("::");
+    constexpr size_t end = name.find('>', nsEnd);
+    // size_t dotBegin = name.find_first_of(',');
+    // size_t end = name.find_last_of('>');
+    // return name.substr(dotBegin + 1, end - dotBegin - 1);
+    return name.substr(nsEnd + 1, end - nsEnd - 1);
+#else
+    std::string_view name(__PRETTY_FUNCTION__);
+    size_t eqBegin = name.find_last_of(' ');
+    size_t end = name.find_last_of(']');
+    return name.substr(eqBegin + 1, end - eqBegin - 1);
+#endif
+}
+
+/**
+ * @brief Get the array of the name of the type in compile time
+ * 
+ * @tparam T 
+ * @return std::array<char,?> (no null terminator)
+ */
+template <auto T>
+consteval auto nameof2() {
+    constexpr auto name = nameof<T>();
+    std::array<char, name.size()> buffer {0};
+    for (size_t i = 0; i < name.size(); ++i) {
+        buffer[i] = name[i];
+    }
+    return buffer;
+}
+
+template <size_t ...N, typename T>
+auto enum2str(std::index_sequence<N...>, T i) -> std::string_view {
+    constinit static auto data = std::tuple {
+        reflect::nameof2<T(N)>()...
+    };
+    std::array<std::string_view, sizeof...(N)> table {
+        std::string_view(
+            std::get<N>(data).data(),
+            std::get<N>(data).size()
+        )...
+    };
+    if (i < 0 || int(i) >= int(table.size())) {
+        return "Unknown";
+    }
+    return table[i];
+}
+
+} // namespace reflect
+
+// Io
+auto IoCategory::message(int err) const -> std::string {
+    return IoError(err).toString();
+}
+
+auto IoCategory::name() const noexcept -> const char * {
+    return "io";
+}
+
+auto IoCategory::instance() -> IoCategory & {
+    static IoCategory instance;
+    return instance;
+}
+
+auto IoError::toString() const -> std::string {
+    auto view = reflect::enum2str(std::make_index_sequence<IoError::Other>(), mErr);
+    return std::string(view);
+}
+
+// System
 auto SystemCategory::message(int err) const -> std::string {
     return SystemError(err).toString();
 }

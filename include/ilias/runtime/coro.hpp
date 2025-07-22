@@ -14,11 +14,11 @@ namespace runtime {
 
 class SwitchCoroutine {
 public:
-    SwitchCoroutine(std::coroutine_handle<> handle) : mHandle(handle) { }
+    SwitchCoroutine(std::coroutine_handle<> handle) : mHandle(handle) {}
 
     auto await_ready() noexcept { return false; }
     auto await_suspend(std::coroutine_handle<>) noexcept { return mHandle; }
-    auto await_resume() noexcept { }
+    auto await_resume() noexcept {}
 private:
     std::coroutine_handle<> mHandle;
 };
@@ -26,17 +26,34 @@ private:
 // The Runtime environment for coroutines
 class CoroContext {
 public:
-    StopSource  stopSource;                               // Use this to try to stop the coroutine
-    Executor   *executor = nullptr;
-    void      (*stoppedHandler)(CoroContext &) = nullptr; // Called when coroutine is stopped
+    CoroContext() = default;
+    CoroContext(std::nostopstate_t) : mStopSource(std::nostopstate) {}
 
-    auto stop() {
-        stopSource.request_stop();
+    // Request to stop the coroutine
+    auto stop() noexcept {
+        mStopSource.request_stop();
     }
-    auto isStopped() const {
+
+    // Check if the coroutine is stopped
+    auto isStopped() const noexcept {
         return mStopped;
     }
+
+    auto executor() const noexcept -> Executor & {
+        return *mExecutor;
+    }
+
+    auto setExecutor(Executor &executor) noexcept {
+        mExecutor = &executor;
+    }
+
+    auto setStoppedHandler(void (*handler)(CoroContext &)) noexcept {
+        mStoppedHandler = handler;
+    }
 private:
+    StopSource  mStopSource;                               // Use this to try to stop the coroutine
+    Executor   *mExecutor = nullptr;
+    void      (*mStoppedHandler)(CoroContext &) = nullptr; // Called when coroutine is stopped
     bool        mStopped = false;
 friend class CoroHandle;
 };
@@ -80,8 +97,9 @@ public:
 private:
     CoroContext       *mContext = nullptr;
     std::exception_ptr mException = nullptr;
-    std::coroutine_handle<> mPrevAwaiting = std::noop_coroutine();
     void (*mCompletionHandler)(CoroContext &) = nullptr; // Called when coroutine is completed, stopped is not completed
+protected: // protected ..., write by Generator :(
+    std::coroutine_handle<> mPrevAwaiting = std::noop_coroutine();
 friend class CoroHandle;
 };
 
@@ -118,41 +136,46 @@ public:
     }
 
     auto executor() const noexcept -> Executor & {
-        return *context().executor; // Executor must not be null
+        return *context().mExecutor; // Executor must not be null
     }
 
-    auto setContext(CoroContext &ctxt) noexcept {
+    auto setContext(CoroContext &ctxt) const noexcept {
         mPromise->mContext = &ctxt;
     }
 
     // Tell the context, are we stopped now, it only can called when the stop was requested and coroutine is suspended
-    auto setStopped() noexcept {
+    auto setStopped() const noexcept {
         auto &ctxt = context();
-        ILIAS_ASSERT_MSG(ctxt.stoppedHandler, "Stopped handler must be set, double call on CoroHandle::setStopped() ?");
-        ILIAS_ASSERT_MSG(ctxt.stopSource.stop_requested(), "Stop source must be requested, invalid state ?");
-        ctxt.stoppedHandler(ctxt); // Call the stopped handler, we are stopped
-        ctxt.stoppedHandler = nullptr; // Mark it as called
+        ILIAS_ASSERT_MSG(ctxt.mStoppedHandler, "Stopped handler must be set, double call on CoroHandle::setStopped() ?");
+        ILIAS_ASSERT_MSG(ctxt.mStopSource.stop_possible(), "Stop source must be possible to stop, invalid state ?");
+        ILIAS_ASSERT_MSG(ctxt.mStopSource.stop_requested(), "Stop source must be requested, invalid state ?");
+        ctxt.mStoppedHandler(ctxt); // Call the stopped handler, we are stopped
+        ctxt.mStoppedHandler = nullptr; // Mark it as called
         ctxt.mStopped = true;
     }
 
     // Set the completion handler, it will be called when coroutine is completed, stopped is not completed
-    auto setCompletionHandler(void (*handler)(CoroContext &)) noexcept {
+    auto setCompletionHandler(void (*handler)(CoroContext &)) const noexcept {
         mPromise->mCompletionHandler = handler;
     }
 
     // Set the previous awaiting coroutine, when the coroutine is completed, it will resume the previous awaiting coroutine
-    auto setPrevAwaiting(CoroHandle h) noexcept {
+    auto setPrevAwaiting(CoroHandle h) const noexcept {
         mPromise->mPrevAwaiting = h.mHandle;
     }
 
     // Resume in the executor
     auto schedule() const noexcept {
         ILIAS_ASSERT_MSG(!context().isStopped(), "Cannot schedule a stopped coroutine");
-        return context().executor->post(scheduleImpl, mHandle.address());
+        return executor().post(scheduleImpl, mHandle.address());
     }
 
     auto stopToken() const noexcept {
-        return context().stopSource.get_token();
+        return context().mStopSource.get_token();
+    }
+
+    auto isStopRequested() const noexcept {
+        return context().mStopSource.stop_requested();
     }
 
     explicit operator bool() const noexcept {

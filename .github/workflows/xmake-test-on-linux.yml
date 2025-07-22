@@ -20,7 +20,7 @@ jobs:
           - backend: epoll
             config_args: ""
           - backend: io_uring
-            config_args: "--use_io_uring=y"
+            config_args: "--io_uring=y"
     steps:
     - uses: actions/checkout@v2
     - name: setup xmake
@@ -32,7 +32,7 @@ jobs:
     - name: Install dependencies
       run: sudo apt install -y lcov
     - name: Configure
-      run: xmake f -m coverage --use_fmt=y ${{ matrix.config_args }} -y
+      run: xmake f -m coverage --fmt=y ${{ matrix.config_args }} -y
     - name: Build
       run: xmake -y
     - name: Run Test and collect coverage

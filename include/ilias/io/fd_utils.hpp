@@ -37,9 +37,9 @@ namespace fd_utils {
  * @brief Closes a file descriptor.
  * 
  * @param fd 
- * @return Result<void> 
+ * @return IoResult<void> 
  */
-inline auto close(fd_t fd) -> Result<void> {
+inline auto close(fd_t fd) -> IoResult<void> {
 
 #if defined(_WIN32)
     if (::CloseHandle(fd)) {
@@ -51,7 +51,7 @@ inline auto close(fd_t fd) -> Result<void> {
     }
 #endif // defined(_WIN32)
 
-    return Unexpected(SystemError::fromErrno());
+    return Err(SystemError::fromErrno());
 }
 
 /**
@@ -67,9 +67,9 @@ struct PipePair {
 /**
  * @brief Creates a pipe pair.
  * 
- * @return Result<PipePair> 
+ * @return IoResult<PipePair> 
  */
-inline auto pipe() -> Result<PipePair> {
+inline auto pipe() -> IoResult<PipePair> {
 
 #if defined(_WIN32)
     // MSDN says anymous pipe does not support overlapped I/O, so we have to create a named pipe.
@@ -96,7 +96,7 @@ inline auto pipe() -> Result<PipePair> {
     );
 
     if (readPipe == INVALID_HANDLE_VALUE) {
-        return Unexpected(SystemError::fromErrno());
+        return Err(SystemError::fromErrno());
     }
 
     HANDLE writePipe = ::CreateFileW(
@@ -111,7 +111,7 @@ inline auto pipe() -> Result<PipePair> {
 
     if (writePipe == INVALID_HANDLE_VALUE) {
         ::CloseHandle(readPipe);
-        return Unexpected(SystemError::fromErrno());
+        return Err(SystemError::fromErrno());
     }
     return PipePair{writePipe, readPipe};
 #else
@@ -120,7 +120,7 @@ inline auto pipe() -> Result<PipePair> {
         return PipePair{fds[1], fds[0]};
     }
 
-    return Unexpected(SystemError::fromErrno());
+    return Err(SystemError::fromErrno());
 #endif // defined(_WIN32)
 
 }
@@ -146,9 +146,9 @@ inline auto isatty(fd_t fd) -> bool {
  * @brief Duplicates a file descriptor.
  * 
  * @param fd 
- * @return Result<fd_t> 
+ * @return IoResult<fd_t> 
  */
-inline auto dup(fd_t fd) -> Result<fd_t> {
+inline auto dup(fd_t fd) -> IoResult<fd_t> {
 
 #if defined(_WIN32)
     HANDLE newFd = nullptr;
@@ -172,7 +172,7 @@ inline auto dup(fd_t fd) -> Result<fd_t> {
     }
 #endif // defined(_WIN32)
 
-    return Unexpected(SystemError::fromErrno());
+    return Err(SystemError::fromErrno());
 }
 
 /**
@@ -180,9 +180,9 @@ inline auto dup(fd_t fd) -> Result<fd_t> {
  * 
  * @param path the utf-8 encoded path to the file.
  * @param mode the mode to open the file. (c style mode string like fopen "r", "w", "a" etc.)
- * @return Result<fd_t> 
+ * @return IoResult<fd_t> 
  */
-inline auto open(const char *path, std::string_view mode) -> Result<fd_t> {
+inline auto open(const char *path, std::string_view mode) -> IoResult<fd_t> {
 
 #if defined(_WIN32)
     ::DWORD access = 0;
@@ -255,16 +255,16 @@ inline auto open(const char *path, std::string_view mode) -> Result<fd_t> {
     }
 #endif // defined(_WIN32)
 
-    return Unexpected(SystemError::fromErrno());
+    return Err(SystemError::fromErrno());
 }
 
 /**
  * @brief Get the file descriptor type.
  * 
  * @param fd The os file descriptor.
- * @return Result<IoDescriptor::Type> 
+ * @return IoResult<IoDescriptor::Type> 
  */
-inline auto type(fd_t fd) -> Result<IoDescriptor::Type> {
+inline auto type(fd_t fd) -> IoResult<IoDescriptor::Type> {
 
 #if defined(_WIN32)
     ::DWORD type = ::GetFileType(fd);
@@ -299,16 +299,16 @@ inline auto type(fd_t fd) -> Result<IoDescriptor::Type> {
     }
 #endif // defined(_WIN32)
 
-    return Unexpected(SystemError::fromErrno());
+    return Err(SystemError::fromErrno());
 }
 
 /**
  * @brief Get the file size.
  * 
  * @param fd The os file descriptor to a file.
- * @return Result<uint64_t> 
+ * @return IoResult<uint64_t> 
  */
-inline auto size(fd_t fd) -> Result<uint64_t> {
+inline auto size(fd_t fd) -> IoResult<uint64_t> {
 
 #if defined(_WIN32)
     ::LARGE_INTEGER size;
@@ -322,7 +322,7 @@ inline auto size(fd_t fd) -> Result<uint64_t> {
     }
 #endif // defined(_WIN32)
 
-    return Unexpected(SystemError::fromErrno());
+    return Err(SystemError::fromErrno());
 }
 
 /**
@@ -330,9 +330,9 @@ inline auto size(fd_t fd) -> Result<uint64_t> {
  * 
  * @param fd 
  * @param size 
- * @return Result<void> 
+ * @return IoResult<void> 
  */
-inline auto truncate(fd_t fd, uint64_t size) -> Result<void> {
+inline auto truncate(fd_t fd, uint64_t size) -> IoResult<void> {
 
 #if defined(_WIN32)
     ::LARGE_INTEGER currentPos { };
@@ -348,7 +348,7 @@ inline auto truncate(fd_t fd, uint64_t size) -> Result<void> {
     }
 #endif // defined(_WIN32)
 
-    return Unexpected(SystemError::fromErrno());
+    return Err(SystemError::fromErrno());
 }
 
 }

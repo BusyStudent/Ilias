@@ -115,6 +115,9 @@ using socket_t = ILIAS_SOCKET_T;
 template <typename T>
 class Task;
 
+template <typename T>
+class Generator;
+
 // Common Concepts
 template <typename T>
 concept IntoString = requires (const T &t) {

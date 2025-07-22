@@ -1,3 +1,4 @@
+#include <ilias/task/generator.hpp>
 #include <ilias/task/task.hpp>
 #include <gtest/gtest.h>
 
@@ -28,8 +29,14 @@ auto testTask() -> Task<void> {
     }
     
     co_await sleep(10ms);
-    co_await sleep(1s);
+    co_await sleep(20ms);
     co_return;
+}
+
+auto range(int start, int end) -> Generator<int> {
+    for (int i = start; i < end; ++i) {
+        co_yield i;
+    }
 }
 
 TEST(Task, DefaultConstructor) {
@@ -45,6 +52,33 @@ TEST(Task, Spawn) {
     handle2.stop();
     auto val2 = std::move(handle2).wait();
     EXPECT_FALSE(val2.has_value());
+}
+
+TEST(Task, SpawnCallable) {
+    spawn([]() -> Task<void> {
+        co_return;
+    }).wait();
+
+    spawn([i = 42]() -> Task<int> {
+        assert(i == 42);
+        co_return i;
+    }).wait();
+}
+
+TEST(Task, SpawnAwait) {
+    auto fn = []() -> Task<void> {
+        co_await spawn(testTask());
+    };
+    fn().wait();
+}
+
+TEST(Task, Generator) {
+    auto fn = []() -> Task<void> {
+        ilias_for_await(int i, range(0, 10)) {
+            assert(i >= 0 && i < 10);
+        }
+    };
+    fn().wait();
 }
 
 auto main(int argc, char** argv) -> int {

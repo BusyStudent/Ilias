@@ -10,20 +10,20 @@
  */
 #pragma once
 
-#include <ilias/task/detail/promise.hpp>
-#include <ilias/task/detail/await.hpp>
-#include <ilias/task/detail/view.hpp>
-#include <ilias/task/executor.hpp>
-#include <ilias/task/task.hpp>
+#include <ilias/runtime/executor.hpp>
+#include <ilias/runtime/token.hpp>
+#include <ilias/runtime/coro.hpp>
 #include <ilias/log.hpp>
 #include <coroutine>
+#include <optional> // std::optional
+#include <vector> // std::vector
 
 /**
  * @brief The range for for the Generator<T>
  * @note Because for(xxx; xxx; co_await(++it)) compile failed in gcc, so we have to use if instead
  * 
  * @code {.cpp}
- * ilias_foreach(const auto &val, generator()) {
+ * ilias_for_await(const auto &val, generator()) {
  *  useVal(val);
  * }
  * @endcode
@@ -35,12 +35,12 @@
  * @param var The variable to hold each value from the generator.
  * @param generator The generator object to iterate over.
  */
-#define ilias_foreach(var, generator)                                                   \
+#define ilias_for_await(var, generator)                                                 \
     if (auto &&_gen_ = (generator); false) { }                                          \
     else if (bool _first_ = true; false) { }                                            \
     else                                                                                \
-        for (auto _it_ = co_await _gen_.begin(), _end_ = _gen_.end();; _first_ = false) \
-            if (!_first_ ? (co_await (++_it_), 0) : 0; _it_ == _end_) {                 \
+        for (auto _it_ = co_await _gen_.begin(); ; _first_ = false)                     \
+            if (!_first_ ? (co_await (++_it_), 0) : 0; _it_ == _gen_.end()) {           \
                 break;                                                                  \
             }                                                                           \
             else                                                                        \
@@ -49,7 +49,57 @@
 
 ILIAS_NS_BEGIN
 
-namespace detail {
+namespace task {
+
+using runtime::StopSource;
+using runtime::StopRegistration;
+using runtime::CoroHandle;
+using runtime::CoroPromise;
+using runtime::CoroContext;
+
+// Promsie
+template <typename T> requires (!std::is_void_v<T>)
+class GeneratorPromise : public CoroPromise {
+public:
+    using handle_type = std::coroutine_handle<GeneratorPromise<T> >;
+
+    GeneratorPromise() = default;
+
+    // Std coroutines
+    auto return_void() const noexcept {}
+
+    auto yield_value(T value) -> runtime::SwitchCoroutine {
+        mValue.emplace(std::move(value));
+        return { std::exchange(this->mPrevAwaiting, std::noop_coroutine()) }; // Return the coroutine by co_await us
+    }
+
+    auto get_return_object() noexcept -> Generator<T> {
+        return { handle() };
+    }
+
+    auto handle() noexcept -> handle_type {
+        return handle_type::from_promise(*this);
+    }
+private:
+    std::optional<T> mValue;
+template <typename U>
+friend class GeneratorHandle;
+};
+
+// Handle...
+template <typename T>
+class GeneratorHandle : public CoroHandle {
+public:
+    using handle_type = std::coroutine_handle<GeneratorPromise<T> >;
+    using promise_type = GeneratorPromise<T>;
+
+    GeneratorHandle(handle_type handle) : CoroHandle(handle) { }
+    GeneratorHandle() = default;
+
+    auto value() const noexcept -> std::optional<T> & {
+        return promise<promise_type>().mValue;
+    }
+};
 
 /**
  * @brief The awaiter used to execute the generator
@@ -57,33 +107,25 @@ namespace detail {
  * @tparam T 
  */
 template <typename T>
-class GeneratorAwaiter {
+class [[nodiscard]] GeneratorAwaiter {
 public:
-    GeneratorAwaiter(GeneratorView<T> view) : mView(view) { }
+    GeneratorAwaiter(GeneratorHandle<T> gen) : mGen(gen) { }
 
     auto await_ready() const noexcept -> bool {
-        mView.value() = std::nullopt; // Clear the previous value
-        mView.resume();
-        return mView.done() || bool(mView.value()); // Done? or value yielded
+        mGen.value() = std::nullopt; // Clear the previous value
+        mGen.resume();
+        return mGen.done() || bool(mGen.value()); // Done? or value yielded
     }
 
-    auto await_suspend(CoroHandle caller) -> void {
-        mView.setAwaitingCoroutine(caller);
+    auto await_suspend(CoroHandle caller) const noexcept -> void {
+        mGen.setPrevAwaiting(caller);
     }
 
-    auto await_resume() const { 
-        mView.rethrowIfException(); 
+    auto await_resume() const -> void { 
+        mGen.promise<CoroPromise>().rethrowIfNeeded();
     }
-
-#if defined(ILIAS_TASK_TRACE)
-    // As same as Task
-    auto _trace(CoroHandle caller) const -> void {
-        caller.traceLink(mView);
-    }
-#endif // defined(ILIAS_TASK_TRACE)
-
 protected:
-    GeneratorView<T> mView; //< The generator we execute
+    GeneratorHandle<T> mGen; // The handle of the generator, doesn't take the ownership
 };
 
 /**
@@ -95,14 +137,23 @@ template <typename T>
 class GeneratorIterator {
 public:
     GeneratorIterator() = default;
-    GeneratorIterator(GeneratorView<T> view, bool end = false) : mView(view), mEnd(end) { }
+    GeneratorIterator(GeneratorHandle<T> gen) : mGen(gen) { }
 
     auto operator *() const -> T & {
-        return *mView.value();
+        return *mGen.value();
     }
 
     auto operator ->() const -> T * {
-        return &*mView.value();
+        return &*mGen.value();
+    }
+
+    // Check end?
+    auto operator ==(std::default_sentinel_t) const noexcept -> bool {
+        return mGen.done();
+    }
+
+    auto operator !=(std::default_sentinel_t) const noexcept -> bool {
+        return !mGen.done();
     }
 
     /**
@@ -110,24 +161,11 @@ public:
      * 
      * @return GeneratorAwaiter<T> 
      */
-    [[nodiscard("Don't not forget to use co_await")]]
     auto operator ++() -> GeneratorAwaiter<T> {
-        return mView;
-    }
-
-    auto operator ==(const GeneratorIterator &other) const noexcept {
-        if (other.mEnd) { // Check is end?
-            return mView.done();
-        }
-        return mView == other.mView;
-    }
-
-    auto operator !=(const GeneratorIterator &other) const noexcept {
-        return !((*this) == other);
+        return mGen;
     }
 private:
-    GeneratorView<T> mView;
-    bool mEnd = false; //< Mark is end() iterator
+    GeneratorHandle<T> mGen;
 friend class Generator<T>;
 };
 
@@ -141,22 +179,15 @@ class GeneratorBeginAwaiter final : public GeneratorAwaiter<T> {
 public:
     using Base = GeneratorAwaiter<T>;
     using Base::Base;
-
-    auto await_ready() const noexcept { return false; }
-
-    auto await_suspend(CoroHandle caller) -> bool {
-        this->mView.setCancellationToken(caller.cancellationToken());
-        this->mView.setExecutor(caller.executor());
-        if (Base::await_ready()) {
-            return false;
-        }
-        Base::await_suspend(caller);
-        return true;
-    }
     
     auto await_resume() -> GeneratorIterator<T> {
         Base::await_resume();
-        return {this->mView};
+        return {this->mGen};
+    }
+
+    // Set the context of the coroutine, call by the await_transform
+    auto setContext(runtime::CoroContext &ctxt) -> void {
+        this->mGen.setContext(ctxt);
     }
 };
 
@@ -165,53 +196,24 @@ public:
 /**
  * @brief The Generator class, used to produce value by yield
  * 
- * @tparam T 
+ * @tparam T The type of the value to be yielded (can't be void)
  */
 template <typename T>
 class Generator {
 public:
-    using iterator = detail::GeneratorIterator<T>;
-    using promise_type = detail::GeneratorPromise<T>;
+    using iterator = task::GeneratorIterator<T>;
+    using promise_type = task::GeneratorPromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
     using value_type = T;
 
-    static_assert(!std::is_same_v<T, void>, "Generator can't yield void");
+    static_assert(!std::is_void_v<T>, "Generator can't be used with void type");
 
-    /**
-     * @brief Construct a new empty Generator object
-     * 
-     */
     Generator() = default;
-
-    /**
-     * @brief Construct a new empty Generator object
-     * 
-     */
     Generator(std::nullptr_t) { }
-
-    /**
-     * @brief Construct a new Generator object, disable copy
-     * 
-     */
     Generator(const Generator &) = delete;
-
-    /**
-     * @brief Construct a new Generator object, by move
-     * 
-     * @param other 
-     */
     Generator(Generator &&other) : mHandle(std::exchange(other.mHandle, nullptr)) { }
-
-    /**
-     * @brief Destroy the Generator object, destroy the coroutine
-     * 
-     */
     ~Generator() { clear(); }
 
-    /**
-     * @brief Clear the the coroutine in the generator
-     * 
-     */
     auto clear() -> void {
         if (mHandle) {
             mHandle.destroy();
@@ -219,23 +221,13 @@ public:
         }
     }
 
-    /**
-     * @brief Get the bgein iterator
-     * 
-     * @return iterator
-     */
     [[nodiscard("Don't forget to use co_await ")]]
-    auto begin() -> detail::GeneratorBeginAwaiter<T> {
+    auto begin() -> task::GeneratorBeginAwaiter<T> {
         return {mHandle};
     }
 
-    /**
-     * @brief Get the end iterator
-     * 
-     * @return iterator 
-     */
-    auto end() -> iterator {
-        return {mHandle, true};
+    auto end() -> std::default_sentinel_t {
+        return std::default_sentinel;
     }
 
     /**
@@ -253,12 +245,6 @@ public:
         co_return ret;
     }
 
-    /**
-     * @brief Assign from another generator
-     * 
-     * @param other 
-     * @return Generator& 
-     */
     auto operator =(Generator &&other) -> Generator & {
         if (&other != this) {
             return *this;
@@ -268,22 +254,11 @@ public:
         return *this;
     }
 
-    /**
-     * @brief Assign to the null
-     * 
-     * @return Generator& 
-     */
     auto operator =(std::nullptr_t) -> Generator & {
         clear();
         return *this;
     }
 
-    /**
-     * @brief Check the generator is valid
-     * 
-     * @return true 
-     * @return false 
-     */
     explicit operator bool() const noexcept {
         return bool(mHandle);
     }
@@ -291,7 +266,7 @@ private:
     Generator(handle_type handle) : mHandle(handle) { }
 
     handle_type mHandle;
-friend class detail::GeneratorPromise<T>;
+friend class task::GeneratorPromise<T>;
 };
 
 ILIAS_NS_END

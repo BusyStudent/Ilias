@@ -12,6 +12,7 @@
 
 #include <ilias/task/task.hpp>
 #include <ilias/io/traits.hpp>
+#include <ilias/io/error.hpp>
 #include <ilias/buffer.hpp>
 #include <cstddef>
 #include <span>

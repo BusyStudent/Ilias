@@ -19,7 +19,6 @@
 
 ILIAS_NS_BEGIN
 
-class MsgHdr;
 class IoContext;
 class EndpointView;
 class MutableEndpointView;
@@ -98,6 +97,8 @@ public:
      */
     virtual auto write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t> = 0;
 
+
+#if defined(ILIAS_NET)
     /**
      * @brief Connect to a remote endpoint
      * 
@@ -137,6 +138,7 @@ public:
      * @return IoTask<size_t> 
      */
     virtual auto recvfrom(IoDescriptor *fd, MutableBuffer buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> = 0;
+#endif
 
     /**
      * @brief Get the current thread io context

@@ -3,7 +3,19 @@ set_languages("c++23")
 option("fmt")
     set_default(false)
     set_showmenu(true)
-    set_description("Use fmt for logging")
+    set_description("Use fmt replace std::format")
+option_end()
+
+option("log")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Enable logging")
+option_end()
+
+option("spdlog")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Use spdlog for logging")
 option_end()
 
 option("io_uring")
@@ -18,12 +30,6 @@ option("task_trace")
     set_description("Add task stacktrace for debug use")
 option_end()
 
-option("use_openssl")
-    set_default(not is_host("windows"))
-    set_showmenu(true)
-    set_description("Use openssl for the ssl backend")
-option_end()
-
 -- Add packages if 
 if has_config("fmt") then
     add_requires("fmt")
@@ -31,10 +37,6 @@ end
 
 if has_config("io_uring") then
     add_requires("liburing")
-end
-
-if has_config("use_openssl") then
-    add_requires("openssl3")
 end
 
 target("ilias")

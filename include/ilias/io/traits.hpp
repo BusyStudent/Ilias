@@ -18,15 +18,6 @@
 ILIAS_NS_BEGIN
 
 /**
- * @brief A type that can be converted to any type.
- * 
- */
-struct AnyType {
-    template <typename T>
-    constexpr operator T() const noexcept; // No implementation
-};
-
-/**
  * @brief Concept for types that can be read to a a byte span.
  * 
  * @tparam T 
@@ -46,26 +37,6 @@ concept Writable = requires(T &t) {
     t.write(Buffer {});
     t.shutdown();
     t.flush();
-};
-
-/**
- * @brief Concept for types that can be connected to an endpoint.
- * 
- * @tparam T 
- */
-template <typename T>
-concept Connectable = requires(T &t) {
-    t.connect(AnyType {});
-};
-
-/**
- * @brief Concept for types that can be accept and create a new connection.
- * 
- * @tparam T 
- */
-template <typename T>
-concept Listener = requires(T &t) {
-    t.accept();
 };
 
 /**

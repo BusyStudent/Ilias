@@ -16,14 +16,8 @@ namespace detail {
 struct StreamVtbl {
     IoTask<size_t> (*read)(void *object, std::span<std::byte> buffer) = nullptr;
     IoTask<size_t> (*write)(void *object, std::span<const std::byte> buffer) = nullptr;
-};
-
-/**
- * @brief For traits StreamClient
- * 
- */
-struct StreamClientVtbl : public StreamVtbl {
-    IoTask<void> (*shutdown)(void *object) = nullptr;
+    IoTask<void>   (*shutdown)(void *object) = nullptr;
+    IoTask<void>   (*flush)(void *object) = nullptr;
 };
 
 /**
@@ -59,7 +53,7 @@ inline auto writeProxy(void *object, std::span<const std::byte> buffer) -> IoTas
  * @param object 
  * @return IoTask<void> 
  */
-template <Shuttable T>
+template <Writable T>
 inline auto shutdownProxy(void *object) -> IoTask<void> {
     return static_cast<T *>(object)->shutdown();
 }
