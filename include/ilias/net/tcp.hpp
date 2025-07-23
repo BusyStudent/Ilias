@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include <ilias/net/detail/sockbase.hpp>
 #include <ilias/net/endpoint.hpp>
+#include <ilias/net/sockfd.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/io/method.hpp>
 
@@ -24,11 +24,10 @@ ILIAS_NS_BEGIN
 class TcpClient final : public StreamMethod<TcpClient> {
 public:
     TcpClient() = default;
-    TcpClient(IoContext &ctxt, int family) : mBase(ctxt, Socket(family, SOCK_STREAM, IPPROTO_TCP)) { }
-    TcpClient(IoContext &ctxt, Socket &&sock) : mBase(ctxt, std::move(sock)) { }
+    TcpClient(IoHandle<Socket> h) : mHandle(std::move(h)) {}
 
-    auto close() { return mBase.close(); }
-    auto cancel() { return mBase.cancel(); }
+    auto close() { return mHandle.close(); }
+    auto cancel() const { return mHandle.cancel(); }
 
     // Stream Concept
     /**
@@ -37,8 +36,27 @@ public:
      * @param buffer 
      * @return IoTask<size_t> 
      */
-    auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
-        return mBase.send(buffer);
+    auto write(Buffer buffer) const -> IoTask<size_t> {
+        return mHandle.sendto(buffer, 0, nullptr);
+    }
+
+    /**
+     * @brief Flush the socket. (no-op)
+     * 
+     * @return IoTask<void> 
+     */
+    auto flush() const -> IoTask<void> {
+        co_return {};
+    }
+
+    /**
+     * @brief Shutdown the socket.
+     * 
+     * @param how 
+     * @return IoTask<void> 
+     */
+    auto shutdown(int how = Shutdown::Both) const -> IoTask<void> {
+        co_return mHandle.fd().shutdown(how);
     }
 
     /**
@@ -47,8 +65,8 @@ public:
      * @param data 
      * @return IoTask<size_t> 
      */
-    auto read(std::span<std::byte> data) -> IoTask<size_t> {
-        return mBase.recv(data);
+    auto read(MutableBuffer data) const -> IoTask<size_t> {
+        return mHandle.recvfrom(data, 0, nullptr);
     }
 
     // Extension Methods
@@ -59,8 +77,8 @@ public:
      * @param flags 
      * @return IoTask<size_t> 
      */
-    auto send(std::span<const std::byte> buffer, int flags = 0) -> IoTask<size_t> {
-        return mBase.send(buffer, flags);
+    auto send(Buffer buffer, int flags = 0) const -> IoTask<size_t> {
+        return mHandle.sendto(buffer, flags, nullptr);
     }
 
     /**
@@ -70,61 +88,8 @@ public:
      * @param flags 
      * @return IoTask<size_t> 
      */
-    auto recv(std::span<std::byte> data, int flags = 0) -> IoTask<size_t> {
-        return mBase.recv(data, flags);
-    }
-
-    /**
-     * @brief Send a message to the socket.
-     * 
-     * @param msg The message to send.
-     * @param flags The flags to use. (like MSG_DONTWAIT)
-     * @return IoTask<size_t> 
-     */
-    auto sendmsg(const MsgHdr &msg, int flags) -> IoTask<size_t> {
-        return mBase.sendmsg(msg, flags);
-    }
-
-    /**
-     * @brief Receive a message from the socket.
-     * 
-     * @param msg The message to receive.
-     * @param flags The flags to use. (like MSG_DONTWAIT)
-     * @return IoTask<size_t> 
-     */
-    auto recvmsg(MsgHdr &msg, int flags) -> IoTask<size_t> {
-        return mBase.recvmsg(msg, flags);
-    }
-
-    /**
-     * @brief Peek at the data in the socket.
-     * 
-     * @param data 
-     * @return Result<size_t> 
-     */
-    auto peek(std::span<std::byte> data) -> Result<size_t> {
-        return mBase.socket().recv(data, MSG_PEEK);
-    }
-
-    /**
-     * @brief Shutdown the socket.
-     * 
-     * @param how 
-     * @return IoTask<void> 
-     */
-    auto shutdown(int how = Shutdown::Both) -> IoTask<void> {
-        return mBase.shutdown(how);
-    }
-
-    // Connectable Connept
-    /**
-     * @brief Connect to a remote endpoint.
-     * 
-     * @param endpoint 
-     * @return IoTask<void> 
-     */
-    auto connect(const IPEndpoint &endpoint) -> IoTask<void> {
-        return mBase.connect(endpoint);
+    auto recv(MutableBuffer data, int flags = 0) const -> IoTask<size_t> {
+        return mHandle.recvfrom(data, flags, nullptr);
     }
 
     /**
@@ -132,40 +97,40 @@ public:
      * 
      * @tparam T 
      * @param opt 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
     template <SetSockOption T>
-    auto setOption(const T &opt) -> Result<void> {
-        return socket().setOption(opt);
+    auto setOption(const T &opt) const -> IoResult<void> {
+        return mHandle.fd().setOption(opt);
     }
 
     /**
      * @brief Get the socket option.
      * 
      * @tparam T 
-     * @return Result<T> 
+     * @return IoResult<T> 
      */
     template <GetSockOption T>
-    auto getOption() -> Result<T> {
-        return socket().getOption<T>();
+    auto getOption() const -> IoResult<T> {
+        return mHandle.fd().getOption<T>();
     }
 
     /**
      * @brief Get the local endpoint associated with the socket.
      * 
-     * @return Result<IPEndpoint> 
+     * @return IoResult<IPEndpoint> 
      */
-    auto localEndpoint() const -> Result<IPEndpoint> { 
-        return mBase.localEndpoint<IPEndpoint>(); 
+    auto localEndpoint() const -> IoResult<IPEndpoint> { 
+        return mHandle.fd().localEndpoint<IPEndpoint>();
     }
 
     /**
      * @brief Get the remote endpoint associated with the socket.
      * 
-     * @return Result<IPEndpoint> 
+     * @return IoResult<IPEndpoint> 
      */
-    auto remoteEndpoint() const -> Result<IPEndpoint> {
-        return mBase.remoteEndpoint<IPEndpoint>();
+    auto remoteEndpoint() const -> IoResult<IPEndpoint> {
+        return mHandle.fd().remoteEndpoint<IPEndpoint>();
     }
 
     /**
@@ -174,38 +139,30 @@ public:
      * @param events 
      * @return IoTask<uint32_t> 
      */
-    auto poll(uint32_t events) -> IoTask<uint32_t> {
-        return mBase.poll(events);
-    }
-
-    /**
-     * @brief Get the underlying socket.
-     * 
-     * @return SocketView 
-     */
-    auto socket() const -> SocketView {
-        return mBase.socket();
-    }
-
-    /**
-     * @brief Get the underlying io context.
-     * 
-     * @return IoContext* 
-     */
-    auto context() const -> IoContext * {
-        return mBase.context();
+    auto poll(uint32_t events) const -> IoTask<uint32_t> {
+        return mHandle.poll(events);
     }
 
     auto operator <=>(const TcpClient &) const = default;
 
     /**
-     * @brief Create a new tcp client by using current coroutine's io context.
+     * @brief Connect to a remote endpoint.
      * 
-     * @param family The address family.
-     * @return Result<TcpClient>
+     * @return IoTask<TcpClient> 
      */
-    static auto make(int family) {
-        return detail::SocketBase::make<TcpClient>(family, SOCK_STREAM, IPPROTO_TCP);
+    static auto connect(IPEndpoint endpoint) -> IoTask<TcpClient> {
+        auto sockfd = Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP);
+        if (!sockfd) {
+            co_return Err(sockfd.error());
+        }
+        auto handle = IoHandle<Socket>::make(std::move(*sockfd), IoDescriptor::Socket);
+        if (!handle) {
+            co_return Err(handle.error());
+        }
+        if (auto res = co_await handle->connect(endpoint); !res) {
+            co_return Err(res.error());
+        }
+        co_return TcpClient(std::move(*handle));
     }
 
     /**
@@ -214,12 +171,9 @@ public:
      * @return true 
      * @return false 
      */
-    explicit operator bool() const { return bool(mBase); }
+    explicit operator bool() const { return bool(mHandle); }
 private:
-    TcpClient(detail::SocketBase &&base) : mBase(std::move(base)) { }
-
-    detail::SocketBase mBase;
-friend class detail::SocketBase;
+    IoHandle<Socket> mHandle;
 };
 
 /**
@@ -229,47 +183,32 @@ friend class detail::SocketBase;
 class TcpListener {
 public:
     TcpListener() = default;
-    TcpListener(IoContext &ctxt, int family) : mBase(ctxt, Socket(family, SOCK_STREAM, IPPROTO_TCP)) { }
-    TcpListener(IoContext &ctxt, Socket &&sock) : mBase(ctxt, std::move(sock)) { }
+    TcpListener(IoHandle<Socket> h) : mHandle(std::move(h)) {}
 
-    auto close() { return mBase.close(); }
-    auto cancel() { return mBase.cancel(); }
+    auto close() { return mHandle.close(); }
+    auto cancel() const { return mHandle.cancel(); }
 
     /**
      * @brief Set the socket option.
      * 
      * @tparam T 
      * @param opt 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
     template <SetSockOption T>
-    auto setOption(const T &opt) -> Result<void> {
-        return socket().setOption(opt);
+    auto setOption(const T &opt) const -> IoResult<void> {
+        return mHandle.fd().setOption(opt);
     }
 
     /**
      * @brief Get the socket option.
      * 
      * @tparam T 
-     * @return Result<T> 
+     * @return IoResult<T> 
      */
     template <GetSockOption T>
-    auto getOption() -> Result<T> {
-        return socket().getOption<T>();
-    }
-
-    /**
-     * @brief Bind the listener to a local endpoint.
-     * 
-     * @param endpoint The local endpoint to bind to.
-     * @param backlog The maximum length to which the queue of pending connections may grow.
-     * @return Result<void> 
-     */
-    auto bind(const IPEndpoint &endpoint, int backlog = 0) -> Result<void> {
-        if (auto ret = mBase.bind(endpoint); !ret) {
-            return Unexpected(ret.error());
-        }
-        return mBase.listen(backlog);
+    auto getOption() const -> IoResult<T> {
+        return mHandle.fd().getOption<T>();
     }
 
     /**
@@ -277,15 +216,13 @@ public:
      * 
      * @return IoTask<std::pair<TcpClient, IPEndpoint> > 
      */
-    auto accept() -> IoTask<std::pair<TcpClient, IPEndpoint> > {
+    auto accept() const -> IoTask<std::pair<TcpClient, IPEndpoint> > {
         IPEndpoint endpoint;
-        auto ctxt = mBase.context();
-        auto sock = co_await mBase.accept(&endpoint);
-        if (!sock) {
-            co_return Unexpected(sock.error());
+        auto client = co_await accept(&endpoint);
+        if (!client) {
+            co_return Err(client.error());
         }
-        TcpClient client(*ctxt, Socket(sock.value()));
-        co_return std::make_pair(std::move(client), endpoint);
+        co_return std::make_pair(std::move(*client), endpoint);
     }
 
     /**
@@ -294,13 +231,16 @@ public:
      * @param endpoint The address to receive the connection from. (can be nullptr)
      * @return IoTask<TcpClient> 
      */
-    auto accept(IPEndpoint *endpoint) -> IoTask<TcpClient> {
-        auto ctxt = mBase.context();
-        auto sock = co_await mBase.accept(endpoint);
-        if (!sock) {
-            co_return Unexpected(sock.error());
+    auto accept(IPEndpoint *endpoint) const -> IoTask<TcpClient> {
+        auto sockfd = co_await mHandle.accept(endpoint);
+        if (!sockfd) {
+            co_return Err(sockfd.error());
         }
-        co_return TcpClient(*ctxt, Socket(sock.value()));
+        auto handle = IoHandle<Socket>::make(Socket(std::move(*sockfd)), IoDescriptor::Socket);
+        if (!handle) {
+            co_return Err(handle.error());
+        }
+        co_return TcpClient(std::move(*handle));
     }
 
     /**
@@ -309,7 +249,7 @@ public:
      * @param endpoint The reference to the address to receive the connection from.
      * @return IoTask<TcpClient> 
      */
-    auto accept(IPEndpoint &endpoint) -> IoTask<TcpClient> {
+    auto accept(IPEndpoint &endpoint) const -> IoTask<TcpClient> {
         return accept(&endpoint);
     }
 
@@ -319,45 +259,42 @@ public:
      * @param events 
      * @return IoTask<uint32_t> 
      */
-    auto poll(uint32_t events) -> IoTask<uint32_t> {
-        return mBase.poll(events);
+    auto poll(uint32_t events) const -> IoTask<uint32_t> {
+        return mHandle.poll(events);
     }
 
     /**
      * @brief Get the local endpoint associated with the socket.
      * 
-     * @return Result<IPEndpoint> 
+     * @return IoResult<IPEndpoint> 
      */
-    auto localEndpoint() const -> Result<IPEndpoint> { 
-        return mBase.localEndpoint<IPEndpoint>(); 
+    auto localEndpoint() const -> IoResult<IPEndpoint> { 
+        return mHandle.fd().localEndpoint<IPEndpoint>();
     }
 
     /**
-     * @brief Get the underlying io context.
+     * @brief Bind the socket to an endpoint.
      * 
-     * @return IoContext* 
+     * @param endpoint The endpoint to bind to.
+     * @param backlog The backlog for the socket.
+     * @return IoTask<TcpListener> 
      */
-    auto context() const -> IoContext * {
-        return mBase.context();
-    }
-
-    /**
-     * @brief Get the underlying socket.
-     * 
-     * @return SocketView 
-     */
-    auto socket() const -> SocketView {
-        return mBase.socket();
-    }
-
-    /**
-     * @brief Create a new tcp listener by using current coroutine's io context.
-     * 
-     * @param family The address family.
-     * @return Result<TcpListener>
-     */
-    static auto make(int family) {
-        return detail::SocketBase::make<TcpListener>(family, SOCK_STREAM, IPPROTO_TCP);
+    static auto bind(IPEndpoint endpoint, int backlog = 0) -> IoTask<TcpListener> {
+        auto sockfd = Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP);
+        if (!sockfd) {
+            co_return Err(sockfd.error());
+        }
+        if (auto res = sockfd->bind(endpoint); !res) {
+            co_return Err(res.error());
+        }
+        if (auto res = sockfd->listen(backlog); !res) {
+            co_return Err(res.error());
+        }
+        auto handle = IoHandle<Socket>::make(std::move(*sockfd), IoDescriptor::Socket);
+        if (!handle) {
+            co_return Err(handle.error());
+        }
+        co_return TcpListener(std::move(*handle));
     }
 
     /**
@@ -366,12 +303,9 @@ public:
      * @return true 
      * @return false 
      */
-    explicit operator bool() const { return bool(mBase); }
+    explicit operator bool() const { return bool(mHandle); }
 private:
-    TcpListener(detail::SocketBase &&base) : mBase(std::move(base)) { }
-
-    detail::SocketBase mBase;
-friend class detail::SocketBase;
+    IoHandle<Socket> mHandle;
 };
 
 ILIAS_NS_END

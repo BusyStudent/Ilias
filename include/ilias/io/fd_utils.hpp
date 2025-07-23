@@ -16,7 +16,6 @@
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp>
-    #include <ilias/detail/win32.hpp>
     #include <atomic>
 #else
     #include <sys/stat.h>

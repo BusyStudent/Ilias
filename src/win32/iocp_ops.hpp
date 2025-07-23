@@ -7,6 +7,7 @@ ILIAS_NS_BEGIN
 
 namespace win32 {
 
+#pragma region Net
 /**
  * @brief Awaiter wrapping WSASendTo
  * 
@@ -361,6 +362,7 @@ private:
     LPFN_WSARECVMSG mRecvMsg = nullptr;
 };
 
+#pragma region Fs
 /**
  * @brief Wrapping the iocp async read operations
  * 

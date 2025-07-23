@@ -12,22 +12,13 @@
 #pragma once
 
 #include <ilias/net/endpoint.hpp>
-#include <ilias/net/address.hpp>
-#include <ilias/net/system.hpp>
-#include <ilias/task/task.hpp>
+#include <ilias/net/system.hpp> // for
+#include <ilias/task/task.hpp> // for Task
+#include <ilias/io/error.hpp> // for IoResult
 #include <optional>
 
 #if defined(_WIN32)
     #define ILIAS_ADDRINFO ::ADDRINFOEXW
-    #include <ilias/detail/win32.hpp> //< EventOverlapped
-    #include <VersionHelpers.h>
-
-    #if defined(__MINGW32__) || defined(__MINGW64__) // Polyfill for MinGW
-        extern "C" {
-            __declspec(dllimport) INT WSAAPI GetAddrInfoExCancel(LPHANDLE);
-            __declspec(dllimport) INT WSAAPI GetAddrInfoExOverlappedResult(LPOVERLAPPED);
-        }
-    #endif // defined(__MINGW32__)
 #else
     #define ILIAS_ADDRINFO ::addrinfo
     #include <csignal>
@@ -42,35 +33,48 @@ ILIAS_NS_BEGIN
 using addrinfo_t = ILIAS_ADDRINFO;
 
 /**
+ * @brief The raw error code of getaddrinfo and getnameinfo
+ * 
+ */
+enum class GaiError : int {
+    TryAgain                  = EAI_AGAIN,
+    Fail                      = EAI_FAIL,
+    OutOfMemory               = EAI_MEMORY,
+    NotFound                  = EAI_NONAME,
+    AddressFamilyNotSupported = EAI_FAMILY,
+};
+
+/**
  * @brief Error for getaddrinfo and getnameinfo
  * 
  */
-class GaiCategory final : public ErrorCategory {
+class ILIAS_API GaiCategory final : public std::error_category {
 public:
-    auto name() const -> std::string_view override;
-    auto message(int64_t code) const -> std::string override;
-    auto equivalent(int64_t self, const Error &other) const -> bool override;
+    auto name() const noexcept -> const char* override;
+    auto message(int value) const -> std::string override;
 
-    static auto instance() -> GaiCategory &;
+    static auto instance() -> const GaiCategory &;
 };
+
+ILIAS_DECLARE_ERROR(GaiError, GaiCategory);
 
 /**
  * @brief Wrapper for addrinfo
  * 
  */
-class AddressInfo {
+class ILIAS_API AddressInfo {
 public:
-    AddressInfo();
-    AddressInfo(const AddressInfo &) = delete;
-    AddressInfo(AddressInfo &&info);
-    ~AddressInfo();
+    struct iterator {
+        auto operator ++() noexcept -> iterator & { ptr = ptr->ai_next; return *this; }
+        auto operator *() -> IPEndpoint { return IPEndpoint::fromRaw(ptr->ai_addr, ptr->ai_addrlen).value(); }
+        auto operator <=>(const iterator &other) const noexcept = default;
+        addrinfo_t *ptr = nullptr;
+    };
 
-    /**
-     * @brief Get all addresses from the info
-     * 
-     * @return std::vector<IPAddress> 
-     */
-    auto addresses() const -> std::vector<IPAddress>;
+    explicit AddressInfo(addrinfo_t *info) noexcept : mInfo(info) { }
+    AddressInfo() = default;
+    AddressInfo(const AddressInfo &) = delete;
+    AddressInfo(AddressInfo &&info) = default;
 
     /**
      * @brief Get all endpoint from the info
@@ -91,8 +95,9 @@ public:
      * 
      * @return addrinfo_t* 
      */
-    auto operator ->() const -> addrinfo_t *;
-    auto operator  *() const -> addrinfo_t &;
+    auto get() const -> addrinfo_t *;
+    auto end() const -> iterator;
+    auto begin() const -> iterator;
     auto operator  =(AddressInfo &&info) -> AddressInfo &;
 
     /**
@@ -104,32 +109,22 @@ public:
     explicit operator bool() const noexcept;
 
     /**
-     * @brief Try get the address info by it
-     * 
-     * @param name The hostname string
-     * @param family 
-     * @return Result<AddressInfo> 
-     */
-    static auto fromHostname(const char *name, int family = AF_UNSPEC) -> Result<AddressInfo>;
-
-    /**
      * @brief Try get the address info by it asynchronously
      * 
      * @param name The hostname string
      * @param family 
      * @return IoTask<AddressInfo> 
      */
-    static auto fromHostnameAsync(const char *name, int family = AF_UNSPEC) -> IoTask<AddressInfo>;
+    static auto fromHostname(std::string_view name, int family = AF_UNSPEC) -> IoTask<AddressInfo>;
 
     /**
-     * @brief Wrapping the raw getaddrinfo
+     * @brief Try get the address info by it
      * 
      * @param name The hostname string
-     * @param service 
-     * @param hint 
-     * @return Result<AddressInfo> 
+     * @param family 
+     * @return IoResult<AddressInfo> 
      */
-    static auto fromHostname(const char *name, const char *service, std::optional<addrinfo_t> hints = {}) -> Result<AddressInfo>;
+    static auto fromHostnameBlocking(std::string_view name, int family = AF_UNSPEC) -> IoResult<AddressInfo>;
 
     /**
      * @brief Wrapping the raw getaddrinfo asynchronously
@@ -139,10 +134,18 @@ public:
      * @param hints 
      * @return IoTask<AddressInfo> 
      */
-    static auto fromHostnameAsync(const char *name, const char *service, std::optional<addrinfo_t> hints = {}) -> IoTask<AddressInfo>;
-private:
-    AddressInfo(addrinfo_t *info) : mInfo(info) { }
+    static auto fromHostname(std::string_view name, std::string_view service, std::optional<addrinfo_t> hints = {}) -> IoTask<AddressInfo>;
 
+    /**
+     * @brief Wrapping the raw getaddrinfo
+     * 
+     * @param name The hostname string
+     * @param service 
+     * @param hint 
+     * @return IoResult<AddressInfo> 
+     */
+    static auto fromHostnameBlocking(std::string_view name, std::string_view service, std::optional<addrinfo_t> hints = {}) -> IoResult<AddressInfo>;
+private:
     struct FreeInfo {
         auto operator ()(addrinfo_t *info) const noexcept -> void {
 #if defined(_WIN32)
@@ -156,25 +159,11 @@ private:
 };
 
 // --- AddressInfo Impl
-inline AddressInfo::AddressInfo() = default;
-inline AddressInfo::AddressInfo(AddressInfo &&other) = default;
-inline AddressInfo::~AddressInfo() = default;
-
 inline AddressInfo::operator bool() const noexcept { return mInfo != nullptr; }
 inline auto AddressInfo::operator =(AddressInfo &&info) -> AddressInfo & = default;
-inline auto AddressInfo::operator *() const -> addrinfo_t & { return *mInfo; }
-inline auto AddressInfo::operator ->() const -> addrinfo_t * { return mInfo.get(); }
-
-inline auto AddressInfo::addresses() const -> std::vector<IPAddress> {
-    std::vector<IPAddress> vec;
-    for (auto cur = mInfo.get(); cur != nullptr; cur = cur->ai_next) {
-        auto ep = IPEndpoint::fromRaw(cur->ai_addr, cur->ai_addrlen);
-        if (ep) {
-            vec.emplace_back(ep->address());
-        }
-    }
-    return vec;
-}
+inline auto AddressInfo::get() const -> addrinfo_t * { return mInfo.get(); }
+inline auto AddressInfo::begin() const -> iterator { return {mInfo.get()}; }
+inline auto AddressInfo::end() const -> iterator { return {nullptr}; }
 
 inline auto AddressInfo::endpoints() const -> std::vector<IPEndpoint> {
     std::vector<IPEndpoint> vec;
@@ -198,184 +187,19 @@ inline auto AddressInfo::canonicalName() const -> std::string {
 #endif // _WIN32
 }
 
-inline auto AddressInfo::fromHostname(const char *hostname, int family) -> Result<AddressInfo> {
+inline auto AddressInfo::fromHostnameBlocking(std::string_view hostname, int family) -> IoResult<AddressInfo> {
     addrinfo_t hints {
         .ai_family = family,
     };
-    return fromHostname(hostname, nullptr, hints);
+    return fromHostnameBlocking(hostname, {}, hints);
 }
 
 
-inline auto AddressInfo::fromHostnameAsync(const char *hostname, int family) -> IoTask<AddressInfo> {
+inline auto AddressInfo::fromHostname(std::string_view hostname, int family) -> IoTask<AddressInfo> {
     addrinfo_t hints {
         .ai_family = family,
     };
-    return fromHostnameAsync(hostname, nullptr, hints);
-}
-
-inline auto AddressInfo::fromHostname(const char *name, const char *service, std::optional<addrinfo_t> hints) -> Result<AddressInfo> {
-    addrinfo_t *info = nullptr;
-    int err = 0;
-
-#if defined(_WIN32)
-    err = ::GetAddrInfoExW(
-        name ? win32::toWide(name).c_str() : nullptr, 
-        service ? win32::toWide(service).c_str() : nullptr, 
-        NS_ALL, 
-        nullptr, 
-        hints ? &hints.value() : nullptr, 
-        &info, 
-        nullptr, 
-        nullptr, 
-        nullptr, 
-        nullptr
-    );
-#else
-    err = ::getaddrinfo(name, service, hints ? &hints.value() : nullptr, &info);
-#endif
-
-    if (err != 0) {
-
-#ifdef EAI_SYSTEM
-        if (err == EAI_SYSTEM) {
-            return Unexpected(SystemError::fromErrno());
-        }
-#endif
-
-        return Unexpected(Error(err, GaiCategory::instance()));
-    }
-    return AddressInfo(info);
-
-}
-
-inline auto AddressInfo::fromHostnameAsync(const char *name, const char *service, std::optional<addrinfo_t> hints) -> IoTask<AddressInfo> {
-    addrinfo_t *info = nullptr;
-    int err = 0;
-
-#if defined(_WIN32)
-    if (!::IsWindows8OrGreater()) {
-        co_return fromHostname(name, service, hints); //< fallback to sync version
-    }
-    win32::EventOverlapped overlapped;
-    HANDLE namedHandle = nullptr;
-    err = ::GetAddrInfoExW(
-        name ? win32::toWide(name).c_str() : nullptr, 
-        service ? win32::toWide(service).c_str() : nullptr, 
-        NS_ALL, 
-        nullptr, 
-        hints ? &hints.value() : nullptr, 
-        &info,
-        nullptr, 
-        &overlapped, 
-        nullptr, 
-        &namedHandle
-    );
-    if (err == ERROR_SUCCESS) { // Done
-        co_return AddressInfo(info); 
-    }
-    if (err != ERROR_IO_PENDING) { //< FAILED to start overlapped
-        co_return Unexpected(Error(err, GaiCategory::instance()));
-    }
-    auto cancelOperation = [&namedHandle]() {
-        ::GetAddrInfoExCancel(&namedHandle);
-    };
-    if (auto ret = co_await overlapped.makeAwaiter(cancelOperation); !ret) {
-        co_return Unexpected(ret.error());
-    }
-    err = ::GetAddrInfoExOverlappedResult(&overlapped);
-    if (err != 0) {
-        co_return Unexpected(Error(err, GaiCategory::instance()));
-    }
-    co_return AddressInfo(info);
-#elif defined(__linux) && defined(__GLIBC__) //< GNU Linux with glibc, use getaddrinfo_a
-    ::gaicb request {
-        .ar_name = name,
-        .ar_service = service,
-        .ar_request = hints ? &hints.value() : nullptr
-    };
-    struct Awaiter {
-        auto await_ready() const noexcept { return false; }
-
-        auto await_suspend(TaskView<> caller) -> bool {
-            ::memset(&mEvent, 0, sizeof(mEvent));
-            mCaller = caller;
-            mEvent.sigev_notify = SIGEV_THREAD; //< Use callback
-            mEvent.sigev_value.sival_ptr = this;
-            mEvent.sigev_notify_function = [](::sigval val) {
-                auto self = static_cast<Awaiter *>(val.sival_ptr);
-                self->mCaller.schedule();
-            };
-            int ret = ::getaddrinfo_a(GAI_NOWAIT, &mRequest, 1, &mEvent);
-            mReg = caller.cancellationToken().register_([](void *request) {
-                auto ret = ::gai_cancel(static_cast<::gaicb*>(request));
-            }, mRequest);
-            return ret == 0;
-        }
-
-        auto await_resume() -> Result<AddressInfo> {
-            auto err = ::gai_error(mRequest);
-            if (err != 0) {
-                return Unexpected(Error(err, GaiCategory::instance()));
-            }
-            return AddressInfo(mRequest->ar_result);
-        }
-
-        TaskView<> mCaller;
-        ::gaicb *mRequest;
-        ::sigevent mEvent;
-        CancellationToken::Registration mReg;
-    };
-    co_return co_await Awaiter { .mRequest = &request };
-#else
-    // Fallback to the synchronous version for platforms other than Windows and GNU/Linux.
-    // This is because no native asynchronous implementation is available for these platforms.
-    // Maybe we start a thread to avoid blocking the current thread. ?
-    co_return fromHostname(name, service, hints);
-#endif
-}
-
-// GaiCategory
-inline auto GaiCategory::instance() -> GaiCategory & { 
-    static GaiCategory c; 
-    return c; 
-}
-
-inline auto GaiCategory::name() const -> std::string_view { 
-    return "getaddrinfo"; 
-}
-
-inline auto GaiCategory::message(int64_t code) const -> std::string {
-
-#ifdef _WIN32
-    // In Windows, the gai error is windows error
-    return Error(SystemError(code)).message();
-#else
-    return ::gai_strerror(code);
-#endif
-
-}
-
-inline auto GaiCategory::equivalent(int64_t code, const Error &other) const -> bool {
-    if (this == &other.category() && code == other.value()) {
-        //< Category is same, value is same
-        return true;
-    }
-    if (other.category() == IliasCategory::instance()) {
-        switch (code) {
-            case EAI_NONAME: return other == Error::HostNotFound;
-
-            //< For async version, it is extension of the platform getaddrinfo
-#if defined(ERROR_OPERATION_ABORTED)
-            case ERROR_OPERATION_ABORTED: return other == Error::Canceled;
-#endif
-
-#if defined(ECANCELED) && !defined(_WIN32) // For POSIX Cancelation
-            case ECANCELED: return other == Error::Canceled;
-#endif
-            default: return other == Error::Unknown;
-        }
-    }
-    return false;
+    return fromHostname(hostname, {}, hints);
 }
 
 ILIAS_NS_END

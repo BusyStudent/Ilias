@@ -38,7 +38,7 @@ public:
     auto name() const noexcept -> const char* override;
     auto message(int value) const -> std::string override;
     
-    static auto instance() -> IoCategory &;
+    static auto instance() -> const IoCategory &;
 };
 
 /**

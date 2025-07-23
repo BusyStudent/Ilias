@@ -16,6 +16,7 @@
 #include <ilias/result.hpp>
 #include <system_error>
 #include <cerrno>
+#include <string> 
 
 #if   defined(_WIN32)
     #include <ilias/detail/win32defs.hpp>
@@ -38,7 +39,7 @@ public:
     auto message(int value) const -> std::string override;
     auto default_error_condition(int value) const noexcept -> std::error_condition override;
     
-    static auto instance() -> SystemCategory &;
+    static auto instance() -> const SystemCategory &;
 };
 
 /**
@@ -125,11 +126,11 @@ public:
     auto operator <=>(const SystemError &other) const noexcept = default;
 
     /**
-     * @brief cast to error_t
+     * @brief cast to int
      * 
      * @return Error 
      */
-    explicit operator error_t() const { return mErr; }
+    explicit operator int() const { return mErr; }
 
     /**
      * @brief Get the system error from the errno

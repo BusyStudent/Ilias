@@ -89,7 +89,7 @@ public:
         ULONG afdEvents = mRInfo.Handles[0].Events;
         if (afdEvents & (AFD_POLL_LOCAL_CLOSE)) {
             // User close the socket
-            return Err(IoError::Canceled);
+            return Err(SystemError::Canceled);
         }
         if (afdEvents & (AFD_POLL_RECEIVE | AFD_POLL_DISCONNECT | AFD_POLL_ACCEPT | AFD_POLL_ABORT)) {
             revents |= PollEvent::In;

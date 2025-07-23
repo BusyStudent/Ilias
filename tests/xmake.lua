@@ -21,6 +21,7 @@ for _, file in ipairs(os.files("**.cpp")) do
         add_tests(name, {run_timeout = 10000})
         add_packages("gtest")
         add_deps("ilias")
+        add_includedirs("./")
     target_end()
 
     ::continue::

@@ -24,9 +24,9 @@
 #include <string>
 
 #define ILIAS_LOG_MAKE_LEVEL(name) ::ILIAS_NAMESPACE::logging::LogLevel::name
-#define ILIAS_LOG_SET_LEVEL(level_) ::ILIAS_NAMESPACE::logging::getLogContext().level = level_
-#define ILIAS_LOG_ADD_WHITELIST(mod) ::ILIAS_NAMESPACE::logging::getLogContext().whitelist.insert(mod)
-#define ILIAS_LOG_ADD_BLACKLIST(mod) ::ILIAS_NAMESPACE::logging::getLogContext().blacklist.insert(mod)
+#define ILIAS_LOG_SET_LEVEL(level_) ::ILIAS_NAMESPACE::logging::setLevel(level_)
+#define ILIAS_LOG_ADD_WHITELIST(mod) ::ILIAS_NAMESPACE::logging::addWhitelist(mod)
+#define ILIAS_LOG_ADD_BLACKLIST(mod) ::ILIAS_NAMESPACE::logging::addBlacklist(mod)
 #define ILIAS_LOG(level, mod, ...) ::ILIAS_NAMESPACE::logging::write(level, mod, std::source_location::current(), ::ILIAS_NAMESPACE::fmtlib::format(__VA_ARGS__))
 
 ILIAS_NS_BEGIN

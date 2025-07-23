@@ -14,6 +14,7 @@
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/sockopt.hpp>
 #include <ilias/net/system.hpp>
+#include <ilias/io/context.hpp>
 #include <ilias/log.hpp>
 #include <span>
 
@@ -183,23 +184,23 @@ public:
     auto setBlocking(bool blocking) const -> IoResult<void> {
 
 #if defined(_WIN32)
-    u_long block = blocking ? 0 : 1;
-    return ioctl(FIONBIO, &block);
+        u_long block = blocking ? 0 : 1;
+        return ioctl(FIONBIO, &block);
 #else
-    int flags = ::fcntl(mFd, F_GETFL, 0);
-    if (flags < 0) {
-        return Err(SystemError::fromErrno());
-    }
-    if (blocking) {
-        flags &= ~O_NONBLOCK;
-    }
-    else {
-        flags |= O_NONBLOCK;
-    }
-    if (::fcntl(mFd, F_SETFL, flags) < 0) {
-        return Err(SystemError::fromErrno());
-    }
-    return IoResult<void>();
+        int flags = ::fcntl(mFd, F_GETFL, 0);
+        if (flags < 0) {
+            return Err(SystemError::fromErrno());
+        }
+        if (blocking) {
+            flags &= ~O_NONBLOCK;
+        }
+        else {
+            flags |= O_NONBLOCK;
+        }
+        if (::fcntl(mFd, F_SETFL, flags) < 0) {
+            return Err(SystemError::fromErrno());
+        }
+        return IoResult<void>();
 #endif
 
     }
@@ -455,13 +456,23 @@ public:
     explicit operator bool() const noexcept {
         return mFd != Invalid;
     }
+
+    /**
+     * @brief Get the underlying socket descriptor
+     * 
+     * @return fd_t 
+     */
+    explicit operator fd_t() const noexcept {
+        return fd_t(mFd);
+    }
+    
     static constexpr socket_t Invalid = ILIAS_INVALID_SOCKET;
 protected:
     socket_t mFd = Invalid;
 };
 
 /**
- * @brief RAII wrapper for a socket
+ * @brief RAII wrapper for a native socket
  * 
  */
 class Socket final : public SocketView {

@@ -91,22 +91,22 @@ public:
 
     constexpr OptionT(T value) : mValue(value) { }
 
-    auto setopt(socket_t sock) const -> Result<void> {
+    auto setopt(socket_t sock) const -> IoResult<void> {
         static_assert(Access & OptionAccess::Write);
         auto ret = ::setsockopt(sock, Level, Optname, reinterpret_cast<const char *>(&mValue), sizeof(T));
         if (ret != 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return {};
     }
 
-    static auto getopt(socket_t sock) -> Result<OptionT> {
+    static auto getopt(socket_t sock) -> IoResult<OptionT> {
         static_assert(Access & OptionAccess::Read);
         ::socklen_t optlen = sizeof(T);
         T value;
         auto ret = ::getsockopt(sock, Level, Optname, reinterpret_cast<char *>(&value), &optlen);
         if (ret != 0) {
-            return Unexpected(SystemError::fromErrno());
+            return Err(SystemError::fromErrno());
         }
         return OptionT {value};
     }

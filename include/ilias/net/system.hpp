@@ -13,7 +13,6 @@
 
 #include <ilias/io/system_error.hpp>
 #include <ilias/result.hpp>
-#include <algorithm>
 #include <array>
 #include <bit>
 
@@ -62,8 +61,6 @@
 
 
 ILIAS_NS_BEGIN
-
-using msghdr_t = ILIAS_MSGHDR_T;
 
 /**
  * @brief The poll event enum. It is the same as in poll.h and can be combined with bitwise operations.
@@ -131,7 +128,7 @@ inline SockInitializer::SockInitializer() {
 }
 inline SockInitializer::~SockInitializer() {
     if (mInited) {
-        uninitialize();
+        auto _ = uninitialize();
     }
 }
 
@@ -173,28 +170,10 @@ consteval auto isNetworkOrder() noexcept -> bool {
  * @tparam T 
  */
 template <std::integral T> requires(std::has_unique_object_representations_v<T>)
-constexpr auto byteswap(const T value) -> T { // std::byteswap is C++23, so we need to implement it by ourselves
+constexpr auto byteswap(const T value) noexcept -> T { // std::byteswap is C++23, so we need to implement it by ourselves
     auto bytes = std::bit_cast<std::array<std::byte, sizeof(T)> >(value);
     std::reverse(bytes.begin(), bytes.end());
     return std::bit_cast<T>(bytes);
-}
-
-/**
- * @brief Swap the bits of the value
- * 
- * @tparam T 
- */
-template <std::integral T> requires(std::has_unique_object_representations_v<T>)
-constexpr auto bitswap(const T value) -> T {
-    using UT = std::make_unsigned_t<T>;
-    auto uvalue = std::bit_cast<UT>(value);
-    auto result = UT {0};
-    auto bits = sizeof(T) * 8;
-    for (size_t i = 0; i < bits; ++i) {
-        result |= (uvalue & 1) << (bits - i - 1);
-        uvalue >>= 1;
-    }
-    return std::bit_cast<T>(result);
 }
 
 /**
@@ -205,7 +184,7 @@ constexpr auto bitswap(const T value) -> T {
  * @return T 
  */
 template <std::integral T>
-constexpr auto hostToNetwork(const T value) -> T {
+constexpr auto hostToNetwork(const T value) noexcept -> T {
     if constexpr (isNetworkOrder()) { // Network is big endian
         return value;
     }
@@ -222,7 +201,7 @@ constexpr auto hostToNetwork(const T value) -> T {
  * @return T 
  */
 template <std::integral T>
-constexpr auto networkToHost(const T value) -> T {
+constexpr auto networkToHost(const T value) noexcept -> T {
     if constexpr (isNetworkOrder()) { // Network is big endian
         return value;
     }

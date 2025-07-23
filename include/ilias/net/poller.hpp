@@ -1,71 +1,29 @@
 #pragma once
 
+#include <ilias/net/sockfd.hpp>
 #include <ilias/io/context.hpp>
-#include <ilias/net/system.hpp>
 
 ILIAS_NS_BEGIN
 
 /**
- * @brief Poller class, use to poll events on fd / sockets
+ * @brief Poller class, use to poll events on fd / sockets, it doesn't own the fd, just borrows it
  * 
  */
 class Poller {
 public:
     Poller() = default;
-
-    /**
-     * @brief Construct a new Poller object
-     * 
-     * @param ctxt The IoContext to use
-     * @param fd The fd to poll
-     * @param type The type of descriptor (default: Unknown, let the backend guess)
-     */
-    Poller(IoContext &ctxt, fd_t fd, IoDescriptor::Type type = IoDescriptor::Unknown) {
-        mCtxt = &ctxt;
-        mDesc = mCtxt->addDescriptor(fd, type).value_or(nullptr);
-        mFd = fd;
-    }
-
-#if defined(_WIN32)
-    /**
-     * @brief Construct a new Poller object from socket
-     * 
-     * @param ctxt The IoContext to use
-     * @param sockfd The socket to poll
-     */
-    Poller(IoContext &ctxt, socket_t sockfd) : Poller(ctxt, fd_t(sockfd), IoDescriptor::Socket) { }
-#endif // defined(_WIN32)
-
-    Poller(const Poller &) = delete;
-
-    /**
-     * @brief Construct a new Poller object by moving from another
-     * 
-     * @param other 
-     */
-    Poller(Poller &&other) : 
-        mCtxt(std::exchange(other.mCtxt, nullptr)), 
-        mDesc(std::exchange(other.mDesc, nullptr)), 
-        mFd(std::exchange(other.mFd, fd_t{ })) 
-    {
-
-    }
-
-    ~Poller() {
-        close();
-    }
+    Poller(IoHandle<fd_t> h) : mHandle(std::move(h)) { }
 
     /**
      * @brief Close the current poller
      * 
      */
-    auto close() -> void {
-        if (mDesc) {
-            mCtxt->removeDescriptor(mDesc);
-            mDesc = nullptr;
-        }
-        mCtxt = nullptr;
-        mFd = { };
+    auto close() {
+        return mHandle.close();
+    }
+
+    auto cancel() {
+        return mHandle.cancel();
     }
 
     /**
@@ -75,47 +33,37 @@ public:
      * @return IoTask<uint32_t> The reveived events
      */
     auto poll(uint32_t events) const -> IoTask<uint32_t> {
-        return mCtxt->poll(mDesc, events);
+        return mHandle.poll(events);
     }
-
-    /**
-     * @brief Get the context of the poller
-     * 
-     * @return IoContext* 
-     */
-    auto context() const -> IoContext * {
-        return mCtxt;
-    }
-
     /**
      * @brief Get the fd of the poller
      * 
      * @return fd_t 
      */
     auto fd() const -> fd_t {
-        return mFd;
+        return mHandle.fd();
     }
 
     /**
-     * @brief Assign the poller by move
+     * @brief Create a new poller by borrowing a fd
      * 
-     * @param other 
-     * @return Poller& 
+     * @param fd    The fd to borrow
+     * @param type  The type of the fd (default is IoDescriptor::Unknown)
+     * @return IoTask<Poller> 
      */
-    auto operator =(Poller &&other) -> Poller & {
-        if (&other == this) {
-            return *this;
+    static auto make(fd_t fd, IoDescriptor::Type type = IoDescriptor::Unknown) -> IoTask<Poller> {
+        auto handle = IoHandle<fd_t>::make(fd, type);
+        if (!handle) {
+            co_return Err(handle.error());
         }
-        mCtxt = std::exchange(other.mCtxt, nullptr);
-        mDesc = std::exchange(other.mDesc, nullptr);
-        mFd = std::exchange(other.mFd, fd_t { });
-        return *this;
+        co_return Poller(std::move(*handle));
     }
 
-    auto operator =(std::nullptr_t) -> Poller & {
-        close();
-        return *this;
+#if defined(_WIN32)
+    static auto make(socket_t sockfd) -> IoTask<Poller> {
+        return make(fd_t(sockfd), IoDescriptor::Socket);
     }
+#endif
 
     /**
      * @brief Check the poller is valid
@@ -124,12 +72,10 @@ public:
      * @return false 
      */
     explicit operator bool() const noexcept {
-        return mDesc != nullptr;
+        return bool(mHandle);
     }
 private:
-    IoContext    *mCtxt = nullptr;
-    IoDescriptor *mDesc = nullptr;
-    fd_t          mFd { };
+    IoHandle<fd_t> mHandle;
 };
 
 ILIAS_NS_END

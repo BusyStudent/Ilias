@@ -77,8 +77,8 @@ auto IoCategory::name() const noexcept -> const char * {
     return "io";
 }
 
-auto IoCategory::instance() -> IoCategory & {
-    static IoCategory instance;
+auto IoCategory::instance() -> const IoCategory & {
+    static const IoCategory instance;
     return instance;
 }
 
@@ -101,8 +101,8 @@ auto SystemCategory::default_error_condition(int err) const noexcept -> std::err
     return ec;
 }
 
-auto SystemCategory::instance() -> SystemCategory & {
-    static SystemCategory instance;
+auto SystemCategory::instance() -> const SystemCategory & {
+    static const SystemCategory instance;
     return instance;
 }
 

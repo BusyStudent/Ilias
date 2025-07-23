@@ -61,9 +61,10 @@ private:
     auto processCompletion(DWORD timeout) -> void;
     auto processCompletionEx(DWORD timeout) -> void;
 
-    SockInitializer mInit;
-    HANDLE mIocpFd = INVALID_HANDLE_VALUE;
-    HANDLE mAfd = INVALID_HANDLE_VALUE; // For poll
+    SockInitializer       mInit;
+    runtime::TimerService mService;
+    HANDLE mIocpFd = nullptr;
+    HANDLE mAfdDevice = nullptr; // For poll
     NtDll &mNt;
 
     // Batching

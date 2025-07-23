@@ -12,6 +12,7 @@
 
 #include <ilias/runtime/executor.hpp>
 #include <ilias/task/task.hpp>
+#include <ilias/io/traits.hpp>
 #include <ilias/io/error.hpp>
 #include <ilias/buffer.hpp>
 #include <cstddef>
@@ -177,6 +178,140 @@ public:
 };
 
 /**
+ * @brief A RAII Wrapper for fd_t + IoDescriptor
+ * 
+ * @param T The fd type, like HANDLE, int, SOCKET, Socket
+ */
+template <IntoFileDescriptor T>
+class IoHandle {
+public:
+    IoHandle() = default;
+    IoHandle(const IoHandle &) = delete;
+    IoHandle(IoHandle &&other) noexcept : 
+        mDesc(std::exchange(other.mDesc, nullptr)), 
+        mCtxt(std::exchange(other.mCtxt, nullptr)), 
+        mFd(std::exchange(other.mFd, {})) 
+    {
+
+    }
+
+    ~IoHandle() { close(); }
+
+    /**
+     * @brief Close the IoHandle
+     * 
+     */
+    auto close() -> void {
+        if (mDesc) {
+            auto _ = mCtxt->removeDescriptor(mDesc);
+        }
+        mDesc = nullptr;
+        mCtxt = nullptr;
+        mFd = {};
+    }
+
+    auto cancel() const -> IoResult<void> {
+        return mCtxt->cancel(mDesc);
+    }
+
+    /**
+     * @brief Get the wrapped fd
+     * 
+     * @return const T& 
+     */
+    auto fd() const noexcept -> const T & {
+        return mFd;
+    }
+
+    /**
+     * @brief Get the Io Context
+     * 
+     * @return IoContext* 
+     */
+    auto context() const noexcept -> IoContext * {
+        return mCtxt;
+    }
+
+    // Forward to IoContext
+    auto write(auto &&...args) const {
+        return mCtxt->write(mDesc, args...);
+    }
+
+    auto read(auto &&...args) const {
+        return mCtxt->read(mDesc, args...);
+    }
+
+    auto poll(auto &&...args) const {
+        return mCtxt->poll(mDesc, args...);
+    }
+
+    auto connect(auto &&...args) const {
+        return mCtxt->connect(mDesc, args...);
+    }
+
+    auto accept(auto &&...args) const {
+        return mCtxt->accept(mDesc, args...);
+    }
+
+    auto sendto(auto &&...args) const {
+        return mCtxt->sendto(mDesc, args...);
+    }
+
+    auto recvfrom(auto &&...args) const {
+        return mCtxt->recvfrom(mDesc, args...);
+    }
+
+    // Operators
+    auto operator <=>(const IoHandle &other) const noexcept = default;
+    auto operator =(IoHandle &&other) noexcept -> IoHandle & {
+        if (this == &other) {
+            return *this;
+        }
+        close();
+        mDesc = std::exchange(other.mDesc, nullptr);
+        mCtxt = std::exchange(other.mCtxt, nullptr);
+        mFd = std::exchange(other.mFd, {});
+        return *this;
+    }
+
+    explicit operator bool() const noexcept {
+        return mDesc != nullptr;
+    }
+    
+    /**
+     * @brief Create an wrapped IoHandle from an fd
+     * 
+     * @param ctxt The IoContext to use
+     * @param fd   The fd to wrap
+     * @param type The type of the fd (default: Unknown)
+     * @return IoResult<IoHandle<T> > 
+     */
+    static auto make(IoContext &ctxt, T fd, IoDescriptor::Type type = Unknown) -> IoResult<IoHandle<T> > {
+        auto desc = ctxt.addDescriptor(fd_t(fd), type);
+        if (!desc) {
+            return Err(desc.error());
+        }
+        IoHandle<T> handle;
+        handle.mDesc = *desc;
+        handle.mCtxt = &ctxt;
+        handle.mFd = std::move(fd);
+        return handle;
+    }
+
+    static auto make(T fd, IoDescriptor::Type type = Unknown) -> IoResult<IoHandle<T> > {
+        auto ctxt = IoContext::currentThread();
+        if (!ctxt) {
+            return Err(IoError::InvalidArgument);
+        }
+        return make(*ctxt, std::move(fd), type);
+    }
+private:
+    IoDescriptor *mDesc = nullptr;
+    IoContext    *mCtxt = nullptr;
+    T             mFd = {};
+};
+
+/**
  * @brief Convert an IoDescriptor::Type to a string
  * 
  * @param type 
@@ -193,5 +328,13 @@ inline auto toString(IoDescriptor::Type type) -> std::string_view {
         default: return "Unknown"; 
     }
 }
+
+#if defined(_WIN32)
+namespace win32 {
+    inline auto waitObject(void *handle) -> IoTask<void> {
+        return IoContext::currentThread()->waitObject(handle);
+    }
+} // namespace win32
+#endif
 
 ILIAS_NS_END

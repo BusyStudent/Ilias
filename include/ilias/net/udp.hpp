@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include <ilias/net/detail/sockbase.hpp>
 #include <ilias/net/endpoint.hpp>
+#include <ilias/net/sockfd.hpp>
 #include <ilias/io/context.hpp>
 
 ILIAS_NS_BEGIN
@@ -23,31 +23,10 @@ ILIAS_NS_BEGIN
 class UdpClient {
 public:
     UdpClient() = default;
-    UdpClient(IoContext &ctxt, int family) : mBase(ctxt, Socket(family, SOCK_DGRAM, IPPROTO_UDP)) { }
-    UdpClient(IoContext &ctxt, Socket &&sock) : mBase(ctxt, std::move(sock)) { }
+    UdpClient(IoHandle<Socket> h) : mHandle(std::move(h)) {}
 
-    auto close() { return mBase.close(); }
-    auto cancel() { return mBase.cancel(); }
-
-    /**
-     * @brief Set if the socket should reuse the address.
-     * 
-     * @param on 
-     * @return Result<void> 
-     */
-    auto setReuseAddr(bool on) -> Result<void> {
-        return mBase.socket().setReuseAddr(on);
-    }
-
-    /**
-     * @brief Bind the socket to the specified endpoint.
-     * 
-     * @param endpoint 
-     * @return Result<void> 
-     */
-    auto bind(const IPEndpoint &endpoint) -> Result<void> {
-        return mBase.bind(endpoint);
-    }
+    auto close() { return mHandle.close(); }
+    auto cancel() { return mHandle.cancel(); }
 
     /**
      * @brief Receive datagram from the socket
@@ -56,8 +35,8 @@ public:
      * @param endpoint The ptr of the endpoint to receive the datagram's endpoint.
      * @return IoTask<size_t> 
      */
-    auto recvfrom(std::span<std::byte> buffer, IPEndpoint *endpoint) -> IoTask<size_t> {
-        return mBase.recvfrom(buffer, 0, endpoint);
+    auto recvfrom(MutableBuffer buffer, IPEndpoint *endpoint) -> IoTask<size_t> {
+        return mHandle.recvfrom(buffer, 0, endpoint);
     }
 
     /**
@@ -67,8 +46,8 @@ public:
      * @param endpoint The endpoint reference to receive the datagram's endpoint.
      * @return IoTask<size_t> 
      */
-    auto recvfrom(std::span<std::byte> buffer, IPEndpoint &endpoint) -> IoTask<size_t> {
-        return mBase.recvfrom(buffer, 0, &endpoint);
+    auto recvfrom(MutableBuffer buffer, IPEndpoint &endpoint) -> IoTask<size_t> {
+        return mHandle.recvfrom(buffer, 0, &endpoint);
     }
 
     /**
@@ -77,11 +56,11 @@ public:
      * @param buffer The buffer to receive the data into.
      * @return IoTask<std::pair<size_t, IPEndpoint> > (The datagram size and the endpoint)
      */
-    auto recvfrom(std::span<std::byte> buffer) -> IoTask<std::pair<size_t, IPEndpoint> > {
+    auto recvfrom(MutableBuffer buffer) -> IoTask<std::pair<size_t, IPEndpoint> > {
         IPEndpoint endpoint;
         auto n = co_await recvfrom(buffer, endpoint);
         if (!n) {
-            co_return Unexpected(n.error());
+            co_return Err(n.error());
         }
         co_return std::make_pair(n.value(), endpoint);
     }
@@ -93,30 +72,8 @@ public:
      * @param endpoint 
      * @return IoTask<size_t> 
      */
-    auto sendto(std::span<const std::byte> buffer, const IPEndpoint &endpoint) -> IoTask<size_t> {
-        return mBase.sendto(buffer, 0, &endpoint);
-    }
-
-    /**
-     * @brief Send a message to the socket.
-     * 
-     * @param msg The message to send.
-     * @param flags The flags to use. (like MSG_DONTWAIT)
-     * @return IoTask<size_t> 
-     */
-    auto sendmsg(const MsgHdr &msg, int flags) -> IoTask<size_t> {
-        return mBase.sendmsg(msg, flags);
-    }
-
-    /**
-     * @brief Receive a message from the socket.
-     * 
-     * @param msg The message to receive.
-     * @param flags The flags to use. (like MSG_DONTWAIT)
-     * @return IoTask<size_t> 
-     */
-    auto recvmsg(MsgHdr &msg, int flags) -> IoTask<size_t> {
-        return mBase.recvmsg(msg, flags);
+    auto sendto(Buffer buffer, const IPEndpoint &endpoint) -> IoTask<size_t> {
+        return mHandle.sendto(buffer, 0, &endpoint);
     }
 
     /**
@@ -124,31 +81,31 @@ public:
      * 
      * @tparam T 
      * @param opt 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
     template <SetSockOption T>
-    auto setOption(const T &opt) -> Result<void> {
-        return socket().setOption(opt);
+    auto setOption(const T &opt) -> IoResult<void> {
+        return mHandle.fd().setOption(opt);
     }
 
     /**
      * @brief Get the socket option.
      * 
      * @tparam T 
-     * @return Result<T> 
+     * @return IoResult<T> 
      */
     template <GetSockOption T>
-    auto getOption() -> Result<T> {
-        return socket().getOption<T>();
+    auto getOption() -> IoResult<T> {
+        return mHandle.fd().getOption<T>();
     }
 
     /**
      * @brief Get the local endpoint associated with the socket.
      * 
-     * @return Result<IPEndpoint> 
+     * @return IoResult<IPEndpoint> 
      */
-    auto localEndpoint() const -> Result<IPEndpoint> { 
-        return mBase.localEndpoint<IPEndpoint>(); 
+    auto localEndpoint() const -> IoResult<IPEndpoint> { 
+        return mHandle.fd().localEndpoint<IPEndpoint>(); 
     }
 
     /**
@@ -158,28 +115,30 @@ public:
      * @return IoTask<uint32_t> 
      */
     auto poll(uint32_t events) -> IoTask<uint32_t> {
-        return mBase.poll(events);
-    }
-
-    /**
-     * @brief Get the underlying socket.
-     * 
-     * @return SocketView 
-     */
-    auto socket() const -> SocketView {
-        return mBase.socket();
+        return mHandle.poll(events);
     }
 
     auto operator <=>(const UdpClient &) const = default;
 
     /**
-     * @brief Create a new udp client by using current coroutine's io context.
+     * @brief Bind the socket to the specified endpoint.
      * 
-     * @param family The address family.
-     * @return Result<UdpClient>
+     * @param endpoint 
+     * @return IoTask<UdpClient> 
      */
-    static auto make(int family) {
-        return detail::SocketBase::make<UdpClient>(family, SOCK_DGRAM, IPPROTO_UDP);
+    static auto bind(IPEndpoint endpoint) -> IoTask<UdpClient> {
+        auto sockfd = Socket::make(endpoint.family(), SOCK_DGRAM, 0);
+        if (!sockfd) {
+            co_return Err(sockfd.error());
+        }
+        if (auto res = sockfd->bind(endpoint); !res) {
+            co_return Err(res.error());
+        }
+        auto handle = IoHandle<Socket>::make(std::move(*sockfd), IoDescriptor::Socket);
+        if (!handle) {
+            co_return Err(handle.error());
+        }
+        co_return UdpClient(std::move(*handle));
     }
 
     /**
@@ -188,12 +147,9 @@ public:
      * @return true 
      * @return false 
      */
-    explicit operator bool() const { return bool(mBase); }
+    explicit operator bool() const { return bool(mHandle); }
 private:
-    UdpClient(detail::SocketBase &&base) : mBase(std::move(base)) { }
-
-    detail::SocketBase mBase;
-friend class detail::SocketBase;
+    IoHandle<Socket> mHandle;
 };
 
 ILIAS_NS_END

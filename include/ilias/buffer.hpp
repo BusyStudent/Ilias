@@ -130,7 +130,7 @@ concept MutableBufferSequence = requires(T &t) {
  * @param n 
  * @return Buffer 
  */
-inline auto makeBuffer(const void *buf, size_t n) -> Buffer {
+inline auto makeBuffer(const void *buf, size_t n) noexcept -> Buffer {
     return std::span(reinterpret_cast<const std::byte *>(buf), n);
 }
 
@@ -141,7 +141,7 @@ inline auto makeBuffer(const void *buf, size_t n) -> Buffer {
  * @param n 
  * @return MutableBuffer 
  */
-inline auto makeBuffer(void *buf, size_t n) -> MutableBuffer {
+inline auto makeBuffer(void *buf, size_t n) noexcept -> MutableBuffer {
     return std::span(reinterpret_cast<std::byte *>(buf), n);
 }
 
@@ -171,24 +171,7 @@ inline auto makeBuffer(T &object) {
     return makeBuffer(span.data(), span.size_bytes());
 }
 
-/**
- * @brief Cast the any byte span to the string view
- * 
- * @tparam T 
- * @tparam In 
- * @param in 
- * @return std::basic_string_view<T> 
- */
-template <typename T = char> requires(sizeof(T) == sizeof(std::byte))
-inline auto asStringView(Buffer span) -> std::basic_string_view<T> {
-    return {
-        reinterpret_cast<const T *>(span.data()),
-        span.size_bytes()
-    };
-}
-
 // --- Utils for sprintf
-
 /**
  * @brief Get the sprintf output size
  * 
@@ -301,7 +284,7 @@ inline auto sprintfTo(std::basic_string<T, Traits, Alloc> &buf, const char *fmt,
 
 namespace literals {
     inline auto operator"" _bin(const char *buf, size_t len) -> Buffer {
-        return {reinterpret_cast<const std::byte *>(buf), len - 1}; // remove the last '\0'
+        return {reinterpret_cast<const std::byte *>(buf), len};
     }
 
     inline auto operator"" _bin(unsigned long long val) -> std::byte {

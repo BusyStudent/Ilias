@@ -41,6 +41,12 @@ namespace win32 {
         NT_IMPORT(NtAssociateWaitCompletionPacket);
         NT_IMPORT(NtCancelWaitCompletionPacket);
         NT_IMPORT(NtCreateWaitCompletionPacket);
+
+        auto hasWaitCompletionPacket() const noexcept -> bool {
+            return NtAssociateWaitCompletionPacket &&
+                   NtCancelWaitCompletionPacket &&
+                   NtCreateWaitCompletionPacket;
+        }
     };
 
     extern auto ntdll() -> NtDll &;

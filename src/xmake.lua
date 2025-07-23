@@ -56,6 +56,8 @@ target("ilias")
     add_headerfiles("(../include/ilias/**.hpp)")
     add_includedirs("../include", {public = true})
     add_defines("_ILIAS_SOURCE")
+    
+    add_files("net/*.cpp")
     add_files("*.cpp")
 
     -- Add links by platform
