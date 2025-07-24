@@ -8,7 +8,26 @@ using namespace ILIAS_NAMESPACE;
 using namespace ILIAS_NAMESPACE::literals;
 
 CORO_TEST(Net, Tcp) {
-    auto client = (co_await TcpListener::bind("127.0.0.1:0")).value();
+    auto listener = (co_await TcpListener::bind("127.0.0.1:0")).value();
+}
+
+CORO_TEST(Net, Udp) {
+    std::byte buffer[1024] {};
+    auto client = (co_await UdpClient::bind("127.0.0.1:0")).value();
+
+    CORO_ASSERT_TRUE((co_await client.poll(PollEvent::Out)).has_value());
+    // Test the cancel
+    {
+        auto handle = spawn(client.recvfrom(buffer));
+        handle.stop();
+        CORO_ASSERT_EQ(co_await std::move(handle), std::nullopt);
+    }
+
+    {
+        auto handle = spawn(client.poll(PollEvent::In));
+        handle.stop();
+        CORO_ASSERT_EQ(co_await std::move(handle), std::nullopt);
+    }
 }
 
 CORO_TEST(Net, Http) {
@@ -34,6 +53,7 @@ CORO_TEST(Net, Http) {
 
 int main(int argc, char** argv) {
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
+    CORO_USE_UTF8();
     PlatformContext ctxt;
     ctxt.install();
 

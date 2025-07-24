@@ -1,9 +1,16 @@
 #include <ilias/runtime/executor.hpp>
 #include <ilias/runtime/timer.hpp>
 #include <ilias/task/task.hpp>
-#include <condition_variable>
-#include <queue>
-#include <mutex>
+#include <condition_variable> // std::condition_variable
+#include <system_error> // std::system_error
+#include <thread> // std::thread
+#include <queue> // std::queue
+#include <mutex> // std::mutex
+
+#if defined(_WIN32)
+    #include <ilias/detail/win32defs.hpp>
+#endif // _WIN32
+
 
 ILIAS_NS_BEGIN
 
@@ -78,6 +85,25 @@ auto EventLoop::run(StopToken token) -> void {
 
 auto EventLoop::sleep(uint64_t ms) -> Task<void> {
     co_return co_await d->service.sleep(ms);
+}
+
+auto threadpool::submit(Callable *callable) -> void {
+    ILIAS_ASSERT_MSG(callable, "Callable must not be null");
+
+#if defined(_WIN32)
+    auto invoke = [](void *cb) -> ::DWORD {
+        auto callable = static_cast<Callable *>(cb);
+        callable->call(*callable);
+        return 0;
+    };
+    if (!::QueueUserWorkItem(invoke, callable, WT_EXECUTEDEFAULT)) {
+        ILIAS_THROW(std::system_error(std::error_code(GetLastError(), std::system_category())));
+    }
+#else
+    std::thread([=]() {
+        callable->call(*callable);
+    }).detach();
+#endif
 }
 
 ILIAS_NS_END

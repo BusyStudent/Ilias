@@ -54,12 +54,12 @@ typedef struct _AFD_POLL_INFO {
  */
 class AfdPollAwaiter final : public IocpAwaiter<AfdPollAwaiter> {
 public:
-    AfdPollAwaiter(HANDLE device, SOCKET sock, uint32_t events) : IocpAwaiter(sock), mDevice(device) {
+    AfdPollAwaiter(HANDLE device, SOCKET sock, uint32_t events) : IocpAwaiter(device) {
         // Fill the info
         mInfo.Exclusive = FALSE; //< Try false?
         mInfo.NumberOfHandles = 1; //< Only one socket
         mInfo.Timeout.QuadPart = INT64_MAX;
-        mInfo.Handles[0].Handle = handle();
+        mInfo.Handles[0].Handle = HANDLE(sock);
         mInfo.Handles[0].Status = 0;
         mInfo.Handles[0].Events = AFD_POLL_LOCAL_CLOSE; //< When socket was ::closesocket(sock)
 
@@ -76,12 +76,12 @@ public:
     }
 
     auto onSubmit() -> bool {
-        ILIAS_TRACE("IOCP", "Poll {} on sockfd {}", afdToString(mInfo.Handles[0].Events), sockfd());
-        return ::DeviceIoControl(mDevice, IOCTL_AFD_POLL, &mInfo, sizeof(mInfo), &mRInfo, sizeof(mRInfo), nullptr, overlapped());
+        ILIAS_TRACE("IOCP", "Poll {} on sockfd {}", afdToString(mInfo.Handles[0].Events), SOCKET(mInfo.Handles[0].Handle));
+        return ::DeviceIoControl(handle(), IOCTL_AFD_POLL, &mInfo, sizeof(mInfo), &mRInfo, sizeof(mRInfo), nullptr, overlapped());
     }
 
     auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<uint32_t> {
-        ILIAS_TRACE("IOCP", "Poll {} on sockfd {} completed, Error {}", afdToString(mInfo.Handles[0].Events), sockfd(), error);
+        ILIAS_TRACE("IOCP", "Poll {} on sockfd {} completed, Error {}", afdToString(mInfo.Handles[0].Events), SOCKET(mInfo.Handles[0].Handle), error);
         if (error != ERROR_SUCCESS) {
             return Err(SystemError(error));
         }
@@ -142,7 +142,6 @@ public:
         return ret;
     }
 private:
-    HANDLE mDevice;
     AFD_POLL_INFO mInfo;
     AFD_POLL_INFO mRInfo; //< Result
 };

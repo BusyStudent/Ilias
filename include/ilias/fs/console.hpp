@@ -43,8 +43,11 @@ public:
      */
     static constexpr auto LineDelimiter = std::string_view(ILIAS_CONSOLE_DELIMITER);
 
-    Console();
+    Console() = default;
     Console(IoHandle<fd_t> h) : mHandle(std::move(h)) {}
+
+    auto close() { return mHandle.close(); }
+    auto cancel() { return mHandle.cancel(); }
 
     /**
      * @brief Read from the console

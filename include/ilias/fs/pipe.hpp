@@ -14,6 +14,7 @@
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/io/method.hpp>
+#include <ilias/io/fd.hpp>
 
 ILIAS_NS_BEGIN
 
@@ -24,101 +25,18 @@ ILIAS_NS_BEGIN
 class Pipe final : public StreamMethod<Pipe> {
 public:
     Pipe() = default;
+    Pipe(IoHandle<FileDescriptor> h) : mHandle(std::move(h)) {}
 
-    /**
-     * @brief Construct a new Pipe object from file descriptor (take the ownership)
-     * 
-     * @param ctxt 
-     * @param fd 
-     */
-    Pipe(IoContext &ctxt, fd_t fd) : mCtxt(&ctxt), mFd(fd) {
-        mDesc = mCtxt->addDescriptor(fd, IoDescriptor::Pipe).value_or(nullptr);
-        if (!mDesc) {
-            fd_utils::close(fd);
-            mCtxt = nullptr;
-            mFd = {};
-        }
-    }
-
-    Pipe(const Pipe &) = delete;
-
-    /**
-     * @brief Construct a new Pipe object by move
-     * 
-     * @param other 
-     */
-    Pipe(Pipe &&other) : mCtxt(other.mCtxt), mDesc(other.mDesc), mFd(other.mFd) {
-        other.mCtxt = nullptr;
-        other.mDesc = nullptr;
-        other.mFd = {};
-    }
-
-    ~Pipe() {
-        close();
-    }
-
-    /**
-     * @brief Check if the pipe is valid
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto isValid() const -> bool {
-        return mDesc != nullptr;
-    }
+    auto close() { return mHandle.close(); }
+    auto cancel() { return mHandle.cancel(); }
 
     /**
      * @brief Get the file descriptor
      * 
      * @return fd_t 
      */
-    auto fd() const -> fd_t {
-        return mFd;
-    }
-
-    /**
-     * @brief Get the io context
-     * 
-     * @return IoContext* 
-     */
-    auto context() const -> IoContext * {
-        return mCtxt;
-    }
-
-    /**
-     * @brief Close the pipe
-     * 
-     */
-    auto close() -> void {
-        if (mDesc) {
-            mCtxt->removeDescriptor(mDesc);
-            mDesc = nullptr;
-            mCtxt = nullptr;
-            fd_utils::close(mFd);
-            mFd = {};
-        }
-    }
-
-    /**
-     * @brief Cancel all pending operations on the pipe
-     * 
-     * @return Result<void> 
-     */
-    auto cancel() -> Result<void> {
-        return mCtxt->cancel(mDesc);
-    }
-
-    /**
-     * @brief Clone the pipe, by using dup
-     * 
-     * @return Result<Pipe> 
-     */
-    auto clone() -> Result<Pipe> {
-        auto newFd = fd_utils::dup(mFd);
-        if (!newFd) {
-            return Unexpected(newFd.error());
-        }
-        return Pipe(*mCtxt, newFd.value());
+    auto fd() const noexcept -> fd_t {
+        return fd_t(mHandle.fd());
     }
 
     // Stream
@@ -128,8 +46,8 @@ public:
      * @param buffer 
      * @return IoTask<size_t> 
      */
-    auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
-        return mCtxt->write(mDesc, buffer, std::nullopt);
+    auto write(Buffer buffer) -> IoTask<size_t> {
+        return mHandle.write(buffer, std::nullopt);
     }
 
     /**
@@ -138,17 +56,25 @@ public:
      * @param buffer 
      * @return IoTask<size_t> 
      */
-    auto read(std::span<std::byte> buffer) -> IoTask<size_t> {
-        return mCtxt->read(mDesc, buffer, std::nullopt);
+    auto read(MutableBuffer buffer) -> IoTask<size_t> {
+        return mHandle.read(buffer, std::nullopt);
     }
 
     /**
-     * @brief Shutdown the pipe, only do the close
+     * @brief Shutdown the pipe, no-op
      * 
      * @return IoTask<void> 
      */
     auto shutdown() -> IoTask<void> {
-        close();
+        co_return {};
+    }
+    
+    /**
+     * @brief Flush the pipe, no-op
+     * 
+     * @return IoTask<void> 
+     */
+    auto flush() -> IoTask<void> {
         co_return {};
     }
 
@@ -159,7 +85,7 @@ public:
      * @return IoTask<void> 
      */
     auto connect() -> IoTask<void> {
-        return mCtxt->connectNamedPipe(mDesc);
+        return mHandle.connectNamedPipe();
     }
 
     /**
@@ -168,28 +94,14 @@ public:
      * 
      * @return Result<void> 
      */
-    auto disconnect() -> Result<void> {
-        if (::DisconnectNamedPipe(mFd)) {
-            return {};
+    auto disconnect() -> IoTask<void> {
+        if (::DisconnectNamedPipe(fd())) {
+            co_return {};
         }
-        return Unexpected(SystemError::fromErrno());
+        co_return Err(SystemError::fromErrno());
     }
 #endif // defined(_WIN32)
 
-
-    // Move only
-    auto operator =(const Pipe &) = delete;
-
-    auto operator =(Pipe &&other) -> Pipe & {
-        close();
-        mCtxt = other.mCtxt;
-        mDesc = other.mDesc;
-        mFd = other.mFd;
-        other.mCtxt = nullptr;
-        other.mDesc = nullptr;
-        other.mFd = {};
-        return *this;
-    }
 
     /**
      * @brief Check if the pipe is valid
@@ -198,23 +110,7 @@ public:
      * @return false 
      */
     explicit operator bool() const {
-        return mDesc != nullptr;
-    }
-
-    /**
-     * @brief Create the pipe and return the pair of pipes
-     * 
-     * @param ctxt 
-     * @return Result<std::pair<Pipe, Pipe> > (write -> read)
-     */
-    static auto pair(IoContext &ctxt) -> Result<std::pair<Pipe, Pipe> > {
-        auto pipes = fd_utils::pipe();
-        if (!pipes) {
-            return Unexpected(pipes.error());
-        }
-        Pipe write(ctxt, pipes->write);
-        Pipe read(ctxt, pipes->read);
-        return std::make_pair(std::move(write), std::move(read));
+        return bool(mHandle);
     }
 
     /**
@@ -223,12 +119,25 @@ public:
      * @return IoTask<std::pair<Pipe, Pipe> > 
      */
     static auto pair() -> IoTask<std::pair<Pipe, Pipe> > {
-        co_return pair(co_await currentIoContext());
+        auto pair = fd_utils::pipe();
+        if (!pair) {
+            co_return Err(pair.error());
+        }
+        FileDescriptor read(pair->read);
+        FileDescriptor write(pair->write);
+
+        auto read2 = IoHandle<FileDescriptor>::make(std::move(read), IoDescriptor::Pipe);
+        if (!read2) {
+            co_return Err(read2.error());
+        }
+        auto write2 = IoHandle<FileDescriptor>::make(std::move(write), IoDescriptor::Pipe);
+        if (!write2) {
+            co_return Err(write2.error());
+        }
+        co_return std::make_pair(Pipe(std::move(*read2)), Pipe(std::move(*write2)));
     }
 private:
-    IoContext    *mCtxt = nullptr;
-    IoDescriptor *mDesc = nullptr;
-    fd_t          mFd {};
+    IoHandle<FileDescriptor> mHandle;
 };
 
 ILIAS_NS_END

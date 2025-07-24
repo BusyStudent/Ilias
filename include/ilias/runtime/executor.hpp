@@ -86,14 +86,36 @@ private:
     std::unique_ptr<Impl> d;
 };
 
+/**
+ * @brief The Callable struct. used to impl function reference
+ * 
+ */
+class Callable {
+public:
+    void (*call)(Callable &) = nullptr;
+};
+
+/**
+ * @brief The CallableImpl struct, use CRTP to impl the Callable
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class CallableImpl : public Callable {
+public:
+    CallableImpl() {
+        call = invoke;
+    }
+private:
+    static auto invoke(Callable &callable) -> void {
+        static_cast<T&>(callable)();
+    }
+};
+
 } // namespace runtime
 
 namespace runtime::threadpool {
-    extern auto ILIAS_API submit(std::move_only_function<void(StopToken)> fn) -> void;
+    extern auto ILIAS_API submit(Callable *callable) -> void;
 } // namespace runtime::threadpool
-
-namespace runtime::utils {
-    extern auto ILIAS_API setThreadName(std::string_view name) -> void;
-}
 
 ILIAS_NS_END

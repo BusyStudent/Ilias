@@ -261,6 +261,12 @@ public:
         return mCtxt->recvfrom(mDesc, args...);
     }
 
+#if defined(_WIN32)
+    auto connectNamedPipe() const {
+        return mCtxt->connectNamedPipe(mDesc);
+    }
+#endif
+
     // Operators
     auto operator <=>(const IoHandle &other) const noexcept = default;
     auto operator =(IoHandle &&other) noexcept -> IoHandle & {

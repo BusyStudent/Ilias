@@ -107,7 +107,7 @@ friend class CoroHandle;
 class CoroHandle {
 public:
     template <typename T> requires (std::is_base_of_v<CoroPromise, T>)
-    CoroHandle(std::coroutine_handle<T> handle) : mHandle(handle), mPromise(&handle.promise()) {}
+    CoroHandle(std::coroutine_handle<T> handle) noexcept : mHandle(handle), mPromise(&handle.promise()) {}
     CoroHandle(const CoroHandle &) = default;
     CoroHandle() = default;
 
@@ -149,9 +149,9 @@ public:
         ILIAS_ASSERT_MSG(ctxt.mStoppedHandler, "Stopped handler must be set, double call on CoroHandle::setStopped() ?");
         ILIAS_ASSERT_MSG(ctxt.mStopSource.stop_possible(), "Stop source must be possible to stop, invalid state ?");
         ILIAS_ASSERT_MSG(ctxt.mStopSource.stop_requested(), "Stop source must be requested, invalid state ?");
+        ctxt.mStopped = true;
         ctxt.mStoppedHandler(ctxt); // Call the stopped handler, we are stopped
         ctxt.mStoppedHandler = nullptr; // Mark it as called
-        ctxt.mStopped = true;
     }
 
     // Set the completion handler, it will be called when coroutine is completed, stopped is not completed
