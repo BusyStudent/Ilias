@@ -1,7 +1,7 @@
 /**
  * @file uring_sock.hpp
  * @author BusyStudent (fyw90mc@gmail.com)
- * @brief Wrapping socket operation on io_uring
+ * @brief Wrapping all operation on io_uring
  * @version 0.1
  * @date 2024-09-26
  * 
@@ -37,9 +37,9 @@ public:
         ::io_uring_prep_sendmsg(sqe(), mFd, &mMsg, mFlags);
     }
 
-    auto onComplete(int64_t ret) -> Result<size_t> {
+    auto onComplete(int64_t ret) -> IoResult<size_t> {
         if (ret < 0) { //< Acrodding to the man page, negative return values is error (-errno)
-            return Unexpected(SystemError(-ret));
+            return Err(SystemError(-ret));
         }
         return size_t(ret);
     }
@@ -66,9 +66,9 @@ public:
         ::io_uring_prep_recvmsg(sqe(), mFd, &mMsg, mFlags);
     }
 
-    auto onComplete(int64_t ret) -> Result<size_t> {
+    auto onComplete(int64_t ret) -> IoResult<size_t> {
         if (ret < 0) {
-            return Unexpected(SystemError(-ret));
+            return Err(SystemError(-ret));
         }
         return size_t(ret);
     }
@@ -95,9 +95,9 @@ public:
         ::io_uring_prep_connect(sqe(), mFd, mEndpoint.data(), mEndpoint.length());
     }
 
-    auto onComplete(int64_t ret) -> Result<void> {
+    auto onComplete(int64_t ret) -> IoResult<void> {
         if (ret < 0) {
-            return Unexpected(SystemError(-ret));
+            return Err(SystemError(-ret));
         }
         return {};
     }
@@ -124,9 +124,9 @@ public:
         ::io_uring_prep_accept(sqe(), mFd, mAddr, &mLen, 0);
     }
 
-    auto onComplete(int64_t ret) -> Result<socket_t> {
+    auto onComplete(int64_t ret) -> IoResult<socket_t> {
         if (ret < 0) {
-            return Unexpected(SystemError(-ret));
+            return Err(SystemError(-ret));
         }
         return socket_t(ret);
     }
@@ -153,15 +153,67 @@ public:
         ::io_uring_prep_poll_add(sqe(), mFd, mEvents);
     }
 
-    auto onComplete(int64_t ret) -> Result<uint32_t> {
+    auto onComplete(int64_t ret) -> IoResult<uint32_t> {
         if (ret < 0) {
-            return Unexpected(SystemError(-ret));
+            return Err(SystemError(-ret));
         }
         return uint32_t(ret);
     }
 private:
     int mFd;
     uint32_t mEvents;
+};
+
+class UringWriteAwaiter final : public UringAwaiter<UringWriteAwaiter> {
+public:
+    UringWriteAwaiter(::io_uring &ring, int fd, Buffer buffer, std::optional<size_t> offset) :
+        UringAwaiter(ring), mFd(fd), mBuffer(buffer), mOffset(offset)
+    {
+
+    }
+
+    auto onSubmit() {
+        ILIAS_TRACE("Uring", "Prep write for fd {}, {} bytes", mFd, mBuffer.size());
+        __u64 offset = mOffset ? mOffset.value() : __u64(-1);
+        ::io_uring_prep_write(sqe(), mFd, mBuffer.data(), mBuffer.size(), offset);
+    }
+
+    auto onComplete(int64_t ret) -> IoResult<size_t> {
+        if (ret < 0) {
+            return Err(SystemError(ret));
+        }
+        return size_t(ret);
+    }
+private:
+    int mFd;
+    Buffer mBuffer;
+    std::optional<size_t> mOffset;    
+};
+
+class UringReadAwaiter final : public UringAwaiter<UringReadAwaiter> {
+public:
+    UringReadAwaiter(::io_uring &ring, int fd, MutableBuffer buffer, std::optional<size_t> offset) :
+        UringAwaiter(ring), mFd(fd), mBuffer(buffer), mOffset(offset)
+    {
+
+    }
+
+    auto onSubmit() {
+        ILIAS_TRACE("Uring", "Prep read for fd {}, {} bytes", mFd, mBuffer.size());
+        __u64 offset = mOffset ? mOffset.value() : __u64(-1);
+        ::io_uring_prep_read(sqe(), mFd, mBuffer.data(), mBuffer.size(), offset);
+    }
+
+    auto onComplete(int64_t ret) -> IoResult<size_t> {
+        if (ret < 0) {
+            return Err(SystemError(ret));
+        }
+        return size_t(ret);
+    }
+private:
+    int mFd;
+    MutableBuffer mBuffer;
+    std::optional<size_t> mOffset;    
 };
 
 }

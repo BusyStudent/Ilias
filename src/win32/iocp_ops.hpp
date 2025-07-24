@@ -14,7 +14,7 @@ namespace win32 {
  */
 class IocpSendtoAwaiter final : public IocpAwaiter<IocpSendtoAwaiter> {
 public:
-    IocpSendtoAwaiter(SOCKET sock, std::span<const std::byte> buffer, int flags, EndpointView endpoint) :
+    IocpSendtoAwaiter(SOCKET sock, Buffer buffer, int flags, EndpointView endpoint) :
         IocpAwaiter(sock)
     {
         mBuf.buf = (char*) buffer.data();
@@ -65,7 +65,7 @@ private:
  */
 class IocpRecvfromAwaiter final : public IocpAwaiter<IocpRecvfromAwaiter> {
 public:
-    IocpRecvfromAwaiter(SOCKET sock, std::span<std::byte> buffer, int flags, MutableEndpointView endpoint) :
+    IocpRecvfromAwaiter(SOCKET sock, MutableBuffer buffer, int flags, MutableEndpointView endpoint) :
         IocpAwaiter(sock) 
     {
         mBuf.buf = (char*) buffer.data();
@@ -369,7 +369,7 @@ private:
  */
 class IocpReadAwaiter final : public IocpAwaiter<IocpReadAwaiter> {
 public:
-    IocpReadAwaiter(HANDLE handle, std::span<std::byte> buffer, std::optional<size_t> offset) :
+    IocpReadAwaiter(HANDLE handle, MutableBuffer buffer, std::optional<size_t> offset) :
         IocpAwaiter(handle), mBuffer(buffer) 
     {
         if (offset) {
@@ -390,7 +390,7 @@ public:
         return bytesTransferred;
     }
 private:
-    std::span<std::byte> mBuffer;
+    MutableBuffer mBuffer;
 };
 
 /**
@@ -399,7 +399,7 @@ private:
  */
 class IocpWriteAwaiter final : public IocpAwaiter<IocpWriteAwaiter> {
 public:
-    IocpWriteAwaiter(HANDLE handle, std::span<const std::byte> buffer, std::optional<size_t> offset) :
+    IocpWriteAwaiter(HANDLE handle, Buffer buffer, std::optional<size_t> offset) :
         IocpAwaiter(handle), mBuffer(buffer)
     {
         if (offset) {
@@ -420,7 +420,7 @@ public:
         return bytesTransferred;
     }
 private:
-    std::span<const std::byte> mBuffer;
+    Buffer mBuffer;
 };
 
 /**
@@ -447,7 +447,7 @@ public:
 
 class IocpDeviceIoControlAwaiter final : public IocpAwaiter<IocpDeviceIoControlAwaiter> {
 public:
-    IocpDeviceIoControlAwaiter(HANDLE handle, DWORD controlCode, std::span<std::byte> inBuffer, std::span<std::byte> outBuffer) :
+    IocpDeviceIoControlAwaiter(HANDLE handle, DWORD controlCode, MutableBuffer inBuffer, MutableBuffer outBuffer) :
         IocpAwaiter(handle), mControlCode(controlCode), mInBuffer(inBuffer), mOutBuffer(outBuffer) 
     {
         
@@ -465,8 +465,8 @@ public:
     }
 private:
     DWORD mControlCode;
-    std::span<std::byte> mInBuffer;
-    std::span<std::byte> mOutBuffer;
+    MutableBuffer mInBuffer;
+    MutableBuffer mOutBuffer;
 };
 
 

@@ -10,19 +10,19 @@ ILIAS_NS_BEGIN
 namespace dyn_traits {
 
 struct StreamVtbl {
-    IoTask<size_t> (*read)(void *object, std::span<std::byte> buffer) = nullptr;
-    IoTask<size_t> (*write)(void *object, std::span<const std::byte> buffer) = nullptr;
+    IoTask<size_t> (*read)(void *object, MutableBuffer buffer) = nullptr;
+    IoTask<size_t> (*write)(void *object, Buffer buffer) = nullptr;
     IoTask<void>   (*shutdown)(void *object) = nullptr;
     IoTask<void>   (*flush)(void *object) = nullptr;
 };
 
 template <Readable T>
-inline auto readProxy(void *object, std::span<std::byte> buffer) -> IoTask<size_t> {
+inline auto readProxy(void *object, MutableBuffer buffer) -> IoTask<size_t> {
     return static_cast<T *>(object)->read(buffer);
 }
 
 template <Writable T>
-inline auto writeProxy(void *object, std::span<const std::byte> buffer) -> IoTask<size_t> {
+inline auto writeProxy(void *object, Buffer buffer) -> IoTask<size_t> {
     return static_cast<T *>(object)->write(buffer);
 }
 
@@ -83,7 +83,7 @@ public:
      * @param buffer 
      * @return IoTask<size_t> 
      */
-    auto read(std::span<std::byte> buffer) const -> IoTask<size_t> {
+    auto read(MutableBuffer buffer) const -> IoTask<size_t> {
         return mVtbl->read(mObject, buffer);
     }
 
@@ -93,7 +93,7 @@ public:
      * @param buffer 
      * @return IoTask<size_t> 
      */
-    auto write(std::span<const std::byte> buffer) const -> IoTask<size_t> {
+    auto write(Buffer buffer) const -> IoTask<size_t> {
         return mVtbl->write(mObject, buffer);
     }
 

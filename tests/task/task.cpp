@@ -145,6 +145,7 @@ CORO_TEST(Task, WhenAny) {
     });
     handle.stop();
     EXPECT_TRUE(!co_await std::move(handle));
+    // FIXME: memory leak detected by valgrind, emm it maybe the cleanup callback run after the resume the callback
     co_return;
 }
 

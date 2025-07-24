@@ -122,7 +122,7 @@ public:
     }
 
     auto await_resume() const -> void { 
-        mGen.promise<CoroPromise>().rethrowIfNeeded();
+        mGen.template promise<CoroPromise>().rethrowIfNeeded();
     }
 protected:
     GeneratorHandle<T> mGen; // The handle of the generator, doesn't take the ownership

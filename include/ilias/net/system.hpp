@@ -13,6 +13,7 @@
 
 #include <ilias/io/system_error.hpp>
 #include <ilias/result.hpp>
+#include <algorithm>
 #include <array>
 #include <bit>
 
@@ -114,7 +115,7 @@ public:
     /**
      * @brief Do initialization
      * 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
     static auto initialize() -> IoResult<void>;
     static auto uninitialize() -> IoResult<void>;

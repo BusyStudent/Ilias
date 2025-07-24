@@ -40,7 +40,7 @@ public:
      * @param flags 
      * @return IoResult<size_t> 
      */
-    auto recv(std::span<std::byte> buf, int flags = 0) const -> IoResult<size_t> {
+    auto recv(MutableBuffer buf, int flags = 0) const -> IoResult<size_t> {
         auto ret = ::recv(mFd, reinterpret_cast<char*>(buf.data()), buf.size_bytes(), flags);
         if (ret < 0) {
             return Err(SystemError::fromErrno());
@@ -55,7 +55,7 @@ public:
      * @param flags 
      * @return IoResult<size_t> 
      */
-    auto send(std::span<const std::byte> buf, int flags = 0) const -> IoResult<size_t> {
+    auto send(Buffer buf, int flags = 0) const -> IoResult<size_t> {
         auto ret = ::send(mFd, reinterpret_cast<const char*>(buf.data()), buf.size_bytes(), flags);
         if (ret < 0) {
             return Err(SystemError::fromErrno());
@@ -71,7 +71,7 @@ public:
      * @param endpoint 
      * @return IoResult<size_t> 
      */
-    auto sendto(std::span<const std::byte> buf, int flags, EndpointView endpoint) const -> IoResult<size_t> {
+    auto sendto(Buffer buf, int flags, EndpointView endpoint) const -> IoResult<size_t> {
         const ::sockaddr *addr = endpoint.data();
         const ::socklen_t addrLen = endpoint.length();
         auto ret = ::sendto(mFd, reinterpret_cast<const char*>(buf.data()), buf.size_bytes(), flags, addr, addrLen);
@@ -89,7 +89,7 @@ public:
      * @param endpoint 
      * @return IoResult<size_t> 
      */
-    auto recvfrom(std::span<std::byte> buf, int flags, MutableEndpointView endpoint) const -> IoResult<size_t> {
+    auto recvfrom(MutableBuffer buf, int flags, MutableEndpointView endpoint) const -> IoResult<size_t> {
         ::sockaddr *addr = endpoint.data();
         ::socklen_t addrLen = endpoint.bufsize();
         auto ret = ::recvfrom(mFd, reinterpret_cast<char*>(buf.data()), buf.size_bytes(), flags, addr, &addrLen);
@@ -574,6 +574,11 @@ public:
      * @return IoResult<Socket> 
      */
     static auto make(int family, int type, int protocol) -> IoResult<Socket> {
+
+#if defined(SOCK_CLOEXEC) // Avoid leak after execve
+        type |= SOCK_CLOEXEC;
+#endif // defined(SOCK_CLOEXEC)
+
         auto sockfd = ::socket(family, type, protocol);
         if (sockfd != Invalid) {
             return Socket(sockfd);

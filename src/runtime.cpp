@@ -99,10 +99,53 @@ auto threadpool::submit(Callable *callable) -> void {
     if (!::QueueUserWorkItem(invoke, callable, WT_EXECUTEDEFAULT)) {
         ILIAS_THROW(std::system_error(std::error_code(GetLastError(), std::system_category())));
     }
-#else
-    std::thread([=]() {
-        callable->call(*callable);
-    }).detach();
+#else // Use our own thread pool
+    struct ThreadPool {
+        StopSource stopSource; // for notifying the threads to stop
+        std::queue<Callable *> queue;
+        std::condition_variable cond;
+        std::mutex mutex;
+        std::vector<std::thread> threads;
+    };
+    static ThreadPool *pool = nullptr;
+    static std::once_flag once;
+
+    auto worker = [](StopToken token) {
+        ::pthread_setname_np(::pthread_self(), "ilias::worker");
+        while (!token.stop_requested()) {
+            std::unique_lock locker(pool->mutex);
+            pool->cond.wait(locker, [&]() {
+                return !pool->queue.empty() || token.stop_requested();
+            });
+            if (token.stop_requested()) {
+                return;
+            }
+            auto callable = pool->queue.front();
+            pool->queue.pop();
+            locker.unlock();
+            callable->call(*callable);
+        }
+    };
+
+    auto cleanup = []() {
+        pool->stopSource.request_stop();
+        pool->cond.notify_all();
+        for (auto &thread : pool->threads) {
+            thread.join();
+        }
+        delete pool;
+    };
+
+    auto init = [&]() {
+        pool = new ThreadPool; 
+        pool->threads.push_back(std::thread(worker, pool->stopSource.get_token()));
+        ::atexit(cleanup);
+    };
+
+    std::call_once(once, init);
+    std::lock_guard locker(pool->mutex);
+    pool->queue.emplace(callable);
+    pool->cond.notify_one();
 #endif
 }
 

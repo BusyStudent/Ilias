@@ -365,6 +365,7 @@ public:
     using T = std::invoke_result_t<Fn>;
 
     TaskSpawnBlockingAwaiter(Fn fn) : mFn(std::move(fn)) {}
+    TaskSpawnBlockingAwaiter(TaskSpawnBlockingAwaiter &&) = default;
 
     auto await_ready() const noexcept { return false; }
     auto await_suspend(CoroHandle caller) {
@@ -543,8 +544,7 @@ inline auto spawn(Fn fn) -> WaitHandle<typename std::invoke_result_t<Fn>::value_
 template <std::invocable Fn>
 inline auto spawnBlocking(Fn fn) -> WaitHandle<typename std::invoke_result_t<Fn> > {
     return spawn([](auto fn) -> Task<typename std::invoke_result_t<Fn> > {
-        task::TaskSpawnBlockingAwaiter<decltype(fn)> awaiter(std::move(fn));
-        co_return co_await awaiter;
+        co_return co_await task::TaskSpawnBlockingAwaiter<decltype(fn)>(std::move(fn));
     }(std::forward<Fn>(fn)));
 }
 

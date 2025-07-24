@@ -92,7 +92,7 @@ public:
      * 
      * @brief Disconnect the named pipe (wrapping DisconnectNamedPipe)
      * 
-     * @return Result<void> 
+     * @return IoTask<void> 
      */
     auto disconnect() -> IoTask<void> {
         if (::DisconnectNamedPipe(fd())) {

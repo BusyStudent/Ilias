@@ -125,7 +125,7 @@ public:
      */
     auto truncate(uint64_t size) -> IoTask<void> {
         if (!mOffset) { // Not Actually File in disk
-            co_return Unexpected(IoError::OperationNotSupported);
+            co_return Err(IoError::OperationNotSupported);
         }
         co_return fd_utils::truncate(fd(), size);
     }

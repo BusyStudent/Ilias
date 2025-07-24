@@ -49,9 +49,9 @@ public:
     /**
      * @brief Send a signal to the process
      * 
-     * @return Result<void> 
+     * @return IoResult<void> 
      */
-    auto kill() const -> Result<void>;
+    auto kill() const -> IoResult<void>;
 
     /**
      * @brief Wait for the process to be done, if canceled, we will kill the process
@@ -77,9 +77,9 @@ public:
      * 
      */
     static auto spawn(std::string_view exec, std::vector<std::string_view> args = {});
-    static auto spawn(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args = {}) -> Result<Process>;
-    static auto spawnLinux(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args) -> Result<Process>;
-    static auto spawnWin32(IoContext &ctxt, std::wstring args) -> Result<Process>;
+    static auto spawn(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args = {}) -> IoResult<Process>;
+    static auto spawnLinux(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args) -> IoResult<Process>;
+    static auto spawnWin32(IoContext &ctxt, std::wstring args) -> IoResult<Process>;
 
     /**
      * @brief Check if the process is valid
@@ -125,9 +125,9 @@ inline auto Process::detach() -> void {
     mHandle = fd_t(-1);
 }
 
-inline auto Process::kill() const -> Result<void> {
+inline auto Process::kill() const -> IoResult<void> {
     if (!mCtxt) {
-        return Unexpected(Error::InvalidArgument);
+        return Err(IoError::InvalidArgument);
     }
 
 #if defined(_WIN32)
@@ -142,10 +142,10 @@ inline auto Process::kill() const -> Result<void> {
         return {};
     }
 #else
-    return Unexpected(SystemError::OperationNotSupported);
+    return Err(SystemError::OperationNotSupported);
 #endif
 
-    return Unexpected(SystemError::fromErrno());
+    return Err(SystemError::fromErrno());
 }
 
 inline auto Process::join() const {
@@ -189,7 +189,7 @@ inline auto Process::spawn(std::string_view exec, std::vector<std::string_view> 
     return awaiter;
 }
 
-inline auto Process::spawn(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args) -> Result<Process> {
+inline auto Process::spawn(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args) -> IoResult<Process> {
 
 #if defined(_WIN32)
     std::wstring cmdline;
@@ -217,7 +217,7 @@ inline auto Process::spawn(IoContext &ctxt, std::string_view exec, std::vector<s
 }
 
 #if defined(SYS_pidfd_open) // We need this system call
-inline auto Process::spawnLinux(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args) -> Result<Process> {
+inline auto Process::spawnLinux(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args) -> IoResult<Process> {
     auto open = [](pid_t pid, unsigned int flags) {
         return ::syscall(SYS_pidfd_open, pid, flags);
     };
@@ -233,18 +233,18 @@ inline auto Process::spawnLinux(IoContext &ctxt, std::string_view exec, std::vec
     // Spawn it
     pid_t pid = 0;
     if (::posix_spawnp(&pid, program, nullptr, nullptr, vec, nullptr) != 0) {
-        return Unexpected(SystemError::fromErrno());
+        return Err(SystemError::fromErrno());
     }
     
     if (int fd = open(pid, 0); fd >= 0) {
         return Process(ctxt, fd);
     }
-    return Unexpected(SystemError::fromErrno());
+    return Err(SystemError::fromErrno());
 }
 #endif // defined(SYS_pidfd_open)
 
 #if defined(_WIN32)
-inline auto Process::spawnWin32(IoContext &ctxt, std::wstring args) -> Result<Process> {
+inline auto Process::spawnWin32(IoContext &ctxt, std::wstring args) -> IoResult<Process> {
     ::STARTUPINFOW si {
         .cb = sizeof(::STARTUPINFOW),
     };
@@ -262,7 +262,7 @@ inline auto Process::spawnWin32(IoContext &ctxt, std::wstring args) -> Result<Pr
         &pi
     );
     if (!ok) {
-        return Unexpected(SystemError::fromErrno());
+        return Err(SystemError::fromErrno());
     }
     ::CloseHandle(pi.hThread); // We don't need the thread handle
     return Process(ctxt, pi.hProcess);

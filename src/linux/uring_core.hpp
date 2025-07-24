@@ -177,9 +177,9 @@ public:
         ::io_uring_prep_timeout(sqe(), &mSpec, 0, 0);
     }
 
-    auto onComplete(int64_t result) -> Result<void> {
+    auto onComplete(int64_t result) -> IoResult<void> {
         if (result < 0 && result != -ETIME) { // Treat ETIME as success
-            return Unexpected(SystemError(-result));
+            return Err(SystemError(-result));
         }
         return {};
     }

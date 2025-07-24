@@ -10,7 +10,6 @@
  */
 #pragma once
 
-#include <ilias/cancellation_token.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/log.hpp>
@@ -21,7 +20,7 @@
 
 ILIAS_NS_BEGIN
 
-namespace detail {
+namespace posix {
 
 template <typename T>
 class AioAwaiter : public ::aiocb {
@@ -33,7 +32,7 @@ public:
 
     auto await_ready() const -> bool { return false; }
 
-    auto await_suspend(TaskView<> caller) -> bool {
+    auto await_suspend(runtime::CoroHandle caller) -> bool {
         aio_sigevent.sigev_notify = SIGEV_THREAD; //< Use callback
         aio_sigevent.sigev_value.sival_ptr = this;
         aio_sigevent.sigev_notify_function = [](::sigval val) {
@@ -45,11 +44,10 @@ public:
         if (!static_cast<T*>(this)->onSubmit()) {
             return false;
         }
-        mReg = caller.cancellationToken().register_([](void *_self) {
-            auto self = static_cast<AioAwaiter *>(_self);
-            auto ret = ::aio_cancel(self->aio_fildes, self);
-            ILIAS_TRACE("POSIX::aio", "Cancel op on fd {}, res {}", self->aio_fildes, ret);
-        }, this);
+        mReg = runtime::StopRegistration(caller.stopToken(), [this]() {
+            auto ret = ::aio_cancel(this->aio_fildes, this);
+            ILIAS_TRACE("POSIX::aio", "Cancel op on fd {}, res {}", this->aio_fildes, ret);
+        });
         return true;
     }
 
@@ -57,8 +55,8 @@ public:
         return static_cast<T*>(this)->onComplete(::aio_return(this));
     }
 private:
-    TaskView<> mCaller;
-    CancellationToken::Registration mReg;
+    runtime::CoroHandle mCaller;
+    runtime::StopRegistration mReg;
 };
 
 /**
@@ -67,8 +65,7 @@ private:
  */
 class AioReadAwaiter final : public AioAwaiter<AioReadAwaiter> {
 public:
-    AioReadAwaiter(int fd, std::span<std::byte> buffer, std::optional<size_t> offset) : AioAwaiter(fd) {
-        aio_lio_opcode = LIO_READ;
+    AioReadAwaiter(int fd, MutableBuffer buffer, std::optional<size_t> offset) : AioAwaiter(fd) {
         aio_offset = offset.value_or(0);
         aio_nbytes = buffer.size_bytes();
         aio_buf = buffer.data();
@@ -79,10 +76,10 @@ public:
         return ::aio_read(this) == 0;
     }
 
-    auto onComplete(ssize_t bytes) -> Result<size_t> {
+    auto onComplete(ssize_t bytes) -> IoResult<size_t> {
         ILIAS_TRACE("POSIX::aio", "Read complete on fd {}, bytes {}", aio_fildes, bytes);
         if (bytes < 0) {
-            return Unexpected(SystemError(::aio_error(this)));
+            return Err(SystemError(::aio_error(this)));
         }
         return bytes;
     }
@@ -94,8 +91,7 @@ public:
  */
 class AioWriteAwaiter final : public AioAwaiter<AioWriteAwaiter> {
 public:
-    AioWriteAwaiter(int fd, std::span<const std::byte> buffer, std::optional<size_t> offset) : AioAwaiter(fd) {
-        aio_lio_opcode = LIO_WRITE;
+    AioWriteAwaiter(int fd, Buffer buffer, std::optional<size_t> offset) : AioAwaiter(fd) {
         aio_offset = offset.value_or(0);
         aio_nbytes = buffer.size_bytes();
         aio_buf = (void*) buffer.data();
@@ -106,16 +102,34 @@ public:
         return ::aio_write(this) == 0;
     }
 
-    auto onComplete(ssize_t bytes) -> Result<size_t> {
+    auto onComplete(ssize_t bytes) -> IoResult<size_t> {
         ILIAS_TRACE("Posix::aio", "Write complete on fd {}, bytes {}", aio_fildes, bytes);
         if (bytes < 0) {
-            return Unexpected(SystemError(::aio_error(this)));
+            return Err(SystemError(::aio_error(this)));
         }
         return bytes;
     }
 };
 
+class AioSyncAwaiter final : public AioAwaiter<AioSyncAwaiter> {
+public:
+    AioSyncAwaiter(int fd, int op) : AioAwaiter(fd), mOp(op) {}
 
-} // namespace detail
+    auto onSubmit() -> bool {
+        return ::aio_fsync(mOp, this) == 0;
+    }
+
+    auto onComplete(ssize_t ret) -> IoResult<void> {
+        if (ret < 0) {
+            return Err(SystemError(::aio_error(this)));
+        }
+        return {};
+    }
+private:
+    int mOp;
+};
+
+
+} // namespace posix
 
 ILIAS_NS_END

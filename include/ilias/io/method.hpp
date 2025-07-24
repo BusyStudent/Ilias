@@ -113,7 +113,7 @@ public:
      * @param buffer The 
      * @return IoTask<size_t> 
      */
-    auto writeAll(std::span<const std::byte> buffer) -> IoTask<size_t> {
+    auto writeAll(Buffer buffer) -> IoTask<size_t> {
         return ILIAS_NAMESPACE::writeAll(static_cast<T &>(*this), buffer);
     }
 

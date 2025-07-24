@@ -3,7 +3,7 @@
 #include <ilias/defines.hpp>
 #include <expected>
 
-#if __cpp_lib_expected < 202211L
+#if __cpp_lib_expected < 202202L
 #error "This library requires C++23"
 #endif
 

@@ -20,13 +20,13 @@ CORO_TEST(Net, Udp) {
     {
         auto handle = spawn(client.recvfrom(buffer));
         handle.stop();
-        CORO_ASSERT_EQ(co_await std::move(handle), std::nullopt);
+        CORO_ASSERT_FALSE((co_await std::move(handle)).has_value());
     }
 
     {
         auto handle = spawn(client.poll(PollEvent::In));
         handle.stop();
-        CORO_ASSERT_EQ(co_await std::move(handle), std::nullopt);
+        CORO_ASSERT_FALSE((co_await std::move(handle)).has_value());
     }
 }
 

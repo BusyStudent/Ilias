@@ -11,7 +11,6 @@
 #pragma once
 
 #include <ilias/task/generator.hpp>
-#include <ilias/task/executor.hpp>
 #include <ilias/task/when_all.hpp>
 #include <ilias/task/when_any.hpp>
 #include <ilias/task/task.hpp>

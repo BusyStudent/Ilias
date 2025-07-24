@@ -292,7 +292,7 @@ public:
      * @param type The type of the fd (default: Unknown)
      * @return IoResult<IoHandle<T> > 
      */
-    static auto make(IoContext &ctxt, T fd, IoDescriptor::Type type = Unknown) -> IoResult<IoHandle<T> > {
+    static auto make(IoContext &ctxt, T fd, IoDescriptor::Type type = IoDescriptor::Unknown) -> IoResult<IoHandle<T> > {
         auto desc = ctxt.addDescriptor(fd_t(fd), type);
         if (!desc) {
             return Err(desc.error());
@@ -304,7 +304,7 @@ public:
         return handle;
     }
 
-    static auto make(T fd, IoDescriptor::Type type = Unknown) -> IoResult<IoHandle<T> > {
+    static auto make(T fd, IoDescriptor::Type type = IoDescriptor::Unknown) -> IoResult<IoHandle<T> > {
         auto ctxt = IoContext::currentThread();
         if (!ctxt) {
             return Err(IoError::InvalidArgument);

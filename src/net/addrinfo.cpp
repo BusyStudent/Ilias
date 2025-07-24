@@ -51,7 +51,9 @@ auto AddressInfo::fromHostnameBlocking(std::string_view name, std::string_view s
         nullptr
     );
 #else
-    err = ::getaddrinfo(name, service, hints ? &hints.value() : nullptr, &info);
+    auto name_ = strndupa(name.data(), name.size());
+    auto service_ = strndupa(service.data(), service.size());
+    err = ::getaddrinfo(name_, service_, hints ? &hints.value() : nullptr, &info);
 #endif
 
     if (err != 0) {
@@ -143,50 +145,57 @@ auto AddressInfo::fromHostname(std::string_view name, std::string_view service, 
     }
 
 #elif defined(__linux) && defined(__GLIBC__) //< GNU Linux with glibc, use getaddrinfo_a
+    auto _name = std::string(name);
+    auto _service = std::string(service);
+
     ::gaicb request {
-        .ar_name = name,
-        .ar_service = service,
+        .ar_name = _name.c_str(),
+        .ar_service = _service.c_str(),
         .ar_request = hints ? &hints.value() : nullptr
     };
     struct Awaiter {
         auto await_ready() const noexcept { return false; }
 
-        auto await_suspend(TaskView<> caller) -> bool {
-            ::memset(&mEvent, 0, sizeof(mEvent));
-            mCaller = caller;
-            mEvent.sigev_notify = SIGEV_THREAD; //< Use callback
-            mEvent.sigev_value.sival_ptr = this;
-            mEvent.sigev_notify_function = [](::sigval val) {
+        auto await_suspend(runtime::CoroHandle caller) {
+            ::memset(&event, 0, sizeof(event));
+            handle = caller;
+            event.sigev_notify = SIGEV_THREAD; //< Use callback
+            event.sigev_value.sival_ptr = this;
+            event.sigev_notify_function = [](::sigval val) {
                 auto self = static_cast<Awaiter *>(val.sival_ptr);
-                self->mCaller.schedule();
+                self->handle.schedule();
             };
-            int ret = ::getaddrinfo_a(GAI_NOWAIT, &mRequest, 1, &mEvent);
-            mReg = caller.cancellationToken().register_([](void *request) {
-                auto ret = ::gai_cancel(static_cast<::gaicb*>(request));
-            }, mRequest);
-            return ret == 0;
+            int ret = ::getaddrinfo_a(GAI_NOWAIT, &cb, 1, &event);
+            reg = runtime::StopRegistration(caller.stopToken(), [this]() {
+                auto ret = ::gai_cancel(cb);
+            });
+            if (ret != 0) { // Error happened
+                handle.schedule();
+            }
         }
 
         auto await_resume() -> IoResult<AddressInfo> {
-            auto err = ::gai_error(mRequest);
+            auto err = ::gai_error(cb);
             if (err != 0) {
-                return Err(Error(err, GaiCategory::instance()));
+                return Err(GaiError(err));
             }
-            return AddressInfo(mRequest->ar_result);
+            return AddressInfo(cb->ar_result);
         }
 
-        TaskView<> mCaller;
-        ::gaicb *mRequest;
-        ::sigevent mEvent;
-        CancellationToken::Registration mReg;
+        ::gaicb *cb;
+        ::sigevent event;
+        runtime::CoroHandle handle;
+        runtime::StopRegistration reg;
     };
-    co_return co_await Awaiter { .mRequest = &request };
+    co_return co_await Awaiter { .cb = &request };
 #endif
 
     // Fallback to the synchronous version for platforms other than Windows and GNU/Linux.
     // This is because no native asynchronous implementation is available for these platforms.
-    // Maybe we start a thread to avoid blocking the current thread. ?
-    co_return fromHostnameBlocking(name, service, hints);
+    // We use thread pool to execute the blocking call.
+    co_return (co_await spawnBlocking([=]() {
+        return fromHostnameBlocking(name, service, hints);
+    })).value();
 }
 
 ILIAS_NS_END

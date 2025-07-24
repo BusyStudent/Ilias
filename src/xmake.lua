@@ -66,6 +66,11 @@ target("ilias")
         add_syslinks("ws2_32", "bcrypt", {public = true})
     end
 
+    if is_plat("linux") then
+        add_files("linux/*.cpp")
+        add_syslinks("pthread", "dl", "anl", {public = true})
+    end
+
     -- Set var if
     if has_config("fmt") then
         add_packages("fmt", {public = true})

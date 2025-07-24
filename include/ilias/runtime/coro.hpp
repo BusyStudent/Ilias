@@ -3,9 +3,9 @@
 #include <ilias/runtime/executor.hpp>
 #include <ilias/runtime/token.hpp>
 #include <functional>
-#include <stop_token>
-#include <coroutine>
-#include <exception>
+#include <coroutine> // std::coroutine_handle<>
+#include <exception> // std::current_exception
+#include <utility> // std::exchange
 
 ILIAS_NS_BEGIN
 
