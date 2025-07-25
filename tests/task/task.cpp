@@ -1,7 +1,8 @@
 #include <ilias/task/generator.hpp>
-#include <ilias/task/task.hpp>
 #include <ilias/task/when_all.hpp>
 #include <ilias/task/when_any.hpp>
+#include <ilias/task/utils.hpp>
+#include <ilias/task/task.hpp>
 #include <gtest/gtest.h>
 #include "testing.hpp"
 
@@ -145,7 +146,6 @@ CORO_TEST(Task, WhenAny) {
     });
     handle.stop();
     EXPECT_TRUE(!co_await std::move(handle));
-    // FIXME: memory leak detected by valgrind, emm it maybe the cleanup callback run after the resume the callback
     co_return;
 }
 

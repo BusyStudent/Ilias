@@ -51,8 +51,6 @@ ILIAS_NS_BEGIN
 
 namespace task {
 
-using runtime::StopSource;
-using runtime::StopRegistration;
 using runtime::CoroHandle;
 using runtime::CoroPromise;
 using runtime::CoroContext;

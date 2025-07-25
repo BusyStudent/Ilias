@@ -101,7 +101,7 @@ public:
     auto await_suspend(CoroHandle caller) -> void;
     auto await_resume() -> void;
 private:
-    auto onStopped() -> void;
+    auto onStopRequested() -> void;
     auto onTimeout() -> void;
 
     TimerService &mService;
@@ -163,16 +163,14 @@ inline auto TimerAwaiter::await_suspend(CoroHandle caller) -> void {
         std::chrono::steady_clock::now() + std::chrono::milliseconds(mTimeout),
         this
     );
-    mReg = StopRegistration(caller.stopToken(), [this]() {
-        onStopped();
-    });
+    mReg.register_<&TimerAwaiter::onStopRequested>(mCaller.stopToken(), this);
 }
 
 inline auto TimerAwaiter::await_resume() -> void {
     ILIAS_ASSERT(!mTimerId.has_value()); // Timer should be canceled or timeout
 }
 
-inline auto TimerAwaiter::onStopped() -> void {
+inline auto TimerAwaiter::onStopRequested() -> void {
     if (!mTimerId) {
         // No-timer id means the timer is already in exector queue
         return;

@@ -85,16 +85,17 @@ public:
 
     auto await_suspend(CoroHandle caller) {
         mCaller = caller;
-        mReg = StopRegistration(caller.stopToken(), [this]() { // Forward the stop if needed
-            mStopRequested = true;
-            stopAll();
-        });
+        mReg.register_<&WhenAnyAwaiterBase::onStopRequested>(caller.stopToken(), this); // Forward the stop if needed
     }
 protected:
     auto stopAll() -> void {
         for (auto &ctxt : mTasks) {
             ctxt.stop();
         }
+    }
+    auto onStopRequested() -> void {
+        mStopRequested = true;
+        stopAll();
     }
 
     static auto onTaskCompleted(CoroContext &_ctxt) -> void {

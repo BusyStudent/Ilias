@@ -44,10 +44,7 @@ public:
         if (!static_cast<T*>(this)->onSubmit()) {
             return false;
         }
-        mReg = runtime::StopRegistration(caller.stopToken(), [this]() {
-            auto ret = ::aio_cancel(this->aio_fildes, this);
-            ILIAS_TRACE("POSIX::aio", "Cancel op on fd {}, res {}", this->aio_fildes, ret);
-        });
+        mReg.register_<&AioAwaiter::onStopRequested>(caller.stopToken(), this);
         return true;
     }
 
@@ -55,6 +52,11 @@ public:
         return static_cast<T*>(this)->onComplete(::aio_return(this));
     }
 private:
+    auto onStopRequested() -> void {
+        auto ret = ::aio_cancel(this->aio_fildes, this);
+        ILIAS_TRACE("POSIX::aio", "Cancel op on fd {}, res {}", this->aio_fildes, ret);
+    }
+
     runtime::CoroHandle mCaller;
     runtime::StopRegistration mReg;
 };

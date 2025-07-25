@@ -121,7 +121,7 @@ auto EpollAwaiter::await_ready() -> bool {
 auto EpollAwaiter::await_suspend(runtime::CoroHandle caller) -> void {
     mIt           = mFd->awaiters.insert(mFd->awaiters.end(), this);
     mCaller       = caller;
-    mRegistration = runtime::StopRegistration(caller.stopToken(), [this]() { onStopRequested(); });
+    mRegistration.register_<&EpollAwaiter::onStopRequested>(caller.stopToken(), this);
 }
 
 auto EpollAwaiter::await_resume() -> IoResult<uint32_t> {

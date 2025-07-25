@@ -292,13 +292,18 @@ private:
         auto &self = static_cast<TaskSpawnContext &>(_self);
 
         // Done..
+        self.mCompleted = true;
         if (self.mCompletionHandler) { // Notify we are stopped
             self.mCompletionHandler(self, self.mUser);
             self.mCompletionHandler = nullptr;
             self.mUser = nullptr;
         }
-        self.mCompleted = true;
-        self.executor().post(TaskSpawnContext::derefSelf, &self);
+        if (self.mSelf.use_count() == 1) { // We are the last one, only can be deref in the event loop
+            self.executor().post(TaskSpawnContext::derefSelf, &self);
+        }
+        else { // For avoid the derefSelf call after quit, we can reset the self
+            self.mSelf.reset();
+        }
     }
 
     // deref self in event loop
@@ -323,9 +328,7 @@ public:
         mPtr->mCompletionHandler = TaskSpawnAwaiterBase::onCompletion;
         mPtr->mUser = this;
         mHandle = caller;
-        mReg = StopRegistration(caller.stopToken(), [&]() { // Forward the stop request
-            mPtr->stop();
-        });
+        mReg.register_(caller.stopToken(), onStopRequested, this); // Forward the stop request
     }
 protected:
     static auto onCompletion(CoroContext &, void *_self) -> void {
@@ -340,6 +343,10 @@ protected:
         }
         // Let the mTask resume the caller
         self.mPtr->mTask.setPrevAwaiting(self.mHandle);
+    }
+    static auto onStopRequested(void *_self) -> void {
+        auto &self = *static_cast<TaskSpawnAwaiterBase *>(_self);
+        self.mPtr->stop();
     }
 
     std::shared_ptr<TaskSpawnContext> mPtr;
@@ -358,7 +365,7 @@ public:
     }
 };
 
-// Awaiter for spawnBlocking
+// Awaiter for spawnBlocking && blocking
 template <std::invocable Fn>
 class TaskSpawnBlockingAwaiter final : public runtime::CallableImpl<TaskSpawnBlockingAwaiter<Fn> > {
 public:
@@ -384,10 +391,10 @@ public:
         }
     }
     auto operator()() noexcept {
-        try {
+        ILIAS_TRY {
             mValue = makeOption([&]() { return mFn(); });
         }
-        catch (...) {
+        ILIAS_CATCH (...) {
             mException = std::current_exception();
         }
         mHandle.schedule();
@@ -548,7 +555,15 @@ inline auto spawnBlocking(Fn fn) -> WaitHandle<typename std::invoke_result_t<Fn>
     }(std::forward<Fn>(fn)));
 }
 
+// Awaiting a blocking task by using given callable
+template <std::invocable Fn>
+[[nodiscard]]
+inline auto blocking(Fn fn) {
+    return task::TaskSpawnBlockingAwaiter<decltype(fn)>(std::move(fn));
+}
+
 // Sleep for a duration
+[[nodiscard]]
 inline auto sleep(std::chrono::milliseconds duration) -> Task<void> {
     return runtime::Executor::currentThread()->sleep(duration.count());
 }

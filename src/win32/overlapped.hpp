@@ -87,7 +87,7 @@ public:
     auto await_suspend(runtime::CoroHandle caller) -> void {
         mCaller = caller;
         onCompleteCallback = completeCallback;
-        mRegistration = runtime::StopRegistration(caller.stopToken(), std::bind(onStopRequest, this));
+        mRegistration.register_(caller.stopToken(), onStopRequested, this);
     }
 
     auto sockfd() const -> SOCKET {
@@ -115,7 +115,7 @@ private:
         self->mBytesTransferred = dwBytesTransferred;
         self->mCaller.resume();
     }
-    static auto onStopRequest(void *_self) -> void {
+    static auto onStopRequested(void *_self) -> void {
         auto self = static_cast<IocpAwaiterBase*>(_self);
         auto err = ::CancelIoEx(self->mHandle, self->overlapped());
         self->mStopRequested = true;

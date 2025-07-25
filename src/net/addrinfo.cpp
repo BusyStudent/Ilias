@@ -99,9 +99,7 @@ auto AddressInfo::fromHostname(std::string_view name, std::string_view service, 
 
         auto await_suspend(runtime::CoroHandle caller) {
             handle = caller;
-            reg = runtime::StopRegistration(caller.stopToken(), [this]() {
-                ::GetAddrInfoExCancel(&namedHandle);
-            });
+            reg.register_<&Awaiter::onStopRequested>(caller.stopToken(), this);
             suspend.count_down(); // We are now suspended
         }
 
@@ -110,6 +108,10 @@ auto AddressInfo::fromHostname(std::string_view name, std::string_view service, 
                 return Err(GaiError(err));
             }
             return AddressInfo(info);
+        }
+
+        auto onStopRequested() -> void {
+            ::GetAddrInfoExCancel(&namedHandle);
         }
 
         static auto onComplete(void *_self) -> void {
@@ -166,9 +168,7 @@ auto AddressInfo::fromHostname(std::string_view name, std::string_view service, 
                 self->handle.schedule();
             };
             int ret = ::getaddrinfo_a(GAI_NOWAIT, &cb, 1, &event);
-            reg = runtime::StopRegistration(caller.stopToken(), [this]() {
-                auto ret = ::gai_cancel(cb);
-            });
+            reg.register_<&Awaiter::onStopRequested>(caller.stopToken(), this);
             if (ret != 0) { // Error happened
                 handle.schedule();
             }
@@ -182,6 +182,10 @@ auto AddressInfo::fromHostname(std::string_view name, std::string_view service, 
             return AddressInfo(cb->ar_result);
         }
 
+        auto onStopRequested() -> void {
+            auto ret = ::gai_cancel(cb);
+        }
+
         ::gaicb *cb;
         ::sigevent event;
         runtime::CoroHandle handle;
@@ -193,9 +197,9 @@ auto AddressInfo::fromHostname(std::string_view name, std::string_view service, 
     // Fallback to the synchronous version for platforms other than Windows and GNU/Linux.
     // This is because no native asynchronous implementation is available for these platforms.
     // We use thread pool to execute the blocking call.
-    co_return (co_await spawnBlocking([=]() {
+    co_return co_await blocking([=]() {
         return fromHostnameBlocking(name, service, hints);
-    })).value();
+    });
 }
 
 ILIAS_NS_END

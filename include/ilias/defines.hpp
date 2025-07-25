@@ -39,8 +39,12 @@
 // Exception check
 #if !defined(__cpp_exceptions)
     #define ILIAS_THROW(x) ::abort()
+    #define ILIAS_TRY if constexpr(true)
+    #define ILIAS_CATCH(x) if constexpr(false)
 #else
     #define ILIAS_THROW(x) throw x
+    #define ILIAS_TRY try
+    #define ILIAS_CATCH(x) catch(x)
 #endif
 
 // Platform detection
