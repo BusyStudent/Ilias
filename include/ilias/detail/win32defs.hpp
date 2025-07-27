@@ -27,6 +27,8 @@ struct NtDll; // Internal use struct
 extern auto ILIAS_API toWide(std::string_view str) -> std::wstring;
 extern auto ILIAS_API toUtf8(std::wstring_view str) -> std::string;
 
+extern auto ILIAS_API pipe(HANDLE *read, HANDLE *write) -> bool;
+
 extern auto ILIAS_API setThreadName(std::string_view name) -> bool;
 extern auto ILIAS_API threadName() -> std::string;
 

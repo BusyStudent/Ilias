@@ -20,11 +20,28 @@
 </Type>
 
 <!-- Stream -->
-<Type Name="ilias::BufferedStream&lt;*&gt;">
+<Type Name="ilias::BufReader&lt;*&gt;">
 	<DisplayString>{mStream}</DisplayString>
 	<Expand>
 		<Item Name="[stream]">mStream</Item>
-		<ExpandedItem>mBuf</ExpandedItem>
+		<Item Name="[buffer]">mBuffer</Item>
+	</Expand>
+</Type>
+
+<Type Name="ilias::BufWriter&lt;*&gt;">
+	<DisplayString>{mStream}</DisplayString>
+	<Expand>
+		<Item Name="[stream]">mStream</Item>
+		<Item Name="[buffer]">mBuffer</Item>
+	</Expand>
+</Type>
+
+<Type Name="ilias::BufStream&lt;*&gt;">
+	<DisplayString>{mStream}</DisplayString>
+	<Expand>
+		<Item Name="[stream]">mStream</Item>
+		<Item Name="[writeBuffer]">mStream.mBuffer</Item>
+		<Item Name="[readBuffer]">mStream.mStream.mBuffer</Item>
 	</Expand>
 </Type>
 

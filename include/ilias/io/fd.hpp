@@ -37,6 +37,7 @@ public:
      * 
      * @return fd_t 
      */
+    [[nodiscard]]
     auto release() noexcept -> fd_t {
         return std::exchange(mFd, fd_t(-1));
     }
@@ -50,7 +51,7 @@ public:
 
     auto operator <=>(const FileDescriptor &other) const noexcept = default;
     auto operator =(FileDescriptor &&other) noexcept -> FileDescriptor & {
-        close();
+        auto _ = close();
         mFd = other.release();
         return *this;
     }

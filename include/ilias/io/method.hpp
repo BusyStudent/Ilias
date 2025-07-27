@@ -113,7 +113,7 @@ public:
      * @param buffer The 
      * @return IoTask<size_t> 
      */
-    auto writeAll(Buffer buffer) -> IoTask<size_t> {
+    auto writeAll(Buffer buffer) -> IoTask<size_t> requires Writable<T> {
         return ILIAS_NAMESPACE::writeAll(static_cast<T &>(*this), buffer);
     }
 
@@ -134,7 +134,7 @@ public:
      * @param buffer The 
      * @return IoTask<size_t> 
      */
-    auto readAll(MutableBuffer buffer) -> IoTask<size_t> {
+    auto readAll(MutableBuffer buffer) -> IoTask<size_t> requires(Readable<T>) {
         return ILIAS_NAMESPACE::readAll(static_cast<T &>(*this), buffer);
     }
     /**
@@ -145,7 +145,7 @@ public:
      * @param minSize The minimum size to read
      * @return IoTask<size_t> 
      */
-    auto readAtleast(MutableBuffer buffer, size_t minSize) -> IoTask<size_t> {
+    auto readAtleast(MutableBuffer buffer, size_t minSize) -> IoTask<size_t> requires(Readable<T>) {
         return ILIAS_NAMESPACE::readAtleast(static_cast<T &>(*this), buffer, minSize);
     }
 

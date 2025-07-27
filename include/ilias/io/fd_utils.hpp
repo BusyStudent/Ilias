@@ -15,7 +15,7 @@
 #include <string>
 
 #if defined(_WIN32)
-    #include <ilias/detail/win32defs.hpp>
+    #include <ilias/detail/win32defs.hpp> // win32 specific types && win32::pipe
     #include <atomic>
 #else
     #include <sys/stat.h>
@@ -26,10 +26,7 @@
 
 ILIAS_NS_BEGIN
 
-/**
- * @brief Wrapping file descriptor api to cross-platform code.
- * 
- */
+// Wrapping file descriptor api to cross-platform code.
 namespace fd_utils {
 
 /**
@@ -62,7 +59,6 @@ struct PipePair {
     fd_t read;
 };
 
-
 /**
  * @brief Creates a pipe pair.
  * 
@@ -71,48 +67,11 @@ struct PipePair {
 inline auto pipe() -> IoResult<PipePair> {
 
 #if defined(_WIN32)
-    // MSDN says anymous pipe does not support overlapped I/O, so we have to create a named pipe.
-    static std::atomic<int> counter{0};
-    wchar_t name[256] {0};
-    ::swprintf(
-        name, 
-        sizeof(name), 
-        L"\\\\.\\Pipe\\IliasPipe_%d_%d_%d",
-        counter.fetch_add(1),
-        int(::time(nullptr)),
-        int(::GetCurrentThreadId())
-    );
-
-    HANDLE readPipe = ::CreateNamedPipeW(
-        name,
-        PIPE_ACCESS_INBOUND | FILE_FLAG_OVERLAPPED,
-        PIPE_TYPE_BYTE | PIPE_WAIT,
-        1, // < Only one instance of the pipe, for our write pipe
-        65535, //< 64KB buffer size, as same as linux
-        65535,
-        NMPWAIT_USE_DEFAULT_WAIT,
-        nullptr
-    );
-
-    if (readPipe == INVALID_HANDLE_VALUE) {
+    HANDLE read, write;
+    if (!win32::pipe(&read, &write)) {
         return Err(SystemError::fromErrno());
     }
-
-    HANDLE writePipe = ::CreateFileW(
-        name,
-        GENERIC_WRITE,
-        0,
-        nullptr,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
-        nullptr
-    );
-
-    if (writePipe == INVALID_HANDLE_VALUE) {
-        ::CloseHandle(readPipe);
-        return Err(SystemError::fromErrno());
-    }
-    return PipePair{writePipe, readPipe};
+    return PipePair{write, read};
 #else
     int fds[2];
     if (::pipe(fds) == 0) {
@@ -350,6 +309,6 @@ inline auto truncate(fd_t fd, uint64_t size) -> IoResult<void> {
     return Err(SystemError::fromErrno());
 }
 
-}
+} // namespace fd_utils
 
 ILIAS_NS_END

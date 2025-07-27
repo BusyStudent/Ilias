@@ -42,7 +42,7 @@ inline auto deleteProxy(void *object) -> void {
 }
 
 template <Stream T>
-inline auto makeStreamVtbl() -> const StreamVtbl * {
+inline auto streamVtbl() -> const StreamVtbl * {
     static constexpr StreamVtbl vtbl = {
         .read     = readProxy<T>,
         .write    = writeProxy<T>,
@@ -75,7 +75,7 @@ public:
      * @param t The reference of the Stream concept object
      */
     template <Stream T>
-    StreamView(T &t) : mVtbl(detail::makeStreamVtbl<T>()), mObject(&t) { }
+    StreamView(T &t) : mVtbl(dyn_traits::streamVtbl<T>()), mObject(&t) { }
 
     /**
      * @brief Read data from the stream
@@ -159,9 +159,9 @@ public:
      */
     template <Stream T>
     DynStream(T &&t) {
-        mVtbl = detail::makeStreamClientVtbl<T>();
+        mVtbl = dyn_traits::streamVtbl<T>();
         mObject = new T(std::move(t));
-        mDelete = detail::deleteProxy<T>;
+        mDelete = dyn_traits::deleteProxy<T>;
     }
 
     /**
@@ -240,5 +240,6 @@ private:
 
 // For compatible with old code
 using IStreamClient = DynStream;
+using DynStreamClient = DynStream;
 
 ILIAS_NS_END

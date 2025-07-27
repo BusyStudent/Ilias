@@ -1,6 +1,7 @@
 #include <ilias/platform.hpp>
 #include <ilias/buffer.hpp>
 #include <ilias/net.hpp>
+#include <ilias/io.hpp>
 #include <gtest/gtest.h>
 #include "testing.hpp"
 
@@ -33,21 +34,27 @@ CORO_TEST(Net, Udp) {
 CORO_TEST(Net, Http) {
     auto info = (co_await AddressInfo::fromHostname("www.baidu.com", "http")).value();
     auto client = (co_await TcpClient::connect(info.endpoints().at(0))).value();
+    auto stream = BufStream(std::move(client));
 
     // Prepare payload
-    (co_await client.writeAll("GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n"_bin)).value();
-    (co_await client.flush()).value();
+    (co_await stream.writeAll("GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n"_bin)).value();
+    (co_await stream.flush()).value();
 
     // Read response
-    std::byte buffer[1024] {};
     while (true) {
-        auto n = (co_await client.read(buffer)).value();
-        if (n == 0) {
+        auto line = (co_await stream.getline("\r\n")).value();
+        if (line.empty()) { // Header end
             break;
         }
-        auto view = std::span(buffer, n);
-        auto str = std::string_view(reinterpret_cast<const char*>(view.data()), view.size());
-        std::cout << str;
+        std::cout << line << std::endl;
+    }
+    char buffer[1024] {};
+    while (true) {
+        auto size = (co_await stream.read(makeBuffer(buffer))).value();
+        if (size == 0) {
+            break;
+        }
+        std::cout << std::string_view(buffer, size) << std::endl;
     }
 }
 

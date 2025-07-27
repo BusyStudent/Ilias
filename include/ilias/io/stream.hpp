@@ -10,17 +10,12 @@
  */
 #pragma once
 
-#include <ilias/io/dyn_traits.hpp>
 #include <ilias/io/method.hpp>
-#include <ilias/io/traits.hpp>
-#include <ilias/detail/mem.hpp>
-#include <ilias/buffer.hpp>
-#include <cstring>
-#include <string>
-#include <vector>
+#include <ilias/io/traits.hpp> // Readable Writable
+#include <ilias/buffer.hpp> // Buffer MutableBuffer
+#include <utility> // std::exchange
+#include <string> // std::string
 #include <limits>
-#include <array>
-#include <span>
 
 // For min max macro in windows.h :(
 #undef min
@@ -378,289 +373,309 @@ private:
     size_t mTail = 0;
 };
 
+enum class FillPolicy {
+    None, // Only fill the buffer when it's empty
+    More, // Always fill the buffer with more data
+};
+
 /**
- * @brief A Wrapper for buffered a stream
+ * @brief Wrap an readable stream with a buffer
  * 
- * @tparam T The underlying stream
+ * @tparam T 
  */
-template <Stream T = DynStreamClient>
-class BufferedStream final : public StreamMethod<BufferedStream<T> > {
+template <Readable T>
+class BufReader final : public StreamMethod<BufReader<T> > {
 public:
-    /**
-     * @brief Construct a new empty Buffered Stream object
-     * 
-     */
-    BufferedStream() = default;
+    BufReader(T stream) : mStream(std::move(stream)) {}
+    BufReader(BufReader &&) = default;
+    BufReader() = default;
 
-    BufferedStream(BufferedStream &&) = default;
+    // Readable
+    auto read(MutableBuffer buffer) -> IoTask<size_t> {
+        auto data = co_await fill();
+        if (!data) {
+            co_return Err(data.error());
+        }
+        if (data->empty()) { // EOF
+            co_return 0;
+        }
+        auto size = std::min(buffer.size(), data->size());
+        ::memcpy(buffer.data(), data->data(), size);
+        mBuffer.consume(size);
+        co_return size;
+    }
 
-    BufferedStream(const BufferedStream &) = delete;
-
-    BufferedStream(T &&stream) : mStream(std::move(stream)) { }
-
-    /**
-     * @brief Read a new line by delim character
-     * 
-     * @param delim 
-     * @return IoTask<std::string> 
-     */
-    auto getline(std::string_view delim) -> IoTask<std::string> {
-        size_t lastPos = 0; // Last position of we scanned
+    // Readline, append the data back to the str, the str contains the deliminator (on EOF, it doesn't contains it)
+    auto readline(std::string &str, std::string_view delim = "\n") -> IoTask<size_t> {
+        auto policy = FillPolicy::None;
         while (true) {
-            // Scanning current buffer
-            auto buf = mBuf.data();
-            if (buf.size() >= delim.size()) {
-                ILIAS_ASSERT_MSG(buf.size() >= lastPos, "Buffer size is smaller than last we scanned");
-                std::string_view view(reinterpret_cast<const char*>(buf.data()), buf.size());
-                size_t pos = view.find(delim, lastPos);
-                if (pos != std::string_view::npos) {
-                    // Found the delimiter
-                    auto content = view.substr(0, pos);
-                    mBuf.consume(pos + delim.size());
-                    co_return std::string(content);
-                }
-                lastPos = buf.size(); // We already scanned the whole buffer, so we start from the beginning
+            auto data = co_await fill(policy);
+            if (data == Err(IoError::UnexpectedEOF) && mBuffer.size() != 0) {
+                // EOF, the buffer data has some, return the whole buffer
+                auto span = mBuffer.data();
+                str.append(reinterpret_cast<const char *>(span.data()), span.size());
+                mBuffer.consume(span.size());
+                co_return span.size();
             }
-            // Try fill the buffer
-            auto wbuf = mBuf.prepare(4096 + delim.size());
-            if (wbuf.empty()) {
-                co_return Unexpected(Error::OutOfMemory);
+            if (!data) {
+                co_return Err(data.error());
             }
-            auto ret = co_await mStream.read(wbuf);
-            if (!ret || *ret == 0) {
-                co_return Unexpected(ret.error_or(Error::ZeroReturn));
+            auto view = std::string_view(reinterpret_cast<const char *>(data->data()), data->size());
+            auto pos = view.find(delim);
+            if (pos != std::string_view::npos) {
+                str.append(view.substr(0, pos + delim.size()));
+                mBuffer.consume(pos + delim.size());
+                co_return pos + delim.size(); // Return the size of the line
             }
-            mBuf.commit(*ret);
+            policy = FillPolicy::More; // We need more data
         }
     }
 
+    // Get an new line, the return string doesn't contains the deliminator
+    auto getline(std::string_view delim = "\n") -> IoTask<std::string> {
+        std::string line;
+        if (auto res = co_await readline(line, delim); !res) {
+            co_return Err(res.error());
+        }
+        if (line.ends_with(delim)) {
+            line.resize(line.size() - delim.size());
+        }
+        co_return line;
+    }
+
     /**
-     * @brief Write data to the stream
+     * @brief Fill the internal buffer
      * 
-     * @param buffer 
-     * @return IoTask<size_t> 
+     * @param policy The policy of filling the buffer (None or More) if None, it will only fill the buffer when it's empty
+     * @return IoTask<Buffer> The filled buffer, Error if lowerlayer stream failed, UnexpectedEOF when policy is More and the stream is EOF
      */
-    auto write(std::span<const std::byte> buffer) -> IoTask<size_t> {
+    auto fill(FillPolicy policy = FillPolicy::None) -> IoTask<Buffer> {
+        if (mBuffer.empty() || policy == FillPolicy::More) {
+            auto buf = mBuffer.prepare(1024 * 4);
+            auto res = co_await mStream.read(buf);
+            if (!res) {
+                co_return Err(res.error());
+            }
+            if (res == 0 && policy == FillPolicy::More) {
+                co_return Err(IoError::UnexpectedEOF); // Failed to fill the buffer with more data
+            }
+            mBuffer.commit(*res);
+        }
+        co_return mBuffer.data();
+    }
+
+    // Expose Writable if the stream is writable
+    auto write(Buffer buffer) -> IoTask<size_t> requires Writable<T> {
         return mStream.write(buffer);
     }
 
-    /**
-     * @brief Read data from the stream
-     * 
-     * @param buffer 
-     * @return IoTask<size_t> 
-     */
-    auto read(std::span<std::byte> buffer) -> IoTask<size_t> {
-        const auto n = buffer.size();
-        while (true) {
-            auto buf = mBuf.data();
-            if (!buf.empty() || n == 0) {
-                // Read data from the buffer
-                auto len = std::min(buf.size(), n);
-                ::memcpy(buffer.data(), buf.data(), len);
-                mBuf.consume(len);
-                co_return len;
-            }
-            // Try fill the buffer
-            auto wbuf = mBuf.prepare(n);
-            if (wbuf.empty()) {
-                co_return Unexpected(Error::OutOfMemory);
-            }
-            auto ret = co_await mStream.read(wbuf);
-            if (!ret) {
-                co_return Unexpected(ret.error());
-            }
-            if (*ret == 0) {
-                co_return 0;
-            }
-            mBuf.commit(*ret);
-        }
+    auto flush() -> IoTask<void> requires Writable<T> {
+        return mStream.flush();
     }
 
-    /**
-     * @brief Connect to a remote endpoint
-     * 
-     * @tparam U 
-     */
-    template <Connectable U = T, typename EndpointLike>
-    auto connect(const EndpointLike &endpoint) -> IoTask<void> {
-        return static_cast<U&>(mStream).connect(endpoint);
+    auto shutdown() -> IoTask<void> requires Writable<T> {
+        return mStream.shutdown();
     }
 
-    /**
-     * @brief Shutdown the stream
-     * 
-     * @tparam U 
-     */
-    template <Shuttable U = T>
-    auto shutdown() -> IoTask<void> {
-        return static_cast<U&>(mStream).shutdown();
-    }
-
-    /**
-     * @brief Get the underlying stream buffer object
-     * 
-     * @return const StreamBuffer & 
-     */
-    auto buffer() const -> const StreamBuffer & {
-        return mBuf;
-    }
-
-    /**
-     * @brief Get the underlying stream buffer object
-     * 
-     * @return StreamBuffer & 
-     */
-    auto buffer() -> StreamBuffer & {
-        return mBuf;
-    }
-
-    /**
-     * @brief Get the underlying stream object
-     * 
-     * @return const T & 
-     */
-    auto stream() const -> const T & {
-        return mStream;
-    }
-
-    /**
-     * @brief Get the underlying stream object
-     * 
-     * @return T & 
-     */
+    // Get the wrapped stream
     auto stream() -> T & {
         return mStream;
     }
 
-    /**
-     * @brief Move another buffered stream into this one
-     * 
-     * @param other 
-     * @return BufferedStream& 
-     */
-    auto operator = (BufferedStream &&other) -> BufferedStream & {
-        mStream = std::move(other.mStream);
-        mBuf = std::move(other.mBuf);
-        return *this;
+    // Get the internal buffer's data
+    auto buffer() -> MutableBuffer {
+        return mBuffer.data();   
     }
 
-    /**
-     * @brief Check the stream is valid or not
-     * 
-     * @return true 
-     * @return false 
-     */
+    // Consume the data of the buffer
+    auto consume(size_t size) -> void {
+        return mBuffer.consume(size);
+    }
+
+    // Detach the stream
+    [[nodiscard]]
+    auto detach() && -> T {
+        return std::move(mStream);
+    }
+
+    auto operator =(BufReader &&) -> BufReader & = default;
+    auto operator <=>(const BufReader &) const = default;
+
     explicit operator bool() const noexcept {
         return bool(mStream);
     }
 private:
+    StreamBuffer mBuffer;
     T mStream;
-    StreamBuffer mBuf;
 };
 
-// Utility functions
-
 /**
- * @brief Read bytes from the stream into buffer until the delimiter is found
+ * @brief Wrap a writable stream with a buffer
  * 
  * @tparam T 
- * @tparam Stream 
- * @param stream The stream to read from (must has readable concept)
- * @param streamBuf The stream buffer to read into (must has stream buffer concept)
- * @param delim The delimiter to stop reading
- * @return IoTask<size_t> The position of the delimiter in the buffer
  */
-template <StreamBufferLike T, Readable Stream>
-inline auto readUntil(Stream &stream, T &streamBuf, std::span<const std::byte> delim) -> IoTask<size_t> {
-    size_t lastPos = 0;
-    while (true) {
-        auto span = streamBuf.data();
-        if (span.size() >= delim.size()) { // We can scan it
-            auto pos = mem::memmem(span.subspan(lastPos), delim);
-            if (pos) { // Got it!
-                co_return *pos + lastPos;
+template <Writable T>
+class BufWriter final : public StreamMethod<BufWriter<T> > {
+public:
+    BufWriter(T stream) : mStream(std::move(stream)) {}
+    BufWriter(BufWriter &&) = default;
+    BufWriter() = default;
+
+    // Writable
+    auto write(Buffer buffer) -> IoTask<size_t> {
+        // Less than 4KB, added to buffer
+        if (buffer.size() < 1024 * 4) {
+            auto data = mBuffer.prepare(buffer.size());
+            ::memcpy(data.data(), buffer.data(), buffer.size());
+            mBuffer.commit(buffer.size());
+            co_return buffer.size();
+        }
+        if (auto res = co_await flush(); !res) {
+            co_return Err(res.error());
+        }
+        co_return co_await mStream.write(buffer);
+    }
+
+    auto flush() -> IoTask<void> {
+        while (!mBuffer.empty()) {
+            auto n = co_await mStream.write(mBuffer.data());
+            if (!n) {
+                co_return Err(n.error());
             }
-            lastPos = span.size();
+            if (*n == 0) {
+                co_return Err(IoError::UnexpectedEOF);
+            }
+            mBuffer.consume(*n);
         }
-        // Try read more data!
-        auto wbuf = streamBuf.prepare(4096 + delim.size());
-        if (wbuf.empty()) {
-            co_return Unexpected(Error::OutOfMemory);
-        }
-        auto ret = co_await stream.read(wbuf);
-        if (!ret || *ret == 0) {
-            co_return Unexpected(ret.error_or(Error::ZeroReturn));
-        }
-        streamBuf.commit(*ret);
+        co_return {};
     }
-}
+
+    auto shutdown() -> IoTask<void> {
+        if (auto res = co_await flush(); !res) {
+            co_return Err(res.error());
+        }
+        co_return co_await mStream.shutdown();
+    }
+
+    // Expose Readable if the stream is readable
+    auto read(MutableBuffer buffer) -> IoTask<size_t> requires Readable<T> {
+        return mStream.read(buffer);   
+    }
+
+    // Get the wrapped stream
+    auto stream() -> T & {
+        return mStream;
+    }
+
+    // Prepare write buffer
+    [[nodiscard]] 
+    auto prepare(size_t n) -> MutableBuffer {
+        return mBuffer.prepare(n);
+    }
+
+    auto commit(size_t n) -> void {
+        return mBuffer.commit(n);
+    }
+
+    // Detach the stream
+    [[nodiscard]] 
+    auto detach() && -> T {
+        return std::move(mStream);
+    }
+
+    auto operator =(BufWriter &&) -> BufWriter & = default;
+    auto operator <=>(const BufWriter &) const = default;
+
+    explicit operator bool() const noexcept {
+        return bool(mStream);
+    }
+private:
+    StreamBuffer mBuffer;
+    T mStream;
+};
+
 
 /**
- * @brief print the string into the stream buffer's input window
+ * @brief Wrap a readable & writable stream with a buffer
  * 
  * @tparam T 
- * @param stream 
- * @param fmt 
- * @param args 
- * @return size_t The number of bytes written (0 on failed to prepare the space)
  */
-template <StreamBufferLike T>
-inline auto vsprintfTo(T &streamBuf, const char *fmt, va_list args) -> size_t {
-    va_list copy;
-    va_copy(copy, args);
-    auto size = vsprintfSize(fmt, args);
-    auto buf = streamBuf.prepare(size + 1); // +1 for the null terminator
-    if (buf.empty() || size == 0) {
-        return 0;
-    }
-    size = ::vsnprintf(reinterpret_cast<char*>(buf.data()), buf.size(), fmt, copy);
-    streamBuf.commit(size); // commit discard the null terminator
-    va_end(copy);
-    return size;
-}
+template <Stream T = DynStream>
+class BufStream final : public StreamMethod<BufStream<T> > {
+public:
+    BufStream(T stream) : mStream(std::move(stream)) {}
+    BufStream(BufStream &&) = default;
+    BufStream() = default;
 
-/**
- * @brief print the string into the stream buffer's input window
- * 
- * @tparam T 
- * @param stream 
- * @param fmt 
- * @param ... 
- * @return size_t The number of bytes written (0 on failed to prepare the space)
- */
-template <StreamBufferLike T>
-inline auto sprintfTo(T &streamBuf, const char *fmt, ...) -> size_t {
-    va_list args;
-    va_start(args, fmt);
-    auto size = vsprintfTo(streamBuf, fmt, args);
-    va_end(args);
-    return size;
-}
-
-// Format support
-#if !defined(ILIAS_NO_FORMAT)
-/**
- * @brief Format the string into the stream buffer's input window
- * 
- * @tparam T 
- * @tparam Args 
- * @param streamBuf 
- * @param fmt 
- * @param args 
- * @return size_t The number of bytes written (0 on failed to prepare the space)
- */
-template <StreamBufferLike T, typename ...Args>
-inline auto formatTo(T &streamBuf, fmtlib::format_string<Args...> fmt, Args &&...args) -> size_t {
-    auto size = fmtlib::formatted_size(fmt, std::forward<Args>(args)...);
-    auto buf = streamBuf.prepare(size);
-    if (buf.empty() || size == 0) {
-        return 0;
+    // Readable
+    auto read(MutableBuffer buffer) -> IoTask<size_t> {
+        return mStream.stream().read(buffer);
     }
-    auto res = fmtlib::format_to_n(reinterpret_cast<char*>(buf.data()), buf.size(), fmt, std::forward<Args>(args)...);
-    buf.commit(res.size);
-    return res.size;
-}
-#endif // !defined(ILIAS_NO_FORMAT)
+
+    auto readline(std::string &str, std::string_view delim = "\n") -> IoTask<size_t> {
+        return mStream.stream().readline(str, delim);
+    }
+
+    auto getline(std::string_view delim = "\n") -> IoTask<std::string> {
+        return mStream.stream().getline(delim);
+    }
+
+    // Writable
+    auto write(Buffer buffer) -> IoTask<size_t> {
+        return mStream.write(buffer);
+    }
+
+    auto shutdown() -> IoTask<void> {
+        return mStream.shutdown();
+    }
+
+    auto flush() -> IoTask<void> {
+        return mStream.flush();
+    }
+
+    // Get
+    auto stream() -> T & {
+        return mStream.stream().stream();
+    }
+
+    // Reader
+    [[nodiscard]]
+    auto buffer() -> MutableBuffer {
+        return mStream.stream().buffer();
+    }
+
+    auto consume(size_t size) -> void {
+        return mStream.stream().consume(size);
+    }
+
+    // Writer
+    [[nodiscard]]
+    auto prepare(size_t n) -> MutableBuffer {
+        return mStream.prepare(n);
+    }
+
+    auto commit(size_t n) -> void {
+        return mStream.commit(n);
+    }
+
+    [[nodiscard]] 
+    auto detach() && -> T {
+        return std::move(stream());
+    }
+
+    auto operator =(BufStream &&) -> BufStream & = default;
+    auto operator <=>(const BufStream &) const = default;
+
+    explicit operator bool() const noexcept {
+        return bool(mStream);
+    }
+private:
+    BufWriter<BufReader<T> > mStream;
+};
+
+
+// For compatible with old code
+template <Stream T = DynStream>
+using BufferedStream = BufStream<T>;
 
 ILIAS_NS_END

@@ -11,14 +11,14 @@
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
-#include <ilias/task/task.hpp>
+#include <ilias/task/task.hpp> // Task<T>
+#include <ilias/task/utils.hpp> // unstoppable
 #include <utility>
 #include <csignal>
 #include <string>
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp>
-    #include <ilias/detail/win32.hpp>
 #else
     #include <sys/syscall.h> // We need to directly use syscall for pidfd
     #include <sys/poll.h>
@@ -35,7 +35,6 @@ ILIAS_NS_BEGIN
 class Process {
 public:
     Process() = default;
-    Process(IoContext &ctxt, fd_t handle);
     Process(const Process &) = delete;
     Process(Process &&other) noexcept;
     ~Process() { detach(); }
@@ -58,10 +57,10 @@ public:
      * 
      * @return auto 
      */
-    auto join() const;
+    auto join() const -> IoTask<void>;
 
     /**
-     * @brief Get the descriptor for the process
+     * @brief Get the descriptor for the process (Process HANDLE on Windows, pidfd on Linux)
      * 
      * @return fd_t 
      */
@@ -95,14 +94,6 @@ private:
     IoDescriptor *mDesc = nullptr; // The added descriptor in the context (only used in linux (pidfd))
     fd_t          mHandle = fd_t(-1); // The process handle (HANDLE in Windows, pidfd in linux)
 };
-
-inline Process::Process(IoContext &ctxt, fd_t handle) : mCtxt(&ctxt), mHandle(handle) {
-
-#if !defined(_WIN32)
-    mDesc = ctxt.addDescriptor(handle, IoDescriptor::Pipe).value_or(nullptr); // make a dirty hack to add the pidfd to the context, TODO: use a better way
-#endif
-
-}
 
 inline Process::Process(Process &&other) noexcept : 
     mCtxt(std::exchange(other.mCtxt, nullptr)),
@@ -148,16 +139,27 @@ inline auto Process::kill() const -> IoResult<void> {
     return Err(SystemError::fromErrno());
 }
 
-inline auto Process::join() const {
+inline auto Process::join() const -> IoTask<void> {
+    using namespace runtime;
+
+    auto token = co_await context::stopToken();
+    auto callback = StopCallback(token, [this]() {
+        auto _ = kill();
+    });
 
 #if defined(_WIN32)
-    return win32::WaitObject(mHandle, INFINITE, [this]() {
-        kill();
-    });
+    auto val = co_await unstoppable(mCtxt->waitObject(mHandle));
 #else
-    return mCtxt->poll(mDesc, POLLIN); // I don't want to include network module here, so just use the platform defines
+    auto val = co_await unstoppable(mCtxt->poll(mDesc, POLLIN)); // I don't want to include network module here, so just use the platform defines
 #endif
 
+    if (!val) {
+        if (val.error() == SystemError::Canceled) { // Try stopped
+            co_await context::stopped();
+        }
+        co_return Err(val.error());
+    }
+    co_return {};
 }
 
 inline auto Process::fd() const -> fd_t {
@@ -176,9 +178,9 @@ inline auto Process::operator=(Process &&other) -> Process & {
 }
 
 inline auto Process::spawn(std::string_view exec, std::vector<std::string_view> args) {
-    struct Awaiter : detail::GetContextAwaiter {
+    struct Awaiter : std::suspend_never {
         auto await_resume() {
-            return spawn(context(), exec, std::move(args));
+            return spawn(*IoContext::currentThread(), exec, std::move(args));
         }
         std::string_view exec;
         std::vector<std::string_view> args;

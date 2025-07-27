@@ -55,7 +55,7 @@ public:
      * @param buffer 
      * @return IoTask<size_t> 
      */
-    auto read(Buffer buffer) const -> IoTask<size_t> {
+    auto read(MutableBuffer buffer) const -> IoTask<size_t> {
         return mHandle.read(buffer, std::nullopt);
     }
 
@@ -65,7 +65,7 @@ public:
      * @param buffer 
      * @return IoTask<size_t> 
      */
-    auto write(MutableBuffer buffer) const -> IoTask<size_t> {
+    auto write(Buffer buffer) const -> IoTask<size_t> {
         return mHandle.write(buffer, std::nullopt);
     }
 
