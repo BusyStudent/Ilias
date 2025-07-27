@@ -23,7 +23,7 @@ TaskGroupBase::TaskGroupBase(TaskGroupBase &&other) noexcept :
 
 TaskGroupBase::~TaskGroupBase() {
     // Unbind the completion handlers detach the tasks and send stop signal
-    for (auto &task : mCompleted) { 
+    for (auto &task : mPending) { 
         task->setCompletionHandler(nullptr, nullptr);
         task->stop();
     }

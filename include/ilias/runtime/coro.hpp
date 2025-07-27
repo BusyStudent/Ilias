@@ -43,6 +43,10 @@ public:
         return *mExecutor;
     }
 
+    auto stopSource() const noexcept -> const StopSource & {
+        return mStopSource;
+    }
+
     auto setExecutor(Executor &executor) noexcept {
         mExecutor = &executor;
     }
@@ -192,6 +196,56 @@ friend class std::hash<CoroHandle>;
 };
 
 } // namespace runtime
+
+// Some builtin function for get environment
+namespace runtime::context {
+
+struct AwaiterBase {
+    auto await_ready() noexcept { return true; }
+    auto await_suspend(CoroHandle) noexcept {}
+    auto setContext(CoroContext &ctxt) noexcept { mCtxt = &ctxt; }
+
+    CoroContext *mCtxt = nullptr;
+};
+
+// Get the stop token from the current coroutine ctxt
+inline auto stopToken() noexcept {
+    struct Awaiter : AwaiterBase {
+        auto await_resume() noexcept -> StopToken {
+            return mCtxt->stopSource().get_token();
+        }
+    };
+
+    return Awaiter {};
+}
+
+// Get the executor
+inline auto executor() noexcept {
+    struct Awaiter : AwaiterBase {
+        auto await_resume() noexcept -> Executor & {
+            return mCtxt->executor();
+        }
+    };
+
+    return Awaiter {};
+}
+
+// Try set the context stopped, it only work when the stop was requested
+inline auto stopped() noexcept {
+    struct Awaiter : AwaiterBase {
+        auto await_ready() noexcept { // If stop requested, enter the stopped state
+            return !mCtxt->stopSource().stop_requested();
+        }
+        auto await_suspend(CoroHandle h) noexcept {
+            h.setStopped();
+        }
+        auto await_resume() noexcept {}
+    };
+
+    return Awaiter {};
+}
+
+} // namespace runtime::env
 
 ILIAS_NS_END
 
