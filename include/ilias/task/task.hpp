@@ -281,6 +281,19 @@ public:
         });
     }
 
+    auto id() const noexcept -> uintptr_t {
+        return reinterpret_cast<uintptr_t>(this);
+    }
+
+    // Check the spawn task is completed
+    auto isCompleted() const -> bool { return mCompleted; }
+
+    // Set the handle when the task is completed
+    auto setCompletionHandler(void (*handler)(TaskSpawnContext &, void *), void *user) -> void {
+        mCompletionHandler = handler;
+        mUser = user;
+    }
+
     static auto make(TaskHandle<> task) -> std::shared_ptr<TaskSpawnContext> {
         auto ptr = std::make_shared<TaskSpawnContext>(task);
         ptr->mSelf = ptr;
@@ -313,7 +326,8 @@ private:
     }
 
     std::shared_ptr<TaskSpawnContext> mSelf; // Used to avoid free self dur execution
-    void (*mCompletionHandler)(CoroContext &ctxt, void *) = nullptr; // The completion handler, call when the task is completed or stopped
+    std::string mName; // The name of the spawn task
+    void (*mCompletionHandler)(TaskSpawnContext &ctxt, void *) = nullptr; // The completion handler, call when the task is completed or stopped
     void  *mUser = nullptr;
     bool   mCompleted = false;
 friend class TaskSpawnAwaiterBase;
@@ -331,7 +345,7 @@ public:
         mReg.register_(caller.stopToken(), onStopRequested, this); // Forward the stop request
     }
 protected:
-    static auto onCompletion(CoroContext &, void *_self) -> void {
+    static auto onCompletion(TaskSpawnContext &, void *_self) -> void {
         auto &self = *static_cast<TaskSpawnAwaiterBase *>(_self);
         if (self.mPtr->isStopped() && self.mHandle.isStopRequested()) { // The target is stopped and the caller was requested to stop
             self.mHandle.setStopped();
@@ -491,10 +505,17 @@ class StopHandle {
 public:
     StopHandle() = default;
     StopHandle(std::nullptr_t) {}
+    StopHandle(const StopHandle &) = default;
+    StopHandle(StopHandle &&) = default;
+    explicit StopHandle(std::shared_ptr<task::TaskSpawnContext> ptr) : mPtr(std::move(ptr)) {}
 
     // Request the stop of the task
+    auto id() const { return mPtr->id(); }
     auto stop() const { return mPtr->stop(); }
-    auto isStopped() const { return mPtr->isStopped(); }
+
+    explicit operator bool() const noexcept {
+        return bool(mPtr);
+    }
 protected:
     std::shared_ptr<task::TaskSpawnContext> mPtr;
 };
@@ -504,9 +525,10 @@ class WaitHandle {
 public:
     WaitHandle() = default;
     WaitHandle(std::nullptr_t) {}
+    WaitHandle(const WaitHandle &) = delete;
+    WaitHandle(WaitHandle &&) = default;
 
     auto stop() const { return mPtr->stop(); }
-    auto isStopped() const { return mPtr->isStopped(); }
 
     // Blocking wait for the task to be done, nullopt on task stopped
     auto wait() && -> task::Option<T> { 
@@ -515,9 +537,18 @@ public:
         return ptr->value<T>();
     }
 
+    // Get the internal context ptr
+    auto _leak() && -> std::shared_ptr<task::TaskSpawnContext> {
+        return std::exchange(mPtr, nullptr);
+    }
+
     // Await for the task to be done, return the Option<T>, nullopt on task stopped
     auto operator co_await() && -> task::TaskSpawnAwaiter<T> {
         return { std::exchange(mPtr, nullptr) };
+    }
+
+    explicit operator bool() const noexcept {
+        return bool(mPtr);
     }
 private:
     std::shared_ptr<task::TaskSpawnContext> mPtr;
