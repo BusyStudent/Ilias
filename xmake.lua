@@ -6,3 +6,4 @@ set_encodings("utf-8")
 
 includes("./src")
 includes("./tests")
+includes("./example")

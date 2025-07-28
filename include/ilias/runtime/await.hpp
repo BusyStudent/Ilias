@@ -96,8 +96,23 @@ struct AwaitableResultImpl<Task<T> > { //< FAST PATH
     using type = T;
 };
 
+/**
+ * @brief Get the co_await result type of an awaitable
+ * 
+ * @tparam T 
+ */
 template <Awaitable T>
 using AwaitableResult = typename AwaitableResultImpl<T>::type;
+
+/**
+ * @brief Types that can be transformed to an awaitable
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept AwaitTransformable = requires(T t) {
+    { awaitTransform(std::forward<T>(t)) } -> Awaitable;
+};
 
 } // namespace runtime
 

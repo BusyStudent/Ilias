@@ -41,7 +41,7 @@ using Option = std::optional<typename ReplaceVoid<T>::type>;
 // Create an option with 'value'
 template <std::invocable Fn>
 auto makeOption(Fn &&fn) -> Option<std::invoke_result_t<Fn> > {
-    if  constexpr (std::is_same_v<std::invoke_result_t<Fn>, void>) {
+    if  constexpr (std::is_void_v<std::invoke_result_t<Fn> >) {
         fn();
         return std::monostate{};
     }
@@ -66,8 +66,13 @@ using option::Option;
 template <typename T>
 class TaskPromiseBase : public CoroPromise {
 public:
-    auto return_value(T value) noexcept {
+    auto return_value(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         mValue.emplace(std::move(value));
+    }
+
+    template <typename U>
+    auto return_value(U &&value) noexcept(std::is_nothrow_constructible_v<T, U>) {
+        mValue.emplace(std::forward<U>(value));
     }
 
     auto value() {
@@ -450,12 +455,12 @@ public:
      * 
      * @return handle_type 
      */
-    auto _leak() -> handle_type {
+    auto _leak() noexcept -> handle_type {
         return std::exchange(mHandle, nullptr);
     }
 
     // Set the context of the task, call on await_transform
-    auto setContext(runtime::CoroContext &context) -> void {
+    auto setContext(runtime::CoroContext &context) noexcept -> void {
         auto handle = task::TaskHandle<T>(mHandle);
         handle.setContext(context);
     }
@@ -471,7 +476,7 @@ public:
         return context.value<T>();
     }
 
-    auto operator =(Task<T> &&other) -> Task & {
+    auto operator =(Task<T> &&other) noexcept -> Task & {
         if (&other == this) {
             return *this;
         }
@@ -486,11 +491,11 @@ public:
         return bool(mHandle);
     }
 
-    auto operator co_await() && -> task::TaskAwaiter<T> {
+    auto operator co_await() && noexcept -> task::TaskAwaiter<T> {
         return task::TaskAwaiter<T>(_leak());
     }
 private:
-    Task(handle_type handle) : mHandle(handle) {}
+    Task(handle_type handle) noexcept : mHandle(handle) {}
 
     handle_type mHandle;
 friend class task::TaskPromise<T>;

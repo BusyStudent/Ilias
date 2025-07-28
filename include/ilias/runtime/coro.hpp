@@ -2,6 +2,7 @@
 #pragma once
 #include <ilias/runtime/executor.hpp>
 #include <ilias/runtime/token.hpp>
+#include <ilias/runtime/await.hpp>
 #include <functional>
 #include <coroutine> // std::coroutine_handle<>
 #include <exception> // std::current_exception
@@ -84,12 +85,17 @@ public:
         mException = std::current_exception();
     }
 
-    template <typename T>
+    template <Awaitable T>
     auto await_transform(T &&awaitable) -> decltype(auto) { // We apply the environment on here
         if constexpr (requires { awaitable.setContext(*mContext); }) { // It support it
             awaitable.setContext(*mContext);
         }
         return std::forward<T>(awaitable);
+    }
+
+    template <AwaitTransformable T>
+    auto await_transform(T &&transformable) {
+        return await_transform(awaitTransform(std::forward<T>(transformable)));
     }
 
     // Our runtime interface
