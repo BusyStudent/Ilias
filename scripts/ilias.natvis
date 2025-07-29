@@ -191,5 +191,14 @@
 </Type>
 
 <!-- Sync -->
+<Type Name="ilias::Mutex">
+	<DisplayString Condition="mLocked">locked</DisplayString>
+	<DisplayString Condition="!mLocked">unlocked</DisplayString>
+</Type>
+
+<Type Name="ilias::Event">
+	<DisplayString Condition="mIsSet">set</DisplayString>
+	<DisplayString Condition="!mIsSet">cleared</DisplayString>
+</Type>
 
 </AutoVisualizer>

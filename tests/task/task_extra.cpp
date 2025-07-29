@@ -44,6 +44,21 @@ CORO_TEST(Task, TaskGroup) {
         auto group = TaskGroup<void>();
         group.spawn(sleep(10ms));
     }
+
+    { // Test Stop
+        auto fn = []() -> Task<void> {
+            auto group = TaskGroup<void>();
+            for (auto i : views::iota(1, 100)) {
+                group.spawn(sleep(1s * i));
+            }
+            auto group2 = std::move(group); // Test Group move
+            auto result = co_await group2.waitAll();
+            ::abort(); // Should not reach here
+        };
+        auto handle = spawn(fn());
+        handle.stop();
+        EXPECT_FALSE(co_await std::move(handle));
+    }
     co_return;
 }
 

@@ -1,54 +1,36 @@
 #pragma once
 
-#include <ilias/cancellation_token.hpp>
-#include <ilias/task/executor.hpp>
-#include <ilias/task/task.hpp>
+#include <ilias/sync/detail/queue.hpp> // WaitQueue, WaitAwaiter
+#include <ilias/runtime/coro.hpp>
 #include <ilias/log.hpp>
-#include <list>
+#include <optional> // std::optional
 
 ILIAS_NS_BEGIN
 
 class Mutex;
 class MutexLock;
 
-namespace detail {
+namespace sync {
 
-class MutexAwaiter {
+class [[nodiscard]] MutexAwaiter : public WaitAwaiter<MutexAwaiter> {
 public:
-    MutexAwaiter(Mutex &m) : mMutex(m) { }
+    MutexAwaiter(Mutex &m);
 
     auto await_ready() const -> bool;
-    
-    auto await_suspend(CoroHandle caller) -> void;
-
-    auto await_resume() -> Result<void>;
-
-    auto onGotLock() -> void;
-protected:
-    auto onCancel() -> void;
-
+    auto await_resume() -> MutexLock;
+private:
     Mutex &mMutex;
-    CoroHandle mCaller;
-    CancellationToken::Registration mRegistration;
-    std::list<MutexAwaiter*>::iterator mIt;
-    bool mCanceled = false;
+friend class Mutex;
 };
 
-class MutexAwaiterEx : public MutexAwaiter {
-public:
-    using MutexAwaiter::MutexAwaiter;
-
-    auto await_resume() -> Result<MutexLock>;
-};
-
-} // namespace detail
+} // namespace sync
 
 
 /**
- * @brief The mutex lock, unlock when the object is destroyed
+ * @brief The mutex lock guard, unlock when the object is destroyed
  * 
  */
-class MutexLock {
+class [[nodiscard]] MutexLock {
 public:
     explicit MutexLock(Mutex &m);
     MutexLock(const MutexLock &) = delete;
@@ -62,19 +44,15 @@ private:
 };
 
 /**
- * @brief The coroutine mutex, not thread-safe
+ * @brief The coroutine mutex, not thread-safe, it only moveable or destroyable when no one await on it
  * 
  */
 class Mutex {
 public:
-    Mutex() = default;
-    
     Mutex(const Mutex &) = delete;
-
-    ~Mutex() {
-        ILIAS_CHECK(!mLocked);
-        ILIAS_ASSERT(mAwaiters.empty());
-    }
+    Mutex(Mutex &&) = delete;
+    Mutex() = default;
+    ~Mutex() = default;
 
     /**
      * @brief Check if the mutex is locked
@@ -90,62 +68,48 @@ public:
      * @return true 
      * @return false 
      */
-    auto tryLock() noexcept -> bool {
+    [[nodiscard]]
+    auto tryLock() noexcept -> std::optional<MutexLock> {
         if (mLocked) {
-            return false;
+            return std::nullopt;
         }
         mLocked = true;
-        return true;
+        return MutexLock(*this);
     }
 
     /**
-     * @brief Do Unlock the mutex
+     * @brief Manually unlock the mutex, if will crash if the mutex is not locked
+     * @note It is not recommend to use this function directly, use RAII lock instead
      * 
-     * @return auto 
      */
-    auto unlock() {
-        ILIAS_CHECK(mLocked);
-        ILIAS_TRACE("Mutex", "Unlock Mutex: {}, Awaiters in waiting list: {}", (void*) this, mAwaiters.size());
-        if (!mAwaiters.empty()) {
-            auto front = mAwaiters.front();
-            mAwaiters.pop_front();
-            front->onGotLock();
-            return; //< Still locked
-        }
+    auto unlockRaw() -> void {
+        ILIAS_ASSERT_MSG(mLocked, "Unlock a unlocked mutex");
         mLocked = false;
+        mQueue.wakeupOne();
     }
 
     /**
-     * @brief Lock the mutex
-     * 
-     * @return auto 
-     */
-    [[nodiscard("DO NOT FORGET TO USE co_await!!!")]]
-    auto lock() noexcept {
-        return detail::MutexAwaiter(*this);
-    }
-
-    /**
-     * @brief Lock the mutex and return a MutexLock object
+     * @brief Lock the mutex, return the lock guard
      * 
      * @return MutexLock 
      */
-    auto uniqueLock() noexcept {
-        return detail::MutexAwaiterEx(*this);
+    [[nodiscard]]
+    auto lock() noexcept {
+        return sync::MutexAwaiter(*this);
     }
 
     /**
-     * @brief Lock the mutex
+     * @brief Lock the mutex, return the Lock
      * 
      * @return MutexLock 
      */
     auto operator co_await() noexcept {
-        return detail::MutexAwaiter(*this);
+        return sync::MutexAwaiter(*this);
     }
 private:
-    std::list<detail::MutexAwaiter *> mAwaiters;
+    sync::WaitQueue mQueue;
     bool mLocked = false;
-friend class detail::MutexAwaiter;
+friend class sync::MutexAwaiter;
 };
 
 inline MutexLock::MutexLock(Mutex &m) : mMutex(&m) {
@@ -162,7 +126,7 @@ inline MutexLock::~MutexLock() {
 
 inline auto MutexLock::unlock() -> void {
     if (mMutex) {
-        mMutex->unlock();
+        mMutex->unlockRaw();
         mMutex = nullptr;
     }
 }
@@ -171,50 +135,16 @@ inline auto MutexLock::release() -> void {
     mMutex = nullptr;
 }
 
-inline auto detail::MutexAwaiter::await_ready() const -> bool {
-    // ILIAS_TRACE("Mutex", "Try to lock Mutex: {} Awaiter: {}", (void*) &mMutex, (void*) this);
-    return mMutex.tryLock();
+inline sync::MutexAwaiter::MutexAwaiter(Mutex &m) : WaitAwaiter(m.mQueue), mMutex(m) {
+
 }
 
-inline auto detail::MutexAwaiter::await_suspend(CoroHandle caller) -> void {
-    // Add self to the waiting list
-    ILIAS_TRACE("Mutex", "Waiting Mutex: {} Awaiter: {}, Calling stack: {}", (void*) &mMutex, (void*) this, backtrace(caller));
-    mCaller = caller;
-    mRegistration = mCaller.cancellationToken().register_([this]() { onCancel(); });
-    mMutex.mAwaiters.push_back(this);
-    mIt = mMutex.mAwaiters.end();
-    --mIt;
+inline auto sync::MutexAwaiter::await_ready() const -> bool {
+    return !mMutex.isLocked(); // If the mutex is not locked, we can get the lock immediately
 }
 
-inline auto detail::MutexAwaiter::await_resume() -> Result<void> {
-    if (mCanceled) {
-        return Unexpected(Error::Canceled);
-    }
-    // ILIAS_TRACE("Mutex", "Got lock Mutex: {} Awaiter: {}", (void*) &mMutex, (void*) this);
-    return {};
-}
-
-inline auto detail::MutexAwaiter::onGotLock() -> void {
-    mIt = mMutex.mAwaiters.end(); //< Already removed
-    mCaller.schedule();
-}
-
-inline auto detail::MutexAwaiter::onCancel() -> void {
-    if (mIt == mMutex.mAwaiters.end()) { //< Already got lock
-        return;
-    }
-    mMutex.mAwaiters.erase(mIt);
-    mIt = mMutex.mAwaiters.end();
-    mCanceled = true;
-    mCaller.schedule();
-    ILIAS_TRACE("Mutex", "Canceled Mutex: {} Awaiter: {}", (void*) &mMutex, (void*) this);
-}
-
-inline auto detail::MutexAwaiterEx::await_resume() -> Result<MutexLock> {
-    if (auto ret = MutexAwaiter::await_resume(); !ret) {
-        return Unexpected(ret.error());
-    }
-    return MutexLock {mMutex};
+inline auto sync::MutexAwaiter::await_resume() -> MutexLock {
+    return *mMutex.tryLock();
 }
 
 

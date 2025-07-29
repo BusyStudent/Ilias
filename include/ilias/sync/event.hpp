@@ -10,41 +10,29 @@
  */
 #pragma once
 
-#include <ilias/cancellation_token.hpp>
-#include <ilias/task/task.hpp>
+#include <ilias/sync/detail/queue.hpp> // WaitQueue, WaitAwaiter
+#include <ilias/runtime/coro.hpp>
 #include <ilias/log.hpp>
-#include <list>
+#include <optional> // std::optional
 
 ILIAS_NS_BEGIN
 
 class Event;
 
-namespace detail {
+namespace sync {
 
-/**
- * @brief The awaiter for waiting event to be set
- * 
- */
-class EventAwaiter {
+class [[nodiscard]] EventAwaiter : public WaitAwaiter<EventAwaiter> {
 public:
-    EventAwaiter(Event &event) : mEvent(event) { }
+    EventAwaiter(Event &event);
 
     auto await_ready() const -> bool;
-    auto await_suspend(CoroHandle) -> void;
-    auto await_resume() -> Result<void>;
-
-    auto notifySet() -> void;
+    auto await_resume() -> void;
 private:
-    auto onCancel() -> void;
-
     Event &mEvent;
-    CoroHandle mCaller;
-    bool mCanceled = false; //< Is Canceled ?
-    CancellationToken::Registration mReg;
-    std::list<EventAwaiter *>::iterator mIt;
+friend class Event;
 };
 
-} // namespace detail
+} // namespace sync
 
 /**
  * @brief The Coroutine Event object for sync, it is not thread safe
@@ -60,12 +48,10 @@ public:
     Event() = default;
     Event(Flag flag) : mAutoClear(flag & AutoClear) { }
     Event(const Event &) = delete;
-    ~Event() {
-        ILIAS_ASSERT(mAwaiters.empty());
-    }
+    ~Event() = default;
 
     /**
-     * @brief Clear thr event, make it to the unset
+     * @brief Clear the event
      * 
      */
     auto clear() -> void {
@@ -77,14 +63,8 @@ public:
      * 
      */
     auto set() -> void {
-        if (mIsSet) {
-            return;
-        }
-        for (const auto &awaiter : mAwaiters) {
-            awaiter->notifySet();
-        }
-        mAwaiters.clear();
-        mIsSet = !mAutoClear; // If auto clear, we don't set it
+        mQueue.wakeupAll();
+        mIsSet = !mAutoClear;
     }
 
     /**
@@ -103,6 +83,16 @@ public:
      * @return false 
      */
     auto isSet() const -> bool { return mIsSet; }
+    
+    /**
+     * @brief Wait the event to be set
+     * 
+     * @return sync::EventAwaiter 
+     */
+    [[nodiscard]]
+    auto wait() noexcept { 
+        return sync::EventAwaiter {*this}; 
+    }
 
     /**
      * @brief Waiting the event to be set
@@ -110,58 +100,25 @@ public:
      * @return co_await 
      */
     auto operator co_await() noexcept {
-        return detail::EventAwaiter {*this};
-    }
-
-    /**
-     * @brief Check the event is set ?
-     * 
-     * @return true 
-     * @return false 
-     */
-    explicit operator bool() const noexcept {
-        return mIsSet;
+        return sync::EventAwaiter {*this};
     }
 private:
-    std::list<detail::EventAwaiter *> mAwaiters;
+    sync::WaitQueue mQueue;
     bool mIsSet = false;
     bool mAutoClear = false;
-friend detail::EventAwaiter;
+friend sync::EventAwaiter;
 };
 
-inline auto detail::EventAwaiter::await_ready() const -> bool {
+inline sync::EventAwaiter::EventAwaiter(Event &event) : WaitAwaiter(event.mQueue), mEvent(event) {
+
+}
+
+inline auto sync::EventAwaiter::await_ready() const -> bool {
     return mEvent.isSet();
 }
 
-inline auto detail::EventAwaiter::await_suspend(CoroHandle caller) -> void {
-    mCaller = caller;
-    mEvent.mAwaiters.push_back(this);
-    mIt = mEvent.mAwaiters.end();
-    --mIt;
-    mReg = mCaller.cancellationToken().register_([this]() { onCancel(); });
-}
+inline auto sync::EventAwaiter::await_resume() -> void {
 
-inline auto detail::EventAwaiter::await_resume() -> Result<void> {
-    if (mCanceled) {
-        return Unexpected(Error::Canceled);
-    }
-    return {};
-}
-
-inline auto detail::EventAwaiter::onCancel() -> void {
-   if (mIt == mEvent.mAwaiters.end()) {
-        ILIAS_TRACE("Event", "Already got notify, cancel no-op");
-        return;
-   }
-   mEvent.mAwaiters.erase(mIt);
-   mIt = mEvent.mAwaiters.end();
-   mCanceled = true;
-   mCaller.schedule();
-}
-
-inline auto detail::EventAwaiter::notifySet() -> void {
-    mIt = mEvent.mAwaiters.end();
-    mCaller.schedule();
 }
 
 ILIAS_NS_END

@@ -41,6 +41,7 @@ namespace {
     auto getLevelString(LogLevel level) -> std::string_view {
         switch (level) {
             case LogLevel::Trace: return "TRACE";
+            case LogLevel::Debug: return "DEBUG";
             case LogLevel::Info:  return "INFO ";
             case LogLevel::Warn:  return "WARN ";
             case LogLevel::Error: return "ERROR";
@@ -51,6 +52,7 @@ namespace {
     auto getLevelColor(LogLevel level) -> const char * {
         switch (level) {
             case LogLevel::Trace: return "\033[1;34m";
+            case LogLevel::Debug: return "\033[1;36m";
             case LogLevel::Info:  return "\033[1;32m";
             case LogLevel::Warn:  return "\033[1;33m";
             case LogLevel::Error: return "\033[1;31m";
@@ -75,7 +77,17 @@ auto write(LogLevel level, std::string_view mod, std::source_location where, std
 
 #if defined(ILIAS_USE_SPDLOG)
     // Forward to spdlog
-    #error "spdlog is not supported yet"
+    spdlog::source_loc loc(where.file_name(), where.line(), where.function_name());
+    spdlog::level::level_enum spdlog_level = spdlog::level::info;
+    switch (level) {
+        case LogLevel::Trace: spdlog_level = spdlog::level::trace; break;
+        case LogLevel::Debug: spdlog_level = spdlog::level::debug; break;
+        case LogLevel::Info:  spdlog_level = spdlog::level::info;  break;
+        case LogLevel::Warn:  spdlog_level = spdlog::level::warn;  break;
+        case LogLevel::Error: spdlog_level = spdlog::level::err;   break;
+        case LogLevel::Off: spdlog_level = spdlog::level::off;   break;
+    }
+    spdlog::log(loc, spdlog_level, "[{}] {}", mod, content);
 #else // Use built-in implementation
     // Set the color
     std::string buf;

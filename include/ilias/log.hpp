@@ -39,6 +39,7 @@ namespace logging {
  */
 enum class LogLevel {
     Trace,
+    Debug,
     Info,
     Warn,
     Error,
@@ -69,6 +70,7 @@ ILIAS_NS_END
 #define ILIAS_ERROR(mod, ...) ILIAS_LOG(ILIAS_ERROR_LEVEL, mod, __VA_ARGS__)
 #define ILIAS_INFO(mod, ...) ILIAS_LOG(ILIAS_INFO_LEVEL, mod, __VA_ARGS__)
 #define ILIAS_TRACE(mod, ...) ILIAS_LOG(ILIAS_TRACE_LEVEL, mod, __VA_ARGS__)
+#define ILIAS_DEBUG(mod, ...) ILIAS_LOG(ILIAS_DEBUG_LEVEL, mod, __VA_ARGS__)
 
 #define ILIAS_TRACE_LEVEL ILIAS_LOG_MAKE_LEVEL(Trace)
 #define ILIAS_INFO_LEVEL  ILIAS_LOG_MAKE_LEVEL(Info)

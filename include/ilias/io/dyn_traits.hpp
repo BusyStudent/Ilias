@@ -43,7 +43,7 @@ inline auto deleteProxy(void *object) -> void {
 
 template <Stream T>
 inline auto streamVtbl() -> const StreamVtbl * {
-    static constexpr StreamVtbl vtbl = {
+    static constinit StreamVtbl vtbl = {
         .read     = readProxy<T>,
         .write    = writeProxy<T>,
         .shutdown = shutdownProxy<T>,

@@ -103,6 +103,7 @@ auto TaskGroupAwaiterBase::await_suspend(CoroHandle caller) -> void {
 
 auto TaskGroupAwaiterBase::onCompletion() -> void {
     if (mStopRequested) {
+        auto _ = mGroup.nextCompletion(); // Drop the completion
         // Check all the task has been completed
         if (mGroup.mPending.size() == 0) {
             mCaller.setStopped();
