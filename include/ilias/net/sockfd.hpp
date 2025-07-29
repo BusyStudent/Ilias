@@ -166,16 +166,6 @@ public:
     }
 
     /**
-     * @brief Bind the socket to the specified ip endpoint
-     * 
-     * @param endpoint The const IPEndpoint to bind to
-     * @return IoResult<void> 
-     */
-    auto bind(const IPEndpoint &endpoint) const -> IoResult<void> {
-        return bind(EndpointView(endpoint));
-    }
-
-    /**
      * @brief Set blocking mode for the socket
      * 
      * @param blocking 

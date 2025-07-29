@@ -37,12 +37,13 @@ class ILIAS_API IoCategory final : public std::error_category {
 public:
     auto name() const noexcept -> const char* override;
     auto message(int value) const -> std::string override;
-    
+    auto equivalent(int value, const std::error_condition &other) const noexcept -> bool override;
+
     static auto instance() -> const IoCategory &;
 };
 
 /**
- * @brief The platform independent error code for io operations
+ * @brief The platform independent error code for io operations, if user want to compare, use IoErrorKind::XXX
  * 
  */
 class ILIAS_API IoError {
@@ -104,6 +105,13 @@ public:
     auto toString() const -> std::string;
 
     /**
+     * @brief Convert the code to the std::errc
+     * 
+     * @return std::errc 
+     */
+    auto toStd() const -> std::errc;
+
+    /**
      * @brief Compare 
      * 
      */
@@ -116,10 +124,24 @@ private:
     Code mErr = Ok;
 };
 
+/**
+ * @brief Convert the code to std::error_condition, useful when compare with std::error_code
+ * 
+ * @param err 
+ * @return std::error_condition 
+ */
+inline auto toKind(IoError err) noexcept -> std::error_condition {
+    return {int(err), IoCategory::instance()};
+}
+
+inline auto toKind(IoError::Code err) noexcept -> std::error_condition {
+    return {int(err), IoCategory::instance()};
+}
+
 ILIAS_DECLARE_ERROR(IoError::Code, IoCategory);
 ILIAS_DECLARE_ERROR(IoError, IoCategory);
 
-template <typename T>
+template <IntoError T>
 inline auto make_error_code(T t) noexcept -> std::error_code {
     return {static_cast<int>(t), _ilias_error_category_of(t)};
 }

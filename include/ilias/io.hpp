@@ -16,6 +16,7 @@
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/fd.hpp>
 #include <ilias/io/dyn_traits.hpp>
+#include <ilias/io/duplex.hpp>
 #include <ilias/io/traits.hpp>
 #include <ilias/io/stream.hpp>
 #include <ilias/io/method.hpp>

@@ -1,4 +1,6 @@
 #include <ilias/io/system_error.hpp>
+#include <ilias/io/duplex.hpp>
+#include <ilias/io/stream.hpp>
 #include <ilias/io/error.hpp>
 #include <tuple>
 
@@ -69,6 +71,7 @@ auto enum2str(std::index_sequence<N...>, T i) -> std::string_view {
 
 } // namespace reflect
 
+#pragma region IoError
 // Io
 auto IoCategory::message(int err) const -> std::string {
     return IoError(err).toString();
@@ -83,11 +86,59 @@ auto IoCategory::instance() -> const IoCategory & {
     return instance;
 }
 
+auto IoCategory::equivalent(int value, const std::error_condition &other) const noexcept -> bool {
+    if (other.category() == instance()) { // Compare with self
+        return value == other.value();
+    }
+    if (other.category() == std::generic_category()) { // Compare with std::errc
+        return IoError(value).toStd() == std::errc(other.value());
+    }
+    return false;
+}
+
 auto IoError::toString() const -> std::string {
     auto view = reflect::enum2str(std::make_index_sequence<IoError::Other>(), mErr);
     return std::string(view);
 }
 
+auto IoError::toStd() const -> std::errc {
+    switch (mErr) {
+        case IoError::Ok                        : return std::errc();
+        case IoError::AccessDenied              : return std::errc::permission_denied;
+        case IoError::AddressInUse              : return std::errc::address_in_use;
+        case IoError::AddressNotAvailable       : return std::errc::address_not_available;
+        case IoError::AddressFamilyNotSupported : return std::errc::address_family_not_supported;
+        case IoError::AlreadyInProgress         : return std::errc::operation_in_progress;
+        case IoError::BadFileDescriptor         : return std::errc::bad_file_descriptor;
+        case IoError::ConnectionAborted         : return std::errc::connection_aborted;
+        case IoError::ConnectionRefused         : return std::errc::connection_refused;
+        case IoError::ConnectionReset           : return std::errc::connection_reset;
+        case IoError::DestinationAddressRequired: return std::errc::destination_address_required;
+        case IoError::BadAddress                : return std::errc::bad_address;
+        case IoError::HostDown                  : return std::errc::host_unreachable;
+        case IoError::HostUnreachable           : return std::errc::host_unreachable;
+        case IoError::InProgress                : return std::errc::operation_in_progress;
+        case IoError::InvalidArgument           : return std::errc::invalid_argument;
+        case IoError::SocketIsConnected         : return std::errc::already_connected;
+        case IoError::TooManyOpenFiles          : return std::errc::too_many_files_open;
+        case IoError::MessageTooLarge           : return std::errc::message_size;
+        case IoError::NetworkDown               : return std::errc::network_down;
+        case IoError::NetworkReset              : return std::errc::network_reset;
+        case IoError::NetworkUnreachable        : return std::errc::network_unreachable;
+        case IoError::NoBufferSpaceAvailable    : return std::errc::no_buffer_space;
+        case IoError::ProtocolOptionNotSupported: return std::errc::no_protocol_option;
+        case IoError::SocketIsNotConnected      : return std::errc::not_connected;
+        case IoError::NotASocket                : return std::errc::not_a_socket;
+        case IoError::OperationNotSupported     : return std::errc::operation_not_supported;
+        case IoError::ProtocolNotSupported      : return std::errc::protocol_not_supported;
+        case IoError::TimedOut                  : return std::errc::timed_out;
+        case IoError::WouldBlock                : return std::errc::operation_would_block;
+        case IoError::Canceled                  : return std::errc::operation_canceled;
+        default                                 : return std::errc::io_error;
+    }
+}
+
+#pragma region SystemError
 // System
 auto SystemCategory::message(int err) const -> std::string {
     return SystemError(err).toString();
@@ -98,50 +149,25 @@ auto SystemCategory::name() const noexcept -> const char * {
 }
 
 auto SystemCategory::default_error_condition(int err) const noexcept -> std::error_condition {
-    auto ec = SystemError(err).translate();
-    return ec;
+    return SystemError(err).toIoError().toStd();
+}
+
+auto SystemCategory::equivalent(int value, const std::error_condition &other) const noexcept -> bool {
+    if (other.category() == instance()) {
+        return value == other.value();
+    }
+    if (other.category() == IoCategory::instance()) { // IoError
+        return SystemError(value).toIoError() == IoError(other.value());
+    }
+    if (other.category() == std::generic_category()) { // std::errc
+        return SystemError(value).toIoError().toStd() == std::errc(other.value());
+    }
+    return false;
 }
 
 auto SystemCategory::instance() -> const SystemCategory & {
     static const SystemCategory instance;
     return instance;
-}
-
-auto SystemError::translate() const -> std::errc {
-    switch (mErr) {
-        case SystemError::Ok                        : return std::errc();
-        case SystemError::AccessDenied              : return std::errc::permission_denied;
-        case SystemError::AddressInUse              : return std::errc::address_in_use;
-        case SystemError::AddressNotAvailable       : return std::errc::address_not_available;
-        case SystemError::AddressFamilyNotSupported : return std::errc::address_family_not_supported;
-        case SystemError::AlreadyInProgress         : return std::errc::operation_in_progress;
-        case SystemError::BadFileDescriptor         : return std::errc::bad_file_descriptor;
-        case SystemError::ConnectionAborted         : return std::errc::connection_aborted;
-        case SystemError::ConnectionRefused         : return std::errc::connection_refused;
-        case SystemError::ConnectionReset           : return std::errc::connection_reset;
-        case SystemError::DestinationAddressRequired: return std::errc::destination_address_required;
-        case SystemError::BadAddress                : return std::errc::invalid_argument;
-        case SystemError::HostDown                  : return std::errc::host_unreachable;
-        case SystemError::HostUnreachable           : return std::errc::host_unreachable;
-        case SystemError::InProgress                : return std::errc::operation_in_progress;
-        case SystemError::InvalidArgument           : return std::errc::invalid_argument;
-        case SystemError::SocketIsConnected         : return std::errc::already_connected;
-        case SystemError::TooManyOpenFiles          : return std::errc::too_many_files_open;
-        case SystemError::MessageTooLarge           : return std::errc::message_size;
-        case SystemError::NetworkDown               : return std::errc::network_down;
-        case SystemError::NetworkReset              : return std::errc::network_reset;
-        case SystemError::NetworkUnreachable        : return std::errc::network_unreachable;
-        case SystemError::NoBufferSpaceAvailable    : return std::errc::no_buffer_space;
-        case SystemError::ProtocolOptionNotSupported: return std::errc::no_protocol_option;
-        case SystemError::SocketIsNotConnected      : return std::errc::not_connected;
-        case SystemError::NotASocket                : return std::errc::not_a_socket;
-        case SystemError::OperationNotSupported     : return std::errc::operation_not_supported;
-        case SystemError::ProtocolNotSupported      : return std::errc::protocol_not_supported;
-        case SystemError::TimedOut                  : return std::errc::timed_out;
-        case SystemError::WouldBlock                : return std::errc::operation_would_block;
-        case SystemError::Canceled                  : return std::errc::operation_canceled;
-        default                                     : return std::errc::io_error;
-    }
 }
 
 auto SystemError::toString() const -> std::string {
@@ -164,5 +190,189 @@ auto SystemError::toString() const -> std::string {
 
 }
 
+auto SystemError::toIoError() const -> IoError {
+    switch (mErr) {
+        case SystemError::Ok                        : return IoError::Ok;
+        case SystemError::AccessDenied              : return IoError::AccessDenied;
+        case SystemError::AddressInUse              : return IoError::AddressInUse;
+        case SystemError::AddressNotAvailable       : return IoError::AddressNotAvailable;
+        case SystemError::AddressFamilyNotSupported : return IoError::AddressFamilyNotSupported;
+        case SystemError::AlreadyInProgress         : return IoError::AlreadyInProgress;
+        case SystemError::BadFileDescriptor         : return IoError::BadFileDescriptor;
+        case SystemError::ConnectionAborted         : return IoError::ConnectionAborted;
+        case SystemError::ConnectionRefused         : return IoError::ConnectionRefused;
+        case SystemError::ConnectionReset           : return IoError::ConnectionReset;
+        case SystemError::DestinationAddressRequired: return IoError::DestinationAddressRequired;
+        case SystemError::BadAddress                : return IoError::BadAddress;
+        case SystemError::HostDown                  : return IoError::HostDown;
+        case SystemError::HostUnreachable           : return IoError::HostUnreachable;
+        case SystemError::InProgress                : return IoError::InProgress;
+        case SystemError::InvalidArgument           : return IoError::InvalidArgument;
+        case SystemError::SocketIsConnected         : return IoError::SocketIsConnected;
+        case SystemError::TooManyOpenFiles          : return IoError::TooManyOpenFiles;
+        case SystemError::MessageTooLarge           : return IoError::MessageTooLarge;
+        case SystemError::NetworkDown               : return IoError::NetworkDown;
+        case SystemError::NetworkReset              : return IoError::NetworkReset;
+        case SystemError::NetworkUnreachable        : return IoError::NetworkUnreachable;
+        case SystemError::NoBufferSpaceAvailable    : return IoError::NoBufferSpaceAvailable;
+        case SystemError::ProtocolOptionNotSupported: return IoError::ProtocolOptionNotSupported;
+        case SystemError::SocketIsNotConnected      : return IoError::SocketIsNotConnected;
+        case SystemError::NotASocket                : return IoError::NotASocket;
+        case SystemError::OperationNotSupported     : return IoError::OperationNotSupported;
+        case SystemError::ProtocolFamilyNotSupported: return IoError::ProtocolFamilyNotSupported;
+        case SystemError::ProtocolNotSupported      : return IoError::ProtocolNotSupported;
+        case SystemError::SocketShutdown            : return IoError::SocketShutdown;
+        case SystemError::SocketTypeNotSupported    : return IoError::SocketTypeNotSupported;
+        case SystemError::TimedOut                  : return IoError::TimedOut;
+        case SystemError::WouldBlock                : return IoError::WouldBlock;
+        case SystemError::Canceled                  : return IoError::Canceled;
+        default                                     : return IoError::Other;
+    }
+}
+
+#pragma region DuplexStream
+
+struct ByteChannel {
+    StreamBuffer buffer;
+    runtime::CoroHandle reader; // suspend on read
+    runtime::CoroHandle writer; // suspend on write
+    size_t maxSize = 0;
+    bool readerClose = false;
+    bool writerClose = false;
+};
+
+struct DuplexStream::Impl {
+    ByteChannel read;
+    ByteChannel write;
+};
+
+auto DuplexStream::make(size_t size) -> std::pair<DuplexStream, DuplexStream> {
+    if (size == 0) {
+        ILIAS_THROW(std::invalid_argument("Size must be greater than 0"));
+    }
+    auto impl = std::make_shared<Impl>();
+    impl->read.maxSize = size;
+    impl->write.maxSize = size;
+
+    return std::pair(
+        DuplexStream(impl, false), // We use bool flip, to make aother stream write on read buffer and read on write buffer
+        DuplexStream(impl, true)
+    );
+}
+
+namespace {
+    auto wakeupIf(runtime::CoroHandle &handle) -> void {
+        if (handle) {
+            handle.schedule();
+            handle = nullptr;
+        }
+    }
+
+    auto shutdownImpl(DuplexStream::Impl *d, bool flip) -> void {
+        auto &readChan = flip ? d->write : d->read;
+        auto &writeChan = flip ? d->read : d->write;
+
+        readChan.readerClose = true;
+        writeChan.writerClose = true;
+        wakeupIf(readChan.writer);
+        wakeupIf(writeChan.reader);
+    }
+}
+
+auto DuplexStream::read(MutableBuffer buffer) -> IoTask<size_t> {
+    struct Awaiter {
+        auto await_ready() -> bool {
+            return !chan.buffer.empty() || chan.writerClose; // Has data or no-none will write
+        }
+        auto await_suspend(runtime::CoroHandle h) -> void {
+            chan.reader = h;
+            handle = h;
+            reg.register_<&Awaiter::onStopRequested>(h.stopToken(), this);
+        }
+        auto await_resume() {
+            return chan.buffer.data();
+        }
+        auto onStopRequested() -> void {
+            if (!chan.reader) { // We are scheduled or already stopped
+                return;
+            }
+            chan.reader = nullptr;
+            handle.setStopped();
+        }
+
+        ByteChannel &chan;
+        runtime::CoroHandle handle;
+        runtime::StopRegistration reg;
+    };
+
+    auto &chan = mFlip ? d->write : d->read;
+
+    // Read data here
+    auto span = co_await Awaiter{ .chan = chan };
+    auto left = std::min(span.size(), buffer.size());
+    ::memcpy(buffer.data(), span.data(), left);
+    chan.buffer.consume(left);
+
+    // Wakeup writer if exists
+    wakeupIf(chan.writer);
+    co_return left;
+}
+
+auto DuplexStream::write(Buffer buffer) -> IoTask<size_t> {
+    struct Awaiter {
+        auto await_ready() -> bool {
+            return chan.buffer.size() < chan.maxSize || chan.readerClose; // Has space or no-one will read
+        }
+        auto await_suspend(runtime::CoroHandle h) -> void {
+            chan.writer = h;
+            handle = h;
+            reg.register_<&Awaiter::onStopRequested>(h.stopToken(), this);
+        }
+        auto await_resume() {}
+        auto onStopRequested() -> void {
+            if (!chan.writer) { // We are scheduled or already stopped
+                return;
+            }
+            chan.writer = nullptr;
+            handle.setStopped();
+        }
+
+        ByteChannel &chan;
+        runtime::CoroHandle handle;
+        runtime::StopRegistration reg;
+    };
+
+    auto &chan = mFlip ? d->read : d->write;    
+    co_await Awaiter{ .chan = chan };
+
+    // Write data here
+    if (chan.readerClose) {
+        co_return 0; // EOF, no data written
+    }
+    auto left = std::min(buffer.size(), chan.maxSize - chan.buffer.size());
+    auto span = chan.buffer.prepare(left);
+    ::memcpy(span.data(), buffer.data(), left);
+    chan.buffer.commit(left);
+
+    // Wakeup reader if exists
+    wakeupIf(chan.reader);
+    co_return left;
+}
+
+auto DuplexStream::shutdown() -> IoTask<void> {
+    shutdownImpl(d.get(), mFlip);
+    co_return {};
+}
+
+auto DuplexStream::flush() -> IoTask<void> {
+    co_return {}; // no-op
+}
+
+auto DuplexStream::close() -> void {
+    if (d) {
+        shutdownImpl(d.get(), mFlip);
+    }
+    d.reset();
+}
 
 ILIAS_NS_END

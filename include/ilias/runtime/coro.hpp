@@ -119,6 +119,7 @@ public:
     template <typename T> requires (std::is_base_of_v<CoroPromise, T>)
     CoroHandle(std::coroutine_handle<T> handle) noexcept : mHandle(handle), mPromise(&handle.promise()) {}
     CoroHandle(const CoroHandle &) = default;
+    CoroHandle(nullptr_t) {};
     CoroHandle() = default;
 
     // std coroutine interface

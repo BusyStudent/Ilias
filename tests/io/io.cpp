@@ -1,4 +1,4 @@
-#include <ilias/fs/console.hpp>
+#include <ilias/task.hpp>
 #include <ilias/io.hpp>
 #include "testing.hpp"
 
@@ -44,19 +44,33 @@ private:
 static_assert(Readable<BufReader<SpanReader> >);
 static_assert(!Writable<BufReader<SpanReader> >);
 
+TEST(Io, Error) {
+    auto ec = make_error_code(IoError::UnexpectedEOF);
+    auto canceled = make_error_code(SystemError::Canceled);
+
+    ASSERT_EQ(ec, IoError::UnexpectedEOF);
+    ASSERT_EQ(ec, toKind(IoError::UnexpectedEOF));
+    
+    ASSERT_EQ(canceled, SystemError::Canceled);
+    ASSERT_EQ(canceled, toKind(IoError::Canceled));
+    ASSERT_EQ(canceled, std::errc::operation_canceled);
+
+    ASSERT_EQ(make_error_code(IoError::Canceled), std::errc::operation_canceled);
+}
+
 CORO_TEST(Io, Read) {
     char buffer[13];
     auto reader = SpanReader("Hello, world!"_bin);
-    auto n = co_await reader.read(makeBuffer(buffer));
-    EXPECT_EQ(n, 13);
+
+    EXPECT_EQ(co_await reader.read(makeBuffer(buffer)), 13);
+    EXPECT_EQ(std::string_view(buffer, 13), "Hello, world!");
 }
 
 CORO_TEST(Io, Write) {
     auto content = std::string();
     auto writer = StringWriter(content);
-    auto n = co_await writer.write("Hello, world!"_bin);
 
-    EXPECT_EQ(n, 13);
+    EXPECT_EQ(co_await writer.write("Hello, world!"_bin), 13);
     EXPECT_EQ(content, "Hello, world!");
 }
 
@@ -67,7 +81,7 @@ CORO_TEST(Io, BufRead) {
 
         EXPECT_EQ(co_await bufReader.getline(), "Hello, First!");
         EXPECT_EQ(co_await bufReader.getline(), "Hello, Next!");
-        EXPECT_EQ(co_await bufReader.getline(), Err(IoError::UnexpectedEOF));
+        EXPECT_EQ(co_await bufReader.getline(), Err(toKind(IoError::UnexpectedEOF)));
     }
 
     {
@@ -77,7 +91,7 @@ CORO_TEST(Io, BufRead) {
         EXPECT_EQ(co_await bufReader.getline(), "Hello, First!");
         EXPECT_EQ(co_await bufReader.getline(), "Hello, Next!");
         EXPECT_EQ(co_await bufReader.getline(), "Hello, Final!");
-        EXPECT_EQ(co_await bufReader.getline(), Err(IoError::UnexpectedEOF));
+        EXPECT_EQ(co_await bufReader.getline(), Err(toKind(IoError::UnexpectedEOF)));
     }
 }
 
@@ -92,6 +106,29 @@ CORO_TEST(Io, BufWrite) {
     EXPECT_TRUE(content.empty());
     EXPECT_TRUE(co_await bufWriter.flush());
     EXPECT_EQ(content, "Hello, First!\nHello, Next!\n");
+}
+
+CORO_TEST(Io, Duplex) {
+    auto [a, b] = DuplexStream::make(10);
+    auto sender = [](auto &stream) -> Task<void> {
+        EXPECT_EQ(co_await stream.writeAll("Hello, world!"_bin), 13);
+    };
+    auto receiver = [](auto &stream) -> Task<void> {
+        char buffer[13];
+        EXPECT_EQ(co_await stream.readAll(makeBuffer(buffer)), 13);
+        EXPECT_EQ(std::string_view(buffer, 13), "Hello, world!");
+    };
+
+    co_await whenAll(sender(a), receiver(b));
+    co_await whenAll(sender(b), receiver(a));
+    co_await whenAll(receiver(b), sender(a));
+    co_await whenAll(receiver(a), sender(b));
+
+    // Try broken
+    a.close();
+    std::byte tmp[10];
+    EXPECT_EQ(co_await b.write("Hello, world!"_bin), 0);
+    EXPECT_EQ(co_await b.read(makeBuffer(tmp)), 0);
 }
 
 auto main(int argc, char **argv) -> int {

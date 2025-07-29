@@ -37,6 +37,7 @@ class ILIAS_API SystemCategory final : public std::error_category {
 public:
     auto name() const noexcept -> const char* override;
     auto message(int value) const -> std::string override;
+    auto equivalent(int value, const std::error_condition &other) const noexcept -> bool override;
     auto default_error_condition(int value) const noexcept -> std::error_condition override;
     
     static auto instance() -> const SystemCategory &;
@@ -113,11 +114,11 @@ public:
     auto toString() const -> std::string;
 
     /**
-     * @brief Translate to IoError
+     * @brief Convert to IoError
      * 
      * @return IoError 
      */
-    auto translate() const -> std::errc;
+    auto toIoError() const -> IoError;
 
     /**
      * @brief Compare with another SystemError

@@ -34,6 +34,7 @@
     static auto _ilias_main(__VA_ARGS__) -> Task<decltype(_ilias_tags())>;      \
     auto main(int argc, char ** argv) -> int {                                  \
         ctxt context;                                                           \
+        context.install();                                                      \
         auto makeTask = [&](auto callable) {                                    \
             if constexpr (std::invocable<decltype(callable)>) {                 \
                 return callable();                                              \
@@ -49,11 +50,11 @@
         auto invoke = [&](auto callable) {                                      \
             auto task = makeTask(callable);                                     \
             if constexpr (std::is_same_v<decltype(task), Task<void> >) {        \
-                task.wait();                                                    \
+                std::move(task).wait();                                         \
                 return 0;                                                       \
             }                                                                   \
             else {                                                              \
-                return task.wait();                                             \
+                return std::move(task).wait();                                  \
             }                                                                   \
         };                                                                      \
         return invoke(_ilias_main);                                             \

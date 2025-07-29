@@ -600,7 +600,7 @@ private:
  * 
  * @tparam T 
  */
-template <Stream T = DynStream>
+template <Stream T>
 class BufStream final : public StreamMethod<BufStream<T> > {
 public:
     BufStream(T stream) : mStream(std::move(stream)) {}
@@ -675,7 +675,7 @@ private:
 
 
 // For compatible with old code
-template <Stream T = DynStream>
+template <Stream T>
 using BufferedStream = BufStream<T>;
 
 ILIAS_NS_END
