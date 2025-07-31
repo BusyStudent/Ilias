@@ -40,6 +40,7 @@ public:
     // Wakeup one, no-op on empty queue
     auto wakeupOne() -> void;
     auto wakeupAll() -> void;
+    auto operator =(const WaitQueue &) = delete;
 private:
     std::list<AwaiterBase *> mAwaiters;
 friend class AwaiterBase;

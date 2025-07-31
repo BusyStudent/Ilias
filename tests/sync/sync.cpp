@@ -1,5 +1,6 @@
 #include <ilias/sync/mutex.hpp>
 #include <ilias/sync/event.hpp>
+#include <ilias/sync/semaphore.hpp>
 #include <ilias/task.hpp>
 #include "testing.hpp"
 
@@ -77,6 +78,25 @@ CORO_TEST(Sync, Event) {
     event.set(); // Wake up the task
     
     EXPECT_TRUE(co_await std::move(handle));
+}
+
+CORO_TEST(Sync, Semaphore) {
+    Semaphore sem(10);
+    auto premit = co_await sem.acquire();
+    EXPECT_EQ(sem.available(), 9);
+    auto premit2 = co_await sem.acquire();
+    EXPECT_EQ(sem.available(), 8);
+
+    auto group = TaskGroup<void>();
+    for (int i = 0; i < 100; ++i) {
+        group.spawn([&]() -> Task<void> {
+            auto _ = co_await sem.acquire();
+            co_await sleep(10ms);
+        });
+    }
+    auto result = co_await group.waitAll();
+    EXPECT_EQ(result.size(), 100);
+    EXPECT_EQ(sem.available(), 8);
 }
 
 auto main(int argc, char **argv) -> int {

@@ -37,7 +37,7 @@ using Box = std::unique_ptr<T, DeleteLater>;
 template <typename ...Args>
 class QSignal {
 public:
-    using Tuple = std::tuple<Args...>; // Replace void with std::monostate
+    using Tuple = std::tuple<Args...>;
 
     /**
      * @brief Construct a new QSignal object, with the same argument as the signal

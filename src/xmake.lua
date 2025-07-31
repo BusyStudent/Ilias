@@ -96,7 +96,7 @@ target("ilias")
     end
 
     -- Default verison 0.3.0
-    set_configvar("ILIAS_VERSION_MAJOR", "0")
-    set_configvar("ILIAS_VERSION_MINOR", "3")
-    set_configvar("ILIAS_VERSION_PATCH", "0")
+    set_configvar("ILIAS_VERSION_MAJOR", 0)
+    set_configvar("ILIAS_VERSION_MINOR", 3)
+    set_configvar("ILIAS_VERSION_PATCH", 0)
 target_end()

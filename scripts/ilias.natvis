@@ -201,4 +201,8 @@
 	<DisplayString Condition="!mIsSet">cleared</DisplayString>
 </Type>
 
+<Type Name="ilias::Semaphore">
+	<DisplayString>{mCount}</DisplayString>
+</Type>
+
 </AutoVisualizer>

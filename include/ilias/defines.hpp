@@ -88,6 +88,8 @@
 
 // Utils macro
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT((x) && (msg))
+#define ILIAS_STRINGIFY_(x) #x
+#define ILIAS_STRINGIFY(x) ILIAS_STRINGIFY_(x)
 #define ILIAS_NS_BEGIN namespace ILIAS_NAMESPACE {
 #define ILIAS_NS_END }
 

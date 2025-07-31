@@ -91,6 +91,7 @@ public:
         ZeroReturn,                  //< The operation can't be completed because the lower level io call returned zero
 
         Other,                       //< Other error
+        Unknown = Other,             //< For compatibility with old code
     };
 
     explicit IoError(int err) : mErr(static_cast<Code>(err)) { }
