@@ -2,6 +2,7 @@
 #include <ilias/net/endpoint.hpp>
 #include <ilias/io/error.hpp>
 #include "overlapped.hpp"
+#include <atomic>
 
 ILIAS_NS_BEGIN
 
@@ -469,7 +470,7 @@ private:
     MutableBuffer mOutBuffer;
 };
 
-
+// Get the function pointer of the winsock extension
 inline auto WSAGetExtensionFnPtr(SOCKET sockfd, GUID id, void *fnptr) -> Result<void, SystemError> {
     DWORD bytes = 0;
     auto ret = ::WSAIoctl(
@@ -487,6 +488,45 @@ inline auto WSAGetExtensionFnPtr(SOCKET sockfd, GUID id, void *fnptr) -> Result<
         return Err(SystemError::fromErrno());
     }
     return {};
+}
+
+// Do io call in thread pool
+template <typename Fn>
+inline auto ioCall(const runtime::StopToken &token, Fn fn) -> std::invoke_result_t<Fn> {
+    // Get the thread handle, used for CancelSynchronousIo
+    HANDLE threadHandle = nullptr;
+    auto ok = ::DuplicateHandle(
+        ::GetCurrentProcess(),
+        ::GetCurrentThread(),
+        ::GetCurrentProcess(),
+        &threadHandle,
+        0,
+        FALSE,
+        DUPLICATE_SAME_ACCESS
+    );
+    if (!ok) {
+        return Err(SystemError::fromErrno());
+    }
+
+    struct Guard {
+        ~Guard() {
+            ::CloseHandle(h);
+        }
+        HANDLE h;
+    } guard{threadHandle};
+
+    // Check the stop request
+    std::atomic_flag flag;
+    runtime::StopCallback callback(token, [&]() {
+        if (!flag.test_and_set()) {
+            return;
+        }
+        ::CancelSynchronousIo(threadHandle);
+    });
+    if (!flag.test_and_set()) {
+        return fn();
+    }
+    return Err(SystemError::Canceled);
 }
 
 }

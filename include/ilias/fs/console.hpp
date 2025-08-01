@@ -86,8 +86,17 @@ public:
     auto flush() const -> IoTask<void> {
         
 #if defined(_WIN32)
+        if (mIsConsole) { // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers
+            // We can't flush a 'real' console handle, so we just return
+            co_return {};
+        }
         if (!::FlushFileBuffers(mHandle.fd())) {
-            co_return Err(SystemError::fromErrno());
+            auto err = ::GetLastError();
+            if (err == ERROR_INVALID_HANDLE && ::GetFileType(mHandle.fd()) == FILE_TYPE_CHAR) {
+                mIsConsole = true;
+                co_return {};
+            }
+            co_return Err(SystemError(err));
         }
 #endif
 
@@ -146,6 +155,11 @@ public:
     }
 private:
     IoHandle<fd_t> mHandle;
+
+#if defined(_WIN32)
+    mutable bool mIsConsole = false; // Doesn the handle is a real console handle in win32?
+#endif
+
 };
 
 

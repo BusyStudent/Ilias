@@ -281,15 +281,21 @@ auto IocpContext::cancel(IoDescriptor *fd) -> IoResult<void> {
 #pragma region Fs
 auto IocpContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
-    if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use WaitForSingleObject to wait it ready
-        if (auto res = co_await waitObject(nfd->handle); !res) {
-            co_return Err(res.error());
+    if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use threadpool to execute it
+        auto token = co_await runtime::context::stopToken();
+        auto val = co_await blocking([&]() {
+            return ioCall(token, [&]() -> IoResult<size_t> {
+                ::DWORD readed = 0;
+                if (::ReadFile(nfd->handle, buffer.data(), buffer.size(), &readed, nullptr)) {
+                    return readed;
+                }
+                return Err(SystemError::fromErrno());
+            });
+        });
+        if (val == Err(SystemError::Canceled)) {
+            co_await runtime::context::stopped(); // Try set the context to stopped
         }
-        ::DWORD readed = 0;
-        if (::ReadFile(nfd->handle, buffer.data(), buffer.size(), &readed, nullptr)) {
-            co_return readed;
-        }
-        co_return Err(SystemError::fromErrno());
+        co_return val;
     }
     co_return co_await IocpReadAwaiter(nfd->handle, buffer, offset);
 }
@@ -297,15 +303,21 @@ auto IocpContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<siz
 
 auto IocpContext::write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
-    if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use WaitForSingleObject to wait it ready
-        if (auto res = co_await waitObject(nfd->handle); !res) {
-            co_return Err(res.error());
+    if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use threadpool to execute it
+        auto token = co_await runtime::context::stopToken();
+        auto val = co_await blocking([&]() {
+            return ioCall(token, [&]() -> IoResult<size_t> {
+                ::DWORD written = 0;
+                if (::WriteFile(nfd->handle, buffer.data(), buffer.size(), &written, nullptr)) {
+                    return written;
+                }
+                return Err(SystemError::fromErrno());
+            });
+        });
+        if (val == Err(SystemError::Canceled)) {
+            co_await runtime::context::stopped(); // Try set the context to stopped
         }
-        ::DWORD written = 0;
-        if (::WriteFile(nfd->handle, buffer.data(), buffer.size(), &written, nullptr)) {
-            co_return written;
-        }
-        co_return Err(SystemError::fromErrno());
+        co_return val;
     }
     co_return co_await IocpWriteAwaiter(nfd->handle, buffer, offset);
 }
@@ -383,7 +395,8 @@ auto IoContext::waitObject(HANDLE object) -> IoTask<void> {
             return false;
         }
 
-        auto await_suspend(runtime::CoroHandle handle) -> bool {
+        auto await_suspend(runtime::CoroHandle h) -> bool {
+            handle = h;
             auto ok = ::RegisterWaitForSingleObject(
                 &waitObject, 
                 object, 

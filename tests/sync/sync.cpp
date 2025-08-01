@@ -1,6 +1,7 @@
 #include <ilias/sync/mutex.hpp>
 #include <ilias/sync/event.hpp>
 #include <ilias/sync/semaphore.hpp>
+#include <ilias/sync/oneshot.hpp>
 #include <ilias/task.hpp>
 #include "testing.hpp"
 
@@ -97,6 +98,43 @@ CORO_TEST(Sync, Semaphore) {
     auto result = co_await group.waitAll();
     EXPECT_EQ(result.size(), 100);
     EXPECT_EQ(sem.available(), 8);
+}
+
+CORO_TEST(Sync, Oneshot) {
+    {
+        auto [sender, receiver] = oneshot::channel<int>();
+        EXPECT_TRUE(sender.send(42));
+        EXPECT_EQ(co_await std::move(receiver), 42);
+    }
+    { // close
+        auto [sender, receiver] = oneshot::channel<int>();
+        sender.close();
+        EXPECT_FALSE(co_await std::move(receiver));
+    }
+    { // blocking
+        auto [sender, receiver] = oneshot::channel<int>();
+        auto recv = [&]() -> Task<std::optional<int> > {
+            co_return co_await std::move(receiver);  
+        };
+        auto send = [&]() -> Task<void> {
+            EXPECT_TRUE(sender.send(42));            
+            co_return;
+        };
+        auto [a, b] = co_await whenAll(recv(), send());
+        EXPECT_EQ(a, 42);
+    }
+    { // blocking close
+        auto [sender, receiver] = oneshot::channel<int>();
+        auto recv = [&]() -> Task<std::optional<int> > {
+            co_return co_await std::move(receiver);  
+        };
+        auto send = [&]() -> Task<void> {
+            sender.close();
+            co_return;
+        };
+        auto [a, b] = co_await whenAll(recv(), send());
+        EXPECT_EQ(a, std::nullopt);
+    }
 }
 
 auto main(int argc, char **argv) -> int {

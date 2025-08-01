@@ -10,9 +10,9 @@
  */
 #pragma once
 
-#include <ilias/cancellation_token.hpp>
-#include <ilias/task/executor.hpp>
+#include <ilias/runtime/coro.hpp>
 #include <ilias/task/task.hpp>
+#include <ilias/result.hpp>
 #include <ilias/log.hpp>
 #include <optional>
 #include <concepts>
@@ -26,21 +26,6 @@ ILIAS_NS_BEGIN
  * 
  */
 namespace oneshot {
-
-template <typename T>
-concept Sendable = std::movable<Result<T> > && (!std::is_reference_v<T>);
-
-template <typename T>
-class Sender;
-template <typename T>
-class Receiver;
-
-template <typename T>
-struct Pair {
-    Sender<T>   sender;
-    Receiver<T> receiver;
-};
-
 namespace detail {
 
 /**
@@ -49,20 +34,19 @@ namespace detail {
  * @tparam T 
  */
 template <typename T>
-class DataBlock {
+class Channel {
 public:
-    ~DataBlock() {
-        ILIAS_TRACE("Oneshot::Channel", "Sender::close() {}", (void*) this);
-        ILIAS_ASSERT(!suspendedCaller); //< MUST no-one waiting on the channel
-        if (sender) {
-            sender->mPtr = nullptr;
+    auto notify() -> void {
+        if (receiver) {
+            receiver.schedule();
+            receiver = nullptr;
         }
     }
 
-    CoroHandle suspendedCaller; //< The caller that is suspended on the recv operation
-    Sender<T> *sender = nullptr;
-    std::optional<Result<T> > value;
-    bool sended = false; //< Does the sender has sended the value
+    runtime::CoroHandle receiver; // The caller that is suspended on the recv operation
+    std::optional<T> value;
+    bool senderClose = false;
+    bool valueGot = false;
 };
 
 /**
@@ -73,237 +57,200 @@ public:
 template <typename T>
 class RecvAwaiter {
 public:
-    RecvAwaiter(DataBlock<T> *ptr) : mPtr(ptr) { }
+    RecvAwaiter(std::shared_ptr<Channel<T> > chan) : mChan(std::move(chan)) { }
 
     auto await_ready() const -> bool { 
-        // Already sended or the sender is null (broken)
-        return mPtr->sended || mPtr->sender == nullptr;
+        // Already sended or broken
+        return mChan->value.has_value() || mChan->senderClose;
     }
 
-    auto await_suspend(CoroHandle caller) -> void {
-        mPtr->suspendedCaller = caller;
-        mReg = caller.cancellationToken().register_([this]() {
-            if (!mPtr->suspendedCaller) { // Already resumed, such as the sender sended the value
-                return;
-            }
-            mPtr->suspendedCaller.schedule();
-            mPtr->suspendedCaller = nullptr; //< Clear the suspended caller
-            mIsCanceled = true;
-        });
+    auto await_suspend(runtime::CoroHandle caller) -> void {
+        mChan->receiver = caller;
+        mReg.register_<&RecvAwaiter::onStopRequested>(caller.stopToken(), this);
     }
 
-    auto await_resume() -> Result<T> {
-        ILIAS_ASSERT(!mPtr->suspendedCaller); // This must be cleared, for prevent the caller is resumed twice
-        if (mPtr->value) {
-            return std::move(*mPtr->value);
+    auto await_resume() -> std::optional<T>{
+        ILIAS_ASSERT_MSG(!mChan->valueGot, "Double call on recv ?, value already got");
+        ILIAS_ASSERT(!mChan->receiver);
+
+        if (mChan->senderClose) {
+            return std::nullopt;
         }
-        // Error happened
-        if (mIsCanceled) {
-            return Unexpected(Error::Canceled);
-        }
-        return Unexpected(Error::ChannelBroken);
+        mChan->valueGot = true;
+        return std::move(*mChan->value);
     }
 private:
-    DataBlock<T> *mPtr;
-    CancellationToken::Registration mReg;
-    bool mIsCanceled = false;
+    auto onStopRequested() -> void {
+        auto handle = std::exchange(mChan->receiver, nullptr);
+        if (handle) { // Not already scheduled
+            handle.setStopped();
+        }
+    }
+
+    std::shared_ptr<Channel<T> > mChan;
+    runtime::StopRegistration    mReg;
 };
 
 } // namespace detail
 
+
+template <typename T>
+concept Sendable = std::movable<T> && (!std::is_reference_v<T>);
+
+template <Sendable T>
+class Sender;
+
+template <Sendable T>
+class Receiver;
+
+template <Sendable T>
+struct Pair {
+    Sender<T>   sender;
+    Receiver<T> receiver;
+};
+
+enum class TryRecvError {
+    Empty,
+    Closed
+};
 
 /**
  * @brief The receiver of the channel (move only)
  * 
  * @tparam T 
  */
-template <typename T>
+template <Sendable T>
 class Receiver {
 public:
     Receiver() = default;
+    Receiver(std::nullptr_t) {}
+    Receiver(const Receiver &) = delete;
+    Receiver(Receiver &&other) = default;
 
-    Receiver(std::nullptr_t) { }
-
-    /**
-     * @brief Check if the channel is closed
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto isClosed() const -> bool {
-        return mPtr->sender == nullptr;
+    // Close the receiver
+    auto close() -> void {
+        return mChan.reset();
     }
 
-    /**
-     * @brief Close the channel
-     * 
-     */
-    auto close() -> void {
-        mPtr.reset();
+    [[nodiscard]]
+    auto empty() const -> bool {
+        return isEmpty();
+    }
+
+    [[nodiscard]]
+    auto isClosed() const -> bool {
+        return !mChan || mChan->senderClose;
+    }
+
+    [[nodiscard]]
+    auto isEmpty() const -> bool {
+        return !mChan || !mChan->value.has_value();
     }
 
     /**
      * @brief Get the value from the channel
      * 
-     * @return IoTask<T>
+     * @return std::optional<T>, nullopt on closed
      */
-    auto recv() -> IoTask<T> {
-        co_return co_await detail::RecvAwaiter<T>(mPtr.get());
+    [[nodiscard]]
+    auto recv() && {
+        return detail::RecvAwaiter<T>(std::move(mChan));
     }
 
-    auto tryRecv() -> Result<T> {
+    /**
+     * @brief Try to recv the value from the channel
+     * 
+     * @return Result<T, TryRecvError> 
+     */
+    [[nodiscard]]
+    auto tryRecv() -> Result<T, TryRecvError> {
         if (isClosed()) {
-            return Unexpected(Error::ChannelBroken);
+            return Err(TryRecvError::Closed);
         }
-        if (!mPtr->sended) {
-            return Unexpected(Error::ChannelEmpty);
+        if (mChan->value) {
+            auto ptr = std::move(mChan);
+            return std::move(*ptr->value);
         }
-        return std::move(*mPtr->value);
+        return Err(TryRecvError::Empty);
     }
 
-    auto operator <=>(const Receiver &) const = default;
+    auto operator =(Receiver &&) -> Receiver & = default;
 
     /**
      * @brief Awaits the value from the channel
      * 
-     * @return co_await 
+     * @return std::optional<T>, nullopt on closed 
      */
-    auto operator co_await() -> detail::RecvAwaiter<T> {
-        return detail::RecvAwaiter<T>(mPtr.get());
+    auto operator co_await() && -> detail::RecvAwaiter<T> {
+        return detail::RecvAwaiter<T>(std::move(mChan));
     }
 
     /**
-     * @brief Check if the channel is open
+     * @brief Check if the receiver is valid
      * 
      * @return true 
      * @return false 
      */
     explicit operator bool() const noexcept {
-        return !isClosed();
+        return bool(mChan);
     }
 private:
-    Receiver(std::unique_ptr<detail::DataBlock<T> > &&ptr) : mPtr(std::move(ptr)) { }
+    Receiver(std::shared_ptr<detail::Channel<T> > ptr) : mChan(std::move(ptr)) { }
 
-    std::unique_ptr<detail::DataBlock<T> > mPtr;
+    std::shared_ptr<detail::Channel<T> > mChan;
 template <Sendable U>
 friend auto channel() -> Pair<U>;
 };
 
 /**
+ * 
  * @brief The sender of the channel (move only)
  * 
  * @tparam T 
  */
-template <typename T>
+template <Sendable T>
 class Sender {
 public:
     Sender() = default;
-
     Sender(std::nullptr_t) { }
+    Sender(Sender &&other) = default;
+    ~Sender() { close(); }
 
-    Sender(const Sender &) = delete;
-
-    Sender(Sender &&other) : mPtr(other.mPtr) {
-        bind();
-        other.mPtr = nullptr;
-    }
-
-    ~Sender() {
-        close();
-    }
-
-    /**
-     * @brief Close the channel
-     * 
-     * @return auto 
-     */
     auto close() -> void {
-        if (!mPtr) {
-            return;
+        if (auto ptr = mWeak.lock(); ptr) {
+            ptr->senderClose = true;
+            ptr->notify();
         }
-        ILIAS_TRACE("Oneshot::Channel", "Sender::close() {}", (void*) mPtr);
-        mPtr->sender = nullptr;
-        if (mPtr->suspendedCaller) {
-            mPtr->suspendedCaller.schedule();
-            mPtr->suspendedCaller = nullptr;
-        }
-        mPtr = nullptr;
+        mWeak.reset();
     }
 
-    /**
-     * @brief Send a value to the channel
-     * 
-     * @tparam U 
-     * @param value 
-     * @return Result<void> 
-     */
-    template <typename U>
-    auto send(U &&value) -> Result<void> {
-        if (!mPtr || mPtr->sended) {
-            return Unexpected(Error::ChannelBroken);
-        }
-        mPtr->value.emplace(std::forward<U>(value));
-        mPtr->sended = true;
-        if (mPtr->suspendedCaller) {
-            mPtr->suspendedCaller.schedule();
-            mPtr->suspendedCaller = nullptr;
-        }
-        return {};
+    // Check the sender is closed, it is safe to call on an empty sender (empty as closed)
+    [[nodiscard]]
+    auto isClosed() -> bool {
+        return mWeak.expired();
     }
 
-    /**
-     * @brief Check if the channel is closed
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto isClosed() const -> bool {
-        return mPtr == nullptr;
-    }
-
-    /**
-     * @brief Get the capacity of the channel, the number of values that can be sent
-     * 
-     * @return size_t 
-     */
-    auto capacity() const -> size_t {
-        if (isClosed() || mPtr->sended) {
-            return 0;
+    // Send the value to the channel, if closed, return the value as error
+    [[nodiscard]]
+    auto send(T value) const -> Result<void, T> {
+        if (auto ptr = mWeak.lock(); ptr) {
+            if (ptr->value) {
+                return Err(std::move(value));
+            }
+            ptr->value.emplace(std::move(value));
+            ptr->notify();
+            return {};
         }
-        return 1;
+        return Err(std::move(value));
     }
 
     auto operator =(const Sender &) = delete;
-
-    auto operator =(Sender &&other) -> Sender & {
-        if (this == &other) {
-            return *this;
-        }
-        close();
-        mPtr = other.mPtr;
-        bind();
-        other.mPtr = nullptr;
-        return *this;
-    }
-
+    auto operator =(Sender &&other) -> Sender & = default;
     auto operator <=>(const Sender &) const = default;
-
-    explicit operator bool() const noexcept {
-        return !isClosed();
-    }
 private:
-    Sender(detail::DataBlock<T> *ptr) : mPtr(ptr) {
-        bind();
-    }
+    Sender(std::weak_ptr<detail::Channel<T> > ptr) : mWeak(std::move(ptr)) {}
 
-    auto bind() {
-        if (mPtr) {
-            mPtr->sender = this;
-        }
-    }
-
-    detail::DataBlock<T> *mPtr = nullptr;
-friend class detail::DataBlock<T>;
+    std::weak_ptr<detail::Channel<T> > mWeak;
 template <Sendable U>
 friend auto channel() -> Pair<U>;
 };
@@ -316,10 +263,11 @@ friend auto channel() -> Pair<U>;
  */
 template <Sendable T>
 inline auto channel() -> Pair<T> {
-    auto uniquePtr = std::make_unique<detail::DataBlock<T> >();
-    auto ptr = uniquePtr.get();
-
-    return Pair<T>(Sender<T>(ptr), Receiver<T>(std::move(uniquePtr)));
+    auto ptr = std::make_shared<detail::Channel<T> >();
+    return {
+        .sender = Sender<T>(ptr),
+        .receiver = Receiver<T>(ptr)
+    };
 }
 
 } // namespace oneshot

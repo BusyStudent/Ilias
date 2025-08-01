@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ilias/detail/win32defs.hpp>
+#include <ilias/runtime/token.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/log.hpp>
