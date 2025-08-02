@@ -10,6 +10,8 @@
  */
 #pragma once
 
+#include <ilias/defines.hpp>
+
 #if defined(_WIN32)
     #include <ilias/platform/iocp.hpp>
     #define ILIAS_PLATFORM_CONTEXT IocpContext

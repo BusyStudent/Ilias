@@ -17,7 +17,7 @@
 
 ILIAS_NS_BEGIN
 
-namespace detail {
+namespace linux {
 
 /**
  * @brief The Callback of the io_uring, store in the cqe/sqe's user_data
@@ -46,36 +46,19 @@ public:
     }
 };
 
-/**
- * @brief The uring callback, but add one user for store this or extra info
- * 
- */
-class UringCallbackEx : public UringCallback {
-public:
-    union {
-        void *ptr;
-        int   fd;
-    };
-};
+// The callback used to submit the request
+class UringCallbackIo : public UringCallback {};
+
+// The callback used to submit the cancel request
+class UringCallbackCancel : public UringCallback {};
 
 /**
- * @brief The probe info we used for io_uring
+ * @brief Generic Uring Submit code
  * 
  */
-class UringProbe {
+class UringAwaiterBase : private UringCallbackIo, private UringCallbackCancel {
 public:
-    bool cancelFd = false; // Does the kernel support io_uring_prep_cancel_fd ? (>= 5.19)
-};
-
-/**
- * @brief Generic Uring Submit / Compelete Template
- * 
- * @tparam T 
- */
-template <typename T>
-class UringAwaiter : public UringCallback {
-public:
-    UringAwaiter(::io_uring &ring) : mRing(ring) {
+    UringAwaiterBase(::io_uring &ring) : mRing(ring) {
 
     }
 
@@ -84,21 +67,14 @@ public:
         return false;
     }
 
-    auto await_suspend(TaskView<> caller) -> void {
+    auto await_suspend(runtime::CoroHandle caller) -> void {
         mCaller = caller;
-        mReg = caller.cancellationToken().register_(onCancel, this);
-
-        // Submit
-        static_cast<T*>(this)->onSubmit();
 
         // Set the callback
-        ::io_uring_sqe_set_data(mSqe, static_cast<UringCallback*>(this));
-        UringCallback::onCallback = UringAwaiter::callback;
-    }
+        ::io_uring_sqe_set_data(mSqe, static_cast<UringCallbackIo*>(this));
+        UringCallbackIo::onCallback = UringAwaiterBase::callback;
 
-    auto await_resume() {
-        auto self = static_cast<T*>(this);
-        return self->onComplete(mResult);
+        mReg.register_<&UringAwaiterBase::onStopRequested>(caller.stopToken(), this);
     }
 
     auto sqe() const -> ::io_uring_sqe * {
@@ -115,38 +91,43 @@ private:
         return sqe;
     }
 
+    auto onStopRequested() -> void {
+        ILIAS_TRACE("Uring", "Operation cancel request");
+        mCancelSqe = allocSqe();
+        UringCallbackCancel::onCallback = UringAwaiterBase::cancelCallback;
+        ::io_uring_prep_cancel(mCancelSqe, this, 0);
+        ::io_uring_sqe_set_data(mCancelSqe, static_cast<UringCallbackCancel*>(this));
+    }
+
+    auto onResume() {
+        if (mResult == -ECANCELED && mCaller.isStopRequested()) {
+            mCaller.setStopped();
+            return;
+        }
+        mCaller.resume();
+    }
+
     static auto callback(UringCallback *_self, const ::io_uring_cqe &cqe) -> void {
         ILIAS_TRACE("Uring", "Operation completed, res: {}, flags: {}, err: {}", cqe.res, cqe.flags, err2str(cqe.res));
-        auto self = static_cast<T*>(_self);
+        auto self = static_cast<UringAwaiterBase*>(static_cast<UringCallbackIo*>(_self));
         self->mResult = cqe.res;
         self->mSqe = nullptr; //< Mark done
         if (self->mCancelSqe) { //< Cancel is not done, wait it
             ILIAS_TRACE("Uring", "Cancel is not done, wait for it");
             return;
         }
-        self->mCaller.resume();
+        self->onResume();
     }
 
     static auto cancelCallback(UringCallback *_self, const ::io_uring_cqe &cqe) -> void {
         ILIAS_TRACE("Uring", "Operation cancel completed, res: {}, flags: {}, err: {}", cqe.res, cqe.flags, err2str(cqe.res));
-        auto self = static_cast<T*>(static_cast<UringCallbackEx*>(_self)->ptr);
+        auto self = static_cast<UringAwaiterBase*>(static_cast<UringCallbackCancel*>(_self));
         self->mCancelSqe = nullptr;
         if (self->mSqe) { //< The main request not done, wait it
             ILIAS_TRACE("Uring", "Main request not done, wait for it");
             return;
         }
-        self->mCaller.resume();
-    }
-
-    static auto onCancel(void *_self) -> void {
-        ILIAS_TRACE("Uring", "Operation cancel request");
-        auto self = static_cast<T*>(_self);
-        
-        self->mCancelSqe = self->allocSqe();
-        self->mCallbackEx.onCallback = cancelCallback;
-        self->mCallbackEx.ptr = self;
-        ::io_uring_prep_cancel(self->mCancelSqe, self, 0);
-        ::io_uring_sqe_set_data(self->mCancelSqe, &self->mCallbackEx);
+        self->onResume();
     }
 
     static auto err2str(int64_t res) -> const char * {
@@ -157,9 +138,31 @@ private:
     ::io_uring_sqe *mSqe = nullptr; //< The sqe we used to submit
     ::io_uring_sqe *mCancelSqe = nullptr; //< The sqe used to submit cancel
     int64_t         mResult = 0; //< The result of the completion
-    TaskView<>      mCaller;
-    UringCallbackEx mCallbackEx;
-    CancellationToken::Registration mReg;
+    runtime::CoroHandle mCaller;
+    runtime::StopRegistration mReg;
+template <typename T>
+friend class UringAwaiter;
+};
+
+/**
+ * @brief The template of all Uring Awaiter
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class UringAwaiter : public UringAwaiterBase {
+public:
+    using UringAwaiterBase::UringAwaiterBase;
+
+    auto await_suspend(runtime::CoroHandle caller) -> void {
+        static_cast<T*>(this)->onSubmit();
+        UringAwaiterBase::await_suspend(caller);
+    }
+
+    auto await_resume() {
+        auto self = static_cast<T*>(this);
+        return self->onComplete(mResult);
+    }
 };
 
 /**
@@ -177,11 +180,8 @@ public:
         ::io_uring_prep_timeout(sqe(), &mSpec, 0, 0);
     }
 
-    auto onComplete(int64_t result) -> IoResult<void> {
-        if (result < 0 && result != -ETIME) { // Treat ETIME as success
-            return Err(SystemError(-result));
-        }
-        return {};
+    auto onComplete(int64_t result) -> void {
+        return;
     }
 private:
     ::__kernel_timespec mSpec;

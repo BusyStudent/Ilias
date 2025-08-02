@@ -93,6 +93,16 @@
 #define ILIAS_NS_BEGIN namespace ILIAS_NAMESPACE {
 #define ILIAS_NS_END }
 
+// Version helper
+#define ILIAS_VERSION_AT_LEAST(major, minor, patch)                  \
+    (ILIAS_VERSION_MAJOR > major ||                                  \
+    (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR > minor) || \
+    (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR == minor && ILIAS_VERSION_PATCH >= patch))
+#define ILIAS_VERSION_STRING                                         \
+    ILIAS_STRINGIFY(ILIAS_VERSION_MAJOR) "."                         \
+    ILIAS_STRINGIFY(ILIAS_VERSION_MINOR) "."                         \
+    ILIAS_STRINGIFY(ILIAS_VERSION_PATCH)
+
 // Formatter macro
 #define ILIAS_FORMATTER(type)                                      \
     template <>                                                    \

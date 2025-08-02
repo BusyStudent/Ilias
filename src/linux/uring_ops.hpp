@@ -10,15 +10,15 @@
  */
 #pragma once
 
-#include <ilias/platform/detail/uring_core.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/sockfd.hpp>
 #include <span>
+#include "uring_core.hpp"
 
 ILIAS_NS_BEGIN
 
-namespace detail {
+namespace linux {
 
 /**
  * @brief Awaiter wrapping the sendmsg

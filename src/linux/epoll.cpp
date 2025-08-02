@@ -243,7 +243,7 @@ auto EpollContext::cancel(IoDescriptor *fd) -> IoResult<void> {
 auto EpollContext::post(void (*fn)(void *), void *args) -> void {
     ILIAS_ASSERT(fn != nullptr);
     ILIAS_TRACE("Epoll", "Post callback {} with args {}", (void *)fn, args);
-    Callback callback {fn, args};
+    auto callback = std::pair(fn, args);
     if (std::this_thread::get_id() == mThreadId) { // Same thread, just push to the queue
         mCallbacks.emplace_back(callback);
         return;
@@ -275,7 +275,7 @@ auto EpollContext::processCompletion(runtime::StopToken &token) -> void {
     while (!mCallbacks.empty()) { // Process all callbacks in the current thread queue
         auto cb = mCallbacks.front();
         mCallbacks.pop_front();
-        cb.fn(cb.args);
+        cb.first(cb.second);
         mService.updateTimers(); // Update timers after each callback, TODO: Make an better way
     }
     // No callbacks available and non exit requested, process epoll events

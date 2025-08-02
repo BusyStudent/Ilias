@@ -71,13 +71,11 @@ public:
     ///> @brief Sleep for a specified amount of time
     auto sleep(uint64_t ms) -> Task<void> override;
 private:
-    struct Callback {
-        void (*fn)(void *);
-        void *args;
-    };
     auto processCompletion(std::stop_token &token) -> void;
     auto processEvents(std::span<const epoll_event> events) -> void;
     auto pollCallbacks() -> void;
+
+    using Callback = std::pair<void (*)(void *), void *>;
 
     ///> @brief The epoll file descriptor
     int                    mEpollFd = -1;

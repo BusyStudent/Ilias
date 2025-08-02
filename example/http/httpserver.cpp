@@ -45,11 +45,11 @@ auto sendReply(BufferedStream<TcpClient> &stream, int statusCode, std::span<cons
         int(content.size())
     );
     auto buffer = std::string_view(headers);
-    if (auto ret = co_await stream.writeAll(makeBuffer(buffer)); !ret || *ret != buffer.size()) {
-        co_return Err(ret.error_or(IoError::Other));
+    if (auto ret = co_await stream.writeAll(makeBuffer(buffer)); !ret) {
+        co_return Err(ret.error());
     }
-    if (auto ret = co_await stream.writeAll(content); !ret || *ret != content.size()) {
-        co_return Err(ret.error_or(IoError::Other));
+    if (auto ret = co_await stream.writeAll(content); !ret) {
+        co_return Err(ret.error());
     }
     co_return {};
 }
