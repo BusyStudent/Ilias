@@ -118,7 +118,12 @@ protected:
             return;
         }
         if (self.mCaller) {
-            ctxt.task().setPrevAwaiting(self.mCaller); // Use the current completed task to resume the caller
+            if (!ctxt.isStopped()) {
+                ctxt.task().setPrevAwaiting(self.mCaller); // Use the current completed task to resume the caller
+            }
+            else {
+                self.mCaller.schedule();
+            }
         }
     }
 

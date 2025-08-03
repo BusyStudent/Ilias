@@ -135,6 +135,16 @@ CORO_TEST(Sync, Oneshot) {
         auto [a, b] = co_await whenAll(recv(), send());
         EXPECT_EQ(a, std::nullopt);
     }
+    {
+        // cancel
+        auto [sender, receiver] = oneshot::channel<int>();
+        auto recv = [&]() -> Task<std::optional<int> > {
+            co_return co_await std::move(receiver);  
+        };
+        auto handle = spawn(recv());
+        handle.stop();
+        EXPECT_FALSE(co_await std::move(handle));
+    }
 }
 
 auto main(int argc, char **argv) -> int {

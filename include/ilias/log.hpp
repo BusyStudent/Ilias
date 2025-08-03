@@ -27,7 +27,13 @@
 #define ILIAS_LOG_SET_LEVEL(level_) ::ILIAS_NAMESPACE::logging::setLevel(level_)
 #define ILIAS_LOG_ADD_WHITELIST(mod) ::ILIAS_NAMESPACE::logging::addWhitelist(mod)
 #define ILIAS_LOG_ADD_BLACKLIST(mod) ::ILIAS_NAMESPACE::logging::addBlacklist(mod)
-#define ILIAS_LOG(level, mod, ...) ::ILIAS_NAMESPACE::logging::write(level, mod, std::source_location::current(), ::ILIAS_NAMESPACE::fmtlib::format(__VA_ARGS__))
+#define ILIAS_LOG(level, mod, ...)                                                                                                          \
+    do {                                                                                                                                    \
+        if (::ILIAS_NAMESPACE::logging::check(level, mod)) {                                                                                \
+            ::ILIAS_NAMESPACE::logging::write(level, mod, std::source_location::current(), ::ILIAS_NAMESPACE::fmtlib::format(__VA_ARGS__)); \
+        }                                                                                                                                   \
+    }                                                                                                                                       \
+    while (0)
 
 ILIAS_NS_BEGIN
 
@@ -47,6 +53,7 @@ enum class LogLevel {
 };
 
 extern auto ILIAS_API write(LogLevel level, std::string_view mod, std::source_location where, std::string_view content) -> void;
+extern auto ILIAS_API check(LogLevel level, std::string_view mod) -> bool;
 extern auto ILIAS_API setLevel(LogLevel level) -> void;
 extern auto ILIAS_API addWhitelist(std::string_view mod) -> void;
 extern auto ILIAS_API addBlacklist(std::string_view mod) -> void;

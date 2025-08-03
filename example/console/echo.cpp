@@ -1,11 +1,13 @@
-#include <ilias/platform.hpp>
+#include <ilias/signal/signal.hpp>
 #include <ilias/fs/console.hpp>
 #include <ilias/io/stream.hpp>
+#include <ilias/platform.hpp>
+#include <ilias/task.hpp>
 
 using namespace ILIAS_NAMESPACE;
 using namespace ILIAS_NAMESPACE::literals;
 
-void ilias_main() {
+auto loop() -> Task<void> {
     auto out = (co_await Console::fromStdout()).value();
     auto in = (co_await Console::fromStdin()).value();
     auto reader = BufReader(std::move(in));
@@ -20,5 +22,12 @@ void ilias_main() {
         (co_await out.writeAll(makeBuffer(*line))).value();
         (co_await out.writeAll("\n"_bin)).value();
         (co_await out.flush()).value();
+    }
+}
+
+void ilias_main() {
+    auto [_, ctrlc] = co_await whenAny(loop(), signal::ctrlC());
+    if (ctrlc) {
+        ::puts("CTRL-C\n");
     }
 }

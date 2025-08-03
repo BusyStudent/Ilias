@@ -9,22 +9,10 @@
  * 
  */
 #include <ilias/io/system_error.hpp>
-#include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
-#include <ilias/task/task.hpp> // Task<T>
-#include <ilias/task/utils.hpp> // unstoppable
-#include <utility>
-#include <csignal>
+#include <ilias/io/error.hpp>
+#include <ilias/fs/pipe.hpp>
 #include <string>
-
-#if defined(_WIN32)
-    #include <ilias/detail/win32defs.hpp>
-#else
-    #include <sys/syscall.h> // We need to directly use syscall for pidfd
-    #include <sys/poll.h>
-    #include <unistd.h>
-    #include <spawn.h>
-#endif
 
 ILIAS_NS_BEGIN
 
@@ -32,18 +20,51 @@ ILIAS_NS_BEGIN
  * @brief The process class
  * 
  */
-class Process {
+class ILIAS_API Process {
 public:
+    enum Flags : uint32_t {
+        None           = 0 << 0,
+        RedirectStdin  = 1 << 0,
+        RedirectStdout = 1 << 1,
+        RedirectStderr = 1 << 2,
+    };
+    enum Behavior : uint32_t {
+        Detach, // Detach the process when the process is destroyed
+        Kill,   // Kill the process when the process is destroyed
+    };
+
     Process() = default;
     Process(const Process &) = delete;
-    Process(Process &&other) noexcept;
-    ~Process() { detach(); }
+    Process(Process &&other) = default;
+    ~Process() {
+        if (!bool(mHandle)) {
+            return;
+        }
+        if (mBehavior == Kill) {
+            auto _ = kill();
+        }
+        else {
+            detach();
+        }
+    }
+
+    // We can't use stdin, stdout, stderr as member variable name, they are macros :(
+    auto in() -> Pipe &;
+    auto out() -> Pipe &;
+    auto err() -> Pipe &;
 
     /**
      * @brief Detch the process, just like thread detach, we will lose the control of the process
      * 
      */
     auto detach() -> void;
+
+    /**
+     * @brief Set the Behavior when destroy the process
+     * 
+     * @param behavior 
+     */
+    auto setBehavior(Behavior behavior) -> void;
 
     /**
      * @brief Send a signal to the process
@@ -55,220 +76,81 @@ public:
     /**
      * @brief Wait for the process to be done, if canceled, we will kill the process
      * 
-     * @return auto 
+     * @return int32_t The exit code of the process
      */
-    auto join() const -> IoTask<void>;
+    auto wait() const -> IoTask<int32_t>;
 
     /**
-     * @brief Get the descriptor for the process (Process HANDLE on Windows, pidfd on Linux)
+     * @brief Get the native handle for the process (Process HANDLE on Windows, pidfd on Linux)
      * 
      * @return fd_t 
      */
-    auto fd() const -> fd_t;
-
-    auto operator =(Process &&other) -> Process &;
+    auto nativeHandle() const -> fd_t;
 
     /**
-     * @brief Spawn a process with the specified command line arguments.s
+     * @brief Spawn a process with the specified command line arguments
      * 
      * @param exec The executable path
      * @param args The arguments passed to the executable
+     * @param flags The flags for the process, see Flags
+     * @return IoResult<Process>
      * 
      */
-    static auto spawn(std::string_view exec, std::vector<std::string_view> args = {});
-    static auto spawn(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args = {}) -> IoResult<Process>;
-    static auto spawnLinux(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args) -> IoResult<Process>;
-    static auto spawnWin32(IoContext &ctxt, std::wstring args) -> IoResult<Process>;
+    static auto spawn(std::string_view exec, std::vector<std::string_view> args = {}, uint32_t flags = None) -> IoResult<Process>;
 
     /**
-     * @brief Check if the process is valid
+     * @brief Check the process is not empty
      * 
      * @return true 
      * @return false 
      */
     explicit operator bool() const noexcept {
-        return mCtxt != nullptr;
+        return bool(mHandle);
     }
 private:
-    IoContext    *mCtxt = nullptr;
-    IoDescriptor *mDesc = nullptr; // The added descriptor in the context (only used in linux (pidfd))
-    fd_t          mHandle = fd_t(-1); // The process handle (HANDLE in Windows, pidfd in linux)
+
+#if defined(_WIN32)
+    struct Deleter {
+        void operator()(void *handle) const {
+            ::CloseHandle(handle);
+        }
+    };
+    std::unique_ptr<void, Deleter> mHandle;
+#else
+    IoHandle<FileDescriptor> mHandle;
+#endif // _WIN32
+
+    // For redirect
+    Pipe mStdin;
+    Pipe mStdout;
+    Pipe mStderr;
+    Behavior mBehavior = Kill;
 };
 
-inline Process::Process(Process &&other) noexcept : 
-    mCtxt(std::exchange(other.mCtxt, nullptr)),
-    mDesc(std::exchange(other.mDesc, nullptr)),
-    mHandle(std::exchange(other.mHandle, fd_t(-1))) 
-{
-
+inline auto Process::in() -> Pipe & {
+    return mStdin;
 }
 
-inline auto Process::detach() -> void {
-    if (!mCtxt) {
-        return;        
-    }
-    if (mDesc) {
-        mCtxt->removeDescriptor(mDesc);
-    }
-    fd_utils::close(mHandle);
-    mCtxt = nullptr;
-    mDesc = nullptr;
-    mHandle = fd_t(-1);
+inline auto Process::out() -> Pipe & {
+    return mStdout;
 }
 
-inline auto Process::kill() const -> IoResult<void> {
-    if (!mCtxt) {
-        return Err(IoError::InvalidArgument);
-    }
-
-#if defined(_WIN32)
-    if (::TerminateProcess(mHandle, 0)) {
-        return {};
-    }
-#elif defined(SYS_pidfd_send_signal)
-    auto send_signal = [](int pidfd, int sig, siginfo_t *info, unsigned int flags) {
-        return ::syscall(SYS_pidfd_send_signal, pidfd, sig, info, flags);
-    };
-    if (send_signal(mHandle, SIGKILL, nullptr, 0) == 0) {
-        return {};
-    }
-#else
-    return Err(SystemError::OperationNotSupported);
-#endif
-
-    return Err(SystemError::fromErrno());
+inline auto Process::err() -> Pipe & {
+    return mStderr;
 }
 
-inline auto Process::join() const -> IoTask<void> {
-    using namespace runtime;
-
-    auto token = co_await context::stopToken();
-    auto callback = StopCallback(token, [this]() {
-        auto _ = kill();
-    });
-
-#if defined(_WIN32)
-    auto val = co_await unstoppable(mCtxt->waitObject(mHandle));
-#else
-    auto val = co_await unstoppable(mCtxt->poll(mDesc, POLLIN)); // I don't want to include network module here, so just use the platform defines
-#endif
-
-    if (!val) {
-        if (val.error() == SystemError::Canceled) { // Try stopped
-            co_await context::stopped();
-        }
-        co_return Err(val.error());
-    }
-    co_return {};
+inline auto Process::setBehavior(Behavior behavior) -> void {
+    mBehavior = behavior;
 }
 
-inline auto Process::fd() const -> fd_t {
-    return mHandle;
-}
-
-inline auto Process::operator=(Process &&other) -> Process & {
-    if (this == &other) {
-        return *this;
-    }
-    detach();
-    mCtxt = std::exchange(other.mCtxt, nullptr);
-    mDesc = std::exchange(other.mDesc, nullptr);
-    mHandle = std::exchange(other.mHandle, fd_t(-1));
-    return *this;
-}
-
-inline auto Process::spawn(std::string_view exec, std::vector<std::string_view> args) {
-    struct Awaiter : std::suspend_never {
-        auto await_resume() {
-            return spawn(*IoContext::currentThread(), exec, std::move(args));
-        }
-        std::string_view exec;
-        std::vector<std::string_view> args;
-    };
-    Awaiter awaiter;
-    awaiter.exec = exec;
-    awaiter.args = std::move(args);
-    return awaiter;
-}
-
-inline auto Process::spawn(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args) -> IoResult<Process> {
-
-#if defined(_WIN32)
-    std::wstring cmdline;
-    if (exec.find(' ') != std::string_view::npos) {
-        cmdline = L"\"" + win32::toWide(exec) + L"\"";
-    }
-    else {
-        cmdline = win32::toWide(exec);
-    }
+inline auto Process::nativeHandle() const -> fd_t {
     
-    for (const auto &arg : args) {
-        cmdline += L" ";
-        std::wstring escaped = win32::toWide(arg);
-        size_t pos = 0;
-        while ((pos = escaped.find(L"\"", pos)) != std::wstring::npos) {
-            escaped.insert(pos, L"\\");
-            pos += 2;
-        }
-        cmdline += L"\"" + escaped + L"\"";
-    }
-    return spawnWin32(ctxt, std::move(cmdline));
-#else
-    return spawnLinux(ctxt, exec, std::move(args));
-#endif
-}
-
-#if defined(SYS_pidfd_open) // We need this system call
-inline auto Process::spawnLinux(IoContext &ctxt, std::string_view exec, std::vector<std::string_view> args) -> IoResult<Process> {
-    auto open = [](pid_t pid, unsigned int flags) {
-        return ::syscall(SYS_pidfd_open, pid, flags);
-    };
-    // Dup it on the stack
-    auto program = strndupa(exec.data(), exec.size());
-    // Allocate argv array with space for program name + args + nullptr
-    auto vec = (char**) alloca((args.size() + 2) * sizeof(char*));
-    vec[0] = program;
-    for (size_t i = 0; i < args.size(); i++) {
-        vec[i + 1] = strndupa(args[i].data(), args[i].size());
-    }
-    vec[args.size() + 1] = nullptr;
-    // Spawn it
-    pid_t pid = 0;
-    if (::posix_spawnp(&pid, program, nullptr, nullptr, vec, nullptr) != 0) {
-        return Err(SystemError::fromErrno());
-    }
-    
-    if (int fd = open(pid, 0); fd >= 0) {
-        return Process(ctxt, fd);
-    }
-    return Err(SystemError::fromErrno());
-}
-#endif // defined(SYS_pidfd_open)
-
 #if defined(_WIN32)
-inline auto Process::spawnWin32(IoContext &ctxt, std::wstring args) -> IoResult<Process> {
-    ::STARTUPINFOW si {
-        .cb = sizeof(::STARTUPINFOW),
-    };
-    ::PROCESS_INFORMATION pi { };
-    auto ok = ::CreateProcessW(
-        nullptr,
-        args.data(),
-        nullptr,
-        nullptr,
-        FALSE,
-        NORMAL_PRIORITY_CLASS,
-        nullptr,
-        nullptr,
-        &si,
-        &pi
-    );
-    if (!ok) {
-        return Err(SystemError::fromErrno());
-    }
-    ::CloseHandle(pi.hThread); // We don't need the thread handle
-    return Process(ctxt, pi.hProcess);
+    return mHandle.get();
+#else
+    return fd_t(mHandle.fd());
+#endif // _WIN32
+
 }
-#endif // defined(_WIN32)
 
 ILIAS_NS_END

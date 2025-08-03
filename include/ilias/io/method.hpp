@@ -85,7 +85,7 @@ inline auto readAtleast(T &stream, MutableBuffer buffer, size_t minSize) -> IoTa
     while (readed < minSize) {
         auto n = co_await stream.read(buffer.subspan(readed));
         if (!n && readed == 0) {
-            co_return Unexpected(n.error());
+            co_return Err(n.error());
         }
         if (!n) {
             break;
@@ -96,6 +96,39 @@ inline auto readAtleast(T &stream, MutableBuffer buffer, size_t minSize) -> IoTa
         readed += *n;
     }
     co_return readed;
+}
+
+/**
+ * @brief Read all data from stream to container, append to container
+ * 
+ * @tparam T 
+ * @tparam Container 
+ * @param stream 
+ * @param container 
+ * @return IoTask<size_t> 
+ */
+template <Readable T, MemWritable Container>
+inline auto readToEnd(T &stream, Container &container) -> IoTask<size_t> {
+    size_t size = container.size();
+    size_t readed = 0;
+    while (true) {
+        container.resize(size + 1024);
+        auto buf = makeBuffer(container).subspan(size);
+        while (!buf.empty()) {
+            auto n = co_await stream.read(buf);
+            if (!n) { // Error resize the back
+                container.resize(size);
+                co_return Err(n.error());
+            }
+            if (*n == 0) {
+                container.resize(size);
+                co_return readed;
+            }
+            readed += *n;
+            size += *n;
+            buf = buf.subspan(*n);
+        }
+    }
 }
 
 
@@ -137,6 +170,7 @@ public:
     auto readAll(MutableBuffer buffer) -> IoTask<size_t> requires(Readable<T>) {
         return ILIAS_NAMESPACE::readAll(static_cast<T &>(*this), buffer);
     }
+
     /**
      * @brief Read at least minSize bytes from stream, if failed and has any bytes readed, ignore the error, return the read size, if not, return error
      * 
@@ -147,6 +181,18 @@ public:
      */
     auto readAtleast(MutableBuffer buffer, size_t minSize) -> IoTask<size_t> requires(Readable<T>) {
         return ILIAS_NAMESPACE::readAtleast(static_cast<T &>(*this), buffer, minSize);
+    }
+
+    /**
+     * @brief Read all data from stream to container, append to container
+     * 
+     * @tparam Container 
+     * @param container
+     * @return IoTask<size_t>
+     */
+    template <MemWritable Container>
+    auto readToEnd(Container &container) -> IoTask<size_t> requires(Readable<T>) {
+        return ILIAS_NAMESPACE::readToEnd(static_cast<T &>(*this), container);
     }
 
     auto operator <=>(const ReadableMethod &rhs) const noexcept = default;

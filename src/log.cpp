@@ -61,19 +61,23 @@ namespace {
     }
 }
 
-auto write(LogLevel level, std::string_view mod, std::source_location where, std::string_view content) -> void {
+auto check(LogLevel level, std::string_view mod) -> bool {
     auto &ctxt = instance();
-    
     // Filter...
     if (int(level) < int(ctxt.level)) {
-        return;
+        return false;
     }
     if (ctxt.blacklist.contains(mod)) {
-        return;
+        return false;
     }
     if (!ctxt.whitelist.empty() && !ctxt.whitelist.contains(mod)) {
-        return;
+        return false;
     }
+    return true;
+}
+
+auto write(LogLevel level, std::string_view mod, std::source_location where, std::string_view content) -> void {
+    auto &ctxt = instance();    
 
 #if defined(ILIAS_USE_SPDLOG)
     // Forward to spdlog
