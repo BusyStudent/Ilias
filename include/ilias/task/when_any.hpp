@@ -101,7 +101,6 @@ protected:
     static auto onTaskCompleted(CoroContext &_ctxt) -> void {
         auto &ctxt = static_cast<WhenAnyTaskContext &>(_ctxt);
         auto &self = *ctxt.mAwaiter;
-        self.mLeft -= 1;
 
         if (!ctxt.isStopped()) { // Only not stopped task can be got (value produced)
             if (self.mGot == nullptr) {
@@ -110,6 +109,7 @@ protected:
             }
         }
 
+        self.mLeft -= 1;
         if (self.mLeft != 0) {
             return; // Still has some imcomplete tasks
         }
@@ -118,12 +118,8 @@ protected:
             return;
         }
         if (self.mCaller) {
-            if (!ctxt.isStopped()) {
-                ctxt.task().setPrevAwaiting(self.mCaller); // Use the current completed task to resume the caller
-            }
-            else {
-                self.mCaller.schedule();
-            }
+            self.mCaller.schedule();
+            self.mCaller = nullptr;
         }
     }
 

@@ -14,6 +14,7 @@ ${define ILIAS_NAMESPACE}
 ${define ILIAS_CORO_TRACE}
 ${define ILIAS_USE_LOG}
 ${define ILIAS_USE_FMT}
+${define ILIAS_USE_FIBER}
 ${define ILIAS_USE_SPDLOG}
 ${define ILIAS_USE_IO_URING}
 

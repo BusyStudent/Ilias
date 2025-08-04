@@ -16,3 +16,4 @@
 #include <ilias/task/utils.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/task/group.hpp>
+#include <ilias/task/scope.hpp>

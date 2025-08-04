@@ -15,7 +15,6 @@ using StopSource = std::stop_source;
 template <typename Callable>
 using StopCallback = std::stop_callback<Callable>;
 
-
 /// Helper class for using std::stop_callback on Awaiter
 template <typename Callable>
 class StopCallbackEx {
@@ -62,6 +61,9 @@ public:
     // Do the registration
     auto register_(const StopToken &token, void (*fn)(void *), void *args) -> void {
         mCallback.emplace(token, Callback{fn, args});
+    }
+    auto register_(StopToken &&token, void (*fn)(void *), void *args) -> void {
+        mCallback.emplace(std::move(token), Callback{fn, args});
     }
 
     // Do the registration with a member function

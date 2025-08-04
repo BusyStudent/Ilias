@@ -201,6 +201,12 @@ public:
     TaskContext(TaskHandle<> task) : mTask(task) {
         mTask.setContext(*this);
     }
+    TaskContext(std::nullptr_t, std::nostopstate_t) : CoroContext(std::nostopstate) {
+        
+    }
+    TaskContext(std::nullptr_t) {
+
+    }
     TaskContext(TaskContext &&other) noexcept : CoroContext(std::move(other)) {
         mTask = std::exchange(other.mTask, nullptr);
         if (mTask) { // rebind the context

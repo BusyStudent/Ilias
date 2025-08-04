@@ -129,6 +129,56 @@ auto TaskGroupAwaiterBase::onStopRequested() -> void {
 template class ILIAS_API TaskGroup<void>;
 
 #pragma region TaskScope
+TaskScope::TaskScope() = default;
+TaskScope::~TaskScope() {
+    ILIAS_ASSERT(mGroup.empty());
+}
 
+auto TaskScope::waitAll(runtime::StopToken token) -> Task<void> {
+    auto callback = runtime::StopCallback(token, [this]() {
+        mGroup.stop(); // Forward the stop
+    });
+    while (!mGroup.empty()) {
+        auto _ = co_await mGroup.next();
+    }
+}
+
+#pragma region FinallyAwaiter
+auto FinallyAwaiterBase::await_suspend(CoroHandle caller) -> std::coroutine_handle<> {
+    auto mainContext = static_cast<TaskContextMain*>(this);
+    auto mainHandle = this->mainHandle();
+    auto finallyContext = static_cast<TaskContextFinally*>(this);
+    auto finallyHandle = this->finallyHandle();
+
+    mCaller = caller;
+    mReg.register_<&TaskContext::stop>(caller.stopToken(), mainContext); // Forward the stop to the handle task
+    mainHandle.setContext(*mainContext);
+    mainHandle.setCompletionHandler(FinallyAwaiterBase::onTaskCompletion);
+    mainContext->setStoppedHandler(FinallyAwaiterBase::onTaskCompletion);
+
+    finallyHandle.setContext(*finallyContext);
+    finallyHandle.setCompletionHandler(FinallyAwaiterBase::onFinallyCompletion);
+    return mainHandle.toStd(); // Switch into it, caller -> task -> finally -> (caller or caller.setStopped())
+}
+
+auto FinallyAwaiterBase::onTaskCompletion(runtime::CoroContext &_self) -> void {
+    auto &self = static_cast<FinallyAwaiterBase &>(static_cast<TaskContextMain &>(_self)); // Switch into finally
+    if (self.TaskContextMain::isStopped()) {
+        self.finallyHandle().schedule();
+    }
+    else {
+        self.mainHandle().setPrevAwaiting(self.finallyHandle());
+    }
+}
+
+auto FinallyAwaiterBase::onFinallyCompletion(runtime::CoroContext &_self) -> void {
+    auto &self = static_cast<FinallyAwaiterBase &>(static_cast<TaskContextFinally &>(_self)); // Switch into caller
+    if (self.TaskContextMain::isStopped()) {
+        self.mCaller.setStopped();
+    }
+    else {
+        self.finallyHandle().setPrevAwaiting(self.mCaller);
+    }
+}
 
 ILIAS_NS_END

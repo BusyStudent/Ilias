@@ -13,6 +13,7 @@ ILIAS_NS_BEGIN
 // Runtime internal coroutine classes
 namespace runtime {
 
+// Helper class to switch between coroutines
 class SwitchCoroutine {
 public:
     SwitchCoroutine(std::coroutine_handle<> handle) : mHandle(handle) {}
@@ -187,6 +188,11 @@ public:
 
     auto isStopRequested() const noexcept {
         return context().mStopSource.stop_requested();
+    }
+
+    // Get the std coroutine handle
+    auto toStd() const noexcept {
+        return mHandle;
     }
 
     explicit operator bool() const noexcept {

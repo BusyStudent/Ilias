@@ -42,7 +42,6 @@ struct EventLoop::Impl {
     std::condition_variable cond;
     std::mutex mutex;
     TimerService service;
-    bool running = false;
 };
 
 EventLoop::EventLoop() : d(std::make_unique<Impl>()) {}

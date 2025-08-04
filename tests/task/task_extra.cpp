@@ -1,5 +1,6 @@
 #include <ilias/task/group.hpp>
 #include <ilias/task/utils.hpp>
+#include <ilias/task/scope.hpp>
 #include <ranges>
 #include "testing.hpp"
 
@@ -70,6 +71,43 @@ CORO_TEST(Task, Unstoppable) {
     handle.stop();
     auto result = co_await std::move(handle);
     EXPECT_TRUE(result.has_value());
+}
+
+CORO_TEST(Task, Finally) {
+    { // Normal condition
+        bool called = false;
+        auto onfinally = [&]() -> Task<void> {
+            called = true;
+            co_return;
+        };
+        co_await (sleep(10ms) | finally(onfinally));
+        EXPECT_TRUE(called);
+    }
+    { // Stop condition
+        bool called = false;
+        auto fn = [&]() -> Task<void> {
+            auto onfinally = [&]() -> Task<void> {
+                called = true;
+                co_return;
+            };
+            co_await finally(sleep(10ms), onfinally);
+            ::abort(); // Should not reach here
+        };
+        auto handle = spawn(fn());
+        handle.stop();
+        EXPECT_FALSE(co_await std::move(handle));
+        EXPECT_TRUE(called);
+    }
+}
+
+CORO_TEST(Task, Scope) {
+    co_await TaskScope::enter([](TaskScope &scope) -> Task<void> {
+        for (auto i : views::iota(1, 100)) {
+            scope.spawn(sleep(1ms * i));
+        }
+        scope.spawnBlocking([]() { return 42; }); // The return value should be ignored
+        co_return;
+    });
 }
 
 auto main(int argc, char** argv) -> int {
