@@ -254,6 +254,7 @@ inline auto type(fd_t fd) -> IoResult<IoDescriptor::Type> {
         else if (S_ISSOCK(st.st_mode)) {
             return IoDescriptor::Socket;
         }
+        return IoDescriptor::Unknown;
     }
 #endif // defined(_WIN32)
 

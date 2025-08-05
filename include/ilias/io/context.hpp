@@ -35,12 +35,13 @@ public:
      * 
      */
     enum Type {
-        Socket,  //< Socket descriptor
-        File,    //< Generic file descriptor
-        Tty,     //< TTY descriptor
-        Pipe,    //< Pipe descriptor
-        Unknown, //< Unknown type, let the backend decide by os api
-        User,    //< User defined type, used for custom more type for backend
+        Socket,   //< Socket descriptor
+        File,     //< Generic file descriptor
+        Tty,      //< TTY descriptor
+        Pipe,     //< Pipe descriptor
+        Unknown,  //< Unknown type, let the backend decide by os api
+        Pollable, //< Unknown type, but a pollable object, such as a timer, eventfd, etc.
+        User,     //< User defined type, used for custom more type for backend
     };
 protected:
     IoDescriptor() = default;

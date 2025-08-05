@@ -27,6 +27,7 @@ public:
         RedirectStdin  = 1 << 0,
         RedirectStdout = 1 << 1,
         RedirectStderr = 1 << 2,
+        RedirectAll = RedirectStdin | RedirectStdout | RedirectStderr,
     };
     enum Behavior : uint32_t {
         Detach, // Detach the process when the process is destroyed

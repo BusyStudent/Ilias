@@ -197,7 +197,7 @@ auto EpollContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<I
 
     ILIAS_TRACE("Epoll", "Created new fd descriptor: {}, type: {}", fd, type);
 
-    if (type == IoDescriptor::Pipe || type == IoDescriptor::Tty || type == IoDescriptor::Socket) {
+    if (type == IoDescriptor::Pipe || type == IoDescriptor::Tty || type == IoDescriptor::Socket || type == IoDescriptor::Pollable) {
         nfd->pollable = true;
         epoll_event event;
         event.events = 0 | EPOLLONESHOT; // Just do simple register

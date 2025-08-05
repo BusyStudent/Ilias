@@ -69,11 +69,11 @@ public:
     // Do the registration with a member function
     template <auto Method, typename Object>
     auto register_(const StopToken &token, Object *self) -> void {
-        auto invoke = [](void *_self) {
-            auto self = static_cast<Object *>(_self);
-            (self->*Method)();
-        };
-        mCallback.emplace(token, Callback{invoke, self});
+        mCallback.emplace(token, Callback{methodProxy<Method, Object>, self});
+    }
+    template <auto Method, typename Object>
+    auto register_(StopToken &&token, Object *self) -> void {
+        mCallback.emplace(std::move(token), Callback{methodProxy<Method, Object>, self});
     }
 private:
     struct Callback {
@@ -82,6 +82,12 @@ private:
 
         void operator()() const { fn(args); }
     };
+
+    template <auto Method, typename Object>
+    static auto methodProxy(void *_self) -> void {
+        auto self = static_cast<Object *>(_self);
+        (self->*Method)();
+    }
 
     StopCallbackEx<Callback> mCallback;
 };
