@@ -166,6 +166,23 @@ public:
     }
 
     /**
+     * @brief Wrap a socket into a TcpClient.
+     * 
+     * @param socket The socket must be SOCK_STREAM. otherwise, IoError::InvalidArgument will be returned.
+     * @return IoResult<TcpClient> 
+     */
+    static auto from(Socket socket) -> IoResult<TcpClient> {
+        if (socket.type() != SOCK_STREAM) {
+            return Err(IoError::InvalidArgument);
+        }
+        auto handle = IoHandle<Socket>::make(std::move(socket), IoDescriptor::Socket);
+        if (!handle) {
+            return Err(handle.error());
+        }
+        return TcpClient(std::move(*handle));
+    }
+
+    /**
      * @brief Check if the socket is valid.
      * 
      * @return true 
@@ -295,6 +312,23 @@ public:
             co_return Err(handle.error());
         }
         co_return TcpListener(std::move(*handle));
+    }
+
+    /**
+     * @brief Wrap a socket in a TcpListener.
+     * 
+     * @param socket The socket must be SOCK_STREAM. otherwise, IoError::InvalidArgument will be returned.
+     * @return IoResult<TcpListener> 
+     */
+    static auto from(Socket socket) -> IoResult<TcpListener> {
+        if (socket.type() != SOCK_STREAM) {
+            return Err(IoError::InvalidArgument);
+        }
+        auto handle = IoHandle<Socket>::make(std::move(socket), IoDescriptor::Socket);
+        if (!handle) {
+            return Err(handle.error());
+        }
+        return TcpListener(std::move(*handle));
     }
 
     /**

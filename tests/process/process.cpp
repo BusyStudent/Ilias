@@ -17,7 +17,7 @@ CORO_TEST(Process, Spawn) {
 #endif
     EXPECT_TRUE(co_await proc.wait());
     std::string content;
-    co_await proc.out().readToEnd(content);
+    EXPECT_TRUE(co_await proc.out().readToEnd(content));
     std::cout << content << std::endl;
 }
 

@@ -88,11 +88,9 @@ template <int Level, int Optname, typename T, OptionAccess Access = OptionAccess
 class OptionT {
 public:
     constexpr OptionT() = default;
-
     constexpr OptionT(T value) : mValue(value) { }
 
-    auto setopt(socket_t sock) const -> IoResult<void> {
-        static_assert(Access & OptionAccess::Write);
+    auto setopt(socket_t sock) const -> IoResult<void> requires (bool(Access & OptionAccess::Write)) {
         auto ret = ::setsockopt(sock, Level, Optname, reinterpret_cast<const char *>(&mValue), sizeof(T));
         if (ret != 0) {
             return Err(SystemError::fromErrno());
@@ -100,8 +98,7 @@ public:
         return {};
     }
 
-    static auto getopt(socket_t sock) -> IoResult<OptionT> {
-        static_assert(Access & OptionAccess::Read);
+    static auto getopt(socket_t sock) -> IoResult<OptionT> requires (bool(Access & OptionAccess::Read)) {
         ::socklen_t optlen = sizeof(T);
         T value;
         auto ret = ::getsockopt(sock, Level, Optname, reinterpret_cast<char *>(&value), &optlen);
@@ -142,11 +139,9 @@ template <DWORD Opcode, typename T, OptionAccess Access = OptionAccess::ReadWrit
 class WSAOptionT {
 public:
     constexpr WSAOptionT() = default;
-
     constexpr WSAOptionT(T value) : mValue(value) { }
 
-    auto setopt(socket_t sock) const -> IoResult<void> {
-        static_assert(Access & OptionAccess::Write);
+    auto setopt(socket_t sock) const -> IoResult<void> requires (bool(Access & OptionAccess::Write)) {
         DWORD bytes = 0;
         auto in = mValue;
         auto out = mValue;
@@ -157,8 +152,7 @@ public:
         return {};
     }
 
-    static auto getopt(socket_t sock) -> IoResult<WSAOptionT> {
-        static_assert(Access & OptionAccess::Read);
+    static auto getopt(socket_t sock) -> IoResult<WSAOptionT> requires (bool(Access & OptionAccess::Read)) {
         DWORD bytes = 0;
         auto out = T { };
         auto ret = ::WSAIoctl(sock, Opcode, nullptr, 0, &out, sizeof(out), &bytes, nullptr, nullptr);

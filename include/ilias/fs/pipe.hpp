@@ -57,7 +57,16 @@ public:
      * @return IoTask<size_t> 
      */
     auto read(MutableBuffer buffer) -> IoTask<size_t> {
+
+#if defined(_WIN32) // Windows named pipe spec
+        auto val = co_await mHandle.read(buffer, std::nullopt);
+        if (val == Err(SystemError(ERROR_BROKEN_PIPE))) {
+            co_return 0; // Map closed to EOF(0)
+        }
+        co_return val;
+#else
         return mHandle.read(buffer, std::nullopt);
+#endif // defined(_WIN32)
     }
 
     /**
@@ -65,7 +74,7 @@ public:
      * 
      * @return IoTask<void> 
      */
-    auto shutdown() -> IoTask<void> {
+auto shutdown() -> IoTask<void> {
         co_return {};
     }
     

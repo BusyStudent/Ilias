@@ -2,7 +2,8 @@
 #include <ilias/net/endpoint.hpp>
 #include <ilias/io/error.hpp>
 #include "overlapped.hpp"
-#include <atomic>
+#include <atomic> // std::atomic
+#include <latch> // std::latch
 
 ILIAS_NS_BEGIN
 
@@ -491,6 +492,7 @@ inline auto WSAGetExtensionFnPtr(SOCKET sockfd, GUID id, void *fnptr) -> Result<
 }
 
 // Do io call in thread pool
+#pragma region SynchronousIo
 template <typename Fn>
 inline auto ioCall(const runtime::StopToken &token, Fn fn) -> std::invoke_result_t<Fn> {
     // Get the thread handle, used for CancelSynchronousIo
@@ -516,17 +518,22 @@ inline auto ioCall(const runtime::StopToken &token, Fn fn) -> std::invoke_result
     } guard{threadHandle};
 
     // Check the stop request
-    std::atomic_flag flag;
+    std::invoke_result_t<Fn> result = Err(SystemError::Canceled); // store the return value
+    std::atomic<HANDLE> handle {threadHandle}; // nullptr on (canceled or completed)
+    std::latch latch {1};
     runtime::StopCallback callback(token, [&]() {
-        if (!flag.test_and_set()) {
-            return;
+        if (auto h = handle.exchange(nullptr); h != nullptr) {
+            ::CancelSynchronousIo(h);
+            latch.count_down();
         }
-        ::CancelSynchronousIo(threadHandle);
     });
-    if (!flag.test_and_set()) {
-        return fn();
+    if (!token.stop_requested()) {
+        result = fn();
     }
-    return Err(SystemError::Canceled);
+    if (handle.exchange(nullptr) == nullptr) { // Check the cancel is start?, if start, wait for it, if not, mark as completed
+        latch.wait();
+    }
+    return result;
 }
 
 }

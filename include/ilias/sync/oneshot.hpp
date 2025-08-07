@@ -49,6 +49,12 @@ public:
     bool valueGot = false;
 };
 
+template <typename T>
+using ChanRef = std::shared_ptr<Channel<T> >;
+
+template <typename T>
+using ChanWeak = std::weak_ptr<Channel<T> >;
+
 /**
  * @brief Do the recv operation
  * 
@@ -57,7 +63,7 @@ public:
 template <typename T>
 class RecvAwaiter {
 public:
-    RecvAwaiter(std::shared_ptr<Channel<T> > chan) : mChan(std::move(chan)) { }
+    RecvAwaiter(ChanRef<T> chan) : mChan(std::move(chan)) { }
 
     auto await_ready() const -> bool { 
         // Already sended or broken
@@ -87,7 +93,7 @@ private:
         }
     }
 
-    std::shared_ptr<Channel<T> > mChan;
+    ChanRef<T> mChan;
     runtime::StopRegistration    mReg;
 };
 
@@ -128,7 +134,7 @@ public:
     Receiver(Receiver &&other) = default;
 
     // Close the receiver
-    auto close() -> void {
+    auto close() noexcept -> void {
         return mChan.reset();
     }
 
@@ -195,9 +201,9 @@ public:
         return bool(mChan);
     }
 private:
-    Receiver(std::shared_ptr<detail::Channel<T> > ptr) : mChan(std::move(ptr)) { }
+    Receiver(detail::ChanRef<T> ptr) : mChan(std::move(ptr)) { }
 
-    std::shared_ptr<detail::Channel<T> > mChan;
+    detail::ChanRef<T> mChan;
 template <Sendable U>
 friend auto channel() -> Pair<U>;
 };
@@ -248,9 +254,9 @@ public:
     auto operator =(Sender &&other) -> Sender & = default;
     auto operator <=>(const Sender &) const = default;
 private:
-    Sender(std::weak_ptr<detail::Channel<T> > ptr) : mWeak(std::move(ptr)) {}
+    Sender(detail::ChanWeak<T> ptr) : mWeak(std::move(ptr)) {}
 
-    std::weak_ptr<detail::Channel<T> > mWeak;
+    detail::ChanWeak<T> mWeak;
 template <Sendable U>
 friend auto channel() -> Pair<U>;
 };

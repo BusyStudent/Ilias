@@ -142,6 +142,23 @@ public:
     }
 
     /**
+     * @brief Wrap a socket into a UdpClient.
+     * 
+     * @param socket 
+     * @return IoResult<UdpClient> 
+     */
+    static auto from(Socket socket) -> IoResult<UdpClient> {
+        if (socket.type() != SOCK_DGRAM) {
+            return Err(IoError::InvalidArgument);
+        }
+        auto handle = IoHandle<Socket>::make(std::move(socket), IoDescriptor::Socket);
+        if (!handle) {
+            return Err(handle.error());
+        }
+        return UdpClient(std::move(*handle));
+    }
+
+    /**
      * @brief Check if the socket is valid.
      * 
      * @return true 

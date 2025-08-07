@@ -10,9 +10,9 @@
  */
 #pragma once
 
+#include <ilias/sync/semaphore.hpp>
 #include <ilias/sync/oneshot.hpp>
+#include <ilias/sync/latch.hpp>
 #include <ilias/sync/mutex.hpp>
-#include <ilias/sync/scope.hpp>
 #include <ilias/sync/event.hpp>
-#include <ilias/sync/mpmc.hpp>
 #include <ilias/sync/mpsc.hpp>

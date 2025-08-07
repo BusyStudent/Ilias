@@ -8,6 +8,248 @@
 using namespace ILIAS_NAMESPACE;
 using namespace ILIAS_NAMESPACE::literals;
 
+// For V4 Address
+TEST(Address4, Parse) {
+    EXPECT_EQ(IPAddress4::fromString("0.0.0.0").value(), IPAddress4::any());
+    EXPECT_EQ(IPAddress4::fromString("255.255.255.255").value(), IPAddress4::none());
+    EXPECT_EQ(IPAddress4::fromString("255.255.255.255").value(), IPAddress4::broadcast());
+    EXPECT_EQ(IPAddress4::fromString("127.0.0.1").value(), IPAddress4::loopback());
+
+    // Fail cases
+    EXPECT_FALSE(IPAddress4::fromString("::1").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("::").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("127.0.0.1:8080").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("256.256.256.256").has_value());
+
+    EXPECT_FALSE(IPAddress4::fromString("127x0.0.1").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("127.0.0.1x").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("127.0.0x1").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("127.0x.1").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("127.x.0.1").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("127.0.0.1.").has_value());
+
+    EXPECT_FALSE(IPAddress4::fromString("的贷记卡就是").has_value());
+    EXPECT_FALSE(IPAddress4::fromString("114.114.114.114.114.114.114.114").has_value());
+}
+
+TEST(Address4, ToString) {
+    EXPECT_EQ(IPAddress4::fromString("0.0.0.0").value().toString(), "0.0.0.0");
+    EXPECT_EQ(IPAddress4::fromString("255.255.255.255").value().toString(), "255.255.255.255");
+    EXPECT_EQ(IPAddress4::fromString("127.0.0.1").value().toString(), "127.0.0.1");
+
+    EXPECT_EQ(IPAddress4::any().toString(), "0.0.0.0");
+    EXPECT_EQ(IPAddress4::broadcast().toString(), "255.255.255.255");
+    EXPECT_EQ(IPAddress4::loopback().toString(), "127.0.0.1");
+
+#if !defined(ILIAS_NO_FORMAT)
+    EXPECT_EQ(fmtlib::format("{}", IPAddress4::any()), "0.0.0.0");
+    EXPECT_EQ(fmtlib::format("{}", IPAddress4::broadcast()), "255.255.255.255");
+    EXPECT_EQ(fmtlib::format("{}", IPAddress4::loopback()), "127.0.0.1");
+#endif
+}
+
+TEST(Address4, Span) {
+    auto addr = IPAddress4::none();
+    auto span = addr.span();
+    EXPECT_EQ(span[0], std::byte {255});
+    EXPECT_EQ(span[1], std::byte {255});
+    EXPECT_EQ(span[2], std::byte {255});
+    EXPECT_EQ(span[3], std::byte {255});
+}
+
+TEST(Address4, Compare) {
+    EXPECT_EQ(IPAddress4::none(), IPAddress4::none());
+    EXPECT_NE(IPAddress4::none(), IPAddress4::any());
+    EXPECT_NE(IPAddress4::none(), IPAddress4::loopback());
+}
+
+// For V6 Address
+TEST(Address6, Parse) {
+    EXPECT_EQ(IPAddress6::fromString("::1").value(), IPAddress6::loopback());
+    EXPECT_EQ(IPAddress6::fromString("::").value(), IPAddress6::any());
+
+    EXPECT_FALSE(IPAddress6::fromString("0.0.0.0").has_value());
+    EXPECT_FALSE(IPAddress6::fromString("255.255.255.255").has_value());
+    EXPECT_FALSE(IPAddress6::fromString("127.0.0.1").has_value());
+    EXPECT_FALSE(IPAddress6::fromString("127.0.0.1:8080").has_value());
+    EXPECT_FALSE(IPAddress6::fromString("256.256.256.256").has_value());
+    EXPECT_FALSE(IPAddress6::fromString("::ffff:256.256.256.256").has_value());
+    EXPECT_FALSE(IPAddress6::fromString("asdkljakldjasdnm,sa南萨摩").has_value());
+    EXPECT_FALSE(IPAddress6::fromString("::ffff:1121212121:121212:sa1212121211212121212121:12121212121:as2a1s2a1212").has_value());
+}
+
+TEST(Address6, Compare) {
+    EXPECT_EQ(IPAddress6::loopback(), IPAddress6::loopback());
+    EXPECT_NE(IPAddress6::loopback(), IPAddress6::any());
+    EXPECT_NE(IPAddress6::loopback(), IPAddress6::none());
+}
+
+// For V4 / 6 Address
+TEST(Address, Parse) {
+    EXPECT_EQ(IPAddress("0.0.0.0").family(), AF_INET);
+    EXPECT_EQ(IPAddress("255.255.255.255").family(), AF_INET);
+    EXPECT_EQ(IPAddress("127.0.0.1").family(), AF_INET);
+    
+    EXPECT_EQ(IPAddress("::1").family(), AF_INET6);
+    EXPECT_EQ(IPAddress("::").family(), AF_INET6);
+    EXPECT_EQ(IPAddress("::ffff:192.168.1.1").family(), AF_INET6);
+
+    EXPECT_FALSE(IPAddress::fromString("127.0.0.1:8080").has_value());
+    EXPECT_FALSE(IPAddress::fromString("256.256.256.256").has_value());
+    EXPECT_FALSE(IPAddress::fromString("::ffff:256.256.256.256").has_value());
+}
+
+TEST(Address, ToString) {
+    EXPECT_EQ(IPAddress(IPAddress4::any()).toString(), "0.0.0.0");
+    EXPECT_EQ(IPAddress(IPAddress4::none()).toString(), "255.255.255.255");
+}
+
+TEST(Address, Compare) {
+    EXPECT_EQ(IPAddress(), IPAddress());
+    EXPECT_EQ(IPAddress(IPAddress4::any()), IPAddress(IPAddress4::any()));
+    EXPECT_NE(IPAddress(IPAddress4::any()), IPAddress(IPAddress4::none()));
+    EXPECT_EQ(IPAddress(IPAddress6::loopback()), IPAddress(IPAddress6::loopback()));
+    EXPECT_NE(IPAddress(IPAddress6::loopback()), IPAddress(IPAddress6::any()));
+    EXPECT_NE(IPAddress(IPAddress4::loopback()), IPAddress(IPAddress6::none()));
+    EXPECT_NE(IPAddress(IPAddress4::loopback()), IPAddress());
+}
+
+TEST(Endpoint, Parse4) {
+    IPEndpoint endpoint1("127.0.0.1:8080");
+    EXPECT_TRUE(endpoint1.isValid());
+    EXPECT_EQ(endpoint1.address(), "127.0.0.1");
+    EXPECT_EQ(endpoint1.port(), 8080);
+    std::cout << endpoint1.toString() << std::endl;
+
+    IPEndpoint endpoint2("127.0.0.1:11451");
+    EXPECT_TRUE(endpoint2.isValid());
+    EXPECT_EQ(endpoint2.address(), "127.0.0.1");
+    EXPECT_EQ(endpoint2.port(), 11451);
+    std::cout << endpoint2.toString() << std::endl;
+
+
+    IPEndpoint endpoint3("127.0.0.1:65535");
+    EXPECT_TRUE(endpoint3.isValid());
+    EXPECT_EQ(endpoint3.address(), "127.0.0.1");
+    EXPECT_EQ(endpoint3.port(), 65535);
+    std::cout << endpoint3.toString() << std::endl;
+
+    // False test cases
+    IPEndpoint endpoint4("127.0.0.1:65536");
+    EXPECT_FALSE(endpoint4.isValid());
+    std::cout << endpoint4.toString() << std::endl;
+
+    IPEndpoint endpoint5("127.0.0.1:8080:8080");
+    EXPECT_FALSE(endpoint5.isValid());
+    std::cout << endpoint5.toString() << std::endl;
+
+    IPEndpoint endpoint6("127asdlllll:askasjajskajs");
+    EXPECT_FALSE(endpoint6.isValid());
+    std::cout << endpoint6.toString() << std::endl;
+
+    IPEndpoint endpoint7("127.0.0.1"); // Only IP address
+    EXPECT_FALSE(endpoint7.isValid());
+    std::cout << endpoint7.toString() << std::endl;
+
+    IPEndpoint endpoint8("127.0.0.1:"); // Only port
+    EXPECT_FALSE(endpoint8.isValid());
+    std::cout << endpoint8.toString() << std::endl;
+
+    IPEndpoint endpoint9(":8080"); // Only port
+    EXPECT_FALSE(endpoint9.isValid());
+    std::cout << endpoint9.toString() << std::endl;
+
+    IPEndpoint endpoint10("127.0.0.1:8080:8080"); // Too many colons
+    EXPECT_FALSE(endpoint10.isValid());
+    std::cout << endpoint10.toString() << std::endl;
+
+    IPEndpoint endpoint11("127.0.0.1.11.11.11.11.11.11.11.11:8080"); // Too long
+    EXPECT_FALSE(endpoint11.isValid());
+    std::cout << endpoint11.toString() << std::endl;
+
+    IPEndpoint endpoint12(":"); // Only :
+    EXPECT_FALSE(endpoint12.isValid());
+    std::cout << endpoint12.toString() << std::endl;
+}
+
+TEST(Endpoint, Parse6) {
+    IPEndpoint endpoint1("[::1]:8080");
+    EXPECT_TRUE(endpoint1.isValid());
+    EXPECT_EQ(endpoint1.address(), "::1");
+    EXPECT_EQ(endpoint1.port(), 8080);
+    std::cout << endpoint1.toString() << std::endl;
+
+    IPEndpoint endpoint2("[::1]:11451");
+    EXPECT_TRUE(endpoint2.isValid());
+    EXPECT_EQ(endpoint2.address(), "::1");
+    EXPECT_EQ(endpoint2.port(), 11451);
+    std::cout << endpoint2.toString() << std::endl;
+
+    IPEndpoint endpoint3("[::1]:65535");
+    EXPECT_TRUE(endpoint3.isValid());
+    EXPECT_EQ(endpoint3.address(), "::1");
+    EXPECT_EQ(endpoint3.port(), 65535);
+    std::cout << endpoint3.toString() << std::endl;
+
+    // False test cases
+    IPEndpoint endpoint4("[::1]:65536");
+    EXPECT_FALSE(endpoint4.isValid());
+    std::cout << endpoint4.toString() << std::endl;
+
+    IPEndpoint endpoint5("[askasjajskajs]:8080");
+    EXPECT_FALSE(endpoint5.isValid());
+    std::cout << endpoint5.toString() << std::endl;
+
+    IPEndpoint endpoint6("[]:1145");
+    EXPECT_FALSE(endpoint6.isValid());
+    std::cout << endpoint6.toString() << std::endl;
+
+    IPEndpoint endpoint7("[aslakkkkkkkkkkkkkkkkkkkkasllaskjlask伯纳斯卡扣设计::1]:8080:8080");
+    EXPECT_FALSE(endpoint7.isValid());
+    std::cout << endpoint7.toString() << std::endl;
+}
+
+TEST(Endpoint, Access4) {
+    IPEndpoint endpoint("127.0.0.1:8080");
+    EXPECT_TRUE(endpoint.isValid());
+    EXPECT_EQ(endpoint.address4(), IPAddress4::loopback());
+}
+
+TEST(Endpoint, Access6) {
+    IPEndpoint endpoint("[::1]:8080");
+    EXPECT_TRUE(endpoint.isValid());
+    EXPECT_EQ(endpoint.address6(), IPAddress6::loopback());
+}
+
+TEST(Endpoint, Compare) {
+    EXPECT_EQ(IPEndpoint(IPAddress4::loopback(), 8080), "127.0.0.1:8080");
+    EXPECT_EQ(IPEndpoint("127.0.0.1:8080"), "127.0.0.1:8080");
+    EXPECT_EQ(IPEndpoint("[::1]:8080"), "[::1]:8080");
+    EXPECT_NE(IPEndpoint("[::1]:8080"), "127.0.0.1:8080");
+    EXPECT_EQ(IPEndpoint(), IPEndpoint());
+}
+
+TEST(Endpoint, Invalid) {
+    IPEndpoint endpoint7;
+    EXPECT_FALSE(endpoint7.isValid());
+}
+
+TEST(Endpoint, ToString) {
+    IPEndpoint endpoint(IPAddress4::any(), 8080);
+    EXPECT_EQ(endpoint.toString(), "0.0.0.0:8080");
+
+#if !defined(ILIAS_NO_FORMAT)
+    EXPECT_EQ(fmtlib::format("{}", endpoint), "0.0.0.0:8080");
+#endif
+
+    IPEndpoint endpoint2(IPAddress6::none(), 8080);
+    EXPECT_EQ(endpoint2.toString(), "[::]:8080");
+
+#if !defined(ILIAS_NO_FORMAT)
+    EXPECT_EQ(fmtlib::format("{}", endpoint2), "[::]:8080");
+#endif
+}
+
 CORO_TEST(Net, Tcp) {
     auto listener = (co_await TcpListener::bind("127.0.0.1:0")).value();
 }
@@ -48,7 +290,7 @@ CORO_TEST(Net, Http) {
         }
         std::cout << line << std::endl;
     }
-    char buffer[1024] {};
+    char buffer[4096] {};
     while (true) {
         auto size = (co_await stream.read(makeBuffer(buffer))).value();
         if (size == 0) {

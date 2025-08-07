@@ -2,6 +2,7 @@
 #include <ilias/sync/event.hpp>
 #include <ilias/sync/semaphore.hpp>
 #include <ilias/sync/oneshot.hpp>
+#include <ilias/sync/mpsc.hpp>
 #include <ilias/task.hpp>
 #include "testing.hpp"
 
@@ -140,6 +141,55 @@ CORO_TEST(Sync, Oneshot) {
         auto [sender, receiver] = oneshot::channel<int>();
         auto recv = [&]() -> Task<std::optional<int> > {
             co_return co_await std::move(receiver);  
+        };
+        auto handle = spawn(recv());
+        handle.stop();
+        EXPECT_FALSE(co_await std::move(handle));
+    }
+}
+
+CORO_TEST(Sync, Mpsc) {
+    {
+        auto [sender, receiver] = mpsc::channel<int>(10);
+        EXPECT_TRUE(co_await sender.send(42));
+        EXPECT_EQ(co_await receiver.recv(), 42);
+    }
+    { // close
+        auto [sender, receiver] = mpsc::channel<int>(10);
+        sender.close();
+        EXPECT_FALSE(co_await receiver.recv());
+        EXPECT_TRUE(sender.isClosed());
+        EXPECT_TRUE(receiver.isClosed());
+    }
+    {
+        auto [sender, receiver] = mpsc::channel<int>(10);
+        receiver.close();
+        EXPECT_FALSE(co_await sender.send(42));
+        EXPECT_TRUE(sender.isClosed());
+        EXPECT_TRUE(receiver.isClosed());
+    }
+    { // blocking
+        auto [sender, receiver] = mpsc::channel<int>(10);
+        auto recvWorker = [&]() -> Task<void> {
+            for (int i = 0; i < 100; i++) {
+                EXPECT_EQ(co_await receiver.recv(), i);
+            }  
+            receiver.close();
+        };
+        auto handle = spawn(recvWorker());
+        for (int i = 0; i < 100; i++) {
+            EXPECT_TRUE(co_await sender.send(i));
+        }
+        EXPECT_FALSE(co_await sender.send(100)); // closed
+        EXPECT_FALSE(co_await sender.send(101)); // closed
+        EXPECT_TRUE(co_await std::move(handle)); // wait for the recvWorker to finish
+    }
+    {
+        // cancel
+        auto [sender, receiver] = mpsc::channel<int>(10);
+        auto recv = [&]() -> Task<void> {
+            co_await receiver.recv();
+            ::abort(); // should not reach here
         };
         auto handle = spawn(recv());
         handle.stop();
