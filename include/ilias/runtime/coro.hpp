@@ -258,6 +258,17 @@ inline auto stopped() noexcept {
     return Awaiter {};
 }
 
+// Yield the current coroutine, it will be resumed in the executor
+inline auto yield() noexcept {
+    struct Awaiter {
+        auto await_ready() noexcept { return false; }
+        auto await_suspend(CoroHandle h) noexcept { h.schedule(); }
+        auto await_resume() noexcept {}
+    };
+
+    return Awaiter {};
+}
+
 } // namespace runtime::env
 
 ILIAS_NS_END

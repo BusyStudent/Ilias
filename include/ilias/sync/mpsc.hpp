@@ -43,7 +43,7 @@ public:
 template <typename T>
 class SendAwaiter final : public sync::WaitAwaiter<SendAwaiter<T> > {
 public:
-    SendAwaiter(Channel<T> *c, T value) : sync::WaitAwaiter<SendAwaiter<T> >(c->senders), mChan(c), mValue(std::move(value)) {};
+    SendAwaiter(Channel<T> *c, T value) : sync::WaitAwaiter<SendAwaiter<T> >(c->senders), mChan(c), mResult(Err(std::move(value))) {};
     SendAwaiter(SendAwaiter &&) = default;
 
     auto await_ready() -> bool {
@@ -51,22 +51,31 @@ public:
             return true; // The receiver is closed, so we can't send any more.
         }
         if (mChan->queue.size() < mChan->capacity) {
+            mChan->queue.emplace_back(std::move(mResult.error()));
+            mChan->receiver.wakeupOne();
+            mResult = {};
             return true; // Have space, 
         }
         return false; // Wait the queue has space.
     }
 
     auto await_resume() -> Result<void, T> {
+        return std::move(mResult);
+    }
+
+    // Called when we wakup from the WaitQueue.
+    auto onWakeup() {
         if (mChan->receiverClosed) {
-            return Err(std::move(mValue));
+            return;
         }
-        mChan->queue.emplace_back(std::move(mValue));
-        mChan->receiver.wakeupOne();
-        return {};
+        // Other wise, we should have space, so we can send the data.
+        ILIAS_ASSERT(mChan->queue.size() < mChan->capacity);
+        mChan->queue.emplace_back(std::move(mResult.error()));
+        mResult = {};
     }
 private:
     Channel<T> *mChan;
-    T mValue;
+    Result<void, T> mResult;
 };
 
 template <typename T>
@@ -218,6 +227,7 @@ public:
 
     /**
      * @brief Receive a item from the channel.
+     * @note Don't use the recv method concurrently, only one task can use it at a time.
      * 
      * @return std::optional<T>, nullopt on the channel is closed
      */

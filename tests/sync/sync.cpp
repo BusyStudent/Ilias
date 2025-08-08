@@ -170,19 +170,36 @@ CORO_TEST(Sync, Mpsc) {
     }
     { // blocking
         auto [sender, receiver] = mpsc::channel<int>(10);
-        auto recvWorker = [&]() -> Task<void> {
+        auto recvWorker = [](auto receiver) -> Task<void> {
             for (int i = 0; i < 100; i++) {
                 EXPECT_EQ(co_await receiver.recv(), i);
             }  
             receiver.close();
         };
-        auto handle = spawn(recvWorker());
+        auto handle = spawn(recvWorker(std::move(receiver)));
         for (int i = 0; i < 100; i++) {
             EXPECT_TRUE(co_await sender.send(i));
         }
+        co_await yield();
         EXPECT_FALSE(co_await sender.send(100)); // closed
         EXPECT_FALSE(co_await sender.send(101)); // closed
         EXPECT_TRUE(co_await std::move(handle)); // wait for the recvWorker to finish
+    }
+    {
+        auto [sender, receiver] = mpsc::channel<int>(10);
+        auto sendWorker = [](auto sender) -> Task<void> {
+            for (int i = 0; i < 10; i++) {
+                EXPECT_TRUE(co_await sender.send(i));
+            }  
+        };
+        auto group = TaskGroup<void>();
+        for (int i = 0; i < 10; i++) {
+            group.spawn(sendWorker(sender));
+        }
+        for (int i = 0; i < 100; i++) {
+            EXPECT_TRUE(co_await receiver.recv());
+        }
+        auto _ = co_await group.waitAll();
     }
     {
         // cancel

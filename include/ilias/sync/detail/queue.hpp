@@ -11,22 +11,26 @@ namespace sync {
 
 class WaitQueue;
 
-// The part of helper awaiter for register the caller to the wait queue
+// The part of helper awaiter for register the caller to the wait queue, user should not use it directly
 class [[nodiscard]] AwaiterBase {
 public:
     AwaiterBase(WaitQueue &queue) : mQueue(queue) {}
     AwaiterBase(AwaiterBase &&) = default;
+    ~AwaiterBase() = default;
 
     ILIAS_API
     auto await_suspend(runtime::CoroHandle caller) -> void;
 private:
-    auto onNotify() -> void;
+    auto onWakeupRaw() -> void;
     auto onStopRequested() -> void;
 
     WaitQueue &mQueue;
     runtime::CoroHandle mCaller;
     runtime::StopRegistration mReg;
     std::list<AwaiterBase *>::iterator mIt;
+    void (*mOnWakeup)(AwaiterBase *self) = nullptr; // Additional wakeup handler for child classes
+template <typename T>
+friend class WaitAwaiter;
 friend class WaitQueue;
 };
 
@@ -48,8 +52,17 @@ friend class AwaiterBase;
 
 template <typename T>
 class WaitAwaiter : public AwaiterBase {
-    // no-op here, reserve for future
-    using AwaiterBase::AwaiterBase;
+public:
+    WaitAwaiter(WaitQueue &queue) : AwaiterBase(queue) {
+        if constexpr (requires(T &t) { t.onWakeup(); }) { // Check if T has onWakeup
+            mOnWakeup = proxy;
+        }
+    }
+private:
+    template <char = 0>
+    static auto proxy(AwaiterBase *self) -> void {
+        static_cast<T *>(self)->onWakeup(); // Call onWakeup
+    }
 };
 
 } // namespace sync

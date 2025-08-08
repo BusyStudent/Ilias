@@ -22,7 +22,7 @@
 
 ILIAS_NS_BEGIN
 
-namespace task::option {
+namespace task {
 
 template <typename T>
 struct ReplaceVoid {
@@ -50,7 +50,7 @@ auto makeOption(Fn &&fn) -> Option<std::invoke_result_t<Fn> > {
     }
 }
 
-} // namespace task::option
+} // namespace task
 
 namespace task {
 
@@ -59,8 +59,6 @@ using runtime::StopRegistration;
 using runtime::CoroHandle;
 using runtime::CoroPromise;
 using runtime::CoroContext;
-using option::makeOption;
-using option::Option;
 
 // The return value part of the task promise
 template <typename T>
@@ -608,6 +606,12 @@ inline auto blocking(Fn fn) {
 [[nodiscard]]
 inline auto sleep(std::chrono::milliseconds duration) -> Task<void> {
     return runtime::Executor::currentThread()->sleep(duration.count());
+}
+
+// Yield the current coroutine
+[[nodiscard]]
+inline auto yield() noexcept {
+    return runtime::context::yield();
 }
 
 // Abstraction for awaitable
