@@ -111,6 +111,13 @@ CORO_TEST(Task, WhenAll) {
     {
         auto [a, b] = co_await whenAll(sleep(10ms), sleep(20ms));
     }
+    {
+        // Check when all on multi blocking task
+        auto blockingSleep = []() {
+            std::this_thread::sleep_for(100ms);
+        };
+        auto [a, b, c, d] = co_await whenAll(blocking(blockingSleep), blocking(blockingSleep), blocking(blockingSleep), blocking(blockingSleep));
+    }
 
     // Check stopping
     auto handle = spawn([]() -> Task<void> {

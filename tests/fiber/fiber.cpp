@@ -5,17 +5,7 @@
 
 using namespace std::literals;
 
-TEST(Fiber, Internal) {
-    auto fiber = fiber::FiberContext::create([]() {
-        std::string s = "HelloWorld";
-        // suspend here
-        fiber::FiberContext::suspend();
-        return s;
-    });
-    fiber->resume();
-    ASSERT_FALSE(fiber->done()); // fiber is not done
-    fiber->destroy(); // Test destry on the suspend point
-}
+#if defined(ILIAS_USE_FIBER)
 
 TEST(Fiber, Simple) {
     auto fiber = Fiber([]() {
@@ -30,7 +20,7 @@ TEST(Fiber, Simple) {
     ASSERT_EQ(std::move(fiber2).wait(), "HelloWorld");
 
     auto fiber3 = Fiber([]() {
-        throw std::exception("String :)");
+        throw std::exception();
     });
     ASSERT_THROW(std::move(fiber3).wait(), std::exception);
 }
@@ -40,6 +30,24 @@ TEST(Fiber, Await) {
         this_fiber::await(sleep(10ms));
     });
     std::move(fiber).wait();
+}
+
+CORO_TEST(Fiber, Spawn) {
+    auto fiber = Fiber([]() {
+        return 42;
+    });
+    auto handle = spawn(toTask(std::move(fiber)));
+    EXPECT_EQ(co_await std::move(handle), 42);
+
+    // With stop
+    auto fiber2 = Fiber([]() {
+        this_fiber::await(sleep(1000ms));
+        // Never reached
+        ::abort();
+    });
+    auto handle2 = spawn(toTask(std::move(fiber2)));
+    handle2.stop();
+    EXPECT_FALSE(co_await std::move(handle2));
 }
 
 CORO_TEST(FiberAwait, Await) {
@@ -55,6 +63,8 @@ CORO_TEST(FiberAwait, Await) {
     });
     EXPECT_EQ(co_await std::move(fiber2), "HelloWorld");
 }
+
+#endif // ILIAS_USE_FIBER
 
 auto main(int argc, char **argv) -> int {
     runtime::EventLoop loop;

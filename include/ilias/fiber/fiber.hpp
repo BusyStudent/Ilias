@@ -11,6 +11,8 @@
 #pragma once
 
 #include <ilias/defines.hpp>
+#if defined(ILIAS_USE_FIBER)
+
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp> // runtime::CoroHandle
 #include <ilias/detail/option.hpp> // Option<void>
@@ -104,7 +106,6 @@ protected: // Don't allow to directly create the context
     // State
     runtime::StopSource mStopSource;
     runtime::Executor *mExecutor = nullptr;
-    bool mUnwinding = false;
     bool mComplete = false;
     bool mStopped = false;
 
@@ -329,3 +330,5 @@ Fiber(Fn, Args ...) -> Fiber<std::invoke_result_t<Fn, Args...> >;
 class FiberUnwind {};
 
 ILIAS_NS_END
+
+#endif // ILIAS_USE_FIBER

@@ -105,13 +105,14 @@ auto threadpool::submit(Callable *callable) -> void {
         std::condition_variable cond;
         std::mutex mutex;
         std::vector<std::thread> threads;
+        std::atomic<size_t> idle {0}; // number of idle threads
+        std::atomic<std::chrono::steady_clock::time_point> lastPeek; // last time the worker peeked the queue
     };
-    static ThreadPool *pool = nullptr;
-    static std::once_flag once;
+    static constinit ThreadPool *pool = nullptr;
+    static constinit std::once_flag once;
 
-    auto worker = [](StopToken token) {
-        ::pthread_setname_np(::pthread_self(), "ilias::worker");
-        while (!token.stop_requested()) {
+    auto dispatch = [](StopToken &token) {
+        while (true) {
             std::unique_lock locker(pool->mutex);
             pool->cond.wait(locker, [&]() {
                 return !pool->queue.empty() || token.stop_requested();
@@ -121,9 +122,19 @@ auto threadpool::submit(Callable *callable) -> void {
             }
             auto callable = pool->queue.front();
             pool->queue.pop();
+            pool->lastPeek = std::chrono::steady_clock::now();
             locker.unlock();
+            
+
+            pool->idle -= 1;
             callable->call(*callable);
+            pool->idle += 1;
         }
+    };
+    auto worker = [&](StopToken token) {
+        ::pthread_setname_np(::pthread_self(), "ilias::worker");
+        dispatch(token);
+        pool->idle -= 1; // The worker thread is exiting, so -= 1
     };
 
     auto cleanup = []() {
@@ -137,12 +148,20 @@ auto threadpool::submit(Callable *callable) -> void {
 
     auto init = [&]() {
         pool = new ThreadPool; 
+        pool->idle += 1;
         pool->threads.push_back(std::thread(worker, pool->stopSource.get_token()));
         ::atexit(cleanup);
     };
 
     std::call_once(once, init);
     std::lock_guard locker(pool->mutex);
+    if (pool->idle == 0) {
+        auto hw = std::thread::hardware_concurrency() * 2;
+        if (pool->threads.size() < hw && hw != 0) { // We can create more threads
+            pool->threads.push_back(std::thread(worker, pool->stopSource.get_token()));
+            pool->idle += 1;
+        }
+    }
     pool->queue.emplace(callable);
     pool->cond.notify_one();
 #endif

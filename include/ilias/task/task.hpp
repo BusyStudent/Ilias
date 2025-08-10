@@ -593,7 +593,7 @@ inline auto sleep(std::chrono::milliseconds duration) -> Task<void> {
 // Abstraction for awaitable
 template <Awaitable T>
 inline auto toTask(T awaitable) -> Task<AwaitableResult<T> > {
-    co_return co_await awaitable;
+    co_return co_await std::move(awaitable);
 }
 
 template <typename T>

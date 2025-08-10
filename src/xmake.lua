@@ -12,6 +12,12 @@ option("log")
     set_description("Enable logging")
 option_end()
 
+option("fiber")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Enable fiber support")
+option_end()
+
 option("spdlog")
     set_default(false)
     set_showmenu(true)
@@ -84,6 +90,11 @@ target("ilias")
     if has_config("log") and has_config("spdlog") then
         add_packages("spdlog", {public = true})
         set_configvar("ILIAS_USE_SPDLOG", 1)
+    end
+
+    if has_config("fiber") then
+        add_packages("fiber", {public = true})
+        set_configvar("ILIAS_USE_FIBER", 1)
     end
 
     if has_config("io_uring") then

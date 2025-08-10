@@ -1,17 +1,17 @@
 #include <ilias/defines.hpp>
 
-// #if defined(ILIAS_USE_FIBER)
+#if defined(ILIAS_USE_FIBER)
 #include <ilias/runtime/executor.hpp> // Executor
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/fiber/fiber.hpp> // Fiber
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp> // CreateFiber
-#endif // _WIN32
-
-#if defined(__linux)
+#elif __has_include(<ucontext.h>)
     #include <ucontext.h> // getcontext, makecontext
-#endif // __linux
+#else
+    #error "No fiber support on this platform"
+#endif // _WIN32
 
 ILIAS_NS_BEGIN
 
@@ -33,9 +33,14 @@ public:
 #if defined(_WIN32)
     // Platform data
     struct win32 {
-        HANDLE handle = nullptr;
-        HANDLE caller = nullptr;
+        ::HANDLE handle = nullptr;
+        ::HANDLE caller = nullptr;
     } win32;
+#else
+    struct {
+        ::ucontext_t caller {};
+        ::ucontext_t self {};
+    } posix;
 #endif // _WIN32
 
     // Method
@@ -46,6 +51,21 @@ public:
     auto suspendImpl() -> void;
     auto destroyImpl() -> void;
 };
+
+#if !defined(_WIN32) // Not in windows, we should save it by ourselves
+static constinit thread_local FiberContextImpl *currentContext = nullptr;
+
+struct CurrentGuard { // RAII guard for manage the current fiber
+    CurrentGuard(FiberContextImpl *c) : cur(c) {
+        prev = std::exchange(currentContext, cur);
+    }
+    ~CurrentGuard() {
+        currentContext = prev;
+    }
+    FiberContextImpl *cur = nullptr;
+    FiberContextImpl *prev = nullptr;
+};
+#endif // _WIN32
 
 auto FiberContextImpl::main() -> void {
     started = true;
@@ -73,13 +93,13 @@ auto FiberContextImpl::main() -> void {
 auto FiberContextImpl::destroyImpl() -> void {
     ILIAS_ASSERT_MSG(!running, "Cannot destroy a running fiber");
     if (started && !mComplete) { // Started, but suspend
-        mUnwinding = true;
-        resumeImpl();
-        ILIAS_ASSERT(mComplete);
+        ILIAS_ASSERT_MSG(false, "Cannot destroy a suspended fiber");
     }
     // Ok, safe to destroy
 #if defined(_WIN32)
     ::DeleteFiber(win32.handle);
+#else
+    ::free(posix.self.uc_stack.ss_sp);
 #endif // _WIN32
 
     // Destroy the entry
@@ -106,6 +126,9 @@ auto FiberContextImpl::resumeImpl() -> void {
     static thread_local ConvertGuard guard;
     win32.caller = ::GetCurrentFiber();
     ::SwitchToFiber(win32.handle);
+#else
+    CurrentGuard guard(this);
+    ::swapcontext(&posix.caller, &posix.self);
 #endif // _WIN32
 
 }
@@ -114,15 +137,15 @@ auto FiberContextImpl::suspendImpl() -> void {
     ILIAS_ASSERT_MSG(running && !mComplete, "Cannot suspend a non-running or complete fiber");
     running = false;
 
+    // Switch back to the resume point
 #if defined(_WIN32)
     auto caller = std::exchange(win32.caller, nullptr);
-    ::SwitchToFiber(caller); // Switch back to the resume point
+    ::SwitchToFiber(caller);
+#else
+    ::swapcontext(&posix.self, &posix.caller);
 #endif // _WIN32
 
     running = true;
-    if (mUnwinding) {
-        throw FiberUnwind();
-    }
 }
 
 auto callContext(void *ctxt) -> void {
@@ -132,10 +155,16 @@ auto callContext(void *ctxt) -> void {
     // Switch back to the resume point
 #if defined(_WIN32)
     ::SwitchToFiber(self->win32.caller);
+    ILIAS_ASSERT_MSG(false, "Should not reach here");
 #endif // _WIN32
 
-    ILIAS_ASSERT_MSG(false, "Should not reach here");
 }
+
+#if !defined(_WIN32)
+auto ucontextEntry() -> void {
+    callContext(currentContext); // We use uc_link to return to the caller
+}
+#endif // _WIN32
 
 } // namespace
 
@@ -148,7 +177,7 @@ auto FiberContext::current() -> FiberContext * {
     ILIAS_ASSERT(data->magic == 0x114514);
     return data;
 #else
-    ::abort();
+    return currentContext;
 #endif // _WIN32
 
 }
@@ -176,7 +205,7 @@ auto FiberContext::schedule() -> void {
     }, self);
 }
 
-auto FiberContext::create4(FiberEntry entry) -> FiberContext *{
+auto FiberContext::create4(FiberEntry entry) -> FiberContext * {
     auto ctxt = std::make_unique<FiberContextImpl>();
 
     ILIAS_ASSERT(entry.invoke);
@@ -192,6 +221,15 @@ auto FiberContext::create4(FiberEntry entry) -> FiberContext *{
         callContext, 
         ctxt.get()
     );
+#else
+    if (entry.stackSize == 0) {
+        entry.stackSize = 1024 * 32; // Use 32K
+    }
+    ::getcontext(&ctxt->posix.self);
+    ctxt->posix.self.uc_stack.ss_sp = ::malloc(entry.stackSize);
+    ctxt->posix.self.uc_stack.ss_size = entry.stackSize;
+    ctxt->posix.self.uc_link = &ctxt->posix.caller; // Return to the caller
+    ::makecontext(&ctxt->posix.self, ucontextEntry, 0);
 #endif // _WIN32
 
     return ctxt.release();
@@ -240,4 +278,4 @@ auto this_fiber::await4(runtime::CoroHandle coro) -> void {
 
 ILIAS_NS_END
 
-// #endif
+#endif // ILIAS_USE_FIBER
