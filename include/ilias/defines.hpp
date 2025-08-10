@@ -13,8 +13,8 @@
 
 #include <ilias/detail/config.hpp>
 #include <concepts>
+#include <version>
 #include <string>
-#include <array>
 
 #if !defined(ILIAS_NAMESPACE)
     #define ILIAS_NAMESPACE ilias

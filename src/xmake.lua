@@ -1,4 +1,4 @@
-set_languages("c++23")
+set_languages("c++latest")
 
 option("fmt")
     set_default(false)
@@ -10,6 +10,12 @@ option("log")
     set_default(false)
     set_showmenu(true)
     set_description("Enable logging")
+option_end()
+
+option("cpp20")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Enable polyfills for std::expected in cpp20")
 option_end()
 
 option("fiber")
@@ -47,6 +53,10 @@ if has_config("fmt") then
     add_requires("fmt")
 end
 
+if has_config("cpp20") then
+    add_requires("zeus_expected")
+end
+
 if has_config("io_uring") then
     add_requires("liburing")
 end
@@ -60,6 +70,7 @@ target("ilias")
     set_configdir("../include/ilias/detail/")
     add_configfiles("../include/ilias/detail/config.hpp.in")
     add_headerfiles("(../include/ilias/**.hpp)")
+    add_headerfiles("(../include/ilias_qt/**.hpp)")
     add_includedirs("../include", {public = true})
     add_defines("_ILIAS_SOURCE")
     
@@ -69,7 +80,7 @@ target("ilias")
     -- Add links by platform
     if is_plat("windows") or is_plat("mingw") or is_plat("msys") then 
         add_files("win32/*.cpp")
-        add_syslinks("ws2_32", "bcrypt", {public = true})
+        add_syslinks("ws2_32", {public = true})
     end
 
     if is_plat("linux") then
@@ -90,6 +101,11 @@ target("ilias")
     if has_config("log") and has_config("spdlog") then
         add_packages("spdlog", {public = true})
         set_configvar("ILIAS_USE_SPDLOG", 1)
+    end
+
+    if has_config("cpp20") then
+        add_packages("zeus_expected", {public = true})
+        set_configvar("ILIAS_CPP20", 1)
     end
 
     if has_config("fiber") then

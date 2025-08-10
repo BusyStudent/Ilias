@@ -1,6 +1,6 @@
 # Ilias
 
-## A header-only async coroutine IO library for C++, based on C++20 stackless coroutines
+## A async coroutine IO library for C++, based on C++20 stackless coroutines
 
 ### Introduction
 
@@ -11,8 +11,6 @@ A lightweight async coroutine library aimed at minimal dependencies, implemented
 - Structured concurrency
 - Network support (TCP, UDP, UnixSocket, Async-GetAddrinfo)
 - File I/O and pipe support
-- SSL support (using Schannel on Windows, OpenSSL on other platforms)
-- Built-in small HTTP 1.1 client and WebSocket client support
 - Cross-platform (Windows, Linux)
 - Simple single-threaded scheduler, easy to integrate with other frameworks like Qt
 
@@ -55,6 +53,7 @@ Just copy all files from the include directory into your project
 
 auto main() -> int {
     ilias::PlatformContext ctxt; // First, build a context for submitting tasks - this is thread_local, one per thread
+    ctxt.install(); 
     // Available IO contexts include IocpContext, EpollContext, UringContext, QIoContext
     // Simple executors without IO include MiniExecutor
     // PlatformContext is a typedef that selects based on the current platform at compile time
@@ -142,60 +141,6 @@ void ilias_main() { // Taking shortcuts, not handling errors for demo, using val
 }
 ```
 
-### HTTP Client
-
-Simple HTTP requests supporting GET, POST, HEAD etc:
-
-```cpp
-#include <ilias/platform.hpp>
-#include <ilias/http.hpp>
-#include <ilias/task.hpp>
-
-void ilias_main() { // Taking a shortcut :)
-    auto session = co_await ilias::HttpSession::make();
-    auto reply = (co_await session.get("https://www.google.com")).value();
-    auto content = (co_await reply.text()).value();
-    std::cout << "Http to " << reply.url().toString() << " Status code" << reply.statusCode() << std::endl;
-    std::cout << content << std::endl;
-}
-```
-
-### Error Handling
-
-Supports error codes and exceptions, using ```Result<T, E = Error>``` which is an alias for ```Expected<T, E>```.
-```Expected<T>``` uses either the standard library implementation (C++23) or built-in implementation based on availability.
-
-```Error``` is equivalent to ```std::error_code```. You can define your own error codes by implementing ```ErrorCategory``` and binding with ```ILIAS_DECLARE_ERROR(errc, category)```, otherwise manually construct ```Error``` objects like ```Error(yourCode, categoryReference)```.
-
-```cpp
-auto fn() -> IoTask<void> {
-    auto ret = co_await someTask();
-    ret.value(); // Throws BadExpectedAccess<Error> if no value. IoTask<T> auto-converts BadExpectedAccess<Error> to Error in return value
-    // Manual checking:
-    if (ret) {
-        ret.value();
-    }
-    else {
-        co_return Unexpected(ret.error());
-    }
-    // Or use try-catch
-    try {
-        ret.value();
-    }
-    catch (const BadExpectedAccess<Error> &e) {
-        auto err = e.error();
-    }
-    // Or let errors propagate up (note: error types must match, e.g., IoTask<void, Error1> and IoTask<void, Error2> can't use this)
-    ret.value();
-    // Or use safe syntactic sugar that checks errors and unwraps Result like Rust's ? (zero-cost with Statement Expression support, otherwise uses exceptions)
-    auto val = ilias_try(ret);
-    auto val2 = ilias_try(co_await someTask());
-
-    // Regular exceptions or mismatched error types propagate up, not caught by IoTask<T>
-    throw 1; // Exception rethrown at co_await fn(); or fn().wait()
-}
-```
-
 ### Qt Integration
 
 ```cpp
@@ -226,13 +171,6 @@ auto fn() -> Task<void> {
     if (b) { // taskB() completed first
 
     }
-    // Vector type
-    std::vector<Task<void>> tasks;
-    tasks.emplace_back(taskA());
-    tasks.emplace_back(taskB());
-    for (auto &result : co_await whenAny(tasks)) {
-        
-    }
 }
 ```
 
@@ -243,12 +181,6 @@ auto fn() -> Task<void> {
     // Returns only when both complete
     auto [a, b] = co_await whenAll(taskA(), taskB());
     // use a & b
-
-    // Vector type
-    std::vector<Task<void>> tasks;
-    tasks.emplace_back(taskA());
-    tasks.emplace_back(taskB());
-    auto res = co_await whenAll(tasks); // Single return value
 }
 ```
 
@@ -265,8 +197,6 @@ auto fn() -> Task<void> {
 
 ### Dependencies
 
-- zlib (optional)
-- openssl (optional)
 - liburing (optional, used by UringContext)
 
 ### Backends

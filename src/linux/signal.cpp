@@ -1,8 +1,8 @@
 #include <ilias/runtime/token.hpp>
-#include <ilias/signal/signal.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/context.hpp> // IoContext, IoHandle
 #include <ilias/io/fd.hpp> // FileDescriptor
+#include <ilias/signal.hpp>
 #include <sys/signalfd.h> // signalfd
 #include <unistd.h>
 #include <csignal>

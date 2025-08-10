@@ -2,6 +2,7 @@
 #include <ilias/io/duplex.hpp>
 #include <ilias/io/stream.hpp>
 #include <ilias/io/error.hpp>
+#include <array>
 #include <tuple>
 
 ILIAS_NS_BEGIN

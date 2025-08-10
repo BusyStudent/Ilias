@@ -1,7 +1,7 @@
-#include <ilias/signal/signal.hpp>
 #include <ilias/fs/console.hpp>
 #include <ilias/io/stream.hpp>
 #include <ilias/platform.hpp>
+#include <ilias/signal.hpp>
 #include <ilias/task.hpp>
 
 using namespace ILIAS_NAMESPACE;

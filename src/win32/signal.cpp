@@ -1,7 +1,7 @@
 #include <ilias/detail/win32defs.hpp>
-#include <ilias/signal/signal.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/context.hpp>
+#include <ilias/signal.hpp>
 #include <csignal>
 
 ILIAS_NS_BEGIN
