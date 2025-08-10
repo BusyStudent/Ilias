@@ -180,7 +180,7 @@ CORO_TEST(Sync, Mpsc) {
         for (int i = 0; i < 100; i++) {
             EXPECT_TRUE(co_await sender.send(i));
         }
-        co_await yield();
+        co_await this_coro::yield();
         EXPECT_FALSE(co_await sender.send(100)); // closed
         EXPECT_FALSE(co_await sender.send(101)); // closed
         EXPECT_TRUE(co_await std::move(handle)); // wait for the recvWorker to finish

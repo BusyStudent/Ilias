@@ -176,7 +176,7 @@ namespace task {
 // Set an timeout for a task, return nullopt on timeout
 template <Awaitable T>
 [[nodiscard]]
-inline auto setTimeout(T awaitable, std::chrono::milliseconds ms) -> Task<task::Option<AwaitableResult<T> > > {
+inline auto setTimeout(T awaitable, std::chrono::milliseconds ms) -> Task<Option<AwaitableResult<T> > > {
     auto [res, timeout] = co_await whenAny(std::move(awaitable), sleep(ms));
     if (timeout) {
         co_return std::nullopt;

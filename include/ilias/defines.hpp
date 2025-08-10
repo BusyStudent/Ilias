@@ -132,6 +132,9 @@ template <typename T>
 class Task;
 
 template <typename T>
+class Fiber;
+
+template <typename T>
 class Generator;
 
 // Common Concepts

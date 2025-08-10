@@ -14,43 +14,12 @@
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/await.hpp>
 #include <ilias/runtime/coro.hpp>
+#include <ilias/detail/option.hpp> // Option
 #include <ilias/log.hpp>
 #include <coroutine>
-#include <optional> // std::optional
-#include <variant> // std::monostate
 #include <chrono> // std::chrono::duration
 
 ILIAS_NS_BEGIN
-
-namespace task {
-
-template <typename T>
-struct ReplaceVoid {
-    using type = T;  
-};
-
-template <>
-struct ReplaceVoid<void> {
-    using type = std::monostate;
-};
-
-// For replace the fucking void to std::monostate :(
-template <typename T>
-using Option = std::optional<typename ReplaceVoid<T>::type>;
-
-// Create an option with 'value'
-template <std::invocable Fn>
-auto makeOption(Fn &&fn) -> Option<std::invoke_result_t<Fn> > {
-    if  constexpr (std::is_void_v<std::invoke_result_t<Fn> >) {
-        fn();
-        return std::monostate{};
-    }
-    else {
-        return fn();
-    }
-}
-
-} // namespace task
 
 namespace task {
 
@@ -431,6 +400,9 @@ private:
 
 } // namespace task
 
+// Re-export this for the user
+namespace this_coro = runtime::context;
+
 /**
  * @brief The lazy task class, it take the ownership of the coroutine
  * 
@@ -455,12 +427,22 @@ public:
 
     /**
      * @brief Leak the std coroutine handle
-     * @note It is internal function, you should not use it
+     * @note It is internal function, you should not use it outside the library
      * 
      * @return handle_type 
      */
     auto _leak() noexcept -> handle_type {
         return std::exchange(mHandle, nullptr);
+    }
+
+    /**
+     * @brief Get the std coroutine handle
+     * @note It is internal function, you should not use it it outside the library
+     * 
+     * @return handle_type 
+     */
+    auto _handle() const noexcept -> handle_type {
+        return mHandle;
     }
 
     // Set the context of the task, call on await_transform
@@ -540,7 +522,7 @@ public:
     auto stop() const { return mPtr->stop(); }
 
     // Blocking wait for the task to be done, nullopt on task stopped
-    auto wait() && -> task::Option<T> { 
+    auto wait() && -> Option<T> { 
         auto ptr = std::exchange(mPtr, nullptr);
         ptr->enter();
         return ptr->value<T>();
@@ -606,12 +588,6 @@ inline auto blocking(Fn fn) {
 [[nodiscard]]
 inline auto sleep(std::chrono::milliseconds duration) -> Task<void> {
     return runtime::Executor::currentThread()->sleep(duration.count());
-}
-
-// Yield the current coroutine
-[[nodiscard]]
-inline auto yield() noexcept {
-    return runtime::context::yield();
 }
 
 // Abstraction for awaitable

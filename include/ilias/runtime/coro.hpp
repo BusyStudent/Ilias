@@ -64,7 +64,7 @@ private:
 friend class CoroHandle;
 };
 
-// The common part of all coroutines
+// The common part of all stackless coroutines
 class CoroPromise {
 public:
     CoroPromise() = default;
@@ -114,7 +114,7 @@ protected: // protected ..., write by Generator :(
 friend class CoroHandle;
 };
 
-// The common part handle of all coroutines
+// The common part handle of all stackless coroutines
 class CoroHandle {
 public:
     template <typename T> requires (std::is_base_of_v<CoroPromise, T>)
@@ -269,7 +269,7 @@ inline auto yield() noexcept {
     return Awaiter {};
 }
 
-} // namespace runtime::env
+} // namespace runtime::context
 
 ILIAS_NS_END
 

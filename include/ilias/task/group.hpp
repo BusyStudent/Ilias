@@ -106,7 +106,7 @@ public:
     TaskGroup(TaskGroup &&) = default;
     ~TaskGroup() = default;
 
-    using value_type = typename task::Option<T>::value_type; // Use Option<T> to replace void to std::monostate :(
+    using value_type = typename Option<T>::value_type; // Use Option<T> to replace void to std::monostate :(
 
     /**
      * @brief Insert a handle to the group, the group take the ownership of the handle.
