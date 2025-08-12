@@ -15,6 +15,7 @@
 #include <ilias/buffer.hpp> // Buffer MutableBuffer
 #include <utility> // std::exchange
 #include <string> // std::string
+#include <array> // std::array
 #include <limits>
 
 // For min max macro in windows.h :(
@@ -82,9 +83,9 @@ public:
      * @brief Prepare a buffer for writing into the stream buffer (it make previous parepared buffer to invalid)
      * 
      * @param size The size of the buffer to prepare
-     * @return std::span<std::byte> 
+     * @return MutableBuffer 
      */
-    auto prepare(size_t size) -> std::span<std::byte> {
+    auto prepare(size_t size) -> MutableBuffer {
         if (mPos == mTail) { //< Input window is empty, move it and us to the begin of the buffer
             mPos = 0;
             mTail = 0;
@@ -124,18 +125,18 @@ public:
     /**
      * @brief Get the stream buffer's input window
      * 
-     * @return std::span<std::byte> 
+     * @return Buffer 
      */
-    auto data() const -> std::span<const std::byte> {
+    auto data() const -> Buffer {
         return mBuffer.subspan(mPos, mTail - mPos);
     }
 
     /**
      * @brief Get the stream buffer's input window (mutable)
      * 
-     * @return std::span<std::byte> 
+     * @return MutableBuffer 
      */
-    auto data() -> std::span<std::byte> {
+    auto data() -> MutableBuffer {
         return mBuffer.subspan(mPos, mTail - mPos);
     }
 
@@ -270,19 +271,20 @@ public:
      * @note if the size is too large, it will return an empty buffer
      * 
      * @param size The size of the buffer to prepare
-     * @return std::span<std::byte> 
+     * @return MutableBuffer 
      */
-    auto prepare(size_t size) -> std::span<std::byte> {
+    auto prepare(size_t size) -> MutableBuffer {
         if (mPos == mTail) { //< Input window is empty, move it and us to the begin of the buffer
             mPos = 0;
             mTail = 0;
         }
-        if ((mTail - mPos) < mBuffer.size() / 8) { //< If the input window is too small, move it to the begin of the buffer
+        auto space = mBuffer.size() - mTail; // The space left in the buffer
+        if ((mTail - mPos) < mBuffer.size() / 8 || space < size) { //< If the input window is too small, or left space is too small, move it to the begin of the buffer
             ::memmove(mBuffer.data(), mBuffer.data() + mPos, mTail - mPos);
             mTail -= mPos;
             mPos = 0;
+            space = mBuffer.size() - mTail; // Recalculate it, tail changed
         }
-        auto space = mBuffer.size() - mTail; // The space left in the buffer
         if (space < size) {
             return {};
         }
@@ -304,18 +306,18 @@ public:
     /**
      * @brief Get the data of the input window
      * 
-     * @return std::span<const std::byte> 
+     * @return Buffer 
      */
-    auto data() const -> std::span<const std::byte> {
+    auto data() const -> Buffer {
         return {mBuffer.data() + mPos, mTail - mPos};
     }
 
     /**
      * @brief Get the data of the input window (mutable)
      * 
-     * @return std::span<std::byte> 
+     * @return MutableBuffer
      */
-    auto data() -> std::span<std::byte> {
+    auto data() -> MutableBuffer {
         return {mBuffer.data() + mPos, mTail - mPos};
     }
 
@@ -478,7 +480,7 @@ public:
     }
 
     // Get the wrapped stream
-    auto stream() -> T & {
+    auto nextLayer() -> T & {
         return mStream;
     }
 
@@ -563,7 +565,7 @@ public:
     }
 
     // Get the wrapped stream
-    auto stream() -> T & {
+    auto nextLayer() -> T & {
         return mStream;
     }
 
@@ -609,15 +611,15 @@ public:
 
     // Readable
     auto read(MutableBuffer buffer) -> IoTask<size_t> {
-        return mStream.stream().read(buffer);
+        return mStream.nextLayer().read(buffer);
     }
 
     auto readline(std::string &str, std::string_view delim = "\n") -> IoTask<size_t> {
-        return mStream.stream().readline(str, delim);
+        return mStream.nextLayer().readline(str, delim);
     }
 
     auto getline(std::string_view delim = "\n") -> IoTask<std::string> {
-        return mStream.stream().getline(delim);
+        return mStream.nextLayer().getline(delim);
     }
 
     // Writable
@@ -634,18 +636,18 @@ public:
     }
 
     // Get
-    auto stream() -> T & {
-        return mStream.stream().stream();
+    auto nextLayer() -> T & {
+        return mStream.nextLayer().nextLayer();
     }
 
     // Reader
     [[nodiscard]]
     auto buffer() -> MutableBuffer {
-        return mStream.stream().buffer();
+        return mStream.nextLayer().buffer();
     }
 
     auto consume(size_t size) -> void {
-        return mStream.stream().consume(size);
+        return mStream.nextLayer().consume(size);
     }
 
     // Writer
@@ -660,7 +662,7 @@ public:
 
     [[nodiscard]] 
     auto detach() && -> T {
-        return std::move(stream());
+        return std::move(nextLayer());
     }
 
     auto operator =(BufStream &&) -> BufStream & = default;

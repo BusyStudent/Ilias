@@ -12,6 +12,12 @@ option("log")
     set_description("Enable logging")
 option_end()
 
+option("tls")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Enable tls support")
+option_end()
+
 option("cpp20")
     set_default(false)
     set_showmenu(true)
@@ -61,6 +67,11 @@ if has_config("io_uring") then
     add_requires("liburing")
 end
 
+if has_config("tls") and not is_plat("windows") then
+    -- In windows, use schannel
+    add_requires("openssl3")
+end
+
 if has_config("spdlog") and has_config("log") then
     add_requires("spdlog")
 end
@@ -77,8 +88,11 @@ target("ilias")
     add_files("net/*.cpp")
     add_files("*.cpp")
 
-    -- Add links by platform
+    -- Add link and files by platform
     if is_plat("windows") or is_plat("mingw") or is_plat("msys") then 
+        if has_config("tls") then
+            add_files("tls/schannel.cpp")
+        end
         add_files("win32/*.cpp")
         add_syslinks("ws2_32", {public = true})
     end
@@ -96,6 +110,10 @@ target("ilias")
 
     if has_config("log") then
         set_configvar("ILIAS_USE_LOG", 1)
+    end
+
+    if has_config("tls") then
+        set_configvar("ILIAS_TLS", 1)
     end
 
     if has_config("log") and has_config("spdlog") then

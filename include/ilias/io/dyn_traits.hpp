@@ -71,10 +71,16 @@ public:
     /**
      * @brief Construct a new Stream View object
      * 
+     */
+    StreamView(const StreamView &) = default;
+
+    /**
+     * @brief Construct a new Stream View object
+     * 
      * @tparam T Type of the Stream concept
      * @param t The reference of the Stream concept object
      */
-    template <Stream T>
+    template <Stream T> requires (!std::is_same_v<T, StreamView>) // Avoid recursion
     StreamView(T &t) : mVtbl(dyn_traits::streamVtbl<T>()), mObject(&t) { }
 
     /**
@@ -157,7 +163,7 @@ public:
      * @tparam T The type of the Stream concept
      * @param t 
      */
-    template <Stream T>
+    template <Stream T> requires (!std::is_same_v<T, StreamView>)
     DynStream(T &&t) {
         mVtbl = dyn_traits::streamVtbl<T>();
         mObject = new T(std::move(t));
