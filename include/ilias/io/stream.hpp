@@ -545,11 +545,11 @@ public:
                 co_return Err(n.error());
             }
             if (*n == 0) {
-                co_return Err(IoError::UnexpectedEOF);
+                co_return Err(IoError::WriteZero);
             }
             mBuffer.consume(*n);
         }
-        co_return {};
+        co_return co_await mStream.flush();
     }
 
     auto shutdown() -> IoTask<void> {

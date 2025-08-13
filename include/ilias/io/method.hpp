@@ -37,7 +37,7 @@ inline auto writeAll(T &stream, Buffer buffer) -> IoTask<size_t> {
             co_return Err(n.error());
         }
         if (*n == 0) {
-            co_return Err(IoError::UnexpectedEOF);
+            co_return Err(IoError::WriteZero);
         }
         written += *n;
         buffer = buffer.subspan(*n);

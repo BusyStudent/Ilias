@@ -183,7 +183,7 @@ public:
             auto data = mReadBuffer.prepare(mReadBuffer.capacity() - mReadBuffer.size());
             if (data.empty()) { // The buffer is full, but we still can't complete the handshake
                 ILIAS_WARN("Schannel", "Failed to handshake by recv buffer full, peer send too much data");
-                co_return Err(IoError::Other);
+                co_return Err(IoError::Tls);
             }
 
             // Read new data here after this

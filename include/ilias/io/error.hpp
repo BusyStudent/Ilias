@@ -43,7 +43,7 @@ public:
 };
 
 /**
- * @brief The platform independent error code for io operations, if user want to compare, use IoErrorKind::XXX
+ * @brief The platform independent error code for io operations, if user want to compare, use toKind(IoError::XXX)
  * 
  */
 class ILIAS_API IoError {
@@ -86,9 +86,15 @@ public:
         WouldBlock,                  //< Socket is non-blocking, operation would block
         Canceled,                    //< Operation was canceled
 
+        // System, getaddrinfo
+        HostNotFound,                //< Host not found
+
+        // TLS
+        Tls,                         //< Generic TLS Error
+
         // Utils
-        UnexpectedEOF,               //< Unexpected end of file
-        ZeroReturn,                  //< The operation can't be completed because the lower level io call returned zero
+        UnexpectedEOF,               //< The operation can't be completed because the lower level read io call returned zero, we need more data
+        WriteZero,                   //< The operation can't be completed because the lower level write io call returned zero
 
         Other,                       //< Other error
         Unknown = Other,             //< For compatibility with old code

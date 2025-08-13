@@ -13,9 +13,15 @@ option("log")
 option_end()
 
 option("tls")
-    set_default(false)
+    set_default(true)
     set_showmenu(true)
     set_description("Enable tls support")
+option_end()
+
+option("openssl")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Always use openssl instead of native tls")
 option_end()
 
 option("cpp20")
@@ -67,9 +73,11 @@ if has_config("io_uring") then
     add_requires("liburing")
 end
 
-if has_config("tls") and not is_plat("windows") then
-    -- In windows, use schannel
-    add_requires("openssl3")
+if has_config("tls") then
+    -- Not in windows or force use openssl
+    if not is_plat("windows") or has_config("openssl") then 
+        add_requires("openssl3")
+    end
 end
 
 if has_config("spdlog") and has_config("log") then
@@ -90,9 +98,6 @@ target("ilias")
 
     -- Add link and files by platform
     if is_plat("windows") or is_plat("mingw") or is_plat("msys") then 
-        if has_config("tls") then
-            add_files("tls/schannel.cpp")
-        end
         add_files("win32/*.cpp")
         add_syslinks("ws2_32", {public = true})
     end
@@ -114,6 +119,13 @@ target("ilias")
 
     if has_config("tls") then
         set_configvar("ILIAS_TLS", 1)
+        if is_plat("windows") and not has_config("openssl") then
+            -- Is windows and not force use openssl, use schannel
+            add_files("tls/schannel.cpp")
+        else 
+            add_packages("openssl3")
+            add_files("tls/openssl.cpp")
+        end
     end
 
     if has_config("log") and has_config("spdlog") then
