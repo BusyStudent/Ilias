@@ -131,6 +131,25 @@ inline auto readToEnd(T &stream, Container &container) -> IoTask<size_t> {
     }
 }
 
+/**
+ * @brief Get the lowest layer of the layered stream
+ * 
+ * @tparam T 
+ * @param layer 
+ * @return decltype(auto) 
+ */
+template <Layer T>
+inline auto lowestLayer(T &layer) -> decltype(auto) {
+    auto walk = [](auto self, auto &cur) -> decltype(auto) {
+        if constexpr (Layer<decltype(cur)>) {
+            return self(self, cur.nextLayer());
+        }
+        else {
+            return cur;
+        }
+    };
+    return walk(walk, layer);
+}
 
 /**
  * @brief Writeable Helper Method

@@ -12,6 +12,7 @@
 
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/sockfd.hpp>
+#include <ilias/net/msghdr.hpp> // MsgHdr
 #include <ilias/io/context.hpp>
 
 ILIAS_NS_BEGIN
@@ -32,33 +33,11 @@ public:
      * @brief Receive datagram from the socket
      * 
      * @param buffer The buffer to receive the data into.
-     * @param endpoint The ptr of the endpoint to receive the datagram's endpoint.
-     * @return IoTask<size_t> 
-     */
-    auto recvfrom(MutableBuffer buffer, IPEndpoint *endpoint) -> IoTask<size_t> {
-        return mHandle.recvfrom(buffer, 0, endpoint);
-    }
-
-    /**
-     * @brief Receive datagram from the socket
-     * 
-     * @param buffer The buffer to receive the data into.
-     * @param endpoint The endpoint reference to receive the datagram's endpoint.
-     * @return IoTask<size_t> 
-     */
-    auto recvfrom(MutableBuffer buffer, IPEndpoint &endpoint) -> IoTask<size_t> {
-        return mHandle.recvfrom(buffer, 0, &endpoint);
-    }
-
-    /**
-     * @brief Receive datagram from the socket
-     * 
-     * @param buffer The buffer to receive the data into.
      * @return IoTask<std::pair<size_t, IPEndpoint> > (The datagram size and the endpoint)
      */
     auto recvfrom(MutableBuffer buffer) -> IoTask<std::pair<size_t, IPEndpoint> > {
         IPEndpoint endpoint;
-        auto n = co_await recvfrom(buffer, endpoint);
+        auto n = co_await mHandle.recvfrom(buffer, 0, &endpoint);
         if (!n) {
             co_return Err(n.error());
         }
@@ -68,12 +47,51 @@ public:
     /**
      * @brief Send the datagram to the specified endpoint.
      * 
-     * @param buffer 
-     * @param endpoint 
+     * @param buffer A single buffer to send.
+     * @param endpoint The endpoint to send the datagram to.
      * @return IoTask<size_t> 
      */
     auto sendto(Buffer buffer, const IPEndpoint &endpoint) -> IoTask<size_t> {
         return mHandle.sendto(buffer, 0, &endpoint);
+    }
+
+    // Vectorized
+    /**
+     * @brief Receive datagram from the socket, it only recives one datagram.
+     * 
+     * @tparam T 
+     * @param buffers The buffers sequence to receive the data into.
+     * @return IoTask<std::pair<size_t, IPEndpoint> > 
+     */
+    template <MutableBufferSequence T>
+    auto recvfrom(T &buffers) -> IoTask<std::pair<size_t, IPEndpoint> > {
+        auto sequence = makeMutableIoSequence(buffers); // Convert To ABI-Compatible Sequence
+        MutableMsgHdr msg;
+        IPEndpoint endpoint;
+        msg.setBuffers(sequence);
+        msg.setEndpoint(endpoint);
+        auto n = co_await mHandle.recvmsg(msg, 0);
+        if (!n) {
+            co_return Err(n.error());
+        }
+        co_return std::make_pair(n.value(), endpoint);
+    }
+
+    /**
+     * @brief Send the datagram to the specified endpoint.
+     * 
+     * @tparam T 
+     * @param buffers The buffers sequence to send.
+     * @param endpoint The endpoint to send the datagram to.
+     * @return IoTask<size_t> 
+     */
+    template <BufferSequence T>
+    auto sendto(const T &buffers, const IPEndpoint &endpoint) -> IoTask<size_t> {
+        auto sequence = makeIoSequence(buffers); // Convert To ABI-Compatible Sequence
+        MsgHdr msg;
+        msg.setEndpoint(endpoint);
+        msg.setBuffers(sequence);
+        co_return co_await mHandle.sendmsg(msg, 0);
     }
 
     /**

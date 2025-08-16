@@ -10,9 +10,9 @@
  */
 #pragma once
 
-#include <ilias/io/error.hpp>
-#include <ilias/defines.hpp>
-#include <ilias/buffer.hpp>
+#include <ilias/io/error.hpp> // IoTask
+#include <ilias/io/vec.hpp> // IoVec
+#include <ilias/buffer.hpp> // Buffer
 #include <concepts>
 #include <cstddef>
 #include <span>
@@ -39,6 +39,38 @@ concept Writable = requires(T &t) {
     { t.write(Buffer {}) } -> std::same_as<IoTask<size_t> >;
     { t.shutdown() }       -> std::same_as<IoTask<void> >;
     { t.flush() }          -> std::same_as<IoTask<void> >;
+};
+
+/**
+ * @brief Concept for types that can be read to a vector of byte spans.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept ScatterReadable = Readable<T> && requires(T &t) {
+    { t.readv(std::span<const MutableIoVec> {}) } -> std::same_as<IoTask<size_t> >;
+};
+
+/**
+ * @brief Concept for types that can be written to a vector of byte spans.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept GatherWritable = Writable<T> && requires(T &t) {
+    { t.writev(std::span<const IoVec> {}) } -> std::same_as<IoTask<size_t> >;
+};
+
+/**
+ * @brief Concept for types that is a layer of another type. (such TlsStream<T> or BufReader)
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept Layer = requires (T &t) {
+    { t.nextLayer() } -> Readable;  
+} || requires (T &t) {
+    { t.nextLayer() } -> Writable;   
 };
 
 /**

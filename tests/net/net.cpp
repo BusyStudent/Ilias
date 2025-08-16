@@ -254,24 +254,67 @@ TEST(Endpoint, ToString) {
 
 CORO_TEST(Net, Tcp) {
     auto listener = (co_await TcpListener::bind("127.0.0.1:0")).value();
+    auto client = [&]() -> Task<void> {
+        auto client =  (co_await TcpClient::connect(listener.localEndpoint().value())).value();
+        EXPECT_TRUE(co_await client.writeAll("Hello, World!"_bin));
+    };
+    std::string content;
+    auto handle = spawn(client());
+    auto [peer, _] = (co_await listener.accept()).value();
+    EXPECT_TRUE(co_await peer.readToEnd(content));
+    EXPECT_TRUE(co_await std::move(handle));
+    EXPECT_EQ(content, "Hello, World!");
 }
 
 CORO_TEST(Net, Udp) {
     std::byte buffer[1024] {};
     auto client = (co_await UdpClient::bind("127.0.0.1:0")).value();
 
-    CORO_ASSERT_TRUE((co_await client.poll(PollEvent::Out)).has_value());
+    EXPECT_TRUE((co_await client.poll(PollEvent::Out)).has_value());
     // Test the cancel
     {
         auto handle = spawn(client.recvfrom(buffer));
         handle.stop();
-        CORO_ASSERT_FALSE((co_await std::move(handle)).has_value());
+        EXPECT_FALSE((co_await std::move(handle)).has_value());
     }
 
     {
         auto handle = spawn(client.poll(PollEvent::In));
         handle.stop();
-        CORO_ASSERT_FALSE((co_await std::move(handle)).has_value());
+        EXPECT_FALSE((co_await std::move(handle)).has_value());
+    }
+
+    // Test send data
+    auto receiver = (co_await UdpClient::bind("127.0.0.1:0")).value();
+    auto endpoint = receiver.localEndpoint().value();
+
+    { // Test normal sendto & recvfrom
+        EXPECT_TRUE(co_await client.sendto("Hello, World!"_bin, endpoint));
+        std::byte buffer[1024] {};
+        auto [n, _] = (co_await receiver.recvfrom(buffer)).value();
+        EXPECT_EQ(n, 13);
+        EXPECT_EQ(std::string_view(reinterpret_cast<char *>(buffer), n), "Hello, World!");
+    }
+
+    {
+        // Test vector version
+        Buffer buffers [] = {
+            "Hello"_bin,
+            ", "_bin,
+            "World!"_bin,
+        };
+        EXPECT_EQ(co_await client.sendto(buffers, endpoint), 13);
+
+        char hello[5] {};
+        char comma[2] {};
+        char world[6] {};
+        MutableBuffer mutBuffers [] = {
+            makeBuffer(hello),
+            makeBuffer(comma),
+            makeBuffer(world),
+        };
+        auto [n, _] = (co_await receiver.recvfrom(mutBuffers)).value();
+        EXPECT_EQ(n, 13);
     }
 }
 

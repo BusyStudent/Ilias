@@ -289,6 +289,14 @@ public:
         return mCtxt->recvfrom(mDesc, args...);
     }
 
+    auto sendmsg(auto &&...args) const {
+        return mCtxt->sendmsg(mDesc, args...);
+    }
+
+    auto recvmsg(auto &&...args) const {
+        return mCtxt->recvmsg(mDesc, args...);
+    }
+
 #if defined(_WIN32)
     auto connectNamedPipe() const {
         return mCtxt->connectNamedPipe(mDesc);
