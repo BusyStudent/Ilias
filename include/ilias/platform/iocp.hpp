@@ -11,13 +11,12 @@
 
 #pragma once
 
+#include <ilias/detail/win32defs.hpp>
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/timer.hpp>
-#include <ilias/task/task.hpp>
-#include <ilias/net/endpoint.hpp>
-#include <ilias/net/system.hpp>
-#include <ilias/net/sockfd.hpp>
+#include <ilias/net/system.hpp> // SockInitializer
 #include <ilias/io/context.hpp>
+#include <deque> // std::deque
 
 ILIAS_NS_BEGIN
 
@@ -54,6 +53,9 @@ public:
     auto sendto(IoDescriptor *fd, Buffer buffer, int flags, EndpointView endpoint) -> IoTask<size_t> override;
     auto recvfrom(IoDescriptor *fd, MutableBuffer buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> override;
 
+    auto sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> override;
+    auto recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> override;
+
     auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
     auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void> override;
     auto waitObject(HANDLE handle) -> IoTask<void> override;
@@ -66,6 +68,10 @@ private:
     HANDLE mIocpFd = nullptr;
     HANDLE mAfdDevice = nullptr; // For poll
     NtDll &mNt;
+
+    // NtCompletionPacket
+    std::deque<void *> mCompletionPackets;
+    size_t mCompletionPacketsPoolSize = 64;
 
     // Batching
     ULONG mEntriesIdx  = 0; // The index of the current entry (for dispatch)

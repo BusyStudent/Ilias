@@ -20,8 +20,10 @@
 
 ILIAS_NS_BEGIN
 
+class MsgHdr;
 class IoContext;
 class EndpointView;
+class MutableMsgHdr;
 class MutableEndpointView;
 
 /**
@@ -147,6 +149,31 @@ public:
      * @return IoTask<uint32_t> 
      */
     virtual auto poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> = 0;
+
+    // Advanced Io Operations, Not required implementation for basic io context
+    /**
+     * @brief Send message to a socket
+     * 
+     * @param fd The fd must be a socket
+     * @param msg The message to send
+     * @param flags The flags to use, like MSG_DONTWAIT
+     * @return IoTask<size_t> 
+     */
+    virtual auto sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
+        co_return Err(IoError::OperationNotSupported); // Default Not implemented
+    }
+
+    /**
+     * @brief Receive message from a socket
+     * 
+     * @param fd The fd must be a socket
+     * @param msg The message to receive into
+     * @param flags The flags to use, like MSG_DONTWAIT
+     * @return IoTask<size_t> 
+     */
+    virtual auto recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> {
+        co_return Err(IoError::OperationNotSupported); // Default Not implemented
+    }
 
     /**
      * @brief Get the current thread io context

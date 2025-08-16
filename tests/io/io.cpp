@@ -2,6 +2,9 @@
 #include <ilias/io.hpp>
 #include "testing.hpp"
 
+// Experimental API
+#include <ilias/io/vec.hpp>
+
 using namespace ILIAS_NAMESPACE;
 using namespace ILIAS_NAMESPACE::literals;
 
@@ -129,6 +132,42 @@ CORO_TEST(Io, Duplex) {
     std::byte tmp[10];
     EXPECT_EQ(co_await b.write("Hello, world!"_bin), 0);
     EXPECT_EQ(co_await b.read(makeBuffer(tmp)), 0);
+}
+
+TEST(Experimental, IoVec) {
+    static_assert(std::is_trivially_destructible_v<IoVec>);
+    static_assert(std::is_trivially_destructible_v<MutableIoVec>);
+
+    auto vec = IoVec{};
+    auto vec2 = IoVec{"Hello"_bin};
+    EXPECT_TRUE(vec.empty());
+    EXPECT_EQ(vec.data(), nullptr);
+    EXPECT_EQ(vec.size(), 0);
+    EXPECT_EQ(vec, IoVec{}); 
+    EXPECT_NE(vec, vec2);
+
+    auto buf = Buffer(vec);
+
+    // Mutable Version
+    char hello[5] = {'H', 'e', 'l', 'l', 'o'};
+    auto mutVec = MutableIoVec(makeBuffer(hello));
+    EXPECT_FALSE(mutVec.empty());
+    EXPECT_EQ(mutVec.size(), 5);
+
+    auto buf1 = Buffer(mutVec);
+    auto mutBuf = MutableBuffer(mutVec);
+
+    // Sequence
+    std::vector<Buffer> buffers;
+    buffers.emplace_back("Hello"_bin);
+    buffers.emplace_back("World"_bin);
+    auto seq = makeIoSequence(buffers);
+    auto span = std::span(seq);
+
+    std::vector<MutableIoVec> mutableBuffers;
+    std::byte subBuffer[1145];
+    mutableBuffers.emplace_back(MutableBuffer(subBuffer));
+    auto seq1 = makeIoSequence(mutableBuffers); // Mutable -> Const, OK!
 }
 
 auto main(int argc, char **argv) -> int {

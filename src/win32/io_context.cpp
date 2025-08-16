@@ -1,7 +1,14 @@
 // Impl some win32 io operations
+#define UMDF_USING_NTSTATUS // Avoid conflict with winnt.h
+#include <ilias/detail/scope_exit.hpp> // ScopeExit
 #include <ilias/platform/iocp.hpp>
+#include <ilias/net/endpoint.hpp>
+#include <ilias/net/msghdr.hpp> // MsgHdr, MutableMsgHdr
+#include <ilias/net/system.hpp>
+#include <ilias/net/sockfd.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/io/fd_utils.hpp>
+#include <ntstatus.h> // STATUS_CANCELLED
 #include <algorithm> // std::clamp
 #include <atomic> // std::atomic
 #include "iocp_ops.hpp"
@@ -56,6 +63,11 @@ IocpContext::IocpContext() : mNt(ntdll()) {
 }
 
 IocpContext::~IocpContext() {
+    for (auto packet : mCompletionPackets) {
+        if (!::CloseHandle(packet)) {
+            ILIAS_WARN("IOCP", "Failed to close completion packet: {}", ::GetLastError());
+        }
+    }
     if (mAfdDevice) {
         if (!::CloseHandle(mAfdDevice)) {
             ILIAS_WARN("IOCP", "Failed to close afd handle: {}", ::GetLastError());
@@ -358,6 +370,22 @@ auto IocpContext::recvfrom(IoDescriptor *fd, MutableBuffer buffer, int flags, Mu
     co_return co_await IocpRecvfromAwaiter(nfd->sockfd, buffer, flags, endpoint);
 }
 
+auto IocpContext::sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<IocpDescriptor*>(fd);
+    if (nfd->type != IoDescriptor::Socket) {
+        co_return Err(IoError::OperationNotSupported);
+    }
+    co_return co_await IocpSendmsgAwaiter(nfd->sockfd, msg, flags, nfd->sock.WSASendMsg);
+}
+
+auto IocpContext::recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<IocpDescriptor*>(fd);
+    if (nfd->type != IoDescriptor::Socket) {
+        co_return Err(IoError::OperationNotSupported);
+    }
+    co_return co_await IocpRecvmsgAwaiter(nfd->sockfd, msg, flags, nfd->sock.WSARecvMsg);
+}
+
 #pragma region Poll
 auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
@@ -378,9 +406,117 @@ auto IocpContext::connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
 
 #pragma region WaitObject
 auto IocpContext::waitObject(HANDLE object) -> IoTask<void> {
-    if (mNt.hasWaitCompletionPacket()) { 
-        
+    do {
+        if (!mNt.hasWaitCompletionPacket()) { // NtCreateWaitCompletionPacket, available in Windows 8
+            break;
+        }
+        // Try to get a completion packet from the pool, if not, create a new one
+        HANDLE packet = nullptr;
+        if (mCompletionPackets.empty()) {
+            auto status = mNt.NtCreateWaitCompletionPacket(&packet, GENERIC_ALL, nullptr);
+            if (FAILED(status)) {
+                ILIAS_ERROR("Win32", "NtCreateWaitCompletionPacket failed: {}", SystemError(mNt.RtlNtStatusToDosError(status)));
+                break;
+            }
+        }
+        else {
+            packet = mCompletionPackets.front();
+            mCompletionPackets.pop_front();
+        }
+        ILIAS_ASSERT(packet);
+
+        // Create an guard
+        auto guard = ScopeExit([packet, this]() {
+            if (mCompletionPackets.size() < mCompletionPacketsPoolSize) {
+                mCompletionPackets.push_back(packet);
+                return;
+            }
+            ::CloseHandle(packet);
+        });
+
+        // Wait for the packet
+        struct Awaiter : public IocpOverlapped {
+            auto await_ready() noexcept -> bool {
+                IocpOverlapped::onCompleteCallback = onComplete;
+                return false;
+            }
+
+            auto await_suspend(runtime::CoroHandle h) -> bool {
+                handle = h;
+
+                BOOLEAN alreadySignaled = FALSE;
+                auto lap = overlapped();
+                auto status = nt->NtAssociateWaitCompletionPacket(
+                    packet, 
+                    iocp,
+                    object,
+                    nullptr, // CompletionKey, just use nullptr
+                    lap, // OVERLAPPED header is IO_STATUS_BLOCK
+                    0,
+                    0,
+                    &alreadySignaled
+                );
+                if (FAILED(status)) {
+                    error = nt->RtlNtStatusToDosError(status);
+                    return false;
+                }
+                if (alreadySignaled) {
+                    return false; // If already signaled, we don't need to wait, just resume
+                }
+                reg.register_<&Awaiter::onStopRequested>(handle.stopToken(), this);
+                return true;
+            }
+
+            auto await_resume() -> IoResult<void> {
+                if (error != ERROR_SUCCESS) {
+                    return Err(SystemError(error));
+                }
+                return {};
+            }
+
+            auto onStopRequested() -> void {
+                auto status = nt->NtCancelWaitCompletionPacket(packet, FALSE);
+                switch (status) {
+                    case STATUS_SUCCESS:
+                    case STATUS_CANCELLED: {
+                        handle.setStopped();
+                        break;
+                    }
+                    case STATUS_PENDING: { // Failed to cancel, so just wait for the completion
+                        break;
+                    }
+                    default: {
+                        ILIAS_ERROR("Win32", "NtCancelWaitCompletionPacket failed: {}", SystemError(nt->RtlNtStatusToDosError(status)));
+                        break;
+                    }
+                }
+            }
+
+            static auto onComplete(IocpOverlapped *_self, DWORD dwError, DWORD dwBytesTransferred) -> void {
+                auto self = static_cast<Awaiter*>(_self);
+                self->error = dwError;
+                self->handle.resume();
+            }
+
+            HANDLE iocp;
+            HANDLE packet;
+            HANDLE object;
+            NtDll *nt;
+
+            // Status
+            runtime::CoroHandle handle;
+            runtime::StopRegistration reg;
+            DWORD error = 0;
+        };
+
+        Awaiter awaiter;
+        awaiter.iocp = mIocpFd;
+        awaiter.packet = packet;
+        awaiter.object = object;
+        awaiter.nt = &mNt;
+        co_return co_await awaiter;
     }
+    while (false);
     // Fallback to win32 API
     co_return co_await IoContext::waitObject(object);
 }
@@ -408,6 +544,7 @@ auto IoContext::waitObject(HANDLE object) -> IoTask<void> {
             if (!ok) {
                 return false; 
             }
+            reg.register_<&Awaiter::onStopRequested>(handle.stopToken(), this);
             return true;
         }
 
@@ -445,6 +582,7 @@ auto IoContext::waitObject(HANDLE object) -> IoTask<void> {
         HANDLE waitObject = nullptr;
         HANDLE object = nullptr;
         runtime::CoroHandle handle;
+        runtime::StopRegistration reg;
         std::atomic_flag waitCompleted;
     };
 
