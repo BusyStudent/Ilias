@@ -4,6 +4,7 @@
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/error.hpp>
 #include <ilias/net/endpoint.hpp>
+#include <ilias/net/msghdr.hpp>
 #include <ilias/net/sockfd.hpp>
 
 #include <sys/eventfd.h>
@@ -535,6 +536,39 @@ auto EpollContext::recvfrom(IoDescriptor *fd, MutableBuffer buffer, int flags,
         else if (ret.error() != SystemError(EINTR) && ret.error() != SystemError(EAGAIN) &&
                  ret.error() != SystemError(EWOULDBLOCK)) {
             co_return ret;
+        }
+        if (auto pollRet = co_await poll(nfd, EPOLLIN); !pollRet) {
+            co_return Err(pollRet.error());
+        }
+    }
+}
+
+auto EpollContext::sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<EpollDescriptor *>(fd);
+    ILIAS_ASSERT(nfd != nullptr);
+    ILIAS_ASSERT(nfd->type == IoDescriptor::Socket);
+    ILIAS_TRACE("Epoll", "Start sendmsg on fd {}", nfd->fd);
+    while (true) {
+        if (auto ret = ::sendmsg(nfd->fd, &msg, flags | MSG_DONTWAIT | MSG_NOSIGNAL); ret > 0) {
+            co_return ret;
+        }
+        else if (auto err = errno; ret == -1 && (err != EINTR && err != EAGAIN && err != EWOULDBLOCK)) {
+            co_return Err(SystemError(err));
+        }
+    }
+}
+
+auto EpollContext::recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<EpollDescriptor *>(fd);
+    ILIAS_ASSERT(nfd != nullptr);
+    ILIAS_ASSERT(nfd->type == IoDescriptor::Socket);
+    ILIAS_TRACE("Epoll", "Start recvmsg on fd {}", nfd->fd);
+    while (true) {
+        if (auto ret = ::recvmsg(nfd->fd, &msg, flags | MSG_DONTWAIT | MSG_NOSIGNAL); ret > 0) {
+            co_return ret;
+        }
+        else if (auto err = errno; ret == -1 && (err != EINTR && err != EAGAIN && err != EWOULDBLOCK)) {
+            co_return Err(SystemError::fromErrno());
         }
         if (auto pollRet = co_await poll(nfd, EPOLLIN); !pollRet) {
             co_return Err(pollRet.error());

@@ -59,6 +59,11 @@ public:
     auto recvfrom(IoDescriptor *fd, MutableBuffer buffer, int flags, MutableEndpointView endpoint)
         -> IoTask<size_t> override;
 
+    ///> @brief Send a message to a descriptor
+    auto sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> override;
+    ///> @brief Receive a message from a descriptor
+    auto recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> override;
+
     ///> @brief Poll a descriptor for events
     auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
 

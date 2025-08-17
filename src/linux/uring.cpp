@@ -5,6 +5,7 @@
 #include <ilias/task/when_any.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/sync/event.hpp>
+#include <ilias/net/msghdr.hpp> // MsgHdr
 #include <sys/eventfd.h>
 #include <sys/utsname.h>
 #include "uring_core.hpp"
@@ -224,6 +225,16 @@ auto UringContext::recvfrom(IoDescriptor *fd, MutableBuffer buffer, int flags, M
         .msg_iov = &vec,
         .msg_iovlen = 1,
     };
+    co_return co_await UringRecvmsgAwaiter {mRing, nfd->fd, msg, flags};
+}
+
+auto UringContext::sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<UringDescriptor*>(fd);
+    co_return co_await UringSendmsgAwaiter {mRing, nfd->fd, msg, flags};
+}
+
+auto UringContext::recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> {
+    auto nfd = static_cast<UringDescriptor*>(fd);
     co_return co_await UringRecvmsgAwaiter {mRing, nfd->fd, msg, flags};
 }
 
