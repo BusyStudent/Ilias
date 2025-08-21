@@ -254,16 +254,19 @@ TEST(Endpoint, ToString) {
 
 CORO_TEST(Net, Tcp) {
     auto listener = (co_await TcpListener::bind("127.0.0.1:0")).value();
-    auto client = [&]() -> Task<void> {
-        auto client =  (co_await TcpClient::connect(listener.localEndpoint().value())).value();
-        EXPECT_TRUE(co_await client.writeAll("Hello, World!"_bin));
-    };
-    std::string content;
-    auto handle = spawn(client());
-    auto [peer, _] = (co_await listener.accept()).value();
-    EXPECT_TRUE(co_await peer.readToEnd(content));
-    EXPECT_TRUE(co_await std::move(handle));
-    EXPECT_EQ(content, "Hello, World!");
+    auto endpoint = listener.localEndpoint().value();
+    {
+        auto client = [&]() -> Task<void> {
+            auto client =  (co_await TcpClient::connect(endpoint)).value();
+            EXPECT_TRUE(co_await client.writeAll("Hello, World!"_bin));
+        };
+        std::string content;
+        auto handle = spawn(client());
+        auto [peer, _] = (co_await listener.accept()).value();
+        EXPECT_TRUE(co_await peer.readToEnd(content));
+        EXPECT_TRUE(co_await std::move(handle));
+        EXPECT_EQ(content, "Hello, World!");
+    }
 }
 
 CORO_TEST(Net, Udp) {

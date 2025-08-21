@@ -8,7 +8,7 @@
 ILIAS_NS_BEGIN
 
 class Mutex;
-class MutexLock;
+class MutexGuard;
 
 namespace sync {
 
@@ -17,7 +17,7 @@ public:
     MutexAwaiter(Mutex &m);
 
     auto await_ready() const -> bool;
-    auto await_resume() -> MutexLock;
+    auto await_resume() -> MutexGuard;
 private:
     Mutex &mMutex;
 friend class Mutex;
@@ -30,12 +30,12 @@ friend class Mutex;
  * @brief The mutex lock guard, unlock when the object is destroyed
  * 
  */
-class [[nodiscard]] MutexLock {
+class [[nodiscard]] MutexGuard {
 public:
-    explicit MutexLock(Mutex &m);
-    MutexLock(const MutexLock &) = delete;
-    MutexLock(MutexLock &&);
-    ~MutexLock();
+    explicit MutexGuard(Mutex &m);
+    MutexGuard(const MutexGuard &) = delete;
+    MutexGuard(MutexGuard &&);
+    ~MutexGuard();
 
     auto unlock() -> void;
     auto release() -> void;
@@ -44,7 +44,31 @@ private:
 };
 
 /**
- * @brief The coroutine mutex, not thread-safe, it only moveable or destroyable when no one await on it
+ * @brief The locked guard, user can access the value by it
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class [[nodiscard]] LockedGuard {
+public:
+    explicit LockedGuard(MutexGuard guard, T &value) : mGuard(std::move(guard)), mValue(&value) {};
+    LockedGuard(const LockedGuard &) = delete;
+    LockedGuard(LockedGuard &&) = default;
+    ~LockedGuard() = default;
+
+    auto operator ->() const noexcept -> T * { return mValue; }
+    auto operator *() const noexcept -> T & { return *mValue; }
+    auto get() const noexcept -> T * { return mValue; }
+
+    auto unlock() -> void { mGuard.unlock(); mValue = nullptr; }
+    auto release() -> void { mGuard.release(); mValue = nullptr; }
+private:
+    MutexGuard mGuard;
+    T         *mValue = nullptr;
+};
+
+/**
+ * @brief The coroutine mutex, not thread-safe
  * 
  */
 class Mutex {
@@ -65,16 +89,15 @@ public:
     /**
      * @brief Try to lock the mutex
      * 
-     * @return true 
-     * @return false 
+     * @return std::optional<MutexGuard> 
      */
     [[nodiscard]]
-    auto tryLock() noexcept -> std::optional<MutexLock> {
+    auto tryLock() noexcept -> std::optional<MutexGuard> {
         if (mLocked) {
             return std::nullopt;
         }
         mLocked = true;
-        return MutexLock(*this);
+        return MutexGuard(*this);
     }
 
     /**
@@ -91,7 +114,7 @@ public:
     /**
      * @brief Lock the mutex, return the lock guard
      * 
-     * @return MutexLock 
+     * @return MutexGuard 
      */
     [[nodiscard]]
     auto lock() noexcept {
@@ -99,12 +122,13 @@ public:
     }
 
     /**
-     * @brief Lock the mutex, return the Lock
+     * @brief Lock the mutex, return the lock guard
      * 
-     * @return MutexLock 
+     * @return MutexGuard 
      */
+    [[nodiscard]]
     auto operator co_await() noexcept {
-        return sync::MutexAwaiter(*this);
+        return lock();
     }
 private:
     sync::WaitQueue mQueue;
@@ -112,26 +136,84 @@ private:
 friend class sync::MutexAwaiter;
 };
 
-inline MutexLock::MutexLock(Mutex &m) : mMutex(&m) {
+/**
+ * @brief The locked value, protect the value by mutex
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class Locked {
+public:
+    template <typename... Args> requires (std::constructible_from<T, Args...>)
+    Locked(Args &&... args) : mValue(std::forward<Args>(args)...) {}
+    Locked(const Locked &) = delete;
+    ~Locked() = default;
+
+    auto isLocked() const noexcept -> bool { return mMutex.isLocked(); }
+
+    /**
+     * @brief Try to lock the mutex, if the mutex is locked, return nullopt
+     * 
+     * @return std::optional<LockedGuard<T> > 
+     */
+    [[nodiscard]]
+    auto tryLock() noexcept -> std::optional<LockedGuard<T> > {
+        auto guard = mMutex.tryLock();
+        if (!guard) {
+            return std::nullopt;
+        }
+        return LockedGuard<T>(std::move(*guard), mValue);
+    }
+
+    /**
+     * @brief Lock the value, return the lock guard, access the value by the guard
+     * 
+     * @return LockedGuard<T> 
+     */
+    [[nodiscard]]
+    auto lock() noexcept {
+        struct Awaiter final : sync::MutexAwaiter {
+            Awaiter(Locked &l) : sync::MutexAwaiter(l.mMutex), mValue(l.mValue) {}
+
+            auto await_resume() -> LockedGuard<T> {
+                return LockedGuard<T>(sync::MutexAwaiter::await_resume(), mValue);
+            }
+
+            T &mValue;
+        };
+        return Awaiter(*this);
+    }
+
+    [[nodiscard]]
+    auto operator co_await() noexcept {
+        return lock();
+    }
+private:
+    Mutex mMutex;
+    T     mValue;
+};
+
+// Implementation
+inline MutexGuard::MutexGuard(Mutex &m) : mMutex(&m) {
     ILIAS_ASSERT(mMutex->isLocked());
 }
 
-inline MutexLock::MutexLock(MutexLock &&o) : mMutex(o.mMutex) {
+inline MutexGuard::MutexGuard(MutexGuard &&o) : mMutex(o.mMutex) {
     o.mMutex = nullptr;
 }
 
-inline MutexLock::~MutexLock() {
+inline MutexGuard::~MutexGuard() {
     unlock();
 }
 
-inline auto MutexLock::unlock() -> void {
+inline auto MutexGuard::unlock() -> void {
     if (mMutex) {
         mMutex->unlockRaw();
         mMutex = nullptr;
     }
 }
 
-inline auto MutexLock::release() -> void {
+inline auto MutexGuard::release() -> void {
     mMutex = nullptr;
 }
 
@@ -143,7 +225,8 @@ inline auto sync::MutexAwaiter::await_ready() const -> bool {
     return !mMutex.isLocked(); // If the mutex is not locked, we can get the lock immediately
 }
 
-inline auto sync::MutexAwaiter::await_resume() -> MutexLock {
+inline auto sync::MutexAwaiter::await_resume() -> MutexGuard {
+    ILIAS_ASSERT(!mMutex.isLocked()); // We can get the lock right now
     return *mMutex.tryLock();
 }
 

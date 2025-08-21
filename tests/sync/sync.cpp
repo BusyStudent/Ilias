@@ -9,6 +9,7 @@
 using namespace ILIAS_NAMESPACE;
 using namespace std::literals;
 
+// Mutex
 CORO_TEST(Sync, BasicMutexLockUnlock) {
     Mutex mtx;
     EXPECT_FALSE(mtx.isLocked());
@@ -59,6 +60,25 @@ CORO_TEST(Sync, MutexCancel) {
     auto handle = spawn(taskA());
     handle.stop();
     EXPECT_FALSE(co_await std::move(handle));
+}
+
+// Locked
+CORO_TEST(Sync, Locked) {
+    Locked<int> value {10};
+    EXPECT_FALSE(value.isLocked());
+    {
+        auto ptr = value.tryLock();
+        EXPECT_TRUE(ptr);
+        EXPECT_TRUE(value.isLocked());
+        EXPECT_EQ(*ptr->get(), 10);
+        **ptr = 114514;
+    }
+    EXPECT_FALSE(value.isLocked());
+    {
+        auto ptr = co_await value;
+        EXPECT_EQ(*ptr, 114514);
+    }
+    co_return;
 }
 
 CORO_TEST(Sync, Event) {

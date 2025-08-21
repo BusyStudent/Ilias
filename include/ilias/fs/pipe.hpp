@@ -74,7 +74,7 @@ public:
      * 
      * @return IoTask<void> 
      */
-auto shutdown() -> IoTask<void> {
+    auto shutdown() -> IoTask<void> {
         co_return {};
     }
     

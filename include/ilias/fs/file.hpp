@@ -46,6 +46,7 @@ public:
     auto close() { return mHandle.close(); }
     auto cancel() { return mHandle.cancel(); }
 
+    // Readable
     /**
      * @brief Start read data from the file
      * 
@@ -60,6 +61,7 @@ public:
         co_return ret;
     }
 
+    // Writable
     /**
      * @brief Write data to the file
      * 
@@ -72,6 +74,16 @@ public:
             *mOffset += ret.value();
         }
         co_return ret;
+    }
+
+    // no-op
+    auto shutdown() -> IoTask<void> {
+        co_return {};
+    }
+    
+    // no-op
+    auto flush() -> IoTask<void> {
+        co_return {};
     }
 
     /**

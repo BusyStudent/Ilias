@@ -1,6 +1,7 @@
-#include <ilias/platform/qt.hpp>
-#include <ilias/net.hpp>
 #include <ilias_qt/network.hpp>
+#include <ilias/platform/qt.hpp>
+#include <ilias/fs/file.hpp>
+#include <ilias/net.hpp>
 
 #include <QApplication>
 #include <QMainWindow>
@@ -35,29 +36,29 @@ public:
     }
 
     auto onHttpSaveButtonClicked() -> QAsyncSlot<void> {
-//         if (mContent.empty()) {
-//             QMessageBox::information(this, "No content", "No content to save");
-//             co_return;
-//         }
-//         auto filename = QFileDialog::getSaveFileName(this, "Save file", "", "All Files (*)");
-//         if (filename.isEmpty()) {
-//             co_return;
-//         }
-// #if 0
-//         QFile file(filename);
-//         if (!file.open(QIODevice::WriteOnly)) {
-//             QMessageBox::critical(this, "Error", "Could not open file for writing");
-//             co_return;
-//         }
-//         file.write(reinterpret_cast<const char*>(mContent.data()), mContent.size());
-//         file.close();
-// #else
-//         auto file = co_await File::open(filename.toStdString(), "wb");
-//         if (!file) {
-//             co_return;
-//         }
-//         auto n = co_await file->writeAll(makeBuffer(mContent));
-// #endif
+        if (mContent.isEmpty()) {
+            QMessageBox::information(this, "No content", "No content to save");
+            co_return;
+        }
+        auto filename = QFileDialog::getSaveFileName(this, "Save file", "", "All Files (*)");
+        if (filename.isEmpty()) {
+            co_return;
+        }
+#if 0
+        QFile file(filename);
+        if (!file.open(QIODevice::WriteOnly)) {
+            QMessageBox::critical(this, "Error", "Could not open file for writing");
+            co_return;
+        }
+        file.write(reinterpret_cast<const char*>(mContent.data()), mContent.size());
+        file.close();
+#else
+        auto file = co_await File::open(filename.toStdString(), "wb");
+        if (!file) {
+            co_return;
+        }
+        auto n = co_await file->writeAll(makeBuffer(mContent));
+#endif
         co_return;
     }
 
@@ -113,16 +114,17 @@ public:
         }
 
         auto contentType = reply->headers().value("Content-Type");
+        mContent = reply->readAll();
         if (contentType.contains("image/")) {
-            ui.httpImageLabel->setPixmap(QPixmap::fromImage(QImage::fromData(reply->readAll())));
+            ui.httpImageLabel->setPixmap(QPixmap::fromImage(QImage::fromData(mContent)));
             ui.httpImageLabel->show();
         }
         else if (contentType.contains("text/")) {
-            ui.httpContentBroswer->setPlainText(QString::fromUtf8(reply->readAll()));
+            ui.httpContentBroswer->setPlainText(QString::fromUtf8(mContent));
             ui.httpContentBroswer->show();
         }
         else {
-            ui.httpContentBroswer->setPlainText(QString::fromUtf8(reply->readAll()));
+            ui.httpContentBroswer->setPlainText(QString::fromUtf8(mContent));
             ui.httpContentBroswer->show();
         }
         co_return;
@@ -131,6 +133,7 @@ public:
 private:
     Ui::MainWindow ui;
     QNetworkAccessManager mManager;
+    QByteArray mContent;
 };
 
 auto main(int argc, char **argv) -> int {

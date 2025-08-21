@@ -84,6 +84,16 @@ concept IntoFileDescriptor = requires(T &t) {
 };
 
 /**
+ * @brief Concept for types that can be cast into a Generator.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept IntoGenerator = requires(T &t) {
+    toGenerator(std::forward<T>(t));
+};
+
+/**
  * @brief Concept for types that can be read and written to a byte span.
  * 
  * @tparam T 

@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/task/generator.hpp>
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/sockfd.hpp>
 #include <ilias/io/context.hpp>
@@ -341,5 +342,21 @@ public:
 private:
     IoHandle<Socket> mHandle;
 };
+
+/**
+ * @brief Convert the TcpListener to an Generator.
+ * 
+ * @param listener 
+ * @return IoGenerator<TcpClient> 
+ */
+inline auto toGenerator(TcpListener listener) -> IoGenerator<TcpClient> {
+    while (true) {
+        auto val = co_await listener.accept(nullptr);
+        if (!val) {
+            co_yield Err(val.error());
+        }
+        co_yield std::move(*val);
+    }
+}
 
 ILIAS_NS_END

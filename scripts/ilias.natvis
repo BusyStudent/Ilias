@@ -39,9 +39,17 @@
 <Type Name="ilias::BufStream&lt;*&gt;">
 	<DisplayString>{mStream}</DisplayString>
 	<Expand>
-		<Item Name="[stream]">mStream</Item>
+		<!-- Directly use the lowest stream -->
+		<Item Name="[stream]">mStream.mStream.mStream</Item>
 		<Item Name="[writeBuffer]">mStream.mBuffer</Item>
 		<Item Name="[readBuffer]">mStream.mStream.mBuffer</Item>
+	</Expand>
+</Type>
+
+<Type Name="ilias::TlsStream&lt;*&gt;">
+	<DisplayString>{mStream}</DisplayString>
+	<Expand>
+		<Item Name="[stream]">mStream</Item>
 	</Expand>
 </Type>
 
@@ -194,6 +202,10 @@
 <Type Name="ilias::Mutex">
 	<DisplayString Condition="mLocked">locked</DisplayString>
 	<DisplayString Condition="!mLocked">unlocked</DisplayString>
+</Type>
+
+<Type Name="ilias::Locked&lt;*&gt;">
+	<DisplayString>{mValue}</DisplayString>
 </Type>
 
 <Type Name="ilias::Event">
