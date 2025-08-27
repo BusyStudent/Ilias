@@ -1,3 +1,4 @@
+#include <ilias/platform/delegate.hpp>
 #include <ilias/platform.hpp>
 #include <ilias/buffer.hpp>
 #include <ilias/net.hpp>
@@ -386,10 +387,24 @@ CORO_TEST(Net, Https) {
 }
 #endif // ILIAS_SSL
 
+class IoEventLoop : public DelegateContext<PlatformContext> {
+public:
+    auto post(void (*fn)(void*), void* arg) -> void override {
+        mLoop.post(fn, arg);
+    }
+
+    auto run(runtime::StopToken token) -> void override {
+        mLoop.run(std::move(token));
+    }
+private:
+    EventLoop mLoop;
+};
+
+
 int main(int argc, char** argv) {
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
     CORO_USE_UTF8();
-    PlatformContext ctxt;
+    IoEventLoop ctxt;
     ctxt.install();
 
     ::testing::InitGoogleTest(&argc, argv);

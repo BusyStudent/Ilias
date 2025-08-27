@@ -235,7 +235,7 @@ CORO_TEST(Sync, Mpsc) {
 }
 
 auto main(int argc, char **argv) -> int {
-    runtime::EventLoop loop;
+    EventLoop loop;
     loop.install();
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

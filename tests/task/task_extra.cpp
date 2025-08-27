@@ -112,7 +112,7 @@ CORO_TEST(Task, Scope) {
 
 auto main(int argc, char** argv) -> int {
     ::testing::InitGoogleTest(&argc, argv);
-    runtime::EventLoop loop;
+    EventLoop loop;
     loop.install();
     return RUN_ALL_TESTS();
 }

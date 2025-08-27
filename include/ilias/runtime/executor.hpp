@@ -15,6 +15,7 @@
 #include <functional>
 #include <stop_token>
 #include <coroutine>
+#include <cstring>
 #include <memory>
 
 ILIAS_NS_BEGIN
@@ -54,7 +55,7 @@ public:
 
     /**
      * @brief Install the executor to the current thread
-     * @note If will panic if the executor is already installed
+     * @note If will throw std::runtime_error if the executor is already installed
      * 
      */
     virtual auto install() -> void;
@@ -65,6 +66,68 @@ public:
      * @return Executor* 
      */
     static auto currentThread() -> Executor *;
+
+    /**
+     * @brief Schedule a coroutine to the executor (thread safe)
+     * 
+     * @param h The coroutine handle (can not be null)
+     */
+    inline auto schedule(std::coroutine_handle<> h) -> void {
+        post(scheduleImpl, h.address());
+    }
+
+    /**
+     * @brief Schedule a callable to the executor (thread safe)
+     * 
+     * @tparam Fn The callable type
+     * @param fn 
+     */
+    template <std::invocable Fn>
+        requires (!std::convertible_to<Fn, std::coroutine_handle<> >) // Avoid conflict with coroutine_handle
+    inline auto schedule(Fn fn) -> void {
+        if constexpr (std::convertible_to<Fn, void (*)()>) { // Can be a function pointer without arguments, like empty lambda
+            auto ptr = static_cast<void (*)()>(fn);
+            post(scheduleProxy, reinterpret_cast<void*>(ptr));
+        }
+        else if constexpr (sizeof(Fn) <= sizeof(void*) && std::is_trivially_destructible_v<Fn> && std::is_trivially_copyable_v<Fn>) {
+            // We can store the function in the void *;
+            void *ptr = nullptr;
+            std::memcpy(&ptr, &fn, sizeof(fn));
+            post(scheduleProxyInline<Fn>, ptr);
+        }
+        else { // Alloc the memory and post it
+            post(scheduleProxyAlloc<Fn>, new Fn(std::move(fn)));
+        }
+    }
+private:
+    // Corutine proxy
+    static auto scheduleImpl(void *h) -> void {
+        std::coroutine_handle<>::from_address(h).resume();
+    }
+
+    // Empty args function pointer proxy
+    static auto scheduleProxy(void *args) -> void {
+        auto fn = reinterpret_cast<void (*)()>(args);
+        fn();
+    }
+
+    // The allocated memory object proxy
+    template <std::invocable Fn>
+    static auto scheduleProxyAlloc(void *args) -> void {
+        auto ptr = static_cast<Fn*>(args);
+        auto guard = std::unique_ptr<Fn>(ptr);
+        (*guard)();
+    }
+
+    // The Small object optimization proxy
+    template <std::invocable Fn>
+    static auto scheduleProxyInline(void *args) -> void {
+        alignas(Fn) std::byte storage[sizeof(Fn)];
+        std::memcpy(storage, &args, sizeof(Fn));
+
+        auto ptr = std::launder(reinterpret_cast<Fn*>(&storage));
+        (*ptr)();
+    }
 };
 
 /**
@@ -117,5 +180,8 @@ private:
 namespace runtime::threadpool {
     extern auto ILIAS_API submit(Callable *callable) -> void;
 } // namespace runtime::threadpool
+
+// Re-export the EventLoop
+using runtime::EventLoop;
 
 ILIAS_NS_END

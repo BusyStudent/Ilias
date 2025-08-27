@@ -59,6 +59,7 @@ TEST(Io, Error) {
     ASSERT_EQ(canceled, std::errc::operation_canceled);
 
     ASSERT_EQ(make_error_code(IoError::Canceled), std::errc::operation_canceled);
+    std::cout << ec.message() << std::endl;
 }
 
 CORO_TEST(Io, Read) {
@@ -171,7 +172,7 @@ TEST(Experimental, IoVec) {
 }
 
 auto main(int argc, char **argv) -> int {
-    runtime::EventLoop loop;
+    EventLoop loop;
     loop.install();
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

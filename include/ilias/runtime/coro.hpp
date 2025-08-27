@@ -94,9 +94,9 @@ public:
         return std::forward<T>(awaitable);
     }
 
-    template <AwaitTransformable T>
-    auto await_transform(T &&transformable) {
-        return await_transform(awaitTransform(std::forward<T>(transformable)));
+    template <IntoAwaitable T>
+    auto await_transform(T &&object) {
+        return await_transform(toAwaitable(std::forward<T>(object)));
     }
 
     // Our runtime interface
@@ -179,7 +179,7 @@ public:
     // Resume in the executor
     auto schedule() const noexcept {
         ILIAS_ASSERT_MSG(!context().isStopped(), "Cannot schedule a stopped coroutine");
-        return executor().post(scheduleImpl, mHandle.address());
+        return executor().schedule(mHandle);
     }
 
     auto stopToken() const noexcept {
@@ -199,10 +199,6 @@ public:
         return bool(mHandle);
     }
 private:
-    static auto scheduleImpl(void *h) -> void {
-        std::coroutine_handle<>::from_address(h).resume();
-    }
-
     std::coroutine_handle<> mHandle;
     CoroPromise *mPromise = nullptr;
 friend class std::hash<CoroHandle>;

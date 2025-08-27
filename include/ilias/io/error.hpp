@@ -35,11 +35,13 @@ concept IntoError = requires(T t) {
  */
 class ILIAS_API IoCategory final : public std::error_category {
 public:
+    constexpr IoCategory() {}
+
     auto name() const noexcept -> const char* override;
     auto message(int value) const -> std::string override;
     auto equivalent(int value, const std::error_condition &other) const noexcept -> bool override;
 
-    static auto instance() -> const IoCategory &;
+    static auto instance() noexcept -> const IoCategory &;
 };
 
 /**

@@ -105,7 +105,7 @@ auto IocpContext::run(runtime::StopToken token) -> void {
         mService.updateTimers();
         processCompletion(timeout);
     }
- }
+}
 
 // TODO: Optimize it, Dyn Select between GetQueuedCompletionStatus and GetQueuedCompletionStatusEx 
 // TODO: based on the number of I/O operations within a specified time interval.

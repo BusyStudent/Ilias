@@ -150,7 +150,7 @@ public:
      */
     virtual auto poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> = 0;
 
-    // Advanced Io Operations, Not required implementation for basic io context
+    // Advanced Io Operations
     /**
      * @brief Send message to a socket
      * 
@@ -159,9 +159,7 @@ public:
      * @param flags The flags to use, like MSG_DONTWAIT
      * @return IoTask<size_t> 
      */
-    virtual auto sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
-        co_return Err(IoError::OperationNotSupported); // Default Not implemented
-    }
+    virtual auto sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> = 0;
 
     /**
      * @brief Receive message from a socket
@@ -171,10 +169,8 @@ public:
      * @param flags The flags to use, like MSG_DONTWAIT
      * @return IoTask<size_t> 
      */
-    virtual auto recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> {
-        co_return Err(IoError::OperationNotSupported); // Default Not implemented
-    }
-
+    virtual auto recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> = 0;
+    
     /**
      * @brief Get the current thread io context
      * 

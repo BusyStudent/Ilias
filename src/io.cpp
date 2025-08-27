@@ -55,19 +55,20 @@ consteval auto nameof2() {
 
 template <size_t ...N, typename T>
 auto enum2str(std::index_sequence<N...>, T i) -> std::string_view {
-    constinit static auto data = std::tuple {
+    constexpr static auto data = std::tuple {
         reflect::nameof2<T(N)>()...
     };
-    std::array<std::string_view, sizeof...(N)> table {
+    constexpr std::array<std::string_view, sizeof...(N)> table {
         std::string_view(
             std::get<N>(data).data(),
             std::get<N>(data).size()
         )...
     };
-    if (i < 0 || int64_t(i) >= int64_t(table.size())) {
+    auto idx = static_cast<int64_t>(i);
+    if (idx < 0 || idx >= int64_t(table.size())) {
         return "Unknown";
     }
-    return table[i];
+    return table[idx];
 }
 
 } // namespace reflect
@@ -82,8 +83,8 @@ auto IoCategory::name() const noexcept -> const char * {
     return "io";
 }
 
-auto IoCategory::instance() -> const IoCategory & {
-    static const IoCategory instance;
+auto IoCategory::instance() noexcept -> const IoCategory & {
+    static constinit IoCategory instance;
     return instance;
 }
 
@@ -166,8 +167,8 @@ auto SystemCategory::equivalent(int value, const std::error_condition &other) co
     return false;
 }
 
-auto SystemCategory::instance() -> const SystemCategory & {
-    static const SystemCategory instance;
+auto SystemCategory::instance() noexcept -> const SystemCategory & {
+    static constinit SystemCategory instance;
     return instance;
 }
 

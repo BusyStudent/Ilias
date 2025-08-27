@@ -27,7 +27,7 @@ auto win32::toUtf8(std::wstring_view s) -> std::string {
 
 auto win32::pipe(HANDLE *read, HANDLE *write, SECURITY_ATTRIBUTES *attr) -> bool {
     // MSDN says anymous pipe does not support overlapped I/O, so we have to create a named pipe.
-    static std::atomic<int> counter{0};
+    static constinit std::atomic<int> counter{0};
     wchar_t name[256] {0};
     ::swprintf(
         name, 
@@ -78,8 +78,8 @@ auto win32::pipe(HANDLE *read, HANDLE *write, SECURITY_ATTRIBUTES *attr) -> bool
 }
 
 namespace {
-    static std::once_flag once;
-    static struct {
+    static constinit std::once_flag once;
+    static constinit struct {
         decltype(::SetThreadDescription) *SetThreadDescription = nullptr;
         decltype(::GetThreadDescription) *GetThreadDescription = nullptr;
     } apis;

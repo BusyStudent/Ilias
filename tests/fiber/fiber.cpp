@@ -67,7 +67,7 @@ CORO_TEST(FiberAwait, Await) {
 #endif // ILIAS_USE_FIBER
 
 auto main(int argc, char **argv) -> int {
-    runtime::EventLoop loop;
+    EventLoop loop;
     loop.install();
 
     ::testing::InitGoogleTest(&argc, argv);

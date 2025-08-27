@@ -35,12 +35,14 @@ ILIAS_NS_BEGIN
  */
 class ILIAS_API SystemCategory final : public std::error_category {
 public:
+    constexpr SystemCategory() noexcept {}
+
     auto name() const noexcept -> const char* override;
     auto message(int value) const -> std::string override;
     auto equivalent(int value, const std::error_condition &other) const noexcept -> bool override;
     auto default_error_condition(int value) const noexcept -> std::error_condition override;
     
-    static auto instance() -> const SystemCategory &;
+    static auto instance() noexcept -> const SystemCategory &;
 };
 
 /**

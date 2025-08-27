@@ -7,7 +7,7 @@
 namespace ilias_qt::network {
 
 // for impl auto val = co_await manager.get(QNetworkRequest)
-inline auto awaitTransform(QNetworkReply *ptr) -> ilias::Task<Box<QNetworkReply> > {
+inline auto toAwaitable(QNetworkReply *ptr) -> ilias::Task<Box<QNetworkReply> > {
     auto reply = Box<QNetworkReply>(ptr);
     if (reply && !reply->isFinished()) {
         struct Guard {
@@ -24,9 +24,8 @@ inline auto awaitTransform(QNetworkReply *ptr) -> ilias::Task<Box<QNetworkReply>
     }
     co_return std::move(reply);
 }
-inline auto awaitTransform(std::nullptr_t) = delete;
 
 }
 
 // Report to the global for the ADL, QNetworkReply is on the global namespace
-using ilias_qt::network::awaitTransform;
+using ilias_qt::network::toAwaitable;

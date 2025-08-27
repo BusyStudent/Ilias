@@ -50,10 +50,12 @@ enum class GaiError : int {
  */
 class ILIAS_API GaiCategory final : public std::error_category {
 public:
+    constexpr GaiCategory() noexcept {}
+
     auto name() const noexcept -> const char* override;
     auto message(int value) const -> std::string override;
 
-    static auto instance() -> const GaiCategory &;
+    static auto instance() noexcept -> const GaiCategory &;
 };
 
 ILIAS_DECLARE_ERROR(GaiError, GaiCategory);

@@ -26,8 +26,8 @@ auto GaiCategory::message(int code) const -> std::string {
 
 }
 
-auto GaiCategory::instance() -> const GaiCategory & {
-    static const GaiCategory instance;
+auto GaiCategory::instance() noexcept -> const GaiCategory & {
+    static constinit GaiCategory instance;
     return instance;
 }
 

@@ -143,6 +143,61 @@ auto TaskScope::waitAll(runtime::StopToken token) -> Task<void> {
     }
 }
 
+#pragma region ScheduleAwaiter
+auto ScheduleAwaiterBase::await_suspend(CoroHandle caller) -> void { // Currently in caller thread
+    ILIAS_TRACE("Task", "Schedule a task on executor {}", static_cast<void*>(&mExecutor));
+    mCaller = caller;
+
+    // Start the task on another executor
+    this->setExecutor(mExecutor);
+    this->setStoppedHandler(ScheduleAwaiterBase::onCompletion);
+    mHandle.setCompletionHandler(ScheduleAwaiterBase::onCompletion);
+    mHandle.setContext(*this);
+    mHandle.schedule();
+    mReg.register_<&ScheduleAwaiterBase::onStopRequested>(caller.stopToken(), this);
+}
+
+auto ScheduleAwaiterBase::onStopRequested() -> void { // Currently in caller thread
+    auto epxected = State::Running;
+    if (mState.compare_exchange_strong(epxected, State::StopPending)) { // We can send the stop
+        mExecutor.schedule([this]() { onStopInvoke(); });
+    }
+}
+
+auto ScheduleAwaiterBase::onStopInvoke() -> void { // Currently in executor thread
+    auto expected = State::StopPending;
+    if (mState.compare_exchange_strong(expected, State::StopHandled)) {
+        this->stop(); // Forward the stop request to the task
+        return;
+    }
+    if (expected == State::Completed) { // Will, the task has been completed, we take the responsibility to resume the caller
+        mExecutor.schedule([this]() { invoke(); });
+    }
+}
+
+auto ScheduleAwaiterBase::onCompletion(runtime::CoroContext &_self) -> void  { // In the executor thread
+    auto &self = static_cast<ScheduleAwaiterBase &>(_self);
+    auto old = self.mState.exchange(State::Completed);
+    if (old == State::StopPending) { // Stop is pending, let the onStopInvoke handle this
+        return;
+    }
+    auto invokeLater = [&self]() {
+        self.mCaller.executor().schedule([&self]() { self.invoke(); });
+    };
+    self.mExecutor.schedule(invokeLater); // Currently, we are on the Coroutine::final_suspend, it is not safe to resume the caller directly
+}
+
+auto ScheduleAwaiterBase::invoke() -> void  { // In the caller thread
+    ILIAS_TRACE("Task", "Task on executor {} completed", static_cast<void*>(&mExecutor));
+    ILIAS_ASSERT(mState == State::Completed);
+    if (this->isStopped()) { // Foreard the stop request to the caller
+        mCaller.setStopped();
+    }
+    else {
+        mCaller.resume();
+    }
+}
+
 #pragma region FinallyAwaiter
 auto FinallyAwaiterBase::await_suspend(CoroHandle caller) -> std::coroutine_handle<> {
     auto mainContext = static_cast<TaskContextMain*>(this);

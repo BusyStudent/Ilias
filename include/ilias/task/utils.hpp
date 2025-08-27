@@ -42,60 +42,43 @@ private:
 };
 
 // Schedule task on another executor
-template <typename T>
-class ScheduleAwaiter : private TaskContext {
+class ScheduleAwaiterBase : private TaskContext {
 public:
-    ScheduleAwaiter(runtime::Executor &exec, TaskHandle<T> handle) : TaskContext(handle), mExecutor(exec), mHandle(handle) {}
-    ScheduleAwaiter(ScheduleAwaiter &&) = default;
+    ScheduleAwaiterBase(runtime::Executor &exec, TaskHandle<> handle) : TaskContext(handle), mExecutor(exec), mHandle(handle) {}
+    ScheduleAwaiterBase(ScheduleAwaiterBase &&) = default;
 
     auto await_ready() -> bool { return false; }
 
-    auto await_suspend(runtime::CoroHandle caller) {
-        mCaller = caller;
+    ILIAS_API
+    auto await_suspend(runtime::CoroHandle caller) -> void;
+protected:
+    enum State : uint8_t {
+        Running     = 0,
+        StopPending = 1,
+        StopHandled = 2,
+        Completed   = 3,
+    };
 
-        // Start the task on another executor
-        this->setExecutor(mExecutor);
-        this->setStoppedHandler(ScheduleAwaiter::onCompletion);
-        mHandle.setCompletionHandler(ScheduleAwaiter::onCompletion);
-        mHandle.setContext(*this);
-        mHandle.schedule();
-        mReg.register_<&ScheduleAwaiter::onStopRequested>(caller.stopToken(), this);
-    }
+    auto onStopRequested() -> void;
+    auto onStopInvoke() -> void;
+    auto invoke() -> void;
+    static auto onCompletion(runtime::CoroContext &_self) -> void;
 
-    auto await_resume() -> T {
-        return mHandle.value();
-    }
-private:
-    auto onStopRequested() -> void { // Currently in caller thread
-        if (mFlag.test_and_set()) { // Prevent call stop after completion
-            return;
-        }
-        mExecutor.post([](void *self) { // Forward the stop request in executor thread
-            static_cast<ScheduleAwaiter *>(self)->stop();
-        }, this);
-    }
-
-    static auto onCompletion(runtime::CoroContext &_self) -> void { // In the executor thread
-        auto &self = static_cast<ScheduleAwaiter &>(_self);
-        self.mFlag.test_and_set();
-        self.mExecutor.post(invoke, &self);
-    }
-
-    static auto invoke(void *_self) -> void { // In the caller thread
-        auto &self = *static_cast<ScheduleAwaiter *>(_self);
-        if (self.isStopped()) { // Foreard the stop request to the caller
-            self.mCaller.setStopped();
-        }
-        else {
-            self.mCaller.resume();
-        }
-    }
-
-    TaskHandle<T> mHandle;
-    std::atomic_flag mFlag;
+    TaskHandle<> mHandle;
+    std::atomic<State> mState {Running};
     runtime::Executor &mExecutor;
     runtime::CoroHandle mCaller;
     runtime::StopRegistration mReg;
+};
+
+template <typename T>
+class ScheduleAwaiter final : public ScheduleAwaiterBase {
+public:
+    ScheduleAwaiter(runtime::Executor &exec, TaskHandle<T> handle) : ScheduleAwaiterBase(exec, handle) {}
+
+    auto await_resume() -> T {
+        return TaskHandle<T>::cast(mHandle).value();
+    }
 };
 
 // Add an async cleanup handler to an awaitable

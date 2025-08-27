@@ -105,13 +105,13 @@ template <Awaitable T>
 using AwaitableResult = typename AwaitableResultImpl<T>::type;
 
 /**
- * @brief Types that can be transformed to an awaitable
+ * @brief Types that can be cast into an awaitable
  * 
  * @tparam T 
  */
 template <typename T>
-concept AwaitTransformable = requires(T t) {
-    { awaitTransform(std::forward<T>(t)) } -> Awaitable;
+concept IntoAwaitable = requires(T t) {
+    { toAwaitable(std::forward<T>(t)) } -> Awaitable;
 };
 
 } // namespace runtime

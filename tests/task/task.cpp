@@ -156,9 +156,24 @@ CORO_TEST(Task, WhenAny) {
     co_return;
 }
 
+CORO_TEST(Task, Executor) {
+    auto executor = runtime::Executor::currentThread();
+    executor->schedule([]() {
+        std::cout << "Hello from executor!" << std::endl;
+    });
+    executor->schedule([i = 114514]() {
+        std::cout << "Hello from executor with value " << i << std::endl;
+    });
+    executor->schedule([a = std::string("Hello World")]() {
+        std::cout << "Hello from executor with value " << a << std::endl;
+    });
+    co_await this_coro::yield(); // Return to the executor
+    co_return;
+}
+
 auto main(int argc, char** argv) -> int {
     ::testing::InitGoogleTest(&argc, argv);
-    runtime::EventLoop loop;
+    EventLoop loop;
     loop.install();
     return RUN_ALL_TESTS();
 }

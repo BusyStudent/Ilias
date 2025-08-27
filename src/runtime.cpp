@@ -16,7 +16,7 @@ ILIAS_NS_BEGIN
 
 using namespace runtime;
 
-static thread_local Executor *currentExecutor = nullptr;
+static constinit thread_local Executor *currentExecutor = nullptr;
 
 Executor::~Executor() {
     if (currentExecutor == this) {
@@ -30,8 +30,10 @@ auto Executor::currentThread() -> Executor * {
 
 auto Executor::install() -> void {
     if (currentExecutor && currentExecutor != this) {
+#if !defined(NDEBUG)
         ::fprintf(stderr, "A different executor already installed\n");
-        ::abort();
+#endif // !NDEBUG
+        ILIAS_THROW(std::runtime_error("A different executor already installed"));
     }
     currentExecutor = this;
 }
