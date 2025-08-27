@@ -49,10 +49,10 @@ public:
 private:
     auto mainloop() -> void;
 
-    runtime::StopSource mSource;
-    std::thread mThread; //< The worker thread
-    std::latch  mLatch {1}; //< The latch used to wait the context creation
     T *mContext = nullptr; //< The context to delegate to
+    runtime::StopSource mSource;
+    std::latch  mLatch {1}; //< The latch used to wait the context creation
+    std::thread mThread; //< The worker thread
 };
 
 template <typename T>

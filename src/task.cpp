@@ -1,4 +1,5 @@
 #include <ilias/task.hpp>
+#include <atomic> // std::atomic_ref
 
 ILIAS_NS_BEGIN
 
@@ -159,14 +160,14 @@ auto ScheduleAwaiterBase::await_suspend(CoroHandle caller) -> void { // Currentl
 
 auto ScheduleAwaiterBase::onStopRequested() -> void { // Currently in caller thread
     auto epxected = State::Running;
-    if (mState.compare_exchange_strong(epxected, State::StopPending)) { // We can send the stop
+    if (std::atomic_ref(mState).compare_exchange_strong(epxected, State::StopPending)) { // We can send the stop
         mExecutor.schedule([this]() { onStopInvoke(); });
     }
 }
 
 auto ScheduleAwaiterBase::onStopInvoke() -> void { // Currently in executor thread
     auto expected = State::StopPending;
-    if (mState.compare_exchange_strong(expected, State::StopHandled)) {
+    if (std::atomic_ref(mState).compare_exchange_strong(expected, State::StopHandled)) {
         this->stop(); // Forward the stop request to the task
         return;
     }
@@ -177,7 +178,7 @@ auto ScheduleAwaiterBase::onStopInvoke() -> void { // Currently in executor thre
 
 auto ScheduleAwaiterBase::onCompletion(runtime::CoroContext &_self) -> void  { // In the executor thread
     auto &self = static_cast<ScheduleAwaiterBase &>(_self);
-    auto old = self.mState.exchange(State::Completed);
+    auto old = std::atomic_ref(self.mState).exchange(State::Completed);
     if (old == State::StopPending) { // Stop is pending, let the onStopInvoke handle this
         return;
     }
@@ -189,7 +190,7 @@ auto ScheduleAwaiterBase::onCompletion(runtime::CoroContext &_self) -> void  { /
 
 auto ScheduleAwaiterBase::invoke() -> void  { // In the caller thread
     ILIAS_TRACE("Task", "Task on executor {} completed", static_cast<void*>(&mExecutor));
-    ILIAS_ASSERT(mState == State::Completed);
+    ILIAS_ASSERT(std::atomic_ref(mState).load() == State::Completed);
     if (this->isStopped()) { // Foreard the stop request to the caller
         mCaller.setStopped();
     }

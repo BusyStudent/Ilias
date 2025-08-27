@@ -4,7 +4,6 @@
 #include <ilias/runtime/coro.hpp>
 #include <ilias/task/when_any.hpp>
 #include <ilias/task/task.hpp>
-#include <atomic> // std::atomic_flag
 #include <chrono> // std::chrono::milliseconds
 
 ILIAS_NS_BEGIN
@@ -64,8 +63,8 @@ protected:
     auto invoke() -> void;
     static auto onCompletion(runtime::CoroContext &_self) -> void;
 
+    State mState {Running}; // We use std::atomic_ref internal, make the compiler happy:(, std::atomic<T> can't move
     TaskHandle<> mHandle;
-    std::atomic<State> mState {Running};
     runtime::Executor &mExecutor;
     runtime::CoroHandle mCaller;
     runtime::StopRegistration mReg;
