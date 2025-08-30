@@ -36,7 +36,7 @@ auto statusString(int statusCode) -> const char * {
     }
 }
 
-auto sendReply(BufferedStream<TcpClient> &stream, int statusCode, std::span<const std::byte> content) -> IoTask<void> {
+auto sendReply(BufferedStream<TcpStream> &stream, int statusCode, std::span<const std::byte> content) -> IoTask<void> {
     char headers[1024] {0};
     ::sprintf(headers, 
         "HTTP/1.1 %d %s\r\nContent-Length: %d\r\nConnection: keep-alive\r\nServer: ILIAS\r\n\r\n", 
@@ -54,19 +54,19 @@ auto sendReply(BufferedStream<TcpClient> &stream, int statusCode, std::span<cons
     co_return {};
 }
 
-auto sendReply(BufferedStream<TcpClient> &stream, int statusCode, std::string_view content) {
+auto sendReply(BufferedStream<TcpStream> &stream, int statusCode, std::string_view content) {
     return sendReply(stream, statusCode, makeBuffer(content));
 }
 
-auto handleHelloPage(BufferedStream<TcpClient> &stream) -> IoTask<void> {
+auto handleHelloPage(BufferedStream<TcpStream> &stream) -> IoTask<void> {
     return sendReply(stream, 200, "<html>Hello World</html>");
 }
 
-auto handle404(BufferedStream<TcpClient> &stream) -> IoTask<void> {
+auto handle404(BufferedStream<TcpStream> &stream) -> IoTask<void> {
     return sendReply(stream, 404, "<html>Not Found</html>");
 }
 
-auto handleMainPage(BufferedStream<TcpClient> &stream) -> IoTask<void> {
+auto handleMainPage(BufferedStream<TcpStream> &stream) -> IoTask<void> {
     char buffer[1024] {0};
     ::sprintf(
         buffer,
@@ -83,7 +83,7 @@ auto handleMainPage(BufferedStream<TcpClient> &stream) -> IoTask<void> {
     co_return co_await sendReply(stream, 200, std::string_view(buffer));
 }
 
-auto handleFilesytem(BufferedStream<TcpClient> &client, std::string_view pathString) -> IoTask<void> {
+auto handleFilesytem(BufferedStream<TcpStream> &client, std::string_view pathString) -> IoTask<void> {
     pathString.remove_prefix(3);
     std::u8string u8((const char8_t *) pathString.data(), pathString.size());
     if (u8.empty()) {
@@ -132,7 +132,7 @@ auto handleFilesytem(BufferedStream<TcpClient> &client, std::string_view pathStr
     }
 }
 
-auto handleConnection(BufStream<TcpClient> stream) -> Task<void> {
+auto handleConnection(BufStream<TcpStream> stream) -> Task<void> {
     while (true) {
         // Get First line METHOD PATH HTTP/1.1
         auto query = co_await stream.getline("\r\n");

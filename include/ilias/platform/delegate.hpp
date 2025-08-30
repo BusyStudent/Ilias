@@ -51,13 +51,12 @@ private:
 
     T *mContext = nullptr; //< The context to delegate to
     runtime::StopSource mSource;
-    std::latch  mLatch {1}; //< The latch used to wait the context creation
     std::thread mThread; //< The worker thread
 };
 
 template <typename T>
 inline DelegateContext<T>::DelegateContext() : mThread(&DelegateContext::mainloop, this) {
-    mLatch.wait();
+    std::atomic_ref(mContext).wait(nullptr); // Wait for the context to be ready
 }
 
 template <typename T>
@@ -122,8 +121,11 @@ inline auto DelegateContext<T>::cancel(IoDescriptor *fd) -> IoResult<void> {
 template <typename T>
 inline auto DelegateContext<T>::mainloop() -> void {
     T ctxt;
-    mContext = &ctxt;
-    mLatch.count_down();
+    {
+        std::atomic_ref ref {mContext};
+        ref.store(&ctxt);
+        ref.notify_one();
+    }
     mContext->run(mSource.get_token());
     mContext = nullptr;
 }

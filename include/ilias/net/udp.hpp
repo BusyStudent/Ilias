@@ -132,7 +132,7 @@ public:
      * @param events 
      * @return IoTask<uint32_t> 
      */
-    auto poll(uint32_t events) -> IoTask<uint32_t> {
+    auto poll(uint32_t events) const -> IoTask<uint32_t> {
         return mHandle.poll(events);
     }
 

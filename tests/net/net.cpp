@@ -258,8 +258,8 @@ CORO_TEST(Net, Tcp) {
     auto endpoint = listener.localEndpoint().value();
     {
         auto client = [&]() -> Task<void> {
-            auto client =  (co_await TcpClient::connect(endpoint)).value();
-            EXPECT_TRUE(co_await client.writeAll("Hello, World!"_bin));
+            auto strean =  (co_await TcpStream::connect(endpoint)).value();
+            EXPECT_TRUE(co_await strean.writeAll("Hello, World!"_bin));
         };
         std::string content;
         auto handle = spawn(client());
@@ -324,7 +324,7 @@ CORO_TEST(Net, Udp) {
 
 CORO_TEST(Net, Http) {
     auto info = (co_await AddressInfo::fromHostname("www.baidu.com", "http")).value();
-    auto client = (co_await TcpClient::connect(info.endpoints().at(0))).value();
+    auto client = (co_await TcpStream::connect(info.endpoints().at(0))).value();
     auto stream = BufStream(std::move(client));
 
     // Prepare payload
@@ -353,7 +353,7 @@ CORO_TEST(Net, Http) {
 CORO_TEST(Net, Https) {
     TlsContext sslCtxt;
     auto info = (co_await AddressInfo::fromHostname("www.baidu.com", "https")).value();
-    auto client = (co_await TcpClient::connect(info.endpoints().at(0))).value();
+    auto client = (co_await TcpStream::connect(info.endpoints().at(0))).value();
     auto ssl = TlsStream(sslCtxt, std::move(client));
 
     // Do ssl here

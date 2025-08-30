@@ -28,7 +28,7 @@ namespace runtime {
  */
 class ILIAS_API Executor {
 public:
-    ~Executor();
+    virtual ~Executor();
 
     /**
      * @brief Post a callable to the executor (thread safe)

@@ -389,6 +389,31 @@ public:
     }
 
     /**
+     * @brief Duplicate the socket
+     * 
+     * @tparam T
+     * @return IoResult<T> 
+     */
+    template <typename T>
+    auto dup() const -> IoResult<T> {
+
+#if defined(_WIN32)
+        ::WSAPROTOCOL_INFOW info {};
+        if (::WSADuplicateSocketW(mFd, ::GetCurrentProcessId(), &info) != 0) {
+            return Err(SystemError::fromErrno());
+        }
+        auto fd = ::WSASocketW(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &info, 0, WSA_FLAG_OVERLAPPED);
+#else
+        auto fd = ::dup(mFd);
+#endif // _WIN32
+
+        if (fd == Invalid) {
+            return Err(SystemError::fromErrno());
+        }
+        return T(fd);
+    }
+
+    /**
      * @brief Get the local endpoint of the socket
      * 
      * @tparam T must has MutableEndpoint concept like IPEndpoint
@@ -543,12 +568,30 @@ public:
      * @return IoResult<std::pair<T, IPEndpoint> > 
      */
     template <typename T = Socket, MutableEndpoint Endpoint = IPEndpoint>
-    auto accept() -> IoResult<std::pair<T, Endpoint> > {
+    auto accept() const -> IoResult<std::pair<T, Endpoint> > {
         return SocketView::accept<T, Endpoint>();
     }
 
+    /**
+     * @brief Duplicate the socket
+     * 
+     * @tparam T 
+     * @return IoResult<T> 
+     */
+    template <typename T = Socket>
+    auto dup() const -> IoResult<T> {
+        return SocketView::dup<T>();
+    }
+
+    // Disabled
     auto operator =(const Socket &) = delete;
 
+    /**
+     * @brief Move assignment operator
+     * 
+     * @param other 
+     * @return Socket& 
+     */
     auto operator =(Socket &&other) -> Socket & {
         close();
         mFd = std::exchange(other.mFd, Invalid);

@@ -59,7 +59,7 @@
     <DisplayString Condition="mFd == -1">invalid</DisplayString>
 </Type>
 
-<Type Name="ilias::TcpClient">
+<Type Name="ilias::TcpStream">
 	<DisplayString>{mHandle}</DisplayString>
 	<Expand>
 		<ExpandedItem>mHandle</ExpandedItem>

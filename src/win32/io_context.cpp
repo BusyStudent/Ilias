@@ -82,9 +82,7 @@ IocpContext::~IocpContext() {
 
 #pragma region Executor
 auto IocpContext::post(void (*fn)(void *), void *args) -> void {
-    if (!fn) [[unlikely]] {
-        return;
-    }
+    ILIAS_ASSERT(fn);
     ::PostQueuedCompletionStatus(
         mIocpFd, 
         0x114514, 

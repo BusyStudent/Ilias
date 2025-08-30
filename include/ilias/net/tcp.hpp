@@ -19,13 +19,13 @@
 ILIAS_NS_BEGIN
 
 /**
- * @brief The tcp client class.
+ * @brief The tcp stream class.
  * 
  */
-class TcpClient final : public StreamMethod<TcpClient> {
+class TcpStream final : public StreamMethod<TcpStream> {
 public:
-    TcpClient() = default;
-    TcpClient(IoHandle<Socket> h) : mHandle(std::move(h)) {}
+    TcpStream() = default;
+    TcpStream(IoHandle<Socket> h) : mHandle(std::move(h)) {}
 
     auto close() { return mHandle.close(); }
     auto cancel() const { return mHandle.cancel(); }
@@ -144,14 +144,14 @@ public:
         return mHandle.poll(events);
     }
 
-    auto operator <=>(const TcpClient &) const = default;
+    auto operator <=>(const TcpStream &) const = default;
 
     /**
      * @brief Connect to a remote endpoint.
      * 
-     * @return IoTask<TcpClient> 
+     * @return IoTask<TcpStream> 
      */
-    static auto connect(IPEndpoint endpoint) -> IoTask<TcpClient> {
+    static auto connect(IPEndpoint endpoint) -> IoTask<TcpStream> {
         auto sockfd = Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP);
         if (!sockfd) {
             co_return Err(sockfd.error());
@@ -163,16 +163,16 @@ public:
         if (auto res = co_await handle->connect(endpoint); !res) {
             co_return Err(res.error());
         }
-        co_return TcpClient(std::move(*handle));
+        co_return TcpStream(std::move(*handle));
     }
 
     /**
-     * @brief Wrap a socket into a TcpClient.
+     * @brief Wrap a socket into a TcpStream.
      * 
      * @param socket The socket must be SOCK_STREAM. otherwise, IoError::InvalidArgument will be returned.
-     * @return IoResult<TcpClient> 
+     * @return IoResult<TcpStream> 
      */
-    static auto from(Socket socket) -> IoResult<TcpClient> {
+    static auto from(Socket socket) -> IoResult<TcpStream> {
         if (socket.type() != SOCK_STREAM) {
             return Err(IoError::InvalidArgument);
         }
@@ -180,7 +180,7 @@ public:
         if (!handle) {
             return Err(handle.error());
         }
-        return TcpClient(std::move(*handle));
+        return TcpStream(std::move(*handle));
     }
 
     /**
@@ -232,9 +232,9 @@ public:
     /**
      * @brief Accept a connection from a remote endpoint.
      * 
-     * @return IoTask<std::pair<TcpClient, IPEndpoint> > 
+     * @return IoTask<std::pair<TcpStream, IPEndpoint> > 
      */
-    auto accept() const -> IoTask<std::pair<TcpClient, IPEndpoint> > {
+    auto accept() const -> IoTask<std::pair<TcpStream, IPEndpoint> > {
         IPEndpoint endpoint;
         auto client = co_await accept(&endpoint);
         if (!client) {
@@ -247,9 +247,9 @@ public:
      * @brief Accept a connection from a remote endpoint.
      * 
      * @param endpoint The address to receive the connection from. (can be nullptr)
-     * @return IoTask<TcpClient> 
+     * @return IoTask<TcpStream> 
      */
-    auto accept(IPEndpoint *endpoint) const -> IoTask<TcpClient> {
+    auto accept(IPEndpoint *endpoint) const -> IoTask<TcpStream> {
         auto sockfd = co_await mHandle.accept(endpoint);
         if (!sockfd) {
             co_return Err(sockfd.error());
@@ -258,16 +258,16 @@ public:
         if (!handle) {
             co_return Err(handle.error());
         }
-        co_return TcpClient(std::move(*handle));
+        co_return TcpStream(std::move(*handle));
     }
 
     /**
      * @brief Accept a connection from a remote endpoint.
      * 
      * @param endpoint The reference to the address to receive the connection from.
-     * @return IoTask<TcpClient> 
+     * @return IoTask<TcpStream> 
      */
-    auto accept(IPEndpoint &endpoint) const -> IoTask<TcpClient> {
+    auto accept(IPEndpoint &endpoint) const -> IoTask<TcpStream> {
         return accept(&endpoint);
     }
 
@@ -343,13 +343,16 @@ private:
     IoHandle<Socket> mHandle;
 };
 
+// For compatible with old version.
+using TcpClient = TcpStream;
+
 /**
  * @brief Convert the TcpListener to an Generator.
  * 
  * @param listener 
- * @return IoGenerator<TcpClient> 
+ * @return IoGenerator<TcpStream> 
  */
-inline auto toGenerator(TcpListener listener) -> IoGenerator<TcpClient> {
+inline auto toGenerator(TcpListener listener) -> IoGenerator<TcpStream> {
     while (true) {
         auto val = co_await listener.accept(nullptr);
         if (!val) {
