@@ -16,6 +16,9 @@ using runtime::CoroContext;
 using runtime::CoroHandle;
 using runtime::StopRegistration;
 
+// Forward declaration
+class TaskGroupAwaiterBase;
+
 // The common part of TaskGroup<T>
 class ILIAS_API TaskGroupBase {
 public:
@@ -43,11 +46,12 @@ private:
 
     using RawSet = std::set<std::shared_ptr<TaskSpawnContext>, Less>;
     using Queue = std::deque<std::shared_ptr<TaskSpawnContext> >;
+    using Awaiter = TaskGroupAwaiterBase;
 
-    RawSet mPending;
-    Queue  mCompleted;
-    bool   mStopRequested = false;
-    void  *mAwaiter = nullptr;
+    RawSet   mPending;
+    Queue    mCompleted;
+    bool     mStopRequested = false;
+    Awaiter *mAwaiter = nullptr;
 friend class TaskGroupAwaiterBase;
 };
 

@@ -69,7 +69,15 @@ auto TaskGroupBase::stop() -> void {
         return;
     }
     mStopRequested = true;
+
+    // The stop may immediately stop the task, and then onTaskCompleted was called, the mPending will be changed in iteration, so we need to copy it
+    // TODO: Think a better way?
+    std::vector<TaskSpawnContext *> pending;
+    pending.reserve(mPending.size());
     for (auto &task : mPending) {
+        pending.emplace_back(task.get());
+    }
+    for (auto &task : pending) {
         task->stop();
     }
 }
@@ -86,8 +94,7 @@ auto TaskGroupBase::nextCompletion() noexcept -> std::shared_ptr<TaskSpawnContex
 }
 
 auto TaskGroupBase::notifyCompletion() -> void {
-    auto ptr = std::exchange(mAwaiter, nullptr);
-    auto awaiter = static_cast<TaskGroupAwaiterBase *>(ptr);
+    auto awaiter = std::exchange(mAwaiter, nullptr);
     if (awaiter) {
         awaiter->onCompletion();
     }
@@ -98,8 +105,8 @@ auto TaskGroupBase::notifyCompletion() -> void {
 auto TaskGroupAwaiterBase::await_suspend(CoroHandle caller) -> void {
     ILIAS_ASSERT_MSG(mGroup.mAwaiter == nullptr, "User should not call group.next() | shutdown() | waitAll() concurrently");
     mCaller = caller;
-    mReg.register_<&TaskGroupAwaiterBase::onStopRequested>(caller.stopToken(), this);
     mGroup.mAwaiter = this;
+    mReg.register_<&TaskGroupAwaiterBase::onStopRequested>(caller.stopToken(), this);
 }
 
 auto TaskGroupAwaiterBase::onCompletion() -> void {

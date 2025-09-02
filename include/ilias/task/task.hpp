@@ -504,6 +504,9 @@ public:
     auto id() const { return mPtr->id(); }
     auto stop() const { return mPtr->stop(); }
 
+    auto operator =(const StopHandle &) -> StopHandle & = delete;
+    auto operator =(StopHandle &&other) -> StopHandle & = default;
+
     explicit operator bool() const noexcept {
         return bool(mPtr);
     }
@@ -537,6 +540,9 @@ public:
     auto operator co_await() && -> task::TaskSpawnAwaiter<T> {
         return { std::exchange(mPtr, nullptr) };
     }
+
+    auto operator =(const WaitHandle &) -> WaitHandle & = delete;
+    auto operator =(WaitHandle &&other) -> WaitHandle & = default;
 
     explicit operator bool() const noexcept {
         return bool(mPtr);
