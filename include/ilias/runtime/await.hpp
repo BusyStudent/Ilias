@@ -41,16 +41,6 @@ concept HasCoAwait = requires(T &&t) {
 };
 
 /**
- * @brief Check the type can directly wait
- * 
- * @tparam T 
- */
-template <typename T>
-concept HasWait = requires(T t) {
-    t.wait();
-};
-
-/**
  * @brief Check tge type can be co_await
  * 
  * @tparam T 

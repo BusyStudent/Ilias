@@ -189,7 +189,7 @@ public:
      * @return true 
      * @return false 
      */
-    explicit operator bool() const { return bool(mHandle); }
+    explicit operator bool() const noexcept { return bool(mHandle); }
 private:
     IoHandle<Socket> mHandle;
 };
@@ -297,22 +297,36 @@ public:
      * @param backlog The backlog for the socket.
      * @return IoTask<TcpListener> 
      */
-    static auto bind(IPEndpoint endpoint, int backlog = 0) -> IoTask<TcpListener> {
+    static auto bind(IPEndpoint endpoint, int backlog = SOMAXCONN) -> IoTask<TcpListener> {
         auto sockfd = Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP);
         if (!sockfd) {
             co_return Err(sockfd.error());
         }
-        if (auto res = sockfd->bind(endpoint); !res) {
-            co_return Err(res.error());
+        co_return bindImpl(std::move(*sockfd), endpoint, backlog);
+    }
+
+    /**
+     * @brief Bind the socket to an endpoint. apply the function to the socket before binding.
+     * 
+     * @tparam Fn 
+     * @param endpoint The endpoint to bind to.
+     * @param backlog The backlog for the socket.
+     * @param fn The function to apply to the socket before binding.
+     * @return IoTask<TcpListener>
+     */
+    template <typename Fn> requires(std::invocable<Fn, SocketView>)
+    static auto bind(IPEndpoint endpoint, int backlog, Fn fn) -> IoTask<TcpListener> {
+        auto sockfd = Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP)
+            .and_then([&](Socket self) -> IoResult<Socket> {
+                if (auto res = fn(SocketView(self)); !res) {
+                    return Err(res.error());
+                }
+                return self;
+            });
+        if (!sockfd) {
+            co_return Err(sockfd.error());
         }
-        if (auto res = sockfd->listen(backlog); !res) {
-            co_return Err(res.error());
-        }
-        auto handle = IoHandle<Socket>::make(std::move(*sockfd), IoDescriptor::Socket);
-        if (!handle) {
-            co_return Err(handle.error());
-        }
-        co_return TcpListener(std::move(*handle));
+        co_return bindImpl(std::move(*sockfd), endpoint, backlog);
     }
 
     /**
@@ -338,8 +352,23 @@ public:
      * @return true 
      * @return false 
      */
-    explicit operator bool() const { return bool(mHandle); }
+    explicit operator bool() const noexcept { return bool(mHandle); }
 private:
+    // Common part of it
+    static auto bindImpl(Socket sockfd, const IPEndpoint &endpoint, int backlog) -> IoResult<TcpListener> {
+        if (auto res = sockfd.bind(endpoint); !res) {
+            return Err(res.error());
+        }
+        if (auto res = sockfd.listen(backlog); !res) {
+            return Err(res.error());
+        }
+        auto handle = IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket);
+        if (!handle) {
+            return Err(handle.error());
+        }
+        return TcpListener(std::move(*handle));
+    }
+
     IoHandle<Socket> mHandle;
 };
 

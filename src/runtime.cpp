@@ -1,7 +1,9 @@
 #include <ilias/runtime/executor.hpp>
 #include <ilias/runtime/timer.hpp>
+#include <ilias/runtime/coro.hpp>
 #include <ilias/task/task.hpp>
 #include <condition_variable> // std::condition_variable
+#include <memory_resource> // std::pmr::memory_resource
 #include <system_error> // std::system_error
 #include <thread> // std::thread
 #include <queue> // std::queue
@@ -16,12 +18,11 @@ ILIAS_NS_BEGIN
 
 using namespace runtime;
 
+// Executor
 static constinit thread_local Executor *currentExecutor = nullptr;
 
 Executor::~Executor() {
-    if (currentExecutor == this) {
-        currentExecutor = nullptr;
-    }
+    uninstall();
 }
 
 auto Executor::currentThread() -> Executor * {
@@ -36,6 +37,12 @@ auto Executor::install() -> void {
         ILIAS_THROW(std::runtime_error("A different executor already installed"));
     }
     currentExecutor = this;
+}
+
+auto Executor::uninstall() -> void {
+    if (currentExecutor == this) {
+        currentExecutor = nullptr;
+    }
 }
 
 // EventLoop
@@ -167,6 +174,15 @@ auto threadpool::submit(Callable *callable) -> void {
     pool->queue.emplace(callable);
     pool->cond.notify_one();
 #endif
+}
+
+// Memory Pool
+auto runtime::allocate(size_t size) -> void * {
+    return ::malloc(size);
+}
+
+auto runtime::deallocate(void *ptr, size_t size) noexcept -> void {
+    return ::free(ptr);
 }
 
 ILIAS_NS_END

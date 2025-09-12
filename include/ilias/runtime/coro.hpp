@@ -13,6 +13,10 @@ ILIAS_NS_BEGIN
 // Runtime internal coroutine classes
 namespace runtime {
 
+// Memory pool for coroutines
+extern auto ILIAS_API allocate(size_t n) -> void *;
+extern auto ILIAS_API deallocate(void *ptr, size_t n) noexcept -> void;
+
 // Helper class to switch between coroutines
 class SwitchCoroutine {
 public:
@@ -105,6 +109,14 @@ public:
             std::rethrow_exception(std::exchange(mException, nullptr));
         }
     }
+
+    auto operator new(size_t n) -> void * {
+        return allocate(n);
+    }
+
+    auto operator delete(void *ptr, size_t n) noexcept -> void {
+        return deallocate(ptr, n);
+    }
 private:
     CoroContext       *mContext = nullptr;
     std::exception_ptr mException = nullptr;
@@ -119,9 +131,9 @@ class CoroHandle {
 public:
     template <typename T> requires (std::is_base_of_v<CoroPromise, T>)
     CoroHandle(std::coroutine_handle<T> handle) noexcept : mHandle(handle), mPromise(&handle.promise()) {}
-    CoroHandle(const CoroHandle &) = default;
-    CoroHandle(nullptr_t) {};
-    CoroHandle() = default;
+    CoroHandle(const CoroHandle &) noexcept = default;
+    CoroHandle(std::nullptr_t) noexcept {};
+    CoroHandle() noexcept = default;
 
     // std coroutine interface
     auto done() const noexcept {

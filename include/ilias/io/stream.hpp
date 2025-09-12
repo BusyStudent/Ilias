@@ -496,7 +496,7 @@ public:
 
     // Detach the stream
     [[nodiscard]]
-    auto detach() && -> T {
+    auto detach() -> T {
         return std::move(mStream);
     }
 
@@ -581,7 +581,7 @@ public:
 
     // Detach the stream
     [[nodiscard]] 
-    auto detach() && -> T {
+    auto detach() -> T {
         return std::move(mStream);
     }
 
@@ -642,6 +642,11 @@ public:
 
     // Reader
     [[nodiscard]]
+    auto fill(FillPolicy p) -> IoTask<Buffer> {
+        return mStream.nextLayer().fill(p);
+    }
+
+    [[nodiscard]]
     auto buffer() -> MutableBuffer {
         return mStream.nextLayer().buffer();
     }
@@ -661,7 +666,7 @@ public:
     }
 
     [[nodiscard]] 
-    auto detach() && -> T {
+    auto detach() -> T {
         return std::move(nextLayer());
     }
 

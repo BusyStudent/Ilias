@@ -254,19 +254,28 @@ TEST(Endpoint, ToString) {
 }
 
 CORO_TEST(Net, Tcp) {
-    auto listener = (co_await TcpListener::bind("127.0.0.1:0")).value();
-    auto endpoint = listener.localEndpoint().value();
     {
-        auto client = [&]() -> Task<void> {
-            auto strean =  (co_await TcpStream::connect(endpoint)).value();
-            EXPECT_TRUE(co_await strean.writeAll("Hello, World!"_bin));
+        auto listener = (co_await TcpListener::bind("127.0.0.1:0")).value();
+        auto endpoint = listener.localEndpoint().value();
+        {
+            auto client = [&]() -> Task<void> {
+                auto strean =  (co_await TcpStream::connect(endpoint)).value();
+                EXPECT_TRUE(co_await strean.writeAll("Hello, World!"_bin));
+            };
+            std::string content;
+            auto handle = spawn(client());
+            auto [peer, _] = (co_await listener.accept()).value();
+            EXPECT_TRUE(co_await peer.readToEnd(content));
+            EXPECT_TRUE(co_await std::move(handle));
+            EXPECT_EQ(content, "Hello, World!");
+        }
+    }
+    {
+        // Test bind with configure
+        auto configure = [](SocketView view) {
+            return view.setOption(sockopt::ReuseAddress(true));
         };
-        std::string content;
-        auto handle = spawn(client());
-        auto [peer, _] = (co_await listener.accept()).value();
-        EXPECT_TRUE(co_await peer.readToEnd(content));
-        EXPECT_TRUE(co_await std::move(handle));
-        EXPECT_EQ(content, "Hello, World!");
+        auto listener = (co_await TcpListener::bind("127.0.0.1:0", SOMAXCONN, configure)).value();
     }
 }
 
@@ -319,6 +328,14 @@ CORO_TEST(Net, Udp) {
         };
         auto [n, _] = (co_await receiver.recvfrom(mutBuffers)).value();
         EXPECT_EQ(n, 13);
+    }
+
+    {
+        // Test bind with configure
+        auto configure = [](SocketView view) {
+            return view.setOption(sockopt::ReuseAddress(true));
+        };
+        auto any = (co_await UdpClient::bind("127.0.0.1:0", configure)).value();
     }
 }
 

@@ -145,18 +145,34 @@ public:
      * @return IoTask<UdpClient> 
      */
     static auto bind(IPEndpoint endpoint) -> IoTask<UdpClient> {
-        auto sockfd = Socket::make(endpoint.family(), SOCK_DGRAM, 0);
+        auto sockfd = Socket::make(endpoint.family(), SOCK_DGRAM, IPPROTO_UDP);
         if (!sockfd) {
             co_return Err(sockfd.error());
         }
-        if (auto res = sockfd->bind(endpoint); !res) {
-            co_return Err(res.error());
+        co_return bindImpl(std::move(*sockfd), endpoint);
+    }
+
+    /**
+     * @brief Bind the socket to the specified endpoint and apply the function to the socket before the bind.
+     * 
+     * @tparam Fn 
+     * 
+     * @param endpoint
+     * @param fn
+     */
+    template <typename Fn> requires (std::invocable<Fn, SocketView>)
+    static auto bind(IPEndpoint endpoint, Fn fn) -> IoTask<UdpClient> {
+        auto sockfd = Socket::make(endpoint.family(), SOCK_DGRAM, IPPROTO_UDP)
+            .and_then([&](Socket self) -> IoResult<Socket> {
+                if (auto res = fn(SocketView(self)); !res) {
+                    return Err(res.error());
+                }
+                return self;
+            });
+        if (!sockfd) {
+            co_return Err(sockfd.error());
         }
-        auto handle = IoHandle<Socket>::make(std::move(*sockfd), IoDescriptor::Socket);
-        if (!handle) {
-            co_return Err(handle.error());
-        }
-        co_return UdpClient(std::move(*handle));
+        co_return bindImpl(std::move(*sockfd), endpoint);
     }
 
     /**
@@ -184,6 +200,17 @@ public:
      */
     explicit operator bool() const { return bool(mHandle); }
 private:
+    static auto bindImpl(Socket sockfd, const IPEndpoint &endpoint) -> IoResult<UdpClient> {
+        if (auto res = sockfd.bind(endpoint); !res) {
+            return Err(res.error());
+        }
+        auto handle = IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket);
+        if (!handle) {
+            return Err(handle.error());
+        }
+        return UdpClient(std::move(*handle));
+    }
+
     IoHandle<Socket> mHandle;
 };
 

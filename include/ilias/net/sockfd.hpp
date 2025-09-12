@@ -142,16 +142,6 @@ public:
     }
 
     /**
-     * @brief Connect to the specified ip endpoint
-     * 
-     * @param endpoint 
-     * @return IoResult<void> 
-     */
-    auto connect(const IPEndpoint &endpoint) const -> IoResult<void> {
-        return connect(EndpointView(endpoint));
-    }
-
-    /**
      * @brief Bind the socket to the specified endpoint
      * 
      * @param endpoint The endpoint view to bind to
@@ -618,7 +608,7 @@ public:
         }
         return Err(SystemError::fromErrno());
     }
-    
+
 };
 
 ILIAS_NS_END

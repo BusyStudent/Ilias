@@ -58,7 +58,13 @@ public:
      * @note If will throw std::runtime_error if the executor is already installed
      * 
      */
-    virtual auto install() -> void;
+    auto install() -> void;
+
+    /**
+     * @brief Uninstall the executor from the current thread, if the executor is not installed, no-op
+     * 
+     */
+    auto uninstall() -> void;
 
     /**
      * @brief Get the current thread's executor
