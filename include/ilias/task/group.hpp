@@ -34,7 +34,7 @@ public:
     auto nextCompletion() noexcept -> std::shared_ptr<TaskSpawnContext>;
 private:
     auto notifyCompletion() -> void;
-    static auto onTaskCompleted(TaskSpawnContext &ctxt, void *_self) -> void;
+    auto onTaskCompleted(TaskSpawnContext &ctxt) -> void;
 
     struct Less { // We only compare the address
         using is_transparent = void;

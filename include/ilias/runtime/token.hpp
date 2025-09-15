@@ -9,7 +9,10 @@ ILIAS_NS_BEGIN
 
 namespace runtime {
 
+/// The StopToken, used to get notify of the stop
 using StopToken = std::stop_token;
+
+/// The StopSource, used to signal the stop request
 using StopSource = std::stop_source;
 
 template <typename Callable>
@@ -53,7 +56,6 @@ public:
     StopRegistration(const StopRegistration &) = delete;
     StopRegistration(StopRegistration &&) = default;
     StopRegistration() = default;
-    ~StopRegistration() = default;
 
     StopRegistration &operator=(const StopRegistration &) = delete;
     StopRegistration &operator=(StopRegistration &&) = default;

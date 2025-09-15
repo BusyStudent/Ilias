@@ -81,16 +81,9 @@ public:
 };
 
 // Add an async cleanup handler to an awaitable
-class TaskContextMain : public TaskContext {};
-class TaskContextFinally : public TaskContext { 
-public: 
-    using TaskContext::TaskContext;
-};
-
-class FinallyAwaiterBase : protected TaskContextMain, protected TaskContextFinally {
+class FinallyAwaiterBase {
 public:
-    FinallyAwaiterBase(TaskHandle<> main, TaskHandle<> finally) : TaskContextMain(main), TaskContextFinally(finally, std::nostopstate) {}
-    FinallyAwaiterBase(TaskHandle<> main, std::nullptr_t finally) : TaskContextMain(main), TaskContextFinally(finally, std::nostopstate) {} // For FinallyFnAwaiter, lazy initialization
+    FinallyAwaiterBase(TaskHandle<> main, TaskHandle<> finally) : mMainCtxt(main), mFinallyCtxt(finally, std::nostopstate) {}
     FinallyAwaiterBase(FinallyAwaiterBase &&) = default;
     ~FinallyAwaiterBase() = default;
 
@@ -99,19 +92,15 @@ public:
     auto await_ready() -> bool { return false; } // Always suspend, because althrough the task is ready, we need to call the finally handler
 
     auto setContext(runtime::CoroContext &ctxt) noexcept {
-        TaskContextMain::setExecutor(ctxt.executor());
-        TaskContextFinally::setExecutor(ctxt.executor());
+        mMainCtxt.setExecutor(ctxt.executor());
+        mFinallyCtxt.setExecutor(ctxt.executor());
     }
 protected:
-    auto mainHandle() -> TaskHandle<> {
-        return TaskContextMain::mTask;
-    }
-    auto finallyHandle() -> TaskHandle<> {
-        return TaskContextFinally::mTask;
-    }
+    TaskContext mMainCtxt;
+    TaskContext mFinallyCtxt;
 private:
-    static auto onTaskCompletion(runtime::CoroContext &_self) -> void;
-    static auto onFinallyCompletion(runtime::CoroContext &_self) -> void;
+    auto onTaskCompletion() -> void;
+    auto onFinallyCompletion() -> void;
 
     runtime::CoroHandle mCaller;
     runtime::StopRegistration mReg;
@@ -123,7 +112,7 @@ public:
     FinallyAwaiter(TaskHandle<T> main, TaskHandle<> finally) : FinallyAwaiterBase(main, finally) {}
 
     auto await_resume() -> T {
-        return TaskHandle<T>::cast(mainHandle()).value();
+        return TaskHandle<T>::cast(mMainCtxt.task()).value();
     }
 };
 
@@ -133,11 +122,11 @@ public:
     FinallyFnAwaiter(TaskHandle<T> main, Fn fn) : FinallyAwaiterBase(main, nullptr), mFn(std::move(fn)) {}
 
     auto await_resume() -> T {
-        return TaskHandle<T>::cast(mainHandle()).value();
+        return TaskHandle<T>::cast(mMainCtxt.task()).value();
     }
 
     auto setContext(runtime::CoroContext &ctxt) { // Lazy initialization until co_await
-        TaskContextFinally::mTask = toTask(mFn())._leak();
+        mFinallyCtxt.setTask(toTask(mFn())._leak());
         FinallyAwaiterBase::setContext(ctxt);
     }
 private:

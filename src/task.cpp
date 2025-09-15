@@ -18,14 +18,14 @@ TaskGroupBase::TaskGroupBase(TaskGroupBase &&other) noexcept :
 {
     // Rebind the completion handlers
     for (auto &task : mPending) {
-        task->setCompletionHandler(onTaskCompleted, this);
+        task->setCompletionHandler<&TaskGroupBase::onTaskCompleted>(this);
     }
 }
 
 TaskGroupBase::~TaskGroupBase() {
     // Unbind the completion handlers detach the tasks and send stop signal
     for (auto &task : mPending) { 
-        task->setCompletionHandler(nullptr, nullptr);
+        task->setCompletionHandler(nullptr);
         task->stop();
     }
 }
@@ -44,24 +44,23 @@ auto TaskGroupBase::insert(std::shared_ptr<TaskSpawnContext> task) -> StopHandle
         notifyCompletion();
     }
     else { // Still Running
-        task->setCompletionHandler(onTaskCompleted, this);
+        task->setCompletionHandler<&TaskGroupBase::onTaskCompleted>(this);
         auto [_, emplace] = mPending.emplace(task);
         ILIAS_ASSERT(emplace);
     }
     return StopHandle(std::move(task));
 }
 
-auto TaskGroupBase::onTaskCompleted(TaskSpawnContext &ctxt, void *_self) -> void {
-    auto &self = *static_cast<TaskGroupBase *>(_self);
-    auto iter = self.mPending.find(&ctxt);
-    if (iter == self.mPending.end()) {
+auto TaskGroupBase::onTaskCompleted(TaskSpawnContext &ctxt) -> void {
+    auto iter = mPending.find(&ctxt);
+    if (iter == mPending.end()) {
         ::abort();
     }
     // Move to the completed set
     auto ptr = *iter;
-    self.mPending.erase(iter);
-    self.mCompleted.emplace_back(std::move(ptr));
-    self.notifyCompletion();
+    mPending.erase(iter);
+    mCompleted.emplace_back(std::move(ptr));
+    notifyCompletion();
 }
 
 auto TaskGroupBase::stop() -> void {
@@ -208,39 +207,47 @@ auto ScheduleAwaiterBase::invoke() -> void  { // In the caller thread
 
 #pragma region FinallyAwaiter
 auto FinallyAwaiterBase::await_suspend(CoroHandle caller) -> std::coroutine_handle<> {
-    auto mainContext = static_cast<TaskContextMain*>(this);
-    auto mainHandle = this->mainHandle();
-    auto finallyContext = static_cast<TaskContextFinally*>(this);
-    auto finallyHandle = this->finallyHandle();
+    auto mainHandle = mMainCtxt.task();
+    auto finallyHandle = mFinallyCtxt.task();
+
+    // Bind the ctxt to self first
+    mMainCtxt.setUserdata(this);
+    mFinallyCtxt.setUserdata(this);
+
+    // The callbacks
+    auto mainCallback = [](runtime::CoroContext &ctxt) {
+        return static_cast<FinallyAwaiterBase*>(ctxt.userdata())->onTaskCompletion();
+    };
+    auto finallyCallback = [](runtime::CoroContext &ctxt) {
+        return static_cast<FinallyAwaiterBase*>(ctxt.userdata())->onFinallyCompletion();
+    };
 
     mCaller = caller;
-    mReg.register_<&TaskContext::stop>(caller.stopToken(), mainContext); // Forward the stop to the handle task
-    mainHandle.setContext(*mainContext);
-    mainHandle.setCompletionHandler(FinallyAwaiterBase::onTaskCompletion);
-    mainContext->setStoppedHandler(FinallyAwaiterBase::onTaskCompletion);
+    mReg.register_<&TaskContext::stop>(caller.stopToken(), &mMainCtxt); // Forward the stop to the handle task
+    mainHandle.setContext(mMainCtxt);
+    mainHandle.setCompletionHandler(mainCallback);
+    mMainCtxt.setStoppedHandler(mainCallback);
 
-    finallyHandle.setContext(*finallyContext);
-    finallyHandle.setCompletionHandler(FinallyAwaiterBase::onFinallyCompletion);
+    finallyHandle.setContext(mFinallyCtxt);
+    finallyHandle.setCompletionHandler(finallyCallback);
     return mainHandle.toStd(); // Switch into it, caller -> task -> finally -> (caller or caller.setStopped())
 }
 
-auto FinallyAwaiterBase::onTaskCompletion(runtime::CoroContext &_self) -> void {
-    auto &self = static_cast<FinallyAwaiterBase &>(static_cast<TaskContextMain &>(_self)); // Switch into finally
-    if (self.TaskContextMain::isStopped()) {
-        self.finallyHandle().schedule();
+auto FinallyAwaiterBase::onTaskCompletion() -> void {
+    if (mMainCtxt.isStopped()) { // The main task is stopped, we should call the finally on event loop
+        mFinallyCtxt.task().schedule();
     }
-    else {
-        self.mainHandle().setPrevAwaiting(self.finallyHandle());
+    else { // Otherwise, let the min call the finally. short-cut :)
+        mMainCtxt.task().setPrevAwaiting(mFinallyCtxt.task());
     }
 }
 
-auto FinallyAwaiterBase::onFinallyCompletion(runtime::CoroContext &_self) -> void {
-    auto &self = static_cast<FinallyAwaiterBase &>(static_cast<TaskContextFinally &>(_self)); // Switch into caller
-    if (self.TaskContextMain::isStopped()) {
-        self.mCaller.setStopped();
+auto FinallyAwaiterBase::onFinallyCompletion() -> void {
+    if (mMainCtxt.isStopped()) { // Forward the stop completion to the caller
+        mCaller.setStopped();
     }
-    else {
-        self.finallyHandle().setPrevAwaiting(self.mCaller);
+    else { // Switch into caller
+        mFinallyCtxt.task().setPrevAwaiting(mCaller);
     }
 }
 

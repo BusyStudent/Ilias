@@ -53,6 +53,10 @@ public:
         return mStopSource;
     }
 
+    auto userdata() const noexcept -> void * {
+        return mUser;
+    }
+
     auto setExecutor(Executor &executor) noexcept {
         mExecutor = &executor;
     }
@@ -60,10 +64,15 @@ public:
     auto setStoppedHandler(void (*handler)(CoroContext &)) noexcept {
         mStoppedHandler = handler;
     }
+
+    auto setUserdata(void *user) noexcept {
+        mUser = user;
+    }
 private:
     StopSource  mStopSource;                               // Use this to try to stop the coroutine
     Executor   *mExecutor = nullptr;
     void      (*mStoppedHandler)(CoroContext &) = nullptr; // Called when coroutine is stopped
+    void       *mUser = nullptr;                           // The user data, useful in the callback
     bool        mStopped = false;
 friend class CoroHandle;
 };

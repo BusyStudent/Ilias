@@ -243,14 +243,11 @@ auto this_fiber::yield() -> void {
 
 auto this_fiber::await4(runtime::CoroHandle coro) -> void {
     auto fiber = static_cast<FiberContextImpl *>(FiberContext::current());
-    struct CoroContext : runtime::CoroContext {
-        FiberContextImpl *fiber = nullptr;
-    };
-    CoroContext ctxt;
-    auto handler = [](runtime::CoroContext &_self) {
-        auto &self = static_cast<CoroContext &>(_self);
-        if (self.fiber) {
-            self.fiber->schedule();
+    runtime::CoroContext ctxt;
+    auto handler = [](runtime::CoroContext &ctxt) {
+        auto self = static_cast<FiberContext*>(ctxt.userdata());
+        if (self) {
+            self->schedule();
         }
     };
 
@@ -266,7 +263,7 @@ auto this_fiber::await4(runtime::CoroHandle coro) -> void {
     coro.setContext(ctxt);
     coro.resume();
     if (!coro.done()) {
-        ctxt.fiber = fiber;
+        ctxt.setUserdata(fiber);
         fiber->suspend(); // Suspend self, wait for the coro to complete
     }
     ILIAS_ASSERT(coro.done() || ctxt.isStopped());

@@ -134,7 +134,6 @@ auto threadpool::submit(Callable *callable) -> void {
             pool->lastPeek = std::chrono::steady_clock::now();
             locker.unlock();
             
-
             pool->idle -= 1;
             callable->call(*callable);
             pool->idle += 1;

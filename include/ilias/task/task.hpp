@@ -10,10 +10,11 @@
  */
 #pragma once
 
-#include <ilias/runtime/executor.hpp>
-#include <ilias/runtime/token.hpp>
-#include <ilias/runtime/await.hpp>
-#include <ilias/runtime/coro.hpp>
+#include <ilias/runtime/functional.hpp> // SmallFunction
+#include <ilias/runtime/executor.hpp> // Executor
+#include <ilias/runtime/token.hpp> // StopToken
+#include <ilias/runtime/await.hpp> // Awaitable
+#include <ilias/runtime/coro.hpp> // CoroPromise
 #include <ilias/detail/option.hpp> // Option
 #include <ilias/log.hpp>
 #include <coroutine>
@@ -28,6 +29,7 @@ using runtime::StopRegistration;
 using runtime::CoroHandle;
 using runtime::CoroPromise;
 using runtime::CoroContext;
+using runtime::SmallFunction;
 
 // The return value part of the task promise
 template <typename T>
@@ -162,18 +164,13 @@ public:
 // Environment for the task, it bind the task with this
 class TaskContext : public CoroContext {
 public:
-    TaskContext(TaskHandle<> task, std::nostopstate_t) : CoroContext(std::nostopstate), mTask(task) {
-        mTask.setContext(*this);
+    template <typename ...Super>
+    TaskContext(TaskHandle<> task, Super ...super) : CoroContext(super...), mTask(task) {
+        if (mTask) {
+            mTask.setContext(*this);
+        }
     }
-    TaskContext(TaskHandle<> task) : mTask(task) {
-        mTask.setContext(*this);
-    }
-    TaskContext(std::nullptr_t, std::nostopstate_t) : CoroContext(std::nostopstate) {
-        
-    }
-    TaskContext(std::nullptr_t) {
 
-    }
     TaskContext(TaskContext &&other) noexcept : CoroContext(std::move(other)) {
         mTask = std::exchange(other.mTask, nullptr);
         if (mTask) { // rebind the context
@@ -186,12 +183,28 @@ public:
             mTask.destroy();
         }
     }
+
+    // Bind a new task on it, destroy the previous one
+    auto setTask(TaskHandle<> newTask) noexcept {
+        if (mTask) {
+            mTask.destroy();
+        }
+        if (newTask) {
+            newTask.setContext(*this);
+        }
+        mTask = newTask;
+    }
+
+    // Get the task in it
+    auto task() const noexcept {
+        return mTask;
+    }
 protected:
     TaskHandle<> mTask; // The task we use to wait for (take ownership)
 };
 
 // Environment for the blocking wait task
-class TaskBlockingContext final : public TaskContext {
+class TaskBlockingContext final : private TaskContext {
 public:
     TaskBlockingContext(TaskHandle<> task) : TaskContext(task, std::nostopstate) {
         auto executor = runtime::Executor::currentThread();
@@ -223,7 +236,7 @@ private:
 };
 
 // Environment for the spawn task
-class TaskSpawnContext final : public TaskContext {
+class TaskSpawnContext final : private TaskContext {
 public:
     TaskSpawnContext(TaskHandle<> task) : TaskContext(task) {
         auto executor = runtime::Executor::currentThread();
@@ -235,14 +248,16 @@ public:
     }
     TaskSpawnContext(const TaskSpawnContext &) = delete;
 
+    // Send the stop request of the spawn task
+    using TaskContext::stop;
+
     // Blocking enter the executor
     auto enter() -> void {
         if (!mCompleted) {
             StopSource source;
-            mCompletionHandler = [](auto, void *source) {
-                static_cast<StopSource *>(source)->request_stop();
+            mCompletionHandler = [&](auto &) {
+                source.request_stop();
             };
-            mUser = &source;
             this->executor().run(source.get_token());
         }
     }
@@ -259,6 +274,7 @@ public:
         });
     }
 
+    // Get the id of the spawn task
     auto id() const noexcept -> uintptr_t {
         return reinterpret_cast<uintptr_t>(this);
     }
@@ -267,9 +283,16 @@ public:
     auto isCompleted() const -> bool { return mCompleted; }
 
     // Set the handle when the task is completed
-    auto setCompletionHandler(void (*handler)(TaskSpawnContext &, void *), void *user) -> void {
+    auto setCompletionHandler(SmallFunction<void (TaskSpawnContext &)> handler) -> void {
         mCompletionHandler = handler;
-        mUser = user;
+    }
+
+    // Set the handler when the task is completed, more convenient
+    template <auto Method, typename Object>
+    auto setCompletionHandler(Object *obj) -> void {
+        mCompletionHandler = [obj](TaskSpawnContext &ctxt) {
+            (obj->*Method)(ctxt);
+        };
     }
 
     static auto make(TaskHandle<> task) -> std::shared_ptr<TaskSpawnContext> {
@@ -285,9 +308,8 @@ private:
         // Done..
         self.mCompleted = true;
         if (self.mCompletionHandler) { // Notify we are stopped
-            self.mCompletionHandler(self, self.mUser);
+            self.mCompletionHandler(self);
             self.mCompletionHandler = nullptr;
-            self.mUser = nullptr;
         }
         if (self.mSelf.use_count() == 1) { // We are the last one, only can be deref in the event loop
             self.executor().post(TaskSpawnContext::derefSelf, &self);
@@ -303,45 +325,42 @@ private:
         ptr.reset();
     }
 
+    SmallFunction<void (TaskSpawnContext &)> mCompletionHandler; // The completion handler, call when the task is completed or stopped
     std::shared_ptr<TaskSpawnContext> mSelf; // Used to avoid free self dur execution
     std::string mName; // The name of the spawn task
-    void (*mCompletionHandler)(TaskSpawnContext &ctxt, void *) = nullptr; // The completion handler, call when the task is completed or stopped
-    void  *mUser = nullptr;
-    bool   mCompleted = false;
+    bool mCompleted = false;
 friend class TaskSpawnAwaiterBase;
 };
 
 class TaskSpawnAwaiterBase {
 public:
-    TaskSpawnAwaiterBase(std::shared_ptr<TaskSpawnContext> ptr) : mPtr(ptr) {}
+    TaskSpawnAwaiterBase(std::shared_ptr<TaskSpawnContext> ptr) : mCtxt(ptr) {}
 
-    auto await_ready() const noexcept { return mPtr->mCompleted; }
+    auto await_ready() const noexcept { return mCtxt->isCompleted(); }
     auto await_suspend(CoroHandle caller) {
-        mPtr->mCompletionHandler = TaskSpawnAwaiterBase::onCompletion;
-        mPtr->mUser = this;
         mHandle = caller;
-        mReg.register_(caller.stopToken(), onStopRequested, this); // Forward the stop request
+        mCtxt->setCompletionHandler<&TaskSpawnAwaiterBase::onCompletion>(this);
+        mReg.register_<&TaskSpawnAwaiterBase::onStopRequested>(caller.stopToken(), this); // Forward the stop request
     }
 protected:
-    static auto onCompletion(TaskSpawnContext &, void *_self) -> void {
-        auto &self = *static_cast<TaskSpawnAwaiterBase *>(_self);
-        if (self.mPtr->isStopped() && self.mHandle.isStopRequested()) { // The target is stopped and the caller was requested to stop
-            self.mHandle.setStopped();
+    auto onStopRequested() -> void {
+        mCtxt->stop();
+    }
+
+    auto onCompletion(TaskSpawnContext &) -> void {
+        if (mCtxt->isStopped() && mHandle.isStopRequested()) { // The target is stopped and the caller was requested to stop
+            mHandle.setStopped();
             return; // Forward the stop
         }
-        if (self.mPtr->isStopped()) {
-            self.mHandle.schedule(); // We should resume the caller by ourself
+        if (mCtxt->isStopped()) {
+            mHandle.schedule(); // We should resume the caller by ourself
             return;
         }
         // Let the mTask resume the caller
-        self.mPtr->mTask.setPrevAwaiting(self.mHandle);
-    }
-    static auto onStopRequested(void *_self) -> void {
-        auto &self = *static_cast<TaskSpawnAwaiterBase *>(_self);
-        self.mPtr->stop();
+        mCtxt->mTask.setPrevAwaiting(mHandle);
     }
 
-    std::shared_ptr<TaskSpawnContext> mPtr;
+    std::shared_ptr<TaskSpawnContext> mCtxt;
     StopRegistration mReg;
     CoroHandle mHandle;
 };
@@ -353,7 +372,7 @@ public:
     using TaskSpawnAwaiterBase::TaskSpawnAwaiterBase;
 
     auto await_resume() -> Option<T> {
-        return mPtr->value<T>();
+        return mCtxt->value<T>();
     }
 };
 

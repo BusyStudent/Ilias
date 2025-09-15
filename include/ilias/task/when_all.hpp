@@ -24,9 +24,6 @@ public:
     WhenAllTaskContext(TaskHandle<> task) : TaskContext(task) { }
 
 private:
-    auto task() -> TaskHandle<> {
-        return mTask;
-    }
     template <typename T>
     auto value() {
         return TaskHandle<T>::cast(mTask).value();

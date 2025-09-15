@@ -10,7 +10,8 @@
  */
 #pragma once
 
-#include <ilias/runtime/token.hpp>
+#include <ilias/runtime/functional.hpp> // SmallCallable
+#include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/defines.hpp>
 #include <functional>
 #include <stop_token>
@@ -91,18 +92,14 @@ public:
     template <std::invocable Fn>
         requires (!std::convertible_to<Fn, std::coroutine_handle<> >) // Avoid conflict with coroutine_handle
     inline auto schedule(Fn fn) -> void {
-        if constexpr (std::convertible_to<Fn, void (*)()>) { // Can be a function pointer without arguments, like empty lambda
-            auto ptr = static_cast<void (*)()>(fn);
-            post(scheduleProxy, reinterpret_cast<void*>(ptr));
-        }
-        else if constexpr (sizeof(Fn) <= sizeof(void*) && std::is_trivially_destructible_v<Fn> && std::is_trivially_copyable_v<Fn>) {
+        if constexpr (SmallCallable<Fn>) {
             // We can store the function in the void *;
-            void *ptr = nullptr;
-            std::memcpy(&ptr, &fn, sizeof(fn));
-            post(scheduleProxyInline<Fn>, ptr);
+            // Delegate to it
+            auto [fn, args] = SmallFunction<void()> {fn}.toRaw();
+            post(fn, args);
         }
         else { // Alloc the memory and post it
-            post(scheduleProxyAlloc<Fn>, new Fn(std::move(fn)));
+            post(scheduleAlloc<Fn>, new Fn(std::move(fn)));
         }
     }
 private:
@@ -111,28 +108,12 @@ private:
         std::coroutine_handle<>::from_address(h).resume();
     }
 
-    // Empty args function pointer proxy
-    static auto scheduleProxy(void *args) -> void {
-        auto fn = reinterpret_cast<void (*)()>(args);
-        fn();
-    }
-
     // The allocated memory object proxy
     template <std::invocable Fn>
-    static auto scheduleProxyAlloc(void *args) -> void {
+    static auto scheduleAlloc(void *args) -> void {
         auto ptr = static_cast<Fn*>(args);
         auto guard = std::unique_ptr<Fn>(ptr);
         (*guard)();
-    }
-
-    // The Small object optimization proxy
-    template <std::invocable Fn>
-    static auto scheduleProxyInline(void *args) -> void {
-        alignas(Fn) std::byte storage[sizeof(Fn)];
-        std::memcpy(storage, &args, sizeof(Fn));
-
-        auto ptr = std::launder(reinterpret_cast<Fn*>(&storage));
-        (*ptr)();
     }
 };
 
