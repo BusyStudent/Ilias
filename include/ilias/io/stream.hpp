@@ -199,7 +199,7 @@ public:
             mTail -= mPos;
             mPos = 0;
         }
-        auto newBuffer = static_cast<std::byte *>(std::realloc(mBuffer.data(), mTail));
+        auto newBuffer = static_cast<std::byte *>(::realloc(mBuffer.data(), mTail));
         ILIAS_ASSERT_MSG(newBuffer != nullptr, "Failed to allocate memory");
         mBuffer = {newBuffer, mTail};
     }

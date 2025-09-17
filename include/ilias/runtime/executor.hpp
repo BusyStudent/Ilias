@@ -95,8 +95,8 @@ public:
         if constexpr (SmallCallable<Fn>) {
             // We can store the function in the void *;
             // Delegate to it
-            auto [fn, args] = SmallFunction<void()> {fn}.toRaw();
-            post(fn, args);
+            auto [proxy, args] = SmallFunction<void()> {fn}.toRaw();
+            post(proxy, args);
         }
         else { // Alloc the memory and post it
             post(scheduleAlloc<Fn>, new Fn(std::move(fn)));
@@ -137,27 +137,27 @@ private:
 };
 
 /**
- * @brief The Callable struct. used to impl function reference
+ * @brief The CallableRef struct. used to impl function reference
  * 
  */
-class Callable {
+class CallableRef {
 public:
-    void (*call)(Callable &) = nullptr;
+    void (*call)(CallableRef &) = nullptr;
 };
 
 /**
- * @brief The CallableImpl struct, use CRTP to impl the Callable
+ * @brief The CallableImpl struct, use CRTP to impl the CallableRef
  * 
  * @tparam T 
  */
 template <typename T>
-class CallableImpl : public Callable {
+class CallableImpl : public CallableRef {
 public:
     CallableImpl() {
         call = invoke;
     }
 private:
-    static auto invoke(Callable &callable) -> void {
+    static auto invoke(CallableRef &callable) -> void {
         static_cast<T&>(callable)();
     }
 };
@@ -165,7 +165,7 @@ private:
 } // namespace runtime
 
 namespace runtime::threadpool {
-    extern auto ILIAS_API submit(Callable *callable) -> void;
+    extern auto ILIAS_API submit(CallableRef &callable) -> void;
 } // namespace runtime::threadpool
 
 // Re-export the EventLoop

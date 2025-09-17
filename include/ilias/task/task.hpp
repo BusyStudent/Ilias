@@ -388,7 +388,7 @@ public:
     auto await_ready() const noexcept { return false; }
     auto await_suspend(CoroHandle caller) {
         mHandle = caller;
-        runtime::threadpool::submit(this);
+        runtime::threadpool::submit(*this);
     }
     auto await_resume() -> T {
         if (mException) {

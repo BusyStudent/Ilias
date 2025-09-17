@@ -140,7 +140,7 @@ class Generator;
 // Common Concepts
 template <typename T>
 concept IntoString = requires (const T &t) {
-    toString(t);
+    { toString(t) } -> std::convertible_to<std::string_view>;
 };
 
 // Formatting namespace
@@ -176,9 +176,16 @@ struct DefaultFormatter {
 #endif // ILIAS_FMT_NAMESPACE
 
 // Utils
-template <typename T> requires requires(const T &t) { t.toString(); }
+template <typename T> requires 
+    requires(const T &t) { t.toString(); } // Make sure the t has the toString() method
 inline auto toString(const T &t) {
     return t.toString();
+}
+
+template <typename Stream, IntoString T> requires 
+    requires(Stream &stream) { stream << std::string_view{}; } // Make sure the stream can output string_view, like std::ostream
+inline auto operator <<(Stream &stream, const T &t) -> decltype(auto) {
+    return stream << toString(t);
 }
 
 ILIAS_NS_END

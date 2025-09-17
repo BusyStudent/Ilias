@@ -95,22 +95,21 @@ auto EventLoop::sleep(uint64_t ms) -> Task<void> {
     co_return co_await d->service.sleep(ms);
 }
 
-auto threadpool::submit(Callable *callable) -> void {
-    ILIAS_ASSERT_MSG(callable, "Callable must not be null");
+auto threadpool::submit(CallableRef &callable) -> void {
 
 #if defined(_WIN32)
     auto invoke = [](void *cb) -> ::DWORD {
-        auto callable = static_cast<Callable *>(cb);
+        auto callable = static_cast<CallableRef *>(cb);
         callable->call(*callable);
         return 0;
     };
-    if (!::QueueUserWorkItem(invoke, callable, WT_EXECUTEDEFAULT)) {
+    if (!::QueueUserWorkItem(invoke, &callable, WT_EXECUTEDEFAULT)) {
         ILIAS_THROW(std::system_error(std::error_code(GetLastError(), std::system_category())));
     }
 #else // Use our own thread pool
     struct ThreadPool {
         StopSource stopSource; // for notifying the threads to stop
-        std::queue<Callable *> queue;
+        std::queue<CallableRef *> queue;
         std::condition_variable cond;
         std::mutex mutex;
         std::vector<std::thread> threads;
@@ -170,7 +169,7 @@ auto threadpool::submit(Callable *callable) -> void {
             pool->idle += 1;
         }
     }
-    pool->queue.emplace(callable);
+    pool->queue.emplace(&callable);
     pool->cond.notify_one();
 #endif
 }

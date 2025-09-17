@@ -127,6 +127,7 @@ private:
 inline SockInitializer::SockInitializer() {
 
 }
+
 inline SockInitializer::~SockInitializer() {
     if (mInited) {
         auto _ = uninitialize();
