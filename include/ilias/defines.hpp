@@ -80,7 +80,9 @@
 #endif
 
 // Library mode
-#if  defined(_ILIAS_SOURCE)
+#if   defined(ILIAS_STATIC) // Static library, no-op
+    #define ILIAS_API
+#elif defined(_ILIAS_SOURCE) // Dynamic library
     #define ILIAS_API ILIAS_EXPORT
 #else
     #define ILIAS_API ILIAS_IMPORT

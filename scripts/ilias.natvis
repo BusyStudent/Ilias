@@ -1,6 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
+<!-- Intrusive List -->
+<Type Name="ilias::intrusive::List&lt;*&gt;">
+	<Intrinsic Name="empty" Expression="mNext == this || mNext == this"></Intrinsic>
+	<DisplayString Condition="empty()">empty</DisplayString>
+	<DisplayString Condition="!empty()">has item</DisplayString>
+
+    <Expand>
+		<CustomListItems MaxItemsPerView="100">
+			<Variable Name="iter" InitialValue="mNext"/>
+			<Loop>
+				<Break Condition="iter == this"/>
+				<Item>*static_cast&lt;$T1*&gt;(iter)</Item>
+				<Exec>iter = (*iter).mNext</Exec>
+			</Loop>
+        </CustomListItems>
+    </Expand>
+</Type>
+
+<!-- Intrusive ListNode -->
+<Type Name="ilias::intrusive::Node&lt;*&gt;" Inheritable="false">
+	<Intrinsic Name="isLinked" Expression="mNext != this || mNext != this"></Intrinsic>
+	<DisplayString Condition="isLinked()">linked</DisplayString>
+	<DisplayString Condition="!isLinked()">not linked</DisplayString>
+</Type>
+
+<!-- Intrusive Rc -->
+<Type Name="ilias::intrusive::Rc&lt;*&gt;">
+	<DisplayString Condition="mPtr == nullptr">empty</DisplayString>
+	<DisplayString Condition="mPtr != nullptr">Rc {*mPtr} [{(*mPtr).mCount} refs]</DisplayString>
+	<Expand>
+		<Item Name="[ptr]" Condition="mPtr != nullptr">mPtr</Item>
+		<Item Name="[count]" Condition="mPtr != nullptr">(*mPtr).mCount</Item>
+	</Expand>
+</Type>
+
+<!-- Intrusive RefCounted -->
+<Type Name="ilias::intrusive::RefCounted&lt;*&gt;" Inheritable="false">
+	<DisplayString>{mCount} refs</DisplayString>
+	<Expand>
+		<Item Name="[count]">mCount</Item>
+	</Expand>
+</Type>
+
 <!-- StreamBuffer -->
 <Type Name="ilias::StreamBuffer">
 	<Intrinsic Name="capacity" Expression="mBuffer._Mysize"></Intrinsic>

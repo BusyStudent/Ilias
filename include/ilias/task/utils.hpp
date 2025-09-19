@@ -11,7 +11,7 @@ ILIAS_NS_BEGIN
 namespace task {
 
 template <typename T>
-class UnstoppableAwaiter {
+class UnstoppableAwaiter final {
 public:
     UnstoppableAwaiter(TaskHandle<T> handle) : mHandle(handle), mAwaiter(handle) {}
     UnstoppableAwaiter(UnstoppableAwaiter &&) = default;
@@ -143,6 +143,14 @@ namespace task {
     template <typename T>
     struct FinallyTags { T v; };
 } // namespace task
+
+// Special types for just spawn a task and forget about it, useful in callback or Qt slots
+class FireAndForget final {
+public:
+    using promise_type = Task<void>::promise_type;
+
+    FireAndForget(Task<void> task) { spawn(std::move(task)); }
+};
 
 // Set an timeout for a task, return nullopt on timeout
 template <Awaitable T>

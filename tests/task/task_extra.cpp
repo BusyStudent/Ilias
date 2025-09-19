@@ -123,6 +123,14 @@ CORO_TEST(Task, Finally) {
     }
 }
 
+CORO_TEST(Task, FireAndForget) {
+    auto fn = []() -> FireAndForget {
+        co_await sleep(10ms);
+    };
+    fn();
+    co_await this_coro::yield();
+}
+
 CORO_TEST(Task, Scope) {
     co_await TaskScope::enter([](TaskScope &scope) -> Task<void> {
         for (auto i : views::iota(1, 100)) {

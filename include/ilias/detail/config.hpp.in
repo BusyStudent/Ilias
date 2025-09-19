@@ -9,11 +9,15 @@
  * 
  */
 
+#include <version>
+
 // Config from build system
 ${define ILIAS_NAMESPACE}
 ${define ILIAS_CORO_TRACE}
 ${define ILIAS_CPP20}
 ${define ILIAS_TLS}
+${define ILIAS_DLL}
+${define ILIAS_STATIC}
 ${define ILIAS_USE_LOG}
 ${define ILIAS_USE_FMT}
 ${define ILIAS_USE_FIBER}

@@ -152,6 +152,8 @@ target("ilias")
         set_configvar("ILIAS_CORO_TRACE", 1)
     end
 
+    set_configvar("ILIAS_DLL", 1)
+
     -- Default verison 0.3.0
     set_configvar("ILIAS_VERSION_MAJOR", 0)
     set_configvar("ILIAS_VERSION_MINOR", 3)

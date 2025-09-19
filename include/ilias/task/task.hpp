@@ -428,7 +428,7 @@ namespace this_coro = runtime::context;
  * @tparam T The return type of the task (default: void)
  */
 template <typename T>
-class [[nodiscard]] Task {
+class [[nodiscard]] Task final {
 public:
     using promise_type = task::TaskPromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
@@ -511,7 +511,7 @@ friend class task::TaskPromise<T>;
  * @brief The handle of an spawned task
  * 
  */
-class StopHandle {
+class StopHandle final {
 public:
     StopHandle() = default;
     StopHandle(std::nullptr_t) {}
@@ -534,7 +534,7 @@ protected:
 };
 
 template <typename T>
-class WaitHandle {
+class WaitHandle final {
 public:
     WaitHandle() = default;
     WaitHandle(std::nullptr_t) {}
