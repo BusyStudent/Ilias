@@ -1,4 +1,5 @@
 #include <ilias/task.hpp>
+#include <utility> // std::exchange
 #include <atomic> // std::atomic_ref
 
 ILIAS_NS_BEGIN
@@ -11,55 +12,77 @@ TaskGroupBase::TaskGroupBase() {
 }
 
 TaskGroupBase::TaskGroupBase(TaskGroupBase &&other) noexcept : 
-    mPending(std::move(other.mPending)),
+    mRunning(std::move(other.mRunning)),
     mCompleted(std::move(other.mCompleted)),
-    mStopRequested(other.mStopRequested),
-    mAwaiter(other.mAwaiter)
+    mStopRequested(std::exchange(other.mStopRequested, false)),
+    mNumRunning(std::exchange(other.mNumRunning, 0)),
+    mNumCompleted(std::exchange(other.mNumCompleted, 0)),
+    mAwaiter(std::exchange(other.mAwaiter, nullptr))
 {
     // Rebind the completion handlers
-    for (auto &task : mPending) {
-        task->setCompletionHandler<&TaskGroupBase::onTaskCompleted>(this);
+    for (auto &task : mRunning) {
+        task.setCompletionHandler<&TaskGroupBase::onTaskCompleted>(this);
     }
 }
 
 TaskGroupBase::~TaskGroupBase() {
     // Unbind the completion handlers detach the tasks and send stop signal
-    for (auto &task : mPending) { 
-        task->setCompletionHandler(nullptr);
-        task->stop();
+    for (auto iter = mRunning.begin(); iter != mRunning.end();) {
+        auto &task = *iter;
+        task.setCompletionHandler(nullptr);
+        task.stop();
+        iter = mRunning.erase(iter);
     }
+
+    // Release all the tasks in the completed list
+    while (hasCompletion()) {
+        auto _ = nextCompletion();
+    }
+    ILIAS_ASSERT(mNumCompleted == 0);
 }
 
 auto TaskGroupBase::size() const noexcept -> size_t {
-    return mPending.size() + mCompleted.size();
+    return mNumRunning + mNumCompleted;
 }
 
-auto TaskGroupBase::insert(std::shared_ptr<TaskSpawnContext> task) -> StopHandle {
+auto TaskGroupBase::insert(Rc<TaskSpawnContext> task) -> StopHandle {
     ILIAS_ASSERT(task != nullptr);
+    task->ref(); // Increase the ref, the group will share the ownership of the task
     if (mStopRequested) {
         task->stop();
     }
     if (task->isCompleted()) { // Already completed
-        mCompleted.emplace_back(task);
+        mCompleted.push_back(*task);
+        mNumCompleted += 1;
         notifyCompletion();
     }
-    else { // Still Running
+    else { // Still Running, add it to the running lust and bind the completion handler
         task->setCompletionHandler<&TaskGroupBase::onTaskCompleted>(this);
-        auto [_, emplace] = mPending.emplace(task);
-        ILIAS_ASSERT(emplace);
+        mNumRunning += 1;
+        mRunning.push_back(*task);
     }
     return StopHandle(std::move(task));
 }
 
 auto TaskGroupBase::onTaskCompleted(TaskSpawnContext &ctxt) -> void {
-    auto iter = mPending.find(&ctxt);
-    if (iter == mPending.end()) {
-        ::abort();
-    }
-    // Move to the completed set
-    auto ptr = *iter;
-    mPending.erase(iter);
-    mCompleted.emplace_back(std::move(ptr));
+    ILIAS_ASSERT(ctxt.isLinked()); // Should be linked the running list
+    ILIAS_ASSERT(ctxt.isCompleted()); // Should be completed
+    ILIAS_ASSERT(mNumRunning > 0); // Should have at least one running task
+
+    // Remove the task from the running list
+    ctxt.unlink();
+    mNumRunning -= 1;
+
+    // Add to the completed list
+    mNumCompleted += 1;
+    mCompleted.push_back(ctxt);
+
+    // In debug check the size, the intrusive list.size() is O(n)
+#if !defined(NDEBUG)
+    ILIAS_ASSERT(mNumRunning == mRunning.size());
+    ILIAS_ASSERT(mNumCompleted == mCompleted.size());
+#endif // defined(NDEBUG)
+
     notifyCompletion();
 }
 
@@ -69,14 +92,15 @@ auto TaskGroupBase::stop() -> void {
     }
     mStopRequested = true;
 
-    // The stop may immediately stop the task, and then onTaskCompleted was called, the mPending will be changed in iteration, so we need to copy it
+    // The stop may immediately stop the task, and then onTaskCompleted was called, the mRunning will be changed in iteration, so we need to copy it
     // TODO: Think a better way?
-    std::vector<TaskSpawnContext *> pending;
-    pending.reserve(mPending.size());
-    for (auto &task : mPending) {
-        pending.emplace_back(task.get());
+    std::vector<TaskSpawnContext *> running;
+    running.reserve(mNumRunning);
+    for (auto &task : mRunning) {
+        running.emplace_back(&task);
     }
-    for (auto &task : pending) {
+    ILIAS_ASSERT(running.size() == mNumRunning);
+    for (auto &task : running) {
         task->stop();
     }
 }
@@ -85,10 +109,13 @@ auto TaskGroupBase::hasCompletion() const noexcept -> bool {
     return !mCompleted.empty();
 }
 
-auto TaskGroupBase::nextCompletion() noexcept -> std::shared_ptr<TaskSpawnContext> {
+auto TaskGroupBase::nextCompletion() noexcept -> Rc<TaskSpawnContext> {
     ILIAS_ASSERT_MSG(hasCompletion(), "No completion, invalid call?");
-    auto ptr = std::move(mCompleted.front());
+    auto &front = mCompleted.front();
+    auto ptr = Rc<TaskSpawnContext>{&front};
     mCompleted.pop_front();
+    mNumCompleted -= 1;
+    ptr->deref(); // We remove the task out of the group, so we need to decrease the ref
     return ptr;
 }
 
@@ -112,7 +139,7 @@ auto TaskGroupAwaiterBase::onCompletion() -> void {
     if (mStopRequested) {
         auto _ = mGroup.nextCompletion(); // Drop the completion
         // Check all the task has been completed
-        if (mGroup.mPending.size() == 0) {
+        if (mGroup.mNumRunning == 0) {
             mCaller.setStopped();
             return;
         }

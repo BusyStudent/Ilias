@@ -77,7 +77,7 @@ CORO_TEST(Task, TaskGroup) {
             }
             auto group2 = std::move(group); // Test Group move
             auto result = co_await group2.waitAll();
-            ::abort(); // Should not reach here
+            ILIAS_TRAP(); // Should not reach here
         };
         auto handle = spawn(fn());
         handle.stop();
@@ -114,7 +114,7 @@ CORO_TEST(Task, Finally) {
                 co_return;
             };
             co_await finally(sleep(10ms), onfinally);
-            ::abort(); // Should not reach here
+            ILIAS_TRAP(); // Should not reach here
         };
         auto handle = spawn(fn());
         handle.stop();

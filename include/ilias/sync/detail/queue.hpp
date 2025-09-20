@@ -1,9 +1,9 @@
 // INTERNAL!!
 #pragma once
 
+#include <ilias/detail/intrusive.hpp> // List, Node
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp>
-#include <list> // std::list
 
 ILIAS_NS_BEGIN
 
@@ -12,7 +12,7 @@ namespace sync {
 class WaitQueue;
 
 // The part of helper awaiter for register the caller to the wait queue, user should not use it directly
-class [[nodiscard]] AwaiterBase {
+class [[nodiscard]] AwaiterBase : public intrusive::Node<AwaiterBase> {
 public:
     AwaiterBase(WaitQueue &queue) : mQueue(queue) {}
     AwaiterBase(AwaiterBase &&) = default;
@@ -27,8 +27,7 @@ private:
     WaitQueue &mQueue;
     runtime::CoroHandle mCaller;
     runtime::StopRegistration mReg;
-    std::list<AwaiterBase *>::iterator mIt;
-    void (*mOnWakeup)(AwaiterBase *self) = nullptr; // Additional wakeup handler for child classes
+    void (*mOnWakeup)(AwaiterBase &self) = nullptr; // Additional wakeup handler for child classes
 template <typename T>
 friend class WaitAwaiter;
 friend class WaitQueue;
@@ -46,7 +45,7 @@ public:
     auto wakeupAll() -> void;
     auto operator =(const WaitQueue &) = delete;
 private:
-    std::list<AwaiterBase *> mAwaiters;
+    intrusive::List<AwaiterBase> mAwaiters;
 friend class AwaiterBase;
 };
 
@@ -60,8 +59,8 @@ public:
     }
 private:
     template <char = 0>
-    static auto proxy(AwaiterBase *self) -> void {
-        static_cast<T *>(self)->onWakeup(); // Call onWakeup
+    static auto proxy(AwaiterBase &self) -> void {
+        static_cast<T &>(self).onWakeup(); // Call onWakeup
     }
 };
 

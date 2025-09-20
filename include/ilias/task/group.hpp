@@ -1,12 +1,10 @@
 #pragma once
 
+#include <ilias/detail/intrusive.hpp> // Rc, List
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp>
 #include <ilias/task/task.hpp>
-#include <memory> // std::shared_ptr
 #include <vector> // std::vector
-#include <deque>  // std::deque
-#include <set> // std::set
 
 ILIAS_NS_BEGIN
 
@@ -29,28 +27,21 @@ public:
     // API for TaskGroup<T>
     auto size() const noexcept -> size_t;
     auto stop() -> void;
-    auto insert(std::shared_ptr<TaskSpawnContext> task) -> StopHandle;
+    auto insert(Rc<TaskSpawnContext> task) -> StopHandle;
     auto hasCompletion() const noexcept -> bool;
-    auto nextCompletion() noexcept -> std::shared_ptr<TaskSpawnContext>;
+    auto nextCompletion() noexcept -> Rc<TaskSpawnContext>;
 private:
     auto notifyCompletion() -> void;
     auto onTaskCompleted(TaskSpawnContext &ctxt) -> void;
 
-    struct Less { // We only compare the address
-        using is_transparent = void;
-
-        auto operator ()(const auto &a, const auto &b) const noexcept -> bool {
-            return std::to_address(a) < std::to_address(b);
-        }
-    };
-
-    using RawSet = std::set<std::shared_ptr<TaskSpawnContext>, Less>;
-    using Queue = std::deque<std::shared_ptr<TaskSpawnContext> >;
+    using List = intrusive::List<TaskSpawnContext>; // intrusive list doesn't have O(1) size()
     using Awaiter = TaskGroupAwaiterBase;
 
-    RawSet   mPending;
-    Queue    mCompleted;
+    List     mRunning;
+    List     mCompleted;
     bool     mStopRequested = false;
+    size_t   mNumRunning = 0; // The size of the running list
+    size_t   mNumCompleted = 0; // The size of the completed list
     Awaiter *mAwaiter = nullptr;
 friend class TaskGroupAwaiterBase;
 };

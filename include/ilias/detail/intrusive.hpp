@@ -3,7 +3,8 @@
 
 #include <ilias/defines.hpp>
 #include <concepts>
-#include <utility>
+#include <utility> // std::forward
+#include <memory> // std::pointer_traits
 
 ILIAS_NS_BEGIN
 
@@ -43,12 +44,12 @@ public:
 
     // Check self is linked in a chain
     [[nodiscard]]
-    auto isLinked() const -> bool {
+    auto isLinked() const noexcept -> bool {
         return mPrev != this || mNext != this;
     }
 
     // Unlink self from this chain
-    auto unlink() -> void {
+    auto unlink() noexcept -> void {
         if (!isLinked()) {
             return;
         }
@@ -59,7 +60,7 @@ public:
     }
 
     // Insert self after the where node
-    auto insertAfter(NodeBase *where) -> void {
+    auto insertAfter(NodeBase *where) noexcept -> void {
         unlink();
 
         // where -> this -> next
@@ -71,7 +72,7 @@ public:
     }
 
     // Insert self before the where node
-    auto insertBefore(NodeBase *where) -> void {
+    auto insertBefore(NodeBase *where) noexcept -> void {
         unlink();
 
         // prev -> this -> where
@@ -82,9 +83,18 @@ public:
         mPrev->mNext = this;
     }
 
+    // Internal Traverse, make sure only this class can to link & unlink
+    auto next() const noexcept {
+        return mNext;
+    }
+
+    auto prev() const noexcept {
+        return mPrev;
+    }
+
     auto operator =(const NodeBase &) = delete;
     auto operator =(NodeBase &&) = delete;
-
+private:
     NodeBase *mPrev = this;
     NodeBase *mNext = this;
 };
@@ -93,18 +103,19 @@ public:
 class ListBase : public NodeBase {
 public:
     ListBase() = default;
+    ListBase(ListBase &&) = default;
     ~ListBase() { clear(); }
 
     // Check the list is empty
     [[nodiscard]]
     auto empty() const -> bool {
-        return mNext == this;
+        return next() == this;
     }
 
     // Clear the whole list
     auto clear() -> void {
         while (!empty()) {
-            mNext->unlink();
+            next()->unlink();
         }
     }
 
@@ -112,7 +123,7 @@ public:
     [[nodiscard]]
     auto size() const -> size_t {
         size_t n = 0;
-        for (auto next = mNext; next != this; next = next->mNext) {
+        for (auto cur = next(); cur != this; cur = cur->next()) {
             n += 1;
         }
         return n;
@@ -150,8 +161,8 @@ public:
         using Ptr = std::conditional_t<Const, const NodeBase *, NodeBase *>;
         using Element = std::conditional_t<Const, const T, T>;
 
-        auto operator ++() -> Iterator & { mCur = mCur->mNext; return *this; }
-        auto operator --() -> Iterator & { mCur = mCur->mPrev; return *this; }
+        auto operator ++() -> Iterator & { mCur = mCur->next(); return *this; }
+        auto operator --() -> Iterator & { mCur = mCur->prev(); return *this; }
         auto operator *() const -> Element & { return static_cast<Element &>(*mCur); }
         auto operator ->() const -> Element * { return static_cast<Element *>(mCur); }
         auto operator <=>(const Iterator &) const noexcept = default;
@@ -169,10 +180,10 @@ public:
     using ListBase::size;
 
     // Iterate the list
-    auto begin() -> iterator { return {mNext}; }
+    auto begin() -> iterator { return {next()}; }
     auto end() -> iterator { return {this}; }
 
-    auto begin() const -> const_iterator { return {mNext}; }
+    auto begin() const -> const_iterator { return {next()}; }
     auto end() const -> const_iterator { return {this}; }
 
     // Insert
@@ -181,12 +192,12 @@ public:
 
     auto pop_front() -> void {
         ILIAS_ASSERT(!empty());
-        mNext->unlink();
+        next()->unlink();
     }
 
     auto pop_back() -> void {
         ILIAS_ASSERT(!empty());
-        mPrev->unlink();
+        prev()->unlink();
     }
 
     // Access
@@ -230,18 +241,20 @@ public:
 
     // Count down refcount
     auto deref() noexcept {
-        ILIAS_ASSERT_MSG(mCount != 0, "Can't deref with refcount == 0");
+        ILIAS_ASSERT_MSG(mCount != 0, "Can't deref with refcount == 0, invalid state?");
         if (--mCount == 0) {
             delete static_cast<T*>(this);
         }
     }
 
     // Get the refcount, as same as STL
+    [[nodiscard]]
     auto use_count() const noexcept {
         return mCount;
     }
 protected:
     RefCounted() = default; // Disallow instantiated directly
+    ~RefCounted() = default; // Disallow to delete it by base class
 private:
     size_t mCount = 0;
 };
@@ -269,17 +282,20 @@ public:
     }
 
     // Get the raw pointer
+    [[nodiscard]]
     auto get() const noexcept -> T * {
         return mPtr;
     }
 
     // Get the refcount value, as same as STL
+    [[nodiscard]]
     auto use_count() const noexcept -> size_t {
         return mPtr ? mPtr->use_count() : 0;
     }
 
     // Operators...
     auto operator <=>(const Rc &other) const noexcept = default;
+
     auto operator =(const Rc &other) noexcept -> Rc & {
         if (this != &other) {
             reset(other.mPtr);
@@ -289,8 +305,8 @@ public:
     
     auto operator =(Rc &&other) noexcept -> Rc & {
         if (this != &other) {
-            reset(other.mPtr);
-            other.mPtr = nullptr;
+            reset();
+            mPtr = std::exchange(other.mPtr, nullptr);
         }
         return *this;
     }
@@ -321,3 +337,18 @@ private:
 } // namespace intrusive
 
 ILIAS_NS_END
+
+// Interop with std
+template <typename T>
+struct std::pointer_traits<ILIAS_NAMESPACE::intrusive::Rc<T> > {
+    using pointer = ILIAS_NAMESPACE::intrusive::Rc<T>;
+    using element_type = T;
+    using difference_type = ptrdiff_t;
+
+    template<typename U>
+    using rebind = ILIAS_NAMESPACE::intrusive::Rc<U>;
+
+    static auto to_address(const pointer &p) noexcept {
+        return p.get();
+    }
+};

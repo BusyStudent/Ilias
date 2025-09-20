@@ -69,14 +69,17 @@
     #define ILIAS_ATTRIBUTE(x)  __declspec(x)
     #define ILIAS_UNREACHABLE() __assume(0)
     #define ILIAS_ASSUME(...)   __assume(__VA_ARGS__)
+    #define ILIAS_TRAP()        __debugbreak()
 #elif defined(__GNUC__)
-    #define ILIAS_ATTRIBUTE(x) __attribute__((x))
+    #define ILIAS_ATTRIBUTE(x)  __attribute__((x))
     #define ILIAS_UNREACHABLE() __builtin_unreachable()
-    #define ILIAS_ASSUME(...) if (!(__VA_ARGS__)) __builtin_unreachable()
+    #define ILIAS_ASSUME(...)   if (!(__VA_ARGS__)) __builtin_unreachable()
+    #define ILIAS_TRAP()        __builtin_trap()
 #else
     #define ILIAS_ATTRIBUTE(x) // no-op
     #define ILIAS_UNREACHABLE() // no-op
     #define ILIAS_ASSUME(...) // no-op
+    #define ILIAS_TRAP() // no-op
 #endif
 
 // Library mode

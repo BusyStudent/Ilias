@@ -43,7 +43,7 @@ CORO_TEST(Fiber, Spawn) {
     auto fiber2 = Fiber([]() {
         this_fiber::await(sleep(1000ms));
         // Never reached
-        ::abort();
+        ILIAS_TRAP();
     });
     auto handle2 = spawn(toTask(std::move(fiber2)));
     handle2.stop();

@@ -55,7 +55,7 @@ CORO_TEST(Sync, MutexCancel) {
     auto lock = co_await mtx.lock();
     auto taskA = [&]() -> Task<void> {
         auto _ = co_await mtx.lock();
-        ::abort(); // never reached
+        ILIAS_TRAP(); // never reached
     };
     auto handle = spawn(taskA());
     handle.stop();
@@ -226,7 +226,7 @@ CORO_TEST(Sync, Mpsc) {
         auto [sender, receiver] = mpsc::channel<int>(10);
         auto recv = [&]() -> Task<void> {
             co_await receiver.recv();
-            ::abort(); // should not reach here
+            ILIAS_TRAP(); // should not reach here
         };
         auto handle = spawn(recv());
         handle.stop();

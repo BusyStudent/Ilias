@@ -26,7 +26,7 @@ auto testTask() -> Task<void> {
     // Test exception handling
     try {
         co_await throwInput(42);
-        ::abort();
+        ILIAS_TRAP(); // Should never reach this line
     }
     catch (int val) {
         EXPECT_EQ(val, 42);
@@ -122,7 +122,7 @@ CORO_TEST(Task, WhenAll) {
     // Check stopping
     auto handle = spawn([]() -> Task<void> {
         auto _ = co_await whenAll(sleep(10ms), sleep(20ms));
-        ::abort(); // should not be reached
+        ILIAS_TRAP(); // should not be reached
     });
     handle.stop();
     EXPECT_TRUE(!co_await std::move(handle));
@@ -149,7 +149,7 @@ CORO_TEST(Task, WhenAny) {
     // Check stopping
     auto handle = spawn([&]() -> Task<void> {
         auto _ = co_await whenAny(sleep(10ms), sleep(20ms));
-        ::abort(); // should not be reached
+        ILIAS_TRAP(); // should not be reached
     });
     handle.stop();
     EXPECT_TRUE(!co_await std::move(handle));

@@ -15,6 +15,7 @@
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/runtime/await.hpp> // Awaitable
 #include <ilias/runtime/coro.hpp> // CoroPromise
+#include <ilias/detail/intrusive.hpp> // List, Rc
 #include <ilias/detail/option.hpp> // Option
 #include <ilias/log.hpp>
 #include <coroutine>
@@ -24,6 +25,13 @@ ILIAS_NS_BEGIN
 
 namespace task {
 
+// Some containers
+using intrusive::RefCounted;
+using intrusive::Node;
+using intrusive::List;
+using intrusive::Rc;
+
+// Runtime
 using runtime::StopSource;
 using runtime::StopRegistration;
 using runtime::CoroHandle;
@@ -236,7 +244,10 @@ private:
 };
 
 // Environment for the spawn task
-class TaskSpawnContext final : private TaskContext {
+class TaskSpawnContext final : public RefCounted<TaskSpawnContext>,
+                               public Node<TaskSpawnContext>,
+                               private TaskContext
+{
 public:
     TaskSpawnContext(TaskHandle<> task) : TaskContext(task) {
         auto executor = runtime::Executor::currentThread();
@@ -245,6 +256,9 @@ public:
         mTask.setCompletionHandler(TaskSpawnContext::onComplete);
         this->setStoppedHandler(TaskSpawnContext::onComplete);
         this->setExecutor(*executor);
+
+        this->ref(); // Ref it, we will deref it when it completed
+        mTask.schedule(); // Schedule the task in the executor
     }
     TaskSpawnContext(const TaskSpawnContext &) = delete;
 
@@ -294,13 +308,6 @@ public:
             (obj->*Method)(ctxt);
         };
     }
-
-    static auto make(TaskHandle<> task) -> std::shared_ptr<TaskSpawnContext> {
-        auto ptr = std::make_shared<TaskSpawnContext>(task);
-        ptr->mSelf = ptr;
-        ptr->mTask.schedule(); // Schedule the task
-        return ptr;
-    }
 private:
     static auto onComplete(CoroContext &_self) -> void { 
         auto &self = static_cast<TaskSpawnContext &>(_self);
@@ -311,22 +318,21 @@ private:
             self.mCompletionHandler(self);
             self.mCompletionHandler = nullptr;
         }
-        if (self.mSelf.use_count() == 1) { // We are the last one, only can be deref in the event loop
+        if (self.use_count() == 1) { // We are the last one, only can be deref in the event loop
             self.executor().post(TaskSpawnContext::derefSelf, &self);
         }
-        else { // For avoid the derefSelf call after quit, we can reset the self
-            self.mSelf.reset();
+        else { // For avoid the derefSelf call after quit, we can deref the self
+            self.deref();
         }
     }
 
     // deref self in event loop
     static auto derefSelf(void *_self) -> void {
-        auto ptr = std::move(static_cast<TaskSpawnContext *>(_self)->mSelf);
-        ptr.reset();
+        auto ptr = static_cast<TaskSpawnContext *>(_self);
+        ptr->deref();
     }
 
     SmallFunction<void (TaskSpawnContext &)> mCompletionHandler; // The completion handler, call when the task is completed or stopped
-    std::shared_ptr<TaskSpawnContext> mSelf; // Used to avoid free self dur execution
     std::string mName; // The name of the spawn task
     bool mCompleted = false;
 friend class TaskSpawnAwaiterBase;
@@ -334,7 +340,7 @@ friend class TaskSpawnAwaiterBase;
 
 class TaskSpawnAwaiterBase {
 public:
-    TaskSpawnAwaiterBase(std::shared_ptr<TaskSpawnContext> ptr) : mCtxt(ptr) {}
+    TaskSpawnAwaiterBase(Rc<TaskSpawnContext> ptr) : mCtxt(ptr) {}
 
     auto await_ready() const noexcept { return mCtxt->isCompleted(); }
     auto await_suspend(CoroHandle caller) {
@@ -360,7 +366,7 @@ protected:
         mCtxt->mTask.setPrevAwaiting(mHandle);
     }
 
-    std::shared_ptr<TaskSpawnContext> mCtxt;
+    Rc<TaskSpawnContext> mCtxt;
     StopRegistration mReg;
     CoroHandle mHandle;
 };
@@ -517,7 +523,7 @@ public:
     StopHandle(std::nullptr_t) {}
     StopHandle(const StopHandle &) = default;
     StopHandle(StopHandle &&) = default;
-    explicit StopHandle(std::shared_ptr<task::TaskSpawnContext> ptr) : mPtr(std::move(ptr)) {}
+    explicit StopHandle(task::Rc<task::TaskSpawnContext> ptr) : mPtr(std::move(ptr)) {}
 
     // Request the stop of the task
     auto id() const { return mPtr->id(); }
@@ -530,7 +536,7 @@ public:
         return bool(mPtr);
     }
 protected:
-    std::shared_ptr<task::TaskSpawnContext> mPtr;
+    task::Rc<task::TaskSpawnContext> mPtr;
 };
 
 template <typename T>
@@ -551,7 +557,7 @@ public:
     }
 
     // Get the internal context ptr
-    auto _leak() && -> std::shared_ptr<task::TaskSpawnContext> {
+    auto _leak() && -> task::Rc<task::TaskSpawnContext> {
         return std::exchange(mPtr, nullptr);
     }
 
@@ -567,7 +573,7 @@ public:
         return bool(mPtr);
     }
 private:
-    std::shared_ptr<task::TaskSpawnContext> mPtr;
+    task::Rc<task::TaskSpawnContext> mPtr;
 template <typename U>
 friend auto spawn(Task<U> task) -> WaitHandle<U>;
 };
@@ -576,7 +582,7 @@ friend auto spawn(Task<U> task) -> WaitHandle<U>;
 template <typename T>
 inline auto spawn(Task<T> task) -> WaitHandle<T> {
     auto handle = WaitHandle<T>();
-    handle.mPtr = task::TaskSpawnContext::make(task._leak());
+    handle.mPtr = task::Rc<task::TaskSpawnContext>::make(task._leak());
     return handle;
 }
 

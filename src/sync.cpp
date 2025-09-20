@@ -12,45 +12,44 @@ WaitQueue::WaitQueue() noexcept = default;
 WaitQueue::~WaitQueue() {
     if (!mAwaiters.empty()) {
         ILIAS_ERROR("Sync", "WaitQueue destroyed with awaiters, did you destroy a mutex or event still locked? / waiting?");
+        ILIAS_TRAP(); // Try raise the debugger
         std::abort();
     }
 }
 
 auto WaitQueue::wakeupOne() -> void {
     if (!mAwaiters.empty()) {
-        auto awaiter = mAwaiters.front();
+        auto &awaiter = mAwaiters.front();
         mAwaiters.pop_front();
-        awaiter->onWakeupRaw();
+        awaiter.onWakeupRaw();
     }
 }
 
 auto WaitQueue::wakeupAll() -> void {
     for (auto it = mAwaiters.begin(); it != mAwaiters.end(); ) {
-        auto awaiter = *it;
+        auto &awaiter = *it;
         it = mAwaiters.erase(it);
-        awaiter->onWakeupRaw();
+        awaiter.onWakeupRaw();
     }
 }
 auto AwaiterBase::await_suspend(runtime::CoroHandle caller) -> void {
     mCaller = caller;
-    mIt = mQueue.mAwaiters.emplace(mQueue.mAwaiters.end(), this);
+    mQueue.mAwaiters.push_back(*this); // Adding self to the queue's last position
     mReg.register_<&AwaiterBase::onStopRequested>(caller.stopToken(), this);
 }
 
 auto AwaiterBase::onWakeupRaw() -> void {
-    mIt = mQueue.mAwaiters.end();
     mCaller.schedule();
     if (mOnWakeup) {
-        mOnWakeup(this);
+        mOnWakeup(*this);
     }
 }
 
 auto AwaiterBase::onStopRequested() -> void {
-    if (mIt == mQueue.mAwaiters.end()) { //  We already got the lock, ignore it
+    if (!isLinked()) { //  We already got the wakeup, ignore it
         return;
     }
-    mQueue.mAwaiters.erase(mIt);
-    mIt = mQueue.mAwaiters.end();
+    unlink(); // Remove self from the queue
     mCaller.setStopped();
 }
 
