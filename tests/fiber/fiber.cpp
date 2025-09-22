@@ -1,9 +1,11 @@
 #include <ilias/runtime/executor.hpp>
 #include <ilias/fiber/fiber.hpp>
-#include "testing.hpp"
+#include <ilias/testing.hpp>
+#include <gtest/gtest.h>
 #include <iostream>
 
 using namespace std::literals;
+using namespace ILIAS_NAMESPACE;
 
 #if defined(ILIAS_USE_FIBER)
 
@@ -32,7 +34,7 @@ TEST(Fiber, Await) {
     std::move(fiber).wait();
 }
 
-CORO_TEST(Fiber, Spawn) {
+ILIAS_TEST(Fiber, Spawn) {
     auto fiber = Fiber([]() {
         return 42;
     });
@@ -50,7 +52,7 @@ CORO_TEST(Fiber, Spawn) {
     EXPECT_FALSE(co_await std::move(handle2));
 }
 
-CORO_TEST(FiberAwait, Await) {
+ILIAS_TEST(FiberAwait, Await) {
     auto fiber = Fiber([](int value) {
         return value;
     }, 42);

@@ -1,10 +1,12 @@
 #include <ilias/task/group.hpp>
 #include <ilias/task/utils.hpp>
 #include <ilias/task/scope.hpp>
+#include <ilias/testing.hpp>
+#include <gtest/gtest.h>
 #include <ranges>
-#include "testing.hpp"
 
 using namespace std::literals;
+using namespace ILIAS_NAMESPACE;
 namespace views = std::views;
 
 auto neverReturn() -> Task<void> {
@@ -18,7 +20,7 @@ auto returnBeforeSleep(int x) -> Task<int> {
     co_return x;
 }
 
-CORO_TEST(Task, TaskGroup) {
+ILIAS_TEST(Task, TaskGroup) {
     {
         auto group = TaskGroup<void>();
         group.spawn(neverReturn());
@@ -86,7 +88,7 @@ CORO_TEST(Task, TaskGroup) {
     co_return;
 }
 
-CORO_TEST(Task, Unstoppable) {
+ILIAS_TEST(Task, Unstoppable) {
     auto fn = []() -> Task<void> {
         co_await unstoppable(sleep(10ms));
     };
@@ -96,7 +98,7 @@ CORO_TEST(Task, Unstoppable) {
     EXPECT_TRUE(result.has_value());
 }
 
-CORO_TEST(Task, Finally) {
+ILIAS_TEST(Task, Finally) {
     { // Normal condition
         bool called = false;
         auto onfinally = [&]() -> Task<void> {
@@ -123,7 +125,7 @@ CORO_TEST(Task, Finally) {
     }
 }
 
-CORO_TEST(Task, FireAndForget) {
+ILIAS_TEST(Task, FireAndForget) {
     auto fn = []() -> FireAndForget {
         co_await sleep(10ms);
     };
@@ -131,7 +133,7 @@ CORO_TEST(Task, FireAndForget) {
     co_await this_coro::yield();
 }
 
-CORO_TEST(Task, Scope) {
+ILIAS_TEST(Task, Scope) {
     // Normal
     co_await TaskScope::enter([](TaskScope &scope) -> Task<void> {
         for (auto i : views::iota(1, 100)) {

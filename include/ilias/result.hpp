@@ -12,9 +12,10 @@
     #error "This library requires C++23, if you want to use C++20, please add cpp20 in packages config"
 #endif // ILIAS_CPP20
 
-#if __cpp_deduction_guides < 201907L
-#error "This library need CTAD for aggregates and aliases"
-#endif
+// clang 17 actually supports C++20 CTAD but doesn't define __cpp_deduction_guides correctly
+#if (!defined(__clang__) && __cpp_deduction_guides < 201907L) || (defined(__clang__) && __clang_major__ < 17)
+#error "This library need C++20 CTAD for aggregates and aliases"
+#endif // __cpp_deduction_guides
 
 ILIAS_NS_BEGIN
 

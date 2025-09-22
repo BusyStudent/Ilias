@@ -80,7 +80,7 @@ public:
         if (mId) {
             *mId = ctxt->id();
         }
-        return ctxt->value<T>();
+        return ctxt->template value<T>();
     }
 private:
     uintptr_t *mId;

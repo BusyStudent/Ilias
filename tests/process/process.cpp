@@ -1,15 +1,18 @@
 #include <ilias/platform.hpp>
 #include <ilias/process.hpp>
-#include "testing.hpp"
+#include <ilias/testing.hpp>
+#include <gtest/gtest.h>
 #include <iostream>
 
-CORO_TEST(Process, SpawnFailed) {
+using namespace ILIAS_NAMESPACE;
+
+ILIAS_TEST(Process, SpawnFailed) {
     auto proc = Process::spawn("nonexistingcommand", {}, Process::RedirectAll);
     EXPECT_FALSE(proc.has_value());
     co_return;
 }
 
-CORO_TEST(Process, Spawn) {
+ILIAS_TEST(Process, Spawn) {
 #if defined(_WIN32)
     auto proc = Process::spawn("powershell", {"-Command", "ls"}, Process::RedirectAll).value();
 #else
@@ -23,7 +26,7 @@ CORO_TEST(Process, Spawn) {
 
 int main(int argc, char** argv) {
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
-    CORO_USE_UTF8();
+    ILIAS_TEST_SETUP_UTF8();
     PlatformContext ctxt;
     ctxt.install();
 

@@ -1,6 +1,7 @@
 #include <ilias/task.hpp>
 #include <ilias/io.hpp>
-#include "testing.hpp"
+#include <ilias/testing.hpp>
+#include <gtest/gtest.h>
 
 // Experimental API
 #include <ilias/io/vec.hpp>
@@ -62,7 +63,7 @@ TEST(Io, Error) {
     std::cout << ec.message() << std::endl;
 }
 
-CORO_TEST(Io, Read) {
+ILIAS_TEST(Io, Read) {
     char buffer[13];
     auto reader = SpanReader("Hello, world!"_bin);
 
@@ -70,7 +71,7 @@ CORO_TEST(Io, Read) {
     EXPECT_EQ(std::string_view(buffer, 13), "Hello, world!");
 }
 
-CORO_TEST(Io, Write) {
+ILIAS_TEST(Io, Write) {
     auto content = std::string();
     auto writer = StringWriter(content);
 
@@ -78,7 +79,7 @@ CORO_TEST(Io, Write) {
     EXPECT_EQ(content, "Hello, world!");
 }
 
-CORO_TEST(Io, BufRead) {
+ILIAS_TEST(Io, BufRead) {
     {
         auto reader = SpanReader("Hello, First!\nHello, Next!\n"_bin);
         auto bufReader = BufReader(reader);
@@ -99,7 +100,7 @@ CORO_TEST(Io, BufRead) {
     }
 }
 
-CORO_TEST(Io, BufWrite) {
+ILIAS_TEST(Io, BufWrite) {
     auto content = std::string();
     auto writer = StringWriter(content);
     auto bufWriter = BufWriter(writer);
@@ -112,7 +113,7 @@ CORO_TEST(Io, BufWrite) {
     EXPECT_EQ(content, "Hello, First!\nHello, Next!\n");
 }
 
-CORO_TEST(Io, Duplex) {
+ILIAS_TEST(Io, Duplex) {
     auto [a, b] = DuplexStream::make(10);
     auto sender = [](auto &stream) -> Task<void> {
         EXPECT_EQ(co_await stream.writeAll("Hello, world!"_bin), 13);

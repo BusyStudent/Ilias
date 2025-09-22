@@ -3,8 +3,8 @@
 #include <ilias/task/when_any.hpp>
 #include <ilias/task/utils.hpp>
 #include <ilias/task/task.hpp>
+#include <ilias/testing.hpp>
 #include <gtest/gtest.h>
-#include "testing.hpp"
 
 using namespace ILIAS_NAMESPACE;
 using namespace std::literals;
@@ -88,13 +88,13 @@ TEST(Task, SpawnBlocking) {
     }).wait(), std::exception);
 }
 
-CORO_TEST(Task, Generator) {
+ILIAS_TEST(Task, Generator) {
     ilias_for_await(int i, range(0, 10)) {
         EXPECT_TRUE(i >= 0 && i < 10);
     }
 }
 
-CORO_TEST(Task, WhenAll) {
+ILIAS_TEST(Task, WhenAll) {
     {
         auto [a, b] = co_await whenAll(returnInput(42), returnInput(43));
         EXPECT_EQ(a, 42);
@@ -128,7 +128,7 @@ CORO_TEST(Task, WhenAll) {
     EXPECT_TRUE(!co_await std::move(handle));
 }
 
-CORO_TEST(Task, WhenAny) {
+ILIAS_TEST(Task, WhenAny) {
     {
         auto [a, b] = co_await whenAny(returnInput(42), returnInput(43));
         EXPECT_TRUE(a);
@@ -156,7 +156,7 @@ CORO_TEST(Task, WhenAny) {
     co_return;
 }
 
-CORO_TEST(Task, Executor) {
+ILIAS_TEST(Task, Executor) {
     auto executor = runtime::Executor::currentThread();
     executor->schedule([]() {
         std::cout << "Hello from executor!" << std::endl;

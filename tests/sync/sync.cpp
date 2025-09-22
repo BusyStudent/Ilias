@@ -4,13 +4,14 @@
 #include <ilias/sync/oneshot.hpp>
 #include <ilias/sync/mpsc.hpp>
 #include <ilias/task.hpp>
-#include "testing.hpp"
+#include <ilias/testing.hpp>
+#include <gtest/gtest.h>
 
 using namespace ILIAS_NAMESPACE;
 using namespace std::literals;
 
 // Mutex
-CORO_TEST(Sync, BasicMutexLockUnlock) {
+ILIAS_TEST(Sync, BasicMutexLockUnlock) {
     Mutex mtx;
     EXPECT_FALSE(mtx.isLocked());
 
@@ -21,7 +22,7 @@ CORO_TEST(Sync, BasicMutexLockUnlock) {
     EXPECT_FALSE(mtx.isLocked());
 }
 
-CORO_TEST(Sync, MutexMultipleWaiters) {
+ILIAS_TEST(Sync, MutexMultipleWaiters) {
     Mutex mtx;
     int shared = 0;
 
@@ -49,7 +50,7 @@ CORO_TEST(Sync, MutexMultipleWaiters) {
     EXPECT_EQ(shared, 6);
 }
 
-CORO_TEST(Sync, MutexCancel) {
+ILIAS_TEST(Sync, MutexCancel) {
     Mutex mtx;
 
     auto lock = co_await mtx.lock();
@@ -63,7 +64,7 @@ CORO_TEST(Sync, MutexCancel) {
 }
 
 // Locked
-CORO_TEST(Sync, Locked) {
+ILIAS_TEST(Sync, Locked) {
     Locked<int> value {10};
     EXPECT_FALSE(value.isLocked());
     {
@@ -81,7 +82,7 @@ CORO_TEST(Sync, Locked) {
     co_return;
 }
 
-CORO_TEST(Sync, Event) {
+ILIAS_TEST(Sync, Event) {
     Event event;
     
     EXPECT_FALSE(event.isSet());
@@ -102,7 +103,7 @@ CORO_TEST(Sync, Event) {
     EXPECT_TRUE(co_await std::move(handle));
 }
 
-CORO_TEST(Sync, Semaphore) {
+ILIAS_TEST(Sync, Semaphore) {
     Semaphore sem(10);
     auto premit = co_await sem.acquire();
     EXPECT_EQ(sem.available(), 9);
@@ -121,7 +122,7 @@ CORO_TEST(Sync, Semaphore) {
     EXPECT_EQ(sem.available(), 8);
 }
 
-CORO_TEST(Sync, Oneshot) {
+ILIAS_TEST(Sync, Oneshot) {
     {
         auto [sender, receiver] = oneshot::channel<int>();
         EXPECT_TRUE(sender.send(42));
@@ -168,7 +169,7 @@ CORO_TEST(Sync, Oneshot) {
     }
 }
 
-CORO_TEST(Sync, Mpsc) {
+ILIAS_TEST(Sync, Mpsc) {
     {
         auto [sender, receiver] = mpsc::channel<int>(10);
         EXPECT_TRUE(co_await sender.send(42));

@@ -4,8 +4,8 @@
 #include <ilias/net.hpp>
 #include <ilias/tls.hpp>
 #include <ilias/io.hpp>
+#include <ilias/testing.hpp>
 #include <gtest/gtest.h>
-#include "testing.hpp"
 
 using namespace ILIAS_NAMESPACE;
 using namespace ILIAS_NAMESPACE::literals;
@@ -253,7 +253,7 @@ TEST(Endpoint, ToString) {
 #endif
 }
 
-CORO_TEST(Net, Tcp) {
+ILIAS_TEST(Net, Tcp) {
     {
         auto listener = (co_await TcpListener::bind("127.0.0.1:0")).value();
         auto endpoint = listener.localEndpoint().value();
@@ -279,7 +279,7 @@ CORO_TEST(Net, Tcp) {
     }
 }
 
-CORO_TEST(Net, Udp) {
+ILIAS_TEST(Net, Udp) {
     std::byte buffer[1024] {};
     auto client = (co_await UdpClient::bind("127.0.0.1:0")).value();
 
@@ -339,7 +339,7 @@ CORO_TEST(Net, Udp) {
     }
 }
 
-CORO_TEST(Net, Http) {
+ILIAS_TEST(Net, Http) {
     auto info = (co_await AddressInfo::fromHostname("www.baidu.com", "http")).value();
     auto client = (co_await TcpStream::connect(info.endpoints().at(0))).value();
     auto stream = BufStream(std::move(client));
@@ -367,7 +367,7 @@ CORO_TEST(Net, Http) {
 }
 
 #if defined(ILIAS_TLS)
-CORO_TEST(Net, Https) {
+ILIAS_TEST(Net, Https) {
     TlsContext sslCtxt;
     auto info = (co_await AddressInfo::fromHostname("www.baidu.com", "https")).value();
     auto client = (co_await TcpStream::connect(info.endpoints().at(0))).value();
@@ -420,7 +420,7 @@ private:
 
 int main(int argc, char** argv) {
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
-    CORO_USE_UTF8();
+    ILIAS_TEST_SETUP_UTF8();
     IoEventLoop ctxt;
     ctxt.install();
 
