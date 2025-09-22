@@ -63,19 +63,22 @@ auto EventLoop::post(void (*fn)(void *), void *args) -> void {
 }
 
 auto EventLoop::run(StopToken token) -> void {
-    StopCallback callback(token, [&]() {
+    auto callback = runtime::StopCallback(token, [&]() {
         d->cond.notify_one();
     });
-    while (!token.stop_requested()) {
+    auto pred = [&]() {
+        return !d->queue.empty() || token.stop_requested();
+    };
+    while (true) {
         std::unique_lock locker(d->mutex);
         auto timepoint = d->service.nextTimepoint();
-        if (!timepoint) {
-            timepoint = std::chrono::steady_clock::now() + std::chrono::hours(60);
+        if (timepoint) {
+            d->cond.wait_until(locker, *timepoint, pred);
         }
-        d->cond.wait_until(locker, *timepoint, [&]() {
-            return !d->queue.empty() || token.stop_requested();
-        });
-        if (token.stop_requested()) {
+        else {
+            d->cond.wait(locker, pred);
+        }
+        if (d->queue.empty() && token.stop_requested()) { // Only quit after process all avaliable callbacks
             return;
         }
         if (!d->queue.empty()) {

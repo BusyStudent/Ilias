@@ -391,7 +391,7 @@ inline auto QIoContext::read(IoDescriptor *fd, MutableBuffer buffer, std::option
 
 #if __has_include(<aio.h>)
     if (nfd->type == IoDescriptor::Tty || nfd->type == IoDescriptor::File) {
-        co_return co_await AioReadAwaiter(nfd->fd, buffer, offset);
+        co_return co_await posix::AioReadAwaiter(nfd->fd, buffer, offset);
     }
 #endif // __has_include(<aio.h>)
 
@@ -448,7 +448,7 @@ inline auto QIoContext::write(IoDescriptor *fd, Buffer buffer, std::optional<siz
     }
 #if __has_include(<aio.h>)
     if (nfd->type == IoDescriptor::Tty || nfd->type == IoDescriptor::File) {
-        co_return co_await AioWriteAwaiter(nfd->fd, buffer, offset);
+        co_return co_await posix::AioWriteAwaiter(nfd->fd, buffer, offset);
     }
 #endif // __has_include(<aio.h>)
 

@@ -132,6 +132,7 @@ CORO_TEST(Task, FireAndForget) {
 }
 
 CORO_TEST(Task, Scope) {
+    // Normal
     co_await TaskScope::enter([](TaskScope &scope) -> Task<void> {
         for (auto i : views::iota(1, 100)) {
             scope.spawn(sleep(1ms * i));
@@ -140,6 +141,25 @@ CORO_TEST(Task, Scope) {
         scope.spawnBlocking([]() { return 42; }); // The return value should be ignored
         co_return;
     });
+
+    // Test stop from inside
+    co_await TaskScope::enter([](TaskScope &scope) -> Task<void> {
+        scope.stop();
+        for (auto i : views::iota(1, 100)) {
+            scope.spawn(sleep(1h * i));
+        }
+        co_return;
+    });
+
+    // Test stop from the outside
+    auto handle = spawn(TaskScope::enter([](TaskScope &scope) -> Task<void> {
+        for (auto i : views::iota(1, 100)) {
+            scope.spawn(sleep(1h * i));
+        }
+        co_await sleep(1h);
+    }));
+    handle.stop();
+    EXPECT_FALSE(co_await std::move(handle)); // Should be stopped
 }
 
 auto main(int argc, char** argv) -> int {

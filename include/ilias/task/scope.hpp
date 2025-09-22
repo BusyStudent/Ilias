@@ -1,8 +1,8 @@
 #pragma once
 
+#include <ilias/detail/intrusive.hpp>
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp>
-#include <ilias/task/group.hpp> // WaitGroup
 #include <ilias/task/task.hpp>
 
 ILIAS_NS_BEGIN
@@ -15,9 +15,9 @@ class ILIAS_API TaskScope final {
 public:
     ~TaskScope();
 
-    auto size() const noexcept -> size_t { return mGroup.size(); }
-    auto empty() const noexcept -> bool { return mGroup.empty(); }
-    auto stop() -> void { return mGroup.stop(); }
+    auto size() const noexcept -> size_t { return mNumRunning; }
+    auto empty() const noexcept -> bool { return mNumRunning == 0; }
+    auto stop() noexcept -> void;
 
     /**
      * @brief Insert an handle to the scope, the scope will wait for it to finish
@@ -28,39 +28,23 @@ public:
      */
     template <typename T>
     auto insert(WaitHandle<T> handle) -> StopHandle {
-        auto wrapper = [](auto handle) -> Task<void> {
-            auto _ = co_await std::move(handle);
-        };
-        return mGroup.spawn(wrapper(std::move(handle)));
-    }
-
-    auto insert(WaitHandle<void> handle) -> StopHandle {
-        return mGroup.insert(std::move(handle));
+        return insertImpl(std::move(handle)._leak());
     }
 
     // Spawn
     template <typename T>
     auto spawn(Task<T> task) -> StopHandle {
-        auto wrapper = [](auto task) -> Task<void> {
-            auto _ = co_await std::move(task);
-        };
-        return mGroup.spawn(wrapper(std::move(task)));
+        return insert(ILIAS_NAMESPACE::spawn(std::move(task)));
     }
 
-    auto spawn(Task<void> task) -> StopHandle { 
-        return mGroup.spawn(std::move(task));
+    template <std::invocable Fn>
+    auto spawn(Fn fn) -> StopHandle {
+        return insert(ILIAS_NAMESPACE::spawn(std::move(fn)));
     }
 
-    template <std::invocable Fn> requires (std::is_void_v<std::invoke_result_t<Fn> >)
+    template <std::invocable Fn>
     auto spawnBlocking(Fn fn) -> StopHandle {
-        return mGroup.spawnBlocking(std::move(fn));
-    }
-
-    template <std::invocable Fn> requires (!std::is_void_v<std::invoke_result_t<Fn> >)
-    auto spawnBlocking(Fn fn) -> StopHandle {
-        return mGroup.spawnBlocking([f = std::move(fn)]() mutable {
-            auto _ = f();
-        });
+        return insert(ILIAS_NAMESPACE::spawnBlocking(std::move(fn)));
     }
 
     /**
@@ -75,7 +59,7 @@ public:
     static auto enter(Fn fn, Args ...args) -> std::invoke_result_t<Fn, TaskScope &, Args...> {
         TaskScope scope;
         co_return co_await ( // Get current context stop token used to forward the stop to the scope
-            fn(scope, args...) | finally(scope.waitAll(co_await runtime::context::stopToken()))
+            fn(scope, args...) | finally(scope.cleanup(co_await runtime::context::stopToken()))
         );
     }
 private:
@@ -83,9 +67,17 @@ private:
     TaskScope(TaskScope &&) = delete;
     TaskScope();
 
-    auto waitAll(runtime::StopToken token) -> Task<void>; // Use the stop token
+    auto cleanup(runtime::StopToken token) -> Task<void>; // Use the stop token
+    auto insertImpl(intrusive::Rc<task::TaskSpawnContext> task) -> StopHandle;
+    auto onTaskCompleted(task::TaskSpawnContext &ctxt) -> void;
 
-    TaskGroup<void> mGroup; // Temporary use TaskGroup to implement TaskScope, for covnvenience, TODO: impl it directly
+    using List = intrusive::List<task::TaskSpawnContext>;
+
+    List   mRunning;
+    size_t mNumRunning = 0;
+    bool   mStopRequested = false;
+    bool   mStopping = false;
+    runtime::CoroHandle mWaiter = nullptr;
 };
 
 ILIAS_NS_END

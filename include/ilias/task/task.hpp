@@ -265,6 +265,9 @@ public:
     // Send the stop request of the spawn task
     using TaskContext::stop;
 
+    // Get the executor of this ctxt
+    using TaskContext::executor;
+
     // Blocking enter the executor
     auto enter() -> void {
         if (!mCompleted) {
@@ -272,7 +275,7 @@ public:
             mCompletionHandler = [&](auto &) {
                 source.request_stop();
             };
-            this->executor().run(source.get_token());
+            executor().run(source.get_token());
         }
     }
 

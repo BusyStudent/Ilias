@@ -14,7 +14,7 @@
 #include <list>
 
 #if __has_include(<aio.h>)
-    #include "aio_core.hpp"
+    #include <ilias/platform/detail/aio_core.hpp>
 #endif // __has_include(<aio.h>)
 
 
