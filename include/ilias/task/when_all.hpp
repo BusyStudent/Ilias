@@ -157,4 +157,11 @@ inline auto whenAll(Ts && ...args) noexcept {
     };
 }
 
+// Logical and operator for awaitable, same as whenAll
+template <Awaitable T1, Awaitable T2>
+[[nodiscard]]
+inline auto operator &&(T1 &&a, T2 &&b) noexcept {
+    return whenAll(std::forward<T1>(a), std::forward<T2>(b));
+}
+
 ILIAS_NS_END

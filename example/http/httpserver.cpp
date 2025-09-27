@@ -1,5 +1,6 @@
 #include <ilias/fs/file.hpp>
 #include <ilias/platform.hpp>
+#include <ilias/signal.hpp>
 #include <ilias/task.hpp>
 #include <ilias/net.hpp>
 #include <ilias/io.hpp>
@@ -199,10 +200,16 @@ auto handleConnection(BufStream<TcpStream> stream) -> Task<void> {
 }
 
 void ilias_main() {
-    auto client = (co_await TcpListener::bind("127.0.0.1:25565")).value();
-    std::cerr << "Listening on " << client.localEndpoint().value().toString() << std::endl;
-    while (true) {
-        auto [conn, endpoint] = (co_await client.accept()).value();
-        spawn(handleConnection(std::move(conn)));
+    auto main = TaskScope::enter([](TaskScope &scope) -> Task<void> {
+        auto client = (co_await TcpListener::bind("127.0.0.1:25565")).value();
+        std::cerr << "Listening on " << client.localEndpoint().value().toString() << std::endl;
+        while (true) {
+            auto [conn, endpoint] = (co_await client.accept()).value();
+            scope.spawn(handleConnection(std::move(conn)));
+        }
+    });
+    auto [done, stop] = co_await(std::move(main) || signal::ctrlC());
+    if (stop) {
+        std::cout << "Received Ctrl+C, shutting down..." << std::endl;
     }
 }

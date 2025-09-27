@@ -268,6 +268,10 @@ public:
     // Get the executor of this ctxt
     using TaskContext::executor;
 
+    // Expose the memory
+    using TaskContext::operator new;
+    using TaskContext::operator delete;
+
     // Blocking enter the executor
     auto enter() -> void {
         if (!mCompleted) {

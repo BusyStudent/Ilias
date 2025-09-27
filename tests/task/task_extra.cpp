@@ -153,15 +153,41 @@ ILIAS_TEST(Task, Scope) {
         co_return;
     });
 
-    // Test stop from the outside
-    auto handle = spawn(TaskScope::enter([](TaskScope &scope) -> Task<void> {
-        for (auto i : views::iota(1, 100)) {
-            scope.spawn(sleep(1h * i));
+    {
+        // Test stop from the outside
+        auto handle = spawn(TaskScope::enter([](TaskScope &scope) -> Task<void> {
+            for (auto i : views::iota(1, 100)) {
+                scope.spawn(sleep(1h * i));
+            }
+            co_await sleep(1h);
+        }));
+        handle.stop();
+        EXPECT_FALSE(co_await std::move(handle)); // Should be stopped
+    }
+
+    {
+        // Test stop by manually waitAll
+        auto handle = spawn([]() -> Task<void> {
+            auto scope = TaskScope();
+            for (auto i : views::iota(1, 100)) {
+                scope.spawn(sleep(1h * i));
+            }
+            co_await scope.waitAll();
+        }());
+        handle.stop();
+        EXPECT_FALSE(co_await std::move(handle)); // Should be stopped
+    }
+}
+
+ILIAS_TEST(Task, AsyncLifetime) {
+    struct Value : public AsyncLifetime<Value> {
+        ~Value() {
+            EXPECT_TRUE(scope().empty());
         }
-        co_await sleep(1h);
-    }));
-    handle.stop();
-    EXPECT_FALSE(co_await std::move(handle)); // Should be stopped
+    };
+    auto ptr = makeAsyncLifetime<Value>();
+    co_await this_coro::yield();
+    co_return;
 }
 
 auto main(int argc, char** argv) -> int {

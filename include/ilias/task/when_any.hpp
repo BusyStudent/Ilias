@@ -183,4 +183,10 @@ inline auto whenAny(Ts && ...args) noexcept {
     };
 }
 
+template <Awaitable T1, Awaitable T2>
+[[nodiscard]]
+inline auto operator ||(T1 &&a, T2 &&b) noexcept {
+    return whenAny(std::forward<T1>(a), std::forward<T2>(b));
+}
+
 ILIAS_NS_END

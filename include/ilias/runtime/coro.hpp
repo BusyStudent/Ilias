@@ -68,6 +68,14 @@ public:
     auto setUserdata(void *user) noexcept {
         mUser = user;
     }
+
+    auto operator new(size_t n) -> void * {
+        return allocate(n);
+    }
+
+    auto operator delete(void *ptr, size_t n) noexcept -> void {
+        return deallocate(ptr, n);
+    }
 private:
     StopSource  mStopSource;                               // Use this to try to stop the coroutine
     Executor   *mExecutor = nullptr;

@@ -168,12 +168,19 @@ TaskScope::TaskScope() = default;
 TaskScope::~TaskScope() {
     ILIAS_ASSERT(mRunning.empty());
     ILIAS_ASSERT(mNumRunning == 0);
+    if (!mRunning.empty()) {
+        ::fprintf(stderr, "Error: TaskScope destructed with %zu running tasks\n call waitAll() before destroy", mNumRunning);
+        ::abort();
+    }
 }
 
-auto TaskScope::cleanup(runtime::StopToken token) -> Task<void> {
+auto TaskScope::cleanup(std::optional<runtime::StopToken> token) -> Task<void> {
     // Forward the stop to the children
+    if (!token) { // If stop token is not provided, get from the current context
+        token = co_await runtime::context::stopToken();
+    }
     auto proxy = [this]() { stop(); };
-    auto cb1 = runtime::StopCallback(token, proxy);
+    auto cb1 = runtime::StopCallback(*token, proxy);
 
     struct Awaiter {
         TaskScope &self;
