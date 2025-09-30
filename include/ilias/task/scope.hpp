@@ -52,6 +52,13 @@ public:
     auto waitAll() -> Task<void> { return cleanup(std::nullopt); }
 
     /**
+     * @brief Stop all tasks and wait for them to finish.
+     * 
+     * @return Task<void> 
+     */
+    auto shutdown() -> Task<void> { stop(); return cleanup(std::nullopt); }
+
+    /**
      * @brief Insert an handle to the scope, the scope will wait for it to finish
      * 
      * @tparam T 

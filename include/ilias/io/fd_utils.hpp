@@ -203,11 +203,18 @@ inline auto open(const char *path, std::string_view mode) -> IoResult<fd_t> {
     if (mode.find('a') != std::string_view::npos) {
         flags |= O_WRONLY | O_CREAT | O_APPEND;
     }
-    if (mode.find('+')) {
+    if (mode.find('+') != std::string_view::npos) {
         flags |= O_RDWR;
     }
 
-    int fd = ::open(path, flags);
+    int fd = -1;
+
+    if (flags & O_CREAT) {
+        fd = ::open(path, flags, mode_t(S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
+    }
+    else {
+        fd = ::open(path, flags);
+    }
     if (fd >= 0) {
         return fd;
     }

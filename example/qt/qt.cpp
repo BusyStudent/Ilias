@@ -1,6 +1,8 @@
 #include <ilias_qt/network.hpp>
+#include <ilias_qt/dialog.hpp>
 #include <ilias/platform/qt.hpp>
 #include <ilias/fs/file.hpp>
+#include <ilias/task.hpp>
 #include <ilias/net.hpp>
 
 #include <QApplication>
@@ -40,10 +42,17 @@ public:
             QMessageBox::information(this, "No content", "No content to save");
             co_return;
         }
-        auto filename = QFileDialog::getSaveFileName(this, "Save file", "", "All Files (*)");
-        if (filename.isEmpty()) {
+        QFileDialog dialog(this);
+        dialog.setWindowTitle("Save file");
+        dialog.setDirectory("");
+        dialog.setNameFilter("All Files (*)");
+        dialog.setAcceptMode(QFileDialog::AcceptSave);
+        dialog.open();
+
+        if ((co_await dialog) != QDialog::Accepted) {
             co_return;
         }
+        auto filename = dialog.selectedFiles().first();
 #if 0
         QFile file(filename);
         if (!file.open(QIODevice::WriteOnly)) {

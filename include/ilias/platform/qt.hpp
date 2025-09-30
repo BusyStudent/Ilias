@@ -70,7 +70,13 @@ public:
         LPFN_WSASENDMSG sendmsg = nullptr;
         LPFN_WSARECVMSG recvmsg = nullptr;
     } sock;
-#endif
+#endif // defined(_WIN32)
+
+#if defined(__linux__) && __has_include(<aio.h>)
+    struct {
+        intrusive::List<posix::AioAwaiterBase> awaiters; // The list of aio operations
+    } aio;
+#endif // defined(__linux__)
 
 };
 
@@ -339,6 +345,15 @@ inline auto QIoContext::cancel(IoDescriptor *fd) -> IoResult<void> {
     }
 #endif // defined(_WIN32)
 
+#if defined(__linux__) && __has_include(<aio.h>)
+    // Cancel all aio operations
+    for (auto it = nfd->aio.awaiters.begin(); it != nfd->aio.awaiters.end(); ) {
+        auto &awaiter = *it;
+        it = nfd->aio.awaiters.erase(it);
+        awaiter.cancel();
+    }
+#endif // defined(__linux__)
+
     Q_EMIT nfd->destroyed(); // Using this signal to notify the operation is canceled
     return {};
 }
@@ -386,12 +401,17 @@ inline auto QIoContext::read(IoDescriptor *fd, MutableBuffer buffer, std::option
             if (auto err = errno; err != EAGAIN && err != EWOULDBLOCK) {
                 co_return Err(SystemError(err));
             }
+            if (auto pollret = co_await poll(fd, PollEvent::In); !pollret) {
+                co_return Err(pollret.error());
+            }
         }
     }
 
 #if __has_include(<aio.h>)
     if (nfd->type == IoDescriptor::Tty || nfd->type == IoDescriptor::File) {
-        co_return co_await posix::AioReadAwaiter(nfd->fd, buffer, offset);
+        auto awaiter = posix::AioReadAwaiter(nfd->fd, buffer, offset);
+        nfd->aio.awaiters.push_back(awaiter);
+        co_return co_await awaiter;
     }
 #endif // __has_include(<aio.h>)
 
@@ -448,7 +468,9 @@ inline auto QIoContext::write(IoDescriptor *fd, Buffer buffer, std::optional<siz
     }
 #if __has_include(<aio.h>)
     if (nfd->type == IoDescriptor::Tty || nfd->type == IoDescriptor::File) {
-        co_return co_await posix::AioWriteAwaiter(nfd->fd, buffer, offset);
+        auto awaiter = posix::AioWriteAwaiter(nfd->fd, buffer, offset);
+        nfd->aio.awaiters.push_back(awaiter);
+        co_return co_await awaiter;
     }
 #endif // __has_include(<aio.h>)
 

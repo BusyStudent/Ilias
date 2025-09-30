@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/detail/intrusive.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/log.hpp>
@@ -22,43 +23,102 @@ ILIAS_NS_BEGIN
 
 namespace posix {
 
-template <typename T>
-class AioAwaiter : public ::aiocb {
+/**
+ * @brief The common base for aio awaiter
+ * 
+ */
+class AioAwaiterBase : public intrusive::Node<AioAwaiterBase>, 
+                       public ::aiocb // The control block
+{
 public:
-    AioAwaiter(int fd) {
-        ::memset(static_cast<::aiocb*>(this), 0, sizeof(::aiocb)); //< Zero the control block
-        aio_fildes = fd;
-    }
+    AioAwaiterBase(int fd) : ::aiocb { .aio_fildes = fd } {}
+    AioAwaiterBase(AioAwaiterBase &&) = default;
 
-    auto await_ready() const -> bool { return false; }
-
-    auto await_suspend(runtime::CoroHandle caller) -> bool {
+    // Always suspend
+    auto await_ready() noexcept -> bool { 
         aio_sigevent.sigev_notify = SIGEV_THREAD; //< Use callback
         aio_sigevent.sigev_value.sival_ptr = this;
-        aio_sigevent.sigev_notify_function = [](::sigval val) {
-            auto self = static_cast<AioAwaiter *>(val.sival_ptr);
-            ILIAS_TRACE("POSIX::aio", "Operation complete on fd {}", self->aio_fildes);
-            self->mCaller.schedule();
-        };
+        aio_sigevent.sigev_notify_function = onNotifyEntry;
+        return false; 
+    }
+
+    // Do the suspend
+    template <typename T>
+    auto suspend(runtime::CoroHandle caller) -> bool {
         mCaller = caller;
-        if (!static_cast<T*>(this)->onSubmit()) {
+        if (!static_cast<T *>(this)->onSubmit()) { 
+            // Error on submit, accroding to man, it will set errno
+            mResult = Err(SystemError::fromErrno());
             return false;
         }
-        mReg.register_<&AioAwaiter::onStopRequested>(caller.stopToken(), this);
+        mReg.register_<&AioAwaiterBase::cancel>(caller.stopToken(), this);
         return true;
     }
 
-    auto await_resume() {
-        return static_cast<T*>(this)->onComplete(::aio_return(this));
-    }
-private:
-    auto onStopRequested() -> void {
+    // Try cancel the operation, note it will unlink self in the list
+    auto cancel() -> void {
+        unlink();
         auto ret = ::aio_cancel(this->aio_fildes, this);
         ILIAS_TRACE("POSIX::aio", "Cancel op on fd {}, res {}", this->aio_fildes, ret);
     }
+protected:
+    auto onNotify() -> void {
+        // Get the result
+        if (auto res = ::aio_return(this); res >= 0) {
+            mResult = res;
+        }
+        else {
+            mResult = Err(SystemError(::aio_error(this)));
+        }
+        ILIAS_TRACE("POSIX::aio", "Operation complete on fd {}, result {}", this->aio_fildes, mResult ? std::to_string(*mResult) : mResult.error().message());
+        
+        // Check the stop request
+        if (mResult == Err(SystemError::Canceled) && mCaller.isStopRequested()) {
+            // If the operation was canceled and the caller requested stop, mark the caller as stopped
+            mCaller.executor().schedule([this]() { // Back to the executor thread
+                mCaller.setStopped();
+            });
+            return;
+        }
 
+        // Check if stop request
+        mCaller.schedule();
+    }
+
+    static auto onNotifyEntry(::sigval val) -> void {
+        static_cast<AioAwaiterBase *>(val.sival_ptr)->onNotify();
+    }
+
+    // States
     runtime::CoroHandle mCaller;
     runtime::StopRegistration mReg;
+
+    // Result of the io operation
+    IoResult<size_t> mResult {0};
+};
+
+/**
+ * @brief The CRTP for aio awaiter
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class AioAwaiter : public AioAwaiterBase {
+public:
+    using AioAwaiterBase::AioAwaiterBase;
+
+    auto await_suspend(runtime::CoroHandle caller) -> bool {
+        return suspend<T>(caller);
+    }
+
+    auto await_resume() {
+        return static_cast<T *>(this)->onComplete(mResult);
+    }
+
+    // Default implementations
+    auto onComplete(IoResult<size_t> res) -> IoResult<size_t> {
+        return res;
+    }
 };
 
 /**
@@ -77,14 +137,6 @@ public:
         ILIAS_TRACE("POSIX::aio", "Submit read {} bytes offset {} on fd {}", aio_nbytes, aio_offset, aio_fildes);
         return ::aio_read(this) == 0;
     }
-
-    auto onComplete(ssize_t bytes) -> IoResult<size_t> {
-        ILIAS_TRACE("POSIX::aio", "Read complete on fd {}, bytes {}", aio_fildes, bytes);
-        if (bytes < 0) {
-            return Err(SystemError(::aio_error(this)));
-        }
-        return bytes;
-    }
 };
 
 /**
@@ -96,20 +148,12 @@ public:
     AioWriteAwaiter(int fd, Buffer buffer, std::optional<size_t> offset) : AioAwaiter(fd) {
         aio_offset = offset.value_or(0);
         aio_nbytes = buffer.size_bytes();
-        aio_buf = (void*) buffer.data();
+        aio_buf = const_cast<std::byte*>(buffer.data());
     }
 
     auto onSubmit() -> bool {
         ILIAS_TRACE("Posix::aio", "Submit write {} bytes offset {} on fd {}", aio_nbytes, aio_offset, aio_fildes);
         return ::aio_write(this) == 0;
-    }
-
-    auto onComplete(ssize_t bytes) -> IoResult<size_t> {
-        ILIAS_TRACE("Posix::aio", "Write complete on fd {}, bytes {}", aio_fildes, bytes);
-        if (bytes < 0) {
-            return Err(SystemError(::aio_error(this)));
-        }
-        return bytes;
     }
 };
 
@@ -121,9 +165,9 @@ public:
         return ::aio_fsync(mOp, this) == 0;
     }
 
-    auto onComplete(ssize_t ret) -> IoResult<void> {
-        if (ret < 0) {
-            return Err(SystemError(::aio_error(this)));
+    auto onComplete(IoResult<size_t> res) -> IoResult<void> {
+        if (!res) {
+            return Err(res.error());
         }
         return {};
     }

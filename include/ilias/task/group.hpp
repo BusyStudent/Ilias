@@ -102,6 +102,7 @@ public:
     ~TaskGroup() = default;
 
     using value_type = typename Option<T>::value_type; // Use Option<T> to replace void to std::monostate :(
+    using Vector = std::vector<value_type>;
 
     /**
      * @brief Insert a handle to the group, the group take the ownership of the handle.
@@ -176,9 +177,9 @@ public:
     /**
      * @brief Wait All tasks to finish. the return vector doesn't contain the task that has been stopped.
      * 
-     * @return Task<std::vector<value_type> > 
+     * @return Task<Vector> 
      */
-    auto waitAll() -> Task<std::vector<value_type> >;
+    auto waitAll() -> Task<Vector>;
 private:
     task::TaskGroupBase mGroup;
 };
@@ -192,8 +193,8 @@ auto TaskGroup<T>::shutdown() -> Task<void> {
 }
 
 template <typename T>
-auto TaskGroup<T>::waitAll() -> Task<std::vector<value_type> > {
-    std::vector<value_type> vec;
+auto TaskGroup<T>::waitAll() -> Task<Vector> {
+    Vector vec;
     while (!empty()) {
         if (auto ret = co_await next(); ret) {
             vec.emplace_back(std::move(*ret));

@@ -142,7 +142,15 @@ private:
  */
 class CallableRef {
 public:
-    void (*call)(CallableRef &) = nullptr;
+    CallableRef() = default;
+
+    // Invoke it
+    auto invoke() noexcept -> void { mHandler(*this); }
+private:
+    using Handler = void (*)(CallableRef &) noexcept;
+    Handler mHandler = nullptr;
+template <typename T>
+friend class CallableImpl;
 };
 
 /**
@@ -153,11 +161,11 @@ public:
 template <typename T>
 class CallableImpl : public CallableRef {
 public:
-    CallableImpl() {
-        call = invoke;
+    CallableImpl() noexcept {
+        mHandler = invokeImpl;
     }
 private:
-    static auto invoke(CallableRef &callable) -> void {
+    static auto invokeImpl(CallableRef &callable) noexcept -> void {
         static_cast<T&>(callable)();
     }
 };

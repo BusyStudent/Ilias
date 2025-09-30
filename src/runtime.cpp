@@ -103,7 +103,7 @@ auto threadpool::submit(CallableRef &callable) -> void {
 #if defined(_WIN32)
     auto invoke = [](void *cb) -> ::DWORD {
         auto callable = static_cast<CallableRef *>(cb);
-        callable->call(*callable);
+        callable->invoke();
         return 0;
     };
     if (!::QueueUserWorkItem(invoke, &callable, WT_EXECUTEDEFAULT)) {
@@ -137,7 +137,7 @@ auto threadpool::submit(CallableRef &callable) -> void {
             locker.unlock();
             
             pool->idle -= 1;
-            callable->call(*callable);
+            callable->invoke();
             pool->idle += 1;
         }
     };

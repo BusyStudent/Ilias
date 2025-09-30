@@ -39,7 +39,7 @@ public:
 
 		// Bind ssl to bio
 		SSL_set_bio(mSsl, mBio, mBio);
-		SSL_set_mode(mSsl, SSL_MODE_AUTO_RETRY);
+		SSL_set_mode(mSsl, SSL_get_mode(mSsl) | SSL_MODE_AUTO_RETRY);
 	}
 
 	~TlsStateImpl() {

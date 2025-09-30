@@ -41,12 +41,23 @@ concept HasCoAwait = requires(T &&t) {
 };
 
 /**
- * @brief Check tge type can be co_await
+ * @brief Check the type can be co_await
  * 
  * @tparam T 
  */
 template <typename T>
 concept Awaitable = Awaiter<T> || HasCoAwait<T> || HasMemberCoAwait<T>;
+
+/**
+ * @brief Check the type is a sequence of awaitable like (std::vector<Task<void> >)
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept AwaitableSequence = requires(T &t) {
+    { *std::begin(t) } -> Awaitable;
+    { *std::end(t)  } -> Awaitable;
+};
 
 /**
  * @brief The result type of the awaiter
@@ -67,13 +78,15 @@ auto toAwaiter(T &&val) noexcept -> decltype(auto) {
     if constexpr (Awaiter<T>) {
         return std::forward<T>(val);
     }
-    if constexpr (HasCoAwait<T>) {
+    else if constexpr (HasCoAwait<T>) {
         return operator co_await(std::forward<T>(val));
     }
-    if constexpr (HasMemberCoAwait<T>) {
+    else if constexpr (HasMemberCoAwait<T>) {
         return std::forward<T>(val).operator co_await();
     }
-    // Emm?, impossible
+    else {
+        static_assert(std::is_same_v<T, void>, "Emm?, impossible");
+    }
 }
 
 template <typename T>
@@ -95,6 +108,14 @@ template <Awaitable T>
 using AwaitableResult = typename AwaitableResultImpl<T>::type;
 
 /**
+ * @brief Get the value type of the awaitable sequence 
+ * 
+ * @tparam T 
+ */
+template <AwaitableSequence T>
+using AwaitableSequenceValue = decltype(*std::begin(std::declval<T>()));
+
+/**
  * @brief Types that can be cast into an awaitable
  * 
  * @tparam T 
@@ -106,6 +127,8 @@ concept IntoAwaitable = requires(T t) {
 
 } // namespace runtime
 
+using runtime::AwaitableSequenceValue;
+using runtime::AwaitableSequence;
 using runtime::AwaitableResult;
 using runtime::Awaitable;
 

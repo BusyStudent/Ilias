@@ -4,7 +4,7 @@
 #include <QNetworkReply>
 #include "object.hpp"
 
-namespace ilias_qt::network {
+namespace ilias_qt {
 
 // for impl auto val = co_await manager.get(QNetworkRequest)
 inline auto toAwaitable(QNetworkReply *ptr) -> ilias::Task<Box<QNetworkReply> > {
@@ -25,7 +25,11 @@ inline auto toAwaitable(QNetworkReply *ptr) -> ilias::Task<Box<QNetworkReply> > 
     co_return std::move(reply);
 }
 
+inline auto reply(QNetworkReply *ptr) {
+    return toAwaitable(ptr);
+}
+
 }
 
 // Report to the global for the ADL, QNetworkReply is on the global namespace
-using ilias_qt::network::toAwaitable;
+using ilias_qt::toAwaitable;
