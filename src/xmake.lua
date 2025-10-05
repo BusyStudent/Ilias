@@ -103,6 +103,7 @@ target("ilias")
     end
 
     if is_plat("linux") then
+        set_symbols("hidden")
         add_files("linux/*.cpp")
         add_syslinks("pthread", "dl", "anl", {public = true})
     end

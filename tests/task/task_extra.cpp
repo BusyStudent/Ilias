@@ -15,7 +15,7 @@ auto neverReturn() -> Task<void> {
     }
 }
 
-auto returnBeforeSleep(int x) -> Task<int> {
+auto returnAfterSleep(int x) -> Task<int> {
     co_await sleep(std::chrono::milliseconds(x));
     co_return x;
 }
@@ -39,7 +39,7 @@ ILIAS_TEST(Task, TaskGroup) {
     {
         auto group = TaskGroup<int>();
         for (auto i : views::iota(0, 10)) {
-            group.spawn(returnBeforeSleep(i));
+            group.spawn(returnAfterSleep(i));
         }
         auto result = co_await group.waitAll();
         EXPECT_EQ(result.size(), 10);
@@ -123,6 +123,15 @@ ILIAS_TEST(Task, Finally) {
         EXPECT_FALSE(co_await std::move(handle));
         EXPECT_TRUE(called);
     }
+}
+
+ILIAS_TEST(Task, Mapping) {
+    auto result = co_await (
+        returnAfterSleep(10) 
+        | fmap([](int x) { return x * 2; })
+        | fmap([](int x) { return x + 10; })
+    );
+    EXPECT_EQ(result, 30);
 }
 
 ILIAS_TEST(Task, FireAndForget) {

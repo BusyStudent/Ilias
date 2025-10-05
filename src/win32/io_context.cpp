@@ -292,7 +292,7 @@ auto IocpContext::cancel(IoDescriptor *fd) -> IoResult<void> {
 auto IocpContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
     if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use threadpool to execute it
-        auto token = co_await runtime::context::stopToken();
+        auto token = co_await this_coro::stopToken();
         auto val = co_await blocking([&]() {
             return ioCall(token, [&]() -> IoResult<size_t> {
                 ::DWORD readed = 0;
@@ -303,7 +303,7 @@ auto IocpContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<siz
             });
         });
         if (val == Err(SystemError::Canceled)) {
-            co_await runtime::context::stopped(); // Try set the context to stopped
+            co_await this_coro::stopped(); // Try set the context to stopped
         }
         co_return val;
     }
@@ -314,7 +314,7 @@ auto IocpContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<siz
 auto IocpContext::write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
     if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use threadpool to execute it
-        auto token = co_await runtime::context::stopToken();
+        auto token = co_await this_coro::stopToken();
         auto val = co_await blocking([&]() {
             return ioCall(token, [&]() -> IoResult<size_t> {
                 ::DWORD written = 0;
@@ -325,7 +325,7 @@ auto IocpContext::write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> o
             });
         });
         if (val == Err(SystemError::Canceled)) {
-            co_await runtime::context::stopped(); // Try set the context to stopped
+            co_await this_coro::stopped(); // Try set the context to stopped
         }
         co_return val;
     }

@@ -432,9 +432,6 @@ private:
 
 } // namespace task
 
-// Re-export this for the user
-namespace this_coro = runtime::context;
-
 /**
  * @brief The lazy task class, it take the ownership of the coroutine
  * 

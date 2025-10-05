@@ -161,7 +161,7 @@ auto TaskGroupAwaiterBase::onStopRequested() -> void {
 }
 
 // Make compile faster?
-template class ILIAS_API TaskGroup<void>;
+template class TaskGroup<void>;
 
 #pragma region TaskScope
 TaskScope::TaskScope() = default;
@@ -177,7 +177,7 @@ TaskScope::~TaskScope() {
 auto TaskScope::cleanup(std::optional<runtime::StopToken> token) -> Task<void> {
     // Forward the stop to the children
     if (!token) { // If stop token is not provided, get from the current context
-        token = co_await runtime::context::stopToken();
+        token = co_await this_coro::stopToken();
     }
     auto proxy = [this]() { stop(); };
     auto cb1 = runtime::StopCallback(*token, proxy);

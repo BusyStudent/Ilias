@@ -55,7 +55,7 @@
     #define ILIAS_SOCKET_T ::uintptr_t
     #define ILIAS_FD_T      void *
 #elif defined(__linux__)
-    #define ILIAS_EXPORT   // no-op
+    #define ILIAS_EXPORT   ILIAS_ATTRIBUTE(visibility("default"))
     #define ILIAS_IMPORT   // no-op
     #define ILIAS_ERROR_T   int
     #define ILIAS_SOCKET_T  int

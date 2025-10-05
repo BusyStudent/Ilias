@@ -95,7 +95,7 @@ private:
  * @tparam T The result type of the tasks.
  */
 template <typename T>
-class TaskGroup final {
+class ILIAS_API TaskGroup final {
 public:
     TaskGroup() = default;
     TaskGroup(TaskGroup &&) = default;
@@ -204,6 +204,6 @@ auto TaskGroup<T>::waitAll() -> Task<Vector> {
 }
 
 // Make compile faster?
-extern template ILIAS_API class TaskGroup<void>;
+extern template class TaskGroup<void>;
 
 ILIAS_NS_END

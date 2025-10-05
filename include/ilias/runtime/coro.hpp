@@ -235,8 +235,13 @@ friend class std::hash<CoroHandle>;
 
 } // namespace runtime
 
-// Some builtin function for get environment
-namespace runtime::context {
+// Some builtin function for access the environment
+namespace this_coro {
+
+using runtime::CoroContext;
+using runtime::CoroHandle;
+using runtime::StopToken;
+using runtime::Executor;
 
 struct AwaiterBase {
     auto await_ready() noexcept { return true; }
@@ -251,6 +256,17 @@ inline auto stopToken() noexcept {
     struct Awaiter : AwaiterBase {
         auto await_resume() noexcept -> StopToken {
             return mCtxt->stopSource().get_token();
+        }
+    };
+
+    return Awaiter {};
+}
+
+// Check current coroutine is requested to stop
+inline auto isStopRequested() noexcept {
+    struct Awaiter : AwaiterBase {
+        auto await_resume() noexcept -> bool {
+            return mCtxt->stopSource().stop_requested();
         }
     };
 
@@ -294,7 +310,23 @@ inline auto yield() noexcept {
     return Awaiter {};
 }
 
-} // namespace runtime::context
+// Get the current coroutine context and process it to an callback
+template <typename Fn> requires (std::invocable<Fn, CoroContext &>)
+inline auto withContext(Fn fn) noexcept {
+    struct Awaiter : AwaiterBase {
+        Awaiter(Fn fn) : mFn(std::move(fn)) {}
+
+        auto await_resume() -> decltype(auto) {
+            return mFn(*mCtxt);
+        }
+
+        Fn mFn;
+    };
+    
+    return Awaiter { std::move(fn) };
+}
+
+} // namespace this_coro
 
 ILIAS_NS_END
 

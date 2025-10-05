@@ -40,6 +40,41 @@ private:
     TaskAwaiter<T> mAwaiter;
 };
 
+// Add an sync map handler to awaitable
+template <typename T, typename Fn>
+class MapAwaiter final {
+public:
+    MapAwaiter(TaskHandle<T> handle, Fn fn) : mHandle(handle), mAwaiter(handle), mFn(std::move(fn)) {}
+    MapAwaiter(MapAwaiter &&) = default;
+
+    auto await_ready() -> bool {
+        return mAwaiter.await_ready();
+    }
+
+    auto await_suspend(runtime::CoroHandle caller) {
+        return mAwaiter.await_suspend(caller);
+    }
+
+    auto await_resume() {
+        if constexpr(std::is_void_v<T>) {
+            mAwaiter.await_resume();
+            return mFn();
+        }
+        else {
+            return mFn(mAwaiter.await_resume());
+        }
+    }
+
+    // Set the context of the task, call on await_transform
+    auto setContext(runtime::CoroContext &ctxt) {
+        mHandle.setContext(ctxt);
+    }
+private:
+    TaskHandle<T>  mHandle;
+    TaskAwaiter<T> mAwaiter;
+    Fn             mFn;
+};
+
 // Schedule task on another executor
 class ScheduleAwaiterBase : private TaskContext {
 public:
@@ -141,6 +176,8 @@ namespace task {
     struct ScheduleOnTags { runtime::Executor &exec; };
     struct UnstoppableTags {};
     template <typename T>
+    struct MapTags { T v; };
+    template <typename T>
     struct FinallyTags { T v; };
 } // namespace task
 
@@ -192,6 +229,12 @@ inline auto finally(T awaitable, Fn fn) -> task::FinallyFnAwaiter<AwaitableResul
     return {toTask(std::move(awaitable))._leak(), std::move(fn)};
 }
 
+// Map an awaitable result to another type
+template <Awaitable T, typename Fn>
+inline auto fmap(T awaitable, Fn fn) -> task::MapAwaiter<AwaitableResult<T>, Fn> {
+    return {toTask(std::move(awaitable))._leak(), std::move(fn)};
+}
+
 // Tags invoke here
 [[nodiscard]]
 inline auto setTimeout(std::chrono::milliseconds ms) -> task::SetTimeoutTags {
@@ -211,6 +254,12 @@ inline auto unstoppable() -> task::UnstoppableTags {
 template <typename T>
 [[nodiscard]]
 inline auto finally(T v) -> task::FinallyTags<T> {
+    return {std::move(v)};
+}
+
+template <typename T>
+[[nodiscard]]
+inline auto fmap(T v) -> task::MapTags<T> {
     return {std::move(v)};
 }
 
@@ -236,6 +285,12 @@ template <Awaitable T, typename U>
 [[nodiscard]]
 inline auto operator |(T awaitable, task::FinallyTags<U> tag) {
     return finally(std::move(awaitable), std::move(tag.v));
+}
+
+template <Awaitable T, typename U>
+[[nodiscard]]
+inline auto operator |(T awaitable, task::MapTags<U> tag) {
+    return fmap(std::move(awaitable), std::move(tag.v));
 }
 
 ILIAS_NS_END

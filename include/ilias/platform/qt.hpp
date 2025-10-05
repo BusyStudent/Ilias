@@ -384,7 +384,7 @@ inline auto QIoContext::read(IoDescriptor *fd, MutableBuffer buffer, std::option
         }
         auto err = SystemError::fromErrno();
         if (err == SystemError::Canceled) {
-            co_await runtime::context::stopped(); // Try set stopped
+            co_await this_coro::stopped(); // Try set stopped
         }
         co_return Err(err);
     }
@@ -445,7 +445,7 @@ inline auto QIoContext::write(IoDescriptor *fd, Buffer buffer, std::optional<siz
         }
         auto err = SystemError::fromErrno();
         if (err == SystemError::Canceled) {
-            co_await runtime::context::stopped(); // Try set stopped
+            co_await this_coro::stopped(); // Try set stopped
         }
         co_return Err(err);
     }

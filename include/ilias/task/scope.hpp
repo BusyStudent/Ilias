@@ -56,7 +56,7 @@ public:
      * 
      * @return Task<void> 
      */
-    auto shutdown() -> Task<void> { stop(); return cleanup(std::nullopt); }
+    auto shutdown() -> Task<void> { stop(); co_return co_await cleanup(std::nullopt); }
 
     /**
      * @brief Insert an handle to the scope, the scope will wait for it to finish
@@ -98,7 +98,7 @@ public:
     static auto enter(Fn fn, Args ...args) -> std::invoke_result_t<Fn, TaskScope &, Args...> {
         TaskScope scope;
         co_return co_await ( // Get current context stop token used to forward the stop to the scope
-            fn(scope, args...) | finally(scope.cleanup(co_await runtime::context::stopToken()))
+            fn(scope, args...) | finally(scope.cleanup(co_await this_coro::stopToken()))
         );
     }
 private:
