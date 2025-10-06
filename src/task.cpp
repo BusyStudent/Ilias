@@ -160,9 +160,6 @@ auto TaskGroupAwaiterBase::onStopRequested() -> void {
     mGroup.stop();
 }
 
-// Make compile faster?
-template class TaskGroup<void>;
-
 #pragma region TaskScope
 TaskScope::TaskScope() = default;
 TaskScope::~TaskScope() {

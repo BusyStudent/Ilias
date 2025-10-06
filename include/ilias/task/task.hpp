@@ -430,6 +430,10 @@ private:
     Fn mFn; // The function to call
 };
 
+// Tags here
+struct ToTaskTags {};
+struct SyncWaitTags {};
+
 } // namespace task
 
 /**
@@ -636,10 +640,36 @@ inline auto toTask(Task<T> task) -> Task<T> {
     return task;
 }
 
+inline auto toTask() -> task::ToTaskTags {
+    return {};
+}
+
+// Blocking wait an awaitable complete
+template <Awaitable T>
+inline auto syncWait(T awaitable) -> AwaitableResult<T> {
+    return toTask(std::move(awaitable)).wait();
+}
+
+inline auto syncWait() -> task::SyncWaitTags {
+    return {};
+}
+
+// Concepts
 template <typename T>
 concept IntoTask = requires (T t) {
     toTask(std::forward<T>(t));
 };
+
+// Tags invoke
+template <Awaitable T>
+inline auto operator |(T awaitable, task::ToTaskTags) {
+    return toTask(std::move(awaitable));
+}
+
+template <Awaitable T>
+inline auto operator |(T awaitable, task::SyncWaitTags) {
+    return syncWait(std::move(awaitable));
+}
 
 ILIAS_NS_END
 

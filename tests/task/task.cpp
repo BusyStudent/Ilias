@@ -73,7 +73,7 @@ TEST(Task, SpawnAwait) {
     auto fn = []() -> Task<void> {
         co_await spawn(testTask());
     };
-    fn().wait();
+    fn() | syncWait(); // Try tags invoke here
 }
 
 TEST(Task, SpawnBlocking) {
@@ -157,14 +157,14 @@ ILIAS_TEST(Task, WhenAny) {
 }
 
 ILIAS_TEST(Task, Executor) {
-    auto executor = runtime::Executor::currentThread();
-    executor->schedule([]() {
+    auto &&executor = co_await this_coro::executor();
+    executor.schedule([]() {
         std::cout << "Hello from executor!" << std::endl;
     });
-    executor->schedule([i = 114514]() {
+    executor.schedule([i = 114514]() {
         std::cout << "Hello from executor with value " << i << std::endl;
     });
-    executor->schedule([a = std::string("Hello World")]() {
+    executor.schedule([a = std::string("Hello World")]() {
         std::cout << "Hello from executor with value " << a << std::endl;
     });
     co_await this_coro::yield(); // Return to the executor
