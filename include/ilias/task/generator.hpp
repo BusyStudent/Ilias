@@ -54,6 +54,7 @@ namespace task {
 using runtime::CoroHandle;
 using runtime::CoroPromise;
 using runtime::CoroContext;
+using runtime::CaptureSource;
 
 // Promsie
 template <typename T> requires (!std::is_void_v<T>)
@@ -71,7 +72,8 @@ public:
         return { std::exchange(this->mPrevAwaiting, std::noop_coroutine()) }; // Return the coroutine by co_await us
     }
 
-    auto get_return_object() noexcept -> Generator<T> {
+    auto get_return_object(CaptureSource where = {}) noexcept -> Generator<T> {
+        this->mCreation = where;
         return { handle() };
     }
 

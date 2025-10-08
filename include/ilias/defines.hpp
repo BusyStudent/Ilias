@@ -66,6 +66,7 @@
 
 // Compiler check
 #if   defined(_MSC_VER)
+    #define ILIAS_NO_UNIQUE_ADDRESS no_unique_address, msvc::no_unique_address
     #define ILIAS_ATTRIBUTE(x)  __declspec(x)
     #define ILIAS_UNREACHABLE() __assume(0)
     #define ILIAS_ASSUME(...)   __assume(__VA_ARGS__)
@@ -80,6 +81,10 @@
     #define ILIAS_UNREACHABLE() // no-op
     #define ILIAS_ASSUME(...) // no-op
     #define ILIAS_TRAP() // no-op
+#endif
+
+#if  !defined(ILIAS_NO_UNIQUE_ADDRESS)
+    #define ILIAS_NO_UNIQUE_ADDRESS no_unique_address
 #endif
 
 // Library mode

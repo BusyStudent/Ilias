@@ -38,6 +38,7 @@ using runtime::CoroHandle;
 using runtime::CoroPromise;
 using runtime::CoroContext;
 using runtime::SmallFunction;
+using runtime::CaptureSource;
 
 // The return value part of the task promise
 template <typename T>
@@ -72,7 +73,9 @@ class TaskPromise final : public TaskPromiseBase<T> {
 public:
     using handle_type = std::coroutine_handle<TaskPromise<T> >;
 
-    auto get_return_object() noexcept -> Task<T> {
+    // Build the task object here, we use capture source to capture the task creation position
+    auto get_return_object(CaptureSource where = {}) noexcept -> Task<T> {
+        this->mCreation = where;
         return {handle()};
     }
 

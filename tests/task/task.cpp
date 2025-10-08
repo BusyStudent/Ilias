@@ -171,6 +171,15 @@ ILIAS_TEST(Task, Executor) {
     co_return;
 }
 
+ILIAS_TEST(Task, Stacktrace) {
+    auto fn = []() -> Task<void> {
+        for (auto &frame : co_await this_coro::stacktrace()) {
+            std::cout << "Frame: " << frame.toString() << std::endl;
+        }
+    };
+    co_await fn();
+}
+
 auto main(int argc, char** argv) -> int {
     ::testing::InitGoogleTest(&argc, argv);
     EventLoop loop;

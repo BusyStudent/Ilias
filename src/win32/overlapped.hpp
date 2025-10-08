@@ -88,7 +88,7 @@ public:
     auto await_suspend(runtime::CoroHandle caller) -> void {
         mCaller = caller;
         onCompleteCallback = completeCallback;
-        mRegistration.register_(caller.stopToken(), onStopRequested, this);
+        mRegistration.register_<&IocpAwaiterBase::cancel>(caller.stopToken(), this);
     }
 
     auto sockfd() const -> SOCKET {
@@ -102,11 +102,18 @@ public:
     auto bytesTransferred() -> DWORD & {
         return mBytesTransferred;
     }
+
+    auto cancel() -> void {
+        auto err = ::CancelIoEx(mHandle, overlapped());
+        if (!err) {
+            ILIAS_WARN("IOCP", "CancelIoEx failed, Error: {}", err2str(::GetLastError()));
+        }
+    }
 private:
     static auto completeCallback(IocpOverlapped *_self, DWORD dwError, DWORD dwBytesTransferred) -> void {
         auto self = static_cast<IocpAwaiterBase*>(_self);
         ILIAS_TRACE("IOCP", "IOCP Compelete callbacked, Error: {}, Bytes Transferred: {}", err2str(dwError), dwBytesTransferred);
-        if (dwError == ERROR_OPERATION_ABORTED && self->mStopRequested) {
+        if (dwError == ERROR_OPERATION_ABORTED && self->mCaller.isStopRequested()) {
             ILIAS_TRACE("IOCP", "IOCP Operation Aborted, Stop Requested");
             self->mCaller.setStopped();
             return;
@@ -116,14 +123,7 @@ private:
         self->mBytesTransferred = dwBytesTransferred;
         self->mCaller.resume();
     }
-    static auto onStopRequested(void *_self) -> void {
-        auto self = static_cast<IocpAwaiterBase*>(_self);
-        auto err = ::CancelIoEx(self->mHandle, self->overlapped());
-        self->mStopRequested = true;
-        if (!err) {
-            ILIAS_WARN("IOCP", "CancelIoEx failed, Error: {}", err2str(::GetLastError()));
-        }
-    }
+
 #if !defined(ILIAS_NO_FORMAT)
     static auto err2str(DWORD err) -> std::string {
         if (err == ERROR_SUCCESS) {
@@ -139,7 +139,6 @@ private:
     };
     ::DWORD mError = 0;
     ::DWORD mBytesTransferred = 0;
-    ::BOOL  mStopRequested = false;
     runtime::CoroHandle mCaller;
     runtime::StopRegistration mRegistration;
 template <typename T>

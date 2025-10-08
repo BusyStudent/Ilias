@@ -257,7 +257,7 @@ ILIAS_TEST(Net, Tcp) {
     {
         auto listener = (co_await TcpListener::bind("127.0.0.1:0")).value();
         auto endpoint = listener.localEndpoint().value();
-        {
+        { // Test cancel
             auto client = [&]() -> Task<void> {
                 auto strean =  (co_await TcpStream::connect(endpoint)).value();
                 EXPECT_TRUE(co_await strean.writeAll("Hello, World!"_bin));
@@ -295,6 +295,14 @@ ILIAS_TEST(Net, Udp) {
         auto handle = spawn(client.poll(PollEvent::In));
         handle.stop();
         EXPECT_FALSE((co_await std::move(handle)).has_value());
+    }
+
+    // Test cancel by listener
+    {
+        auto handle = spawn(client.poll(PollEvent::In));
+        co_await sleep(10ms); // Make sure the poll actually submitted
+        client.cancel();
+        EXPECT_EQ(co_await std::move(handle), Err(std::errc::operation_canceled));
     }
 
     // Test send data

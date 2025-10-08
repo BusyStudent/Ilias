@@ -1,11 +1,12 @@
 // INTERNAL !!!
 #pragma once
-#include <ilias/runtime/executor.hpp>
-#include <ilias/runtime/token.hpp>
-#include <ilias/runtime/await.hpp>
-#include <functional>
+#include <ilias/runtime/executor.hpp> // Executor
+#include <ilias/runtime/capture.hpp> // CaptureSource, StackFrame
+#include <ilias/runtime/token.hpp> // StopToken
+#include <ilias/runtime/await.hpp> // Awaitable
 #include <coroutine> // std::coroutine_handle<>
 #include <exception> // std::current_exception
+#include <concepts> // std::invocable
 #include <utility> // std::exchange
 
 ILIAS_NS_BEGIN
@@ -69,6 +70,16 @@ public:
         mUser = user;
     }
 
+    // Get the stacktrace of the ctxt
+    auto stacktrace() const noexcept {
+#if defined(ILIAS_CORO_TRACE)
+        return std::vector<StackFrame> { mFrames.rbegin(), mFrames.rend() };
+#else
+        return std::vector<StackFrame> {};
+#endif // defined(ILIAS_CORO_TRACE)
+    }
+
+    // Memory pool for coroutines (maybe.)
     auto operator new(size_t n) -> void * {
         return allocate(n);
     }
@@ -82,6 +93,9 @@ private:
     void      (*mStoppedHandler)(CoroContext &) = nullptr; // Called when coroutine is stopped
     void       *mUser = nullptr;                           // The user data, useful in the callback
     bool        mStopped = false;
+    [[ILIAS_NO_UNIQUE_ADDRESS]]                            // To make it as 0-sized when disabled
+    StackFrameVec mFrames;                                 // The frames of the coroutine,
+friend class CoroPromise;
 friend class CoroHandle;
 };
 
@@ -90,16 +104,28 @@ class CoroPromise {
 public:
     CoroPromise() = default;
     CoroPromise(const CoroPromise &) = delete;
+    ~CoroPromise() noexcept = default;
 
     // std coroutine interface
-    auto initial_suspend() noexcept -> std::suspend_always {
-        return {};
+    auto initial_suspend() noexcept {
+        struct Awaiter {
+            auto await_ready() noexcept { return false; }
+            auto await_suspend(std::coroutine_handle<> handle) noexcept {}
+            auto await_resume() noexcept { self.init(); }
+            CoroPromise &self;
+        };
+        return Awaiter {*this};
     }
 
     auto final_suspend() noexcept -> SwitchCoroutine {
         if (mCompletionHandler) {
             mCompletionHandler(*mContext);
         }
+#if defined(ILIAS_CORO_TRACE)
+        if (mContext->mFrames.size() > 0 && mContext->mFrames.back().address() == this) { // Cleanup the frame belong to us
+            mContext->mFrames.pop_back();
+        }
+#endif // defined(ILIAS_CORO_TRACE)
         return {mPrevAwaiting};
     }
 
@@ -108,8 +134,12 @@ public:
     }
 
     template <Awaitable T>
-    auto await_transform(T &&awaitable) -> decltype(auto) { // We apply the environment on here
-        if constexpr (requires { awaitable.setContext(*mContext); }) { // It support it
+    auto await_transform(T &&awaitable, CaptureSource source = {}) -> decltype(auto) { // We apply the environment on here
+        if constexpr (requires { awaitable.setContext(*mContext, source); }) { // It support setContext & with source
+            awaitable.setContext(*mContext, source);
+        }
+        if constexpr (requires { awaitable.setContext(*mContext); }) { // It support setContext
+            static_cast<void>(source);
             awaitable.setContext(*mContext);
         }
         return std::forward<T>(awaitable);
@@ -127,6 +157,15 @@ public:
         }
     }
 
+    // Doing sth before the coroutine starts
+    auto init() noexcept -> void {
+        ILIAS_ASSERT_MSG(mContext, "Coroutine context must be set before coroutine starts");
+#if defined(ILIAS_CORO_TRACE)
+        mContext->mFrames.push_back(StackFrame {this, "", toLocation(mCreation)});
+#endif // defined(ILIAS_CORO_TRACE)
+    }
+
+    // Memory pool for coroutines (maybe.)
     auto operator new(size_t n) -> void * {
         return allocate(n);
     }
@@ -137,9 +176,11 @@ public:
 private:
     CoroContext       *mContext = nullptr;
     std::exception_ptr mException = nullptr;
-    void (*mCompletionHandler)(CoroContext &) = nullptr; // Called when coroutine is completed, stopped is not completed
-protected: // protected ..., write by Generator :(
-    std::coroutine_handle<> mPrevAwaiting = std::noop_coroutine();
+    void             (*mCompletionHandler)(CoroContext &) = nullptr; // Called when coroutine is completed, stopped is not completed
+protected: // protected ...
+    [[ILIAS_NO_UNIQUE_ADDRESS]] // The CaptureSource will be std::monostate if disabled, so add it
+    CaptureSource           mCreation = {}; // The source of the coroutine creation
+    std::coroutine_handle<> mPrevAwaiting = std::noop_coroutine(); // write by Generator :(
 friend class CoroHandle;
 };
 
@@ -224,12 +265,16 @@ public:
         return mHandle;
     }
 
+    // Allow comparison
+    auto operator <=>(const CoroHandle &other) const noexcept = default;
+
+    // Check if the handle is valid
     explicit operator bool() const noexcept {
         return bool(mHandle);
     }
 private:
     std::coroutine_handle<> mHandle;
-    CoroPromise *mPromise = nullptr;
+    CoroPromise            *mPromise = nullptr;
 friend class std::hash<CoroHandle>;
 };
 
@@ -240,6 +285,7 @@ namespace this_coro {
 
 using runtime::CoroContext;
 using runtime::CoroHandle;
+using runtime::StackFrame;
 using runtime::StopToken;
 using runtime::Executor;
 
@@ -252,6 +298,7 @@ struct AwaiterBase {
 };
 
 // Get the stop token from the current coroutine ctxt
+[[nodiscard]] 
 inline auto stopToken() noexcept {
     struct Awaiter : AwaiterBase {
         auto await_resume() noexcept -> StopToken {
@@ -263,6 +310,7 @@ inline auto stopToken() noexcept {
 }
 
 // Check current coroutine is requested to stop
+[[nodiscard]] 
 inline auto isStopRequested() noexcept {
     struct Awaiter : AwaiterBase {
         auto await_resume() noexcept -> bool {
@@ -274,6 +322,7 @@ inline auto isStopRequested() noexcept {
 }
 
 // Get the executor
+[[nodiscard]] 
 inline auto executor() noexcept {
     struct Awaiter : AwaiterBase {
         auto await_resume() noexcept -> Executor & {
@@ -285,6 +334,7 @@ inline auto executor() noexcept {
 }
 
 // Try set the context stopped, it only work when the stop was requested
+[[nodiscard]] 
 inline auto stopped() noexcept {
     struct Awaiter : AwaiterBase {
         auto await_ready() noexcept { // If stop requested, enter the stopped state
@@ -300,6 +350,7 @@ inline auto stopped() noexcept {
 }
 
 // Yield the current coroutine, it will be resumed in the executor
+[[nodiscard]] 
 inline auto yield() noexcept {
     struct Awaiter {
         auto await_ready() noexcept { return false; }
@@ -312,6 +363,7 @@ inline auto yield() noexcept {
 
 // Get the current coroutine context and process it to an callback
 template <typename Fn> requires (std::invocable<Fn, CoroContext &>)
+[[nodiscard]]
 inline auto withContext(Fn fn) noexcept {
     struct Awaiter : AwaiterBase {
         Awaiter(Fn fn) : mFn(std::move(fn)) {}
@@ -324,6 +376,18 @@ inline auto withContext(Fn fn) noexcept {
     };
     
     return Awaiter { std::move(fn) };
+}
+
+// Get the current virtual callstack (empty on disabled)
+[[nodiscard]]
+inline auto stacktrace() noexcept {
+    struct Awaiter : AwaiterBase {
+        auto await_resume() noexcept {
+            return mCtxt->stacktrace();
+        }
+    };
+
+    return Awaiter {};
 }
 
 } // namespace this_coro

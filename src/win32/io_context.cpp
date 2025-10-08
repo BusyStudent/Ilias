@@ -43,6 +43,11 @@ public:
         int type = 0;
         int protocol = 0;
     } sock;
+
+    // For Afd Poll
+    struct {
+        intrusive::List<AfdPollAwaiter> awaiters;
+    } afd;
 };
 
 IocpContext::IocpContext() : mNt(ntdll()) {
@@ -278,12 +283,20 @@ auto IocpContext::removeDescriptor(IoDescriptor *descriptor) -> IoResult<void> {
 auto IocpContext::cancel(IoDescriptor *fd) -> IoResult<void> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
     ILIAS_TRACE("IOCP", "Cancelling fd: {}", nfd->handle);
+
+    // Cancxel normal iocp base io
     if (!CancelIoEx(nfd->handle, nullptr)) {
         auto err = ::GetLastError();
         if (err != ERROR_NOT_FOUND) { //< It's ok if the Io is not found, no any pending IO
             ILIAS_WARN("IOCP", "Failed to cancel Io on fd: {}, error: {}", nfd->handle, err);
             return Err(SystemError(err));
         }
+    }
+    // Cancel poll operation
+    for (auto iter = nfd->afd.awaiters.begin(); iter != nfd->afd.awaiters.end(); ) {
+        auto &awaiter = *iter;
+        iter = nfd->afd.awaiters.erase(iter);
+        awaiter.cancel();
     }
     return {};
 }
@@ -390,7 +403,9 @@ auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     if (nfd->type != IoDescriptor::Socket || mAfdDevice == INVALID_HANDLE_VALUE) {
         co_return Err(IoError::OperationNotSupported);
     }
-    co_return co_await AfdPollAwaiter(mAfdDevice, nfd->sockfd, events);
+    auto awaiter = AfdPollAwaiter(mAfdDevice, nfd->sockfd, events);
+    nfd->afd.awaiters.push_back(awaiter);
+    co_return co_await awaiter;
 }
 
 #pragma region NamedPipe
