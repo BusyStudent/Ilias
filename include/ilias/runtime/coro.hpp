@@ -38,7 +38,7 @@ public:
 
     // Request to stop the coroutine
     auto stop() noexcept {
-        mStopSource.request_stop();
+        return mStopSource.request_stop();
     }
 
     // Check if the coroutine is stopped
@@ -122,9 +122,9 @@ public:
             mCompletionHandler(*mContext);
         }
 #if defined(ILIAS_CORO_TRACE)
-        if (mContext->mFrames.size() > 0 && mContext->mFrames.back().address() == this) { // Cleanup the frame belong to us
-            mContext->mFrames.pop_back();
-        }
+        // Cleanup the frame belong to us
+        ILIAS_ASSERT(!mContext->mFrames.empty());
+        mContext->mFrames.pop_back();
 #endif // defined(ILIAS_CORO_TRACE)
         return {mPrevAwaiting};
     }
@@ -161,7 +161,7 @@ public:
     auto init() noexcept -> void {
         ILIAS_ASSERT_MSG(mContext, "Coroutine context must be set before coroutine starts");
 #if defined(ILIAS_CORO_TRACE)
-        mContext->mFrames.push_back(StackFrame {this, "", toLocation(mCreation)});
+        mContext->mFrames.push_back(StackFrame {"", toLocation(mCreation)});
 #endif // defined(ILIAS_CORO_TRACE)
     }
 

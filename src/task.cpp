@@ -1,3 +1,4 @@
+#include <ilias/platform.hpp> // PlatformContext
 #include <ilias/task.hpp>
 #include <utility> // std::exchange
 #include <atomic> // std::atomic_ref
@@ -361,6 +362,55 @@ auto FinallyAwaiterBase::onFinallyCompletion() -> void {
     else { // Switch into caller
         mFinallyCtxt.task().setPrevAwaiting(mCaller);
     }
+}
+
+#pragma region Thread
+auto ThreadBase::start() -> void {
+    if (!mInit) {
+        mInit = []() -> Executor * {
+            return new PlatformContext;
+        };
+    }
+    mThread = std::thread([this]() {
+        // Make the executor
+        auto executor = std::unique_ptr<Executor> { mInit() };
+        executor->install();
+
+        // Start
+        auto taskHandle = spawn(mInvoke(*this));
+        auto stopHandle = StopHandle {taskHandle};
+        auto cb = runtime::StopCallback(mSource.get_token(), [&]() {
+            // Forward the stop to the task
+            executor->schedule([&]() {
+                stopHandle.stop();
+            }); // We need call it on the current thread
+        });
+
+        // Wait done
+        try {
+            std::move(taskHandle).wait();
+        }
+        catch (...) {
+            mException = std::current_exception();
+        }
+
+        // Ok try wakeup the awaiter
+        mSem.acquire();
+        mCompleted = true;
+        auto caller = mHandle; // Copy it from the critical section
+        mSem.release();
+
+        if (!caller) {
+            return;
+        }
+        caller.executor().schedule([caller, this]() { // Back to the caller thread
+            if (mSource.stop_requested() && caller.isStopRequested()) {
+                caller.setStopped();
+                return;
+            }
+            caller.resume();
+        });
+    });
 }
 
 ILIAS_NS_END

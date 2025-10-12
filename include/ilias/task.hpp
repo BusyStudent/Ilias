@@ -13,6 +13,7 @@
 #include <ilias/task/generator.hpp>
 #include <ilias/task/when_all.hpp>
 #include <ilias/task/when_any.hpp>
+#include <ilias/task/thread.hpp>
 #include <ilias/task/utils.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/task/group.hpp>

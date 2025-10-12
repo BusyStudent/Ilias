@@ -367,6 +367,27 @@ auto fn() -> ilias::Task<void> {
 }
 ```
 
+#### Mutex
+
+```cpp
+auto fn() -> ilias::Task<void> {
+    auto mutex = ilias::Mutex {};
+
+    // Mutex加锁的结果是MutexGuard, 析构会自动释放锁
+    {
+      auto guard = co_await mutex.lock();
+      guard.unlock(); // 提早释放
+    }
+
+    // 有时候 用户有手动管理锁的需求
+    {
+        auto guard = co_await mutex.lock()
+        guard.leak(); // 把释放的责任交给用户
+        mutex.unlockRaw(); // 手动释放锁
+    }
+}
+```
+
 #### TaskGroup
 
 ```cpp

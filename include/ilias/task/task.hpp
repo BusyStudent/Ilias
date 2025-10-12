@@ -435,7 +435,7 @@ private:
 
 // Tags here
 struct ToTaskTags {};
-struct SyncWaitTags {};
+struct BlockingWaitTags {};
 
 } // namespace task
 
@@ -492,7 +492,7 @@ public:
      * 
      * @return T 
      */
-    auto wait() && -> T {
+    auto wait() -> T {
         auto context = task::TaskBlockingContext(_leak());
         context.enter();
         return context.value<T>();
@@ -561,14 +561,14 @@ public:
     auto stop() const { return mPtr->stop(); }
 
     // Blocking wait for the task to be done, nullopt on task stopped
-    auto wait() && -> Option<T> { 
+    auto wait() -> Option<T> { 
         auto ptr = std::exchange(mPtr, nullptr);
         ptr->enter();
         return ptr->value<T>();
     }
 
     // Get the internal context ptr
-    auto _leak() && -> task::Rc<task::TaskSpawnContext> {
+    auto _leak() -> task::Rc<task::TaskSpawnContext> {
         return std::exchange(mPtr, nullptr);
     }
 
@@ -580,6 +580,12 @@ public:
     auto operator =(const WaitHandle &) -> WaitHandle & = delete;
     auto operator =(WaitHandle &&other) -> WaitHandle & = default;
 
+    // Convert to stop handle
+    operator StopHandle() {
+        return StopHandle {mPtr};
+    }
+
+    // Check the wait handle is valid
     explicit operator bool() const noexcept {
         return bool(mPtr);
     }
@@ -649,11 +655,11 @@ inline auto toTask() -> task::ToTaskTags {
 
 // Blocking wait an awaitable complete
 template <Awaitable T>
-inline auto syncWait(T awaitable) -> AwaitableResult<T> {
+inline auto blockingWait(T awaitable) -> AwaitableResult<T> {
     return toTask(std::move(awaitable)).wait();
 }
 
-inline auto syncWait() -> task::SyncWaitTags {
+inline auto blockingWait() -> task::BlockingWaitTags {
     return {};
 }
 
@@ -670,8 +676,8 @@ inline auto operator |(T awaitable, task::ToTaskTags) {
 }
 
 template <Awaitable T>
-inline auto operator |(T awaitable, task::SyncWaitTags) {
-    return syncWait(std::move(awaitable));
+inline auto operator |(T awaitable, task::BlockingWaitTags) {
+    return blockingWait(std::move(awaitable));
 }
 
 ILIAS_NS_END

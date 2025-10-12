@@ -1,3 +1,4 @@
+#include <ilias/task/thread.hpp>
 #include <ilias/task/group.hpp>
 #include <ilias/task/utils.hpp>
 #include <ilias/task/scope.hpp>
@@ -197,6 +198,32 @@ ILIAS_TEST(Task, AsyncLifetime) {
     auto ptr = makeAsyncLifetime<Value>();
     co_await this_coro::yield();
     co_return;
+}
+
+ILIAS_TEST(Task, Thread) {
+    auto sleep1h = []() -> Task<void> {
+        co_await sleep(1h);  
+    };
+
+    auto exec = UseExecutor<EventLoop>();
+    auto thread = Thread(exec, [](int in) -> Task<int> {
+        co_return in;
+    }, 42);
+    auto res = co_await thread.join();
+    EXPECT_EQ(res, 42);
+
+    // Test stop
+    auto thread2 = Thread(sleep1h);
+    thread2.stop();
+    EXPECT_FALSE(co_await thread2.join()); // nullopt
+
+    // Test stop from upper
+    auto fn = [&]() -> Task<void> {
+        co_await Thread(sleep1h);
+    };
+    auto handle = spawn(fn());
+    handle.stop();
+    EXPECT_FALSE(co_await std::move(handle));
 }
 
 auto main(int argc, char** argv) -> int {

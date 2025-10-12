@@ -73,7 +73,7 @@ TEST(Task, SpawnAwait) {
     auto fn = []() -> Task<void> {
         co_await spawn(testTask());
     };
-    fn() | syncWait(); // Try tags invoke here
+    fn() | blockingWait(); // Try tags invoke here
 }
 
 TEST(Task, SpawnBlocking) {

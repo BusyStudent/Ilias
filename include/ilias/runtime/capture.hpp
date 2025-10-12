@@ -16,16 +16,14 @@ class StackFrame {
 public:
     StackFrame() = default;
     StackFrame(const StackFrame &) = default;
-    StackFrame(void *ptr, std::string_view msg, std::source_location where) : mPtr(ptr), mMsg(msg), mWhere(where) {}
+    StackFrame(std::string_view msg, std::source_location where) : mMsg(msg), mWhere(where) {}
 
-    auto address() const noexcept { return mPtr; }
     auto message() const noexcept { return std::string_view(mMsg); }
     auto location() const noexcept { return mWhere; }
     auto toString() const -> std::string {
         return std::string(mWhere.function_name()) + " at " + mWhere.file_name() + ":" + std::to_string(mWhere.line()) + " (" + mMsg + ")";
     }
 private:
-    void                *mPtr = nullptr; // The pointer to the coro frame (nullptr on virtual frame)
     std::string          mMsg; // Extra message for debugging
     std::source_location mWhere; // The location of the frame
 };

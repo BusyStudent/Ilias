@@ -107,7 +107,7 @@ auto threadpool::submit(CallableRef &callable) -> void {
         return 0;
     };
     if (!::QueueUserWorkItem(invoke, &callable, WT_EXECUTEDEFAULT)) {
-        ILIAS_THROW(std::system_error(std::error_code(GetLastError(), std::system_category())));
+        ILIAS_THROW(std::system_error(std::error_code(GetLastError(), std::system_category()), "Faliled to submit to thread pool"));
     }
 #else // Use our own thread pool
     struct ThreadPool {
