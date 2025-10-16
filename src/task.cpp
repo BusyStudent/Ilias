@@ -377,18 +377,18 @@ auto ThreadBase::start() -> void {
         executor->install();
 
         // Start
-        auto taskHandle = spawn(mInvoke(*this));
-        auto stopHandle = StopHandle {taskHandle};
-        auto cb = runtime::StopCallback(mSource.get_token(), [&]() {
-            // Forward the stop to the task
-            executor->schedule([&]() {
-                stopHandle.stop();
-            }); // We need call it on the current thread
-        });
-
-        // Wait done
         try {
-            std::move(taskHandle).wait();
+            auto taskHandle = spawn(mInvoke(*this));
+            auto stopHandle = StopHandle {taskHandle};
+            auto cb = runtime::StopCallback(mSource.get_token(), [&]() {
+                // Forward the stop to the task
+                executor->schedule([&]() {
+                    stopHandle.stop();
+                }); // We need call it on the current thread
+            });
+
+            // Wait done
+            taskHandle.wait();
         }
         catch (...) {
             mException = std::current_exception();

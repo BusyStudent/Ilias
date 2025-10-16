@@ -285,4 +285,9 @@ Thread(Fn fn, Args &&...args) -> Thread<typename std::invoke_result_t<Fn, Args..
 template <typename E, typename Fn, typename ...Args>
 Thread(UseExecutor<E>, Fn fn, Args &&...args) -> Thread<typename std::invoke_result_t<Fn, Args...>::value_type>;
 
+template <typename E>
+auto useExecutor() -> UseExecutor<E> {
+    return {};
+}
+
 ILIAS_NS_END

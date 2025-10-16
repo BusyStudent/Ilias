@@ -14,15 +14,17 @@
 #include <ilias/task/task.hpp>
 #include <ilias/result.hpp>
 #include <ilias/log.hpp>
+#include <semaphore> // std::binary_semaphore
 #include <optional>
 #include <concepts>
-#include <memory>
+#include <memory> // std::unique_ptr
+#include <atomic> // std::atomic
+#include <mutex> // std::lock_guard
 
 ILIAS_NS_BEGIN
 
-
 /**
- * @brief Channel for sending one value, the sender and receiver are not copyable, only movable, it is not thread-safe
+ * @brief Channel for sending one value, the sender and receiver are not copyable, only movable, it is thread-safe
  * 
  */
 namespace oneshot {
@@ -41,19 +43,67 @@ public:
             receiver.schedule();
             receiver = nullptr;
         }
+        finally.store(true);
+        finally.notify_one();
     }
 
-    runtime::CoroHandle receiver; // The caller that is suspended on the recv operation
-    std::optional<T> value;
-    bool senderClose = false;
-    bool valueGot = false;
+    auto lock() {
+        sem.acquire();
+    }
+
+    auto unlock() {
+        sem.release();
+    }
+
+    runtime::CoroHandle   receiver; // The caller that is suspended on the recv operation
+    std::optional<T>      value;
+    std::binary_semaphore sem {1}; // used as a mutex, it is smaller than std::mutex, replace it to our futex mutex if needed?
+
+    // States, TODO: Compress the state to a single byte?
+    std::atomic<bool>     finally       {false}; // For blocking recv, set true when sender close or value is set
+    bool                  valueGot      {false}; // Did the receiver get the value ?(alreay got)
+    bool                  senderClose   {false};
+    bool                  receiverClose {false};
+};
+
+struct ChanSenderDeleter {
+    template <typename T>
+    auto operator()(Channel<T> *chan) -> void {
+        bool delete_ = false;
+        {
+            auto locker = std::lock_guard(*chan);
+            chan->senderClose = true;
+            chan->notify(); // Notify the receiver we are closed
+            delete_ = chan->receiverClose; // Reciever already closed, no-one own the data block, delete!
+        }
+
+        if (delete_) {
+            delete chan;
+        }
+    }
+};
+
+struct ChanReceiverDeleter {
+    template <typename T>
+    auto operator()(Channel<T> *chan) -> void {
+        bool delete_ = false;
+        {
+            auto locker = std::lock_guard(*chan);
+            chan->receiverClose = true;
+            delete_ = chan->senderClose; // Sender already closed, no-one own the data block, delete!
+        }
+
+        if (delete_) {
+            delete chan;
+        }
+    }
 };
 
 template <typename T>
-using ChanRef = std::shared_ptr<Channel<T> >;
+using ChanSender = std::unique_ptr<Channel<T>, ChanSenderDeleter>;
 
 template <typename T>
-using ChanWeak = std::weak_ptr<Channel<T> >;
+using ChanReceiver = std::unique_ptr<Channel<T>, ChanReceiverDeleter>;
 
 /**
  * @brief Do the recv operation
@@ -63,7 +113,9 @@ using ChanWeak = std::weak_ptr<Channel<T> >;
 template <typename T>
 class RecvAwaiter {
 public:
-    RecvAwaiter(ChanRef<T> chan) : mChan(std::move(chan)) { }
+    RecvAwaiter(ChanReceiver<T> chan) : mChan(std::move(chan)), mLocker(*mChan) { } // GOT ownship and lock here
+    RecvAwaiter(RecvAwaiter &&other) = default;
+    ~RecvAwaiter() = default;
 
     auto await_ready() const -> bool { 
         // Already sended or broken
@@ -72,29 +124,38 @@ public:
 
     auto await_suspend(runtime::CoroHandle caller) -> void {
         mChan->receiver = caller;
+        mLocker.unlock(); // Unlock the channel, lock again when resume or stopRequested
         mReg.register_<&RecvAwaiter::onStopRequested>(caller.stopToken(), this);
     }
 
-    auto await_resume() -> std::optional<T>{
+    auto await_resume() -> std::optional<T> {
+        if (!mLocker.owns_lock()) {
+            mLocker.lock();
+        }
         ILIAS_ASSERT_MSG(!mChan->valueGot, "Double call on recv ?, value already got");
         ILIAS_ASSERT(!mChan->receiver);
 
-        if (mChan->senderClose) {
-            return std::nullopt;
+        if (mChan->value) { // Value is set
+            mChan->valueGot = true;
+            return std::move(*mChan->value);
         }
-        mChan->valueGot = true;
-        return std::move(*mChan->value);
+        ILIAS_ASSERT(mChan->senderClose); // Should be closed, if not, wrong state
+        return std::nullopt;
     }
 private:
-    auto onStopRequested() -> void {
+    auto onStopRequested() -> void { // On the executor thread
+        mLocker.lock();
         auto handle = std::exchange(mChan->receiver, nullptr);
+        mLocker.unlock();
+
         if (handle) { // Not already scheduled
             handle.setStopped();
         }
     }
 
-    ChanRef<T> mChan;
-    runtime::StopRegistration    mReg;
+    ChanReceiver<T>               mChan;
+    std::unique_lock<Channel<T> > mLocker; // Lock the channel, unlock before destroy the chan
+    runtime::StopRegistration     mReg;
 };
 
 } // namespace detail
@@ -145,26 +206,34 @@ public:
 
     [[nodiscard]]
     auto isClosed() const -> bool {
-        return !mChan || mChan->senderClose;
+        if (!mChan) {
+            return true;
+        }
+        auto locker = std::lock_guard(*mChan);
+        return mChan->senderClose;
     }
 
     [[nodiscard]]
     auto isEmpty() const -> bool {
-        return !mChan || !mChan->value.has_value();
+        if (!mChan) {
+            return true;
+        }
+        auto locker = std::lock_guard(*mChan);
+        return !mChan->value.has_value();
     }
 
     /**
-     * @brief Get the value from the channel
+     * @brief Get the value from the channel, it will `CONSUME` the receiver
      * 
      * @return std::optional<T>, nullopt on closed
      */
     [[nodiscard]]
-    auto recv() && {
+    auto recv() {
         return detail::RecvAwaiter<T>(std::move(mChan));
     }
 
     /**
-     * @brief Try to recv the value from the channel
+     * @brief Try to recv the value from the channel, it will `CONSUME` the receiver if success
      * 
      * @return Result<T, TryRecvError> 
      */
@@ -173,11 +242,41 @@ public:
         if (isClosed()) {
             return Err(TryRecvError::Closed);
         }
-        if (mChan->value) {
-            auto ptr = std::move(mChan);
-            return std::move(*ptr->value);
+        auto locker = std::unique_lock(*mChan);
+
+        // Check value
+        if (!mChan->value) {
+            return Err(TryRecvError::Empty);
         }
-        return Err(TryRecvError::Empty);
+
+        // Take the value
+        auto value = std::move(*mChan->value);
+        mChan->valueGot = true;
+
+        // Then, consume the receiver
+        locker.unlock();
+        mChan.reset();
+        return std::move(value);
+    }
+
+    /**
+     * @brief Block until the value is received or the channel is closed
+     * @note It will ```BLOCK``` the thread, so it is not recommended to use it in the async context, use it in sync code
+     * 
+     * @return std::optional<T> nullopt on closed
+     */
+    [[nodiscard]]
+    auto blockingRecv() -> std::optional<T> {
+        mChan->finally.wait(false); // Wait the result
+        auto locker = std::lock_guard(*mChan);
+
+        if (mChan->value) {
+            mChan->valueGot = true;
+            return std::move(*mChan->value);
+        }
+        // Channel is closed
+        ILIAS_ASSERT(mChan->senderClose);
+        return std::nullopt;
     }
 
     auto operator =(Receiver &&) -> Receiver & = default;
@@ -201,9 +300,9 @@ public:
         return bool(mChan);
     }
 private:
-    Receiver(detail::ChanRef<T> ptr) : mChan(std::move(ptr)) { }
+    explicit Receiver(detail::Channel<T> *ptr) : mChan(ptr) { }
 
-    detail::ChanRef<T> mChan;
+    detail::ChanReceiver<T> mChan;
 template <Sendable U>
 friend auto channel() -> Pair<U>;
 };
@@ -220,43 +319,53 @@ public:
     Sender() = default;
     Sender(std::nullptr_t) { }
     Sender(Sender &&other) = default;
-    ~Sender() { close(); }
+    ~Sender() = default;
 
     auto close() -> void {
-        if (auto ptr = mWeak.lock(); ptr) {
-            ptr->senderClose = true;
-            ptr->notify();
-        }
-        mWeak.reset();
+        mChan.reset();
     }
 
     // Check the sender is closed, it is safe to call on an empty sender (empty as closed)
     [[nodiscard]]
     auto isClosed() -> bool {
-        return mWeak.expired();
+        if (!mChan) {
+            return true;
+        }
+        auto locker = std::lock_guard(*mChan);
+        return mChan->senderClose;
     }
 
-    // Send the value to the channel, if closed, return the value as error
+    /**
+     * @brief Send the value to the channel, if closed or already send, return the value as error
+     * 
+     * @param value 
+     * @return Result<void, T> 
+     */
     [[nodiscard]]
-    auto send(T value) const -> Result<void, T> {
-        if (auto ptr = mWeak.lock(); ptr) {
-            if (ptr->value) {
-                return Err(std::move(value));
-            }
-            ptr->value.emplace(std::move(value));
-            ptr->notify();
-            return {};
+    auto send(T value) -> Result<void, T> {
+        if (!mChan) {
+            return Err(std::move(value));
         }
-        return Err(std::move(value));
+
+        auto locker = std::lock_guard(*mChan);
+        if (mChan->value) { // already send
+            return Err(std::move(value));
+        }
+        if (mChan->receiverClose) { // already close
+            return Err(std::move(value));
+        }
+        mChan->value.emplace(std::move(value));
+        mChan->notify();
+        return {};
     }
 
     auto operator =(const Sender &) = delete;
     auto operator =(Sender &&other) -> Sender & = default;
     auto operator <=>(const Sender &) const = default;
 private:
-    Sender(detail::ChanWeak<T> ptr) : mWeak(std::move(ptr)) {}
+    explicit Sender(detail::Channel<T> *ptr) : mChan(ptr) {}
 
-    detail::ChanWeak<T> mWeak;
+    detail::ChanSender<T> mChan;
 template <Sendable U>
 friend auto channel() -> Pair<U>;
 };
@@ -269,7 +378,7 @@ friend auto channel() -> Pair<U>;
  */
 template <Sendable T>
 inline auto channel() -> Pair<T> {
-    auto ptr = std::make_shared<detail::Channel<T> >();
+    auto ptr = new detail::Channel<T>();
     return {
         .sender = Sender<T>(ptr),
         .receiver = Receiver<T>(ptr)

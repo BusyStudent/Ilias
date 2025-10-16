@@ -205,15 +205,23 @@ ILIAS_TEST(Task, Thread) {
         co_await sleep(1h);  
     };
 
-    auto exec = UseExecutor<EventLoop>();
+    // Test normal
+    auto exec = useExecutor<EventLoop>();
     auto thread = Thread(exec, [](int in) -> Task<int> {
         co_return in;
     }, 42);
     auto res = co_await thread.join();
     EXPECT_EQ(res, 42);
 
+    // Test exception
+    auto thread2 = Thread(exec, []() -> Task<void> {
+        throw std::runtime_error("test");
+        co_return;
+    });
+    EXPECT_THROW(co_await thread2.join(), std::runtime_error);
+
     // Test stop
-    auto thread2 = Thread(sleep1h);
+    thread2 = Thread(sleep1h);
     thread2.stop();
     EXPECT_FALSE(co_await thread2.join()); // nullopt
 
@@ -224,6 +232,13 @@ ILIAS_TEST(Task, Thread) {
     auto handle = spawn(fn());
     handle.stop();
     EXPECT_FALSE(co_await std::move(handle));
+
+    // Test finish before wait
+    auto thread3 = Thread(exec, []() -> Task<void> {
+        co_return; 
+    });
+    co_await sleep(10ms);
+    EXPECT_TRUE(co_await thread3.join());
 }
 
 auto main(int argc, char** argv) -> int {

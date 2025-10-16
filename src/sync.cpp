@@ -10,6 +10,7 @@ using namespace sync;
 #pragma region WaitQueue
 WaitQueue::WaitQueue() noexcept = default;
 WaitQueue::~WaitQueue() {
+    ILIAS_ASSERT_MSG(mSem.try_acquire(), "WaitQueue destroyed with locked ?");
     if (!mAwaiters.empty()) {
         ILIAS_ERROR("Sync", "WaitQueue destroyed with awaiters, did you destroy a mutex or event still locked? / waiting?");
         ILIAS_TRAP(); // Try raise the debugger
@@ -18,18 +19,24 @@ WaitQueue::~WaitQueue() {
 }
 
 auto WaitQueue::wakeupOne() -> void {
-    if (!mAwaiters.empty()) {
-        auto &awaiter = mAwaiters.front();
-        mAwaiters.pop_front();
-        awaiter.onWakeupRaw();
+    for (auto it = mAwaiters.begin(); it != mAwaiters.end(); ++it) {
+        auto &awaiter = *it;
+        if (awaiter.onWakeupRaw()) { // Got one
+            mAwaiters.erase(it);
+            return;
+        }
     }
 }
 
 auto WaitQueue::wakeupAll() -> void {
     for (auto it = mAwaiters.begin(); it != mAwaiters.end(); ) {
         auto &awaiter = *it;
-        it = mAwaiters.erase(it);
-        awaiter.onWakeupRaw();
+        if (awaiter.onWakeupRaw()) {
+            it = mAwaiters.erase(it);
+        }
+        else {
+            ++it;
+        }
     }
 }
 auto AwaiterBase::await_suspend(runtime::CoroHandle caller) -> void {
@@ -38,11 +45,15 @@ auto AwaiterBase::await_suspend(runtime::CoroHandle caller) -> void {
     mReg.register_<&AwaiterBase::onStopRequested>(caller.stopToken(), this);
 }
 
-auto AwaiterBase::onWakeupRaw() -> void {
-    mCaller.schedule();
+auto AwaiterBase::onWakeupRaw() -> bool {
     if (mOnWakeup) {
-        mOnWakeup(*this);
+        if (!mOnWakeup(*this)) {
+            return false;
+        }
     }
+    // Default behavior is true
+    mCaller.schedule();
+    return true;
 }
 
 auto AwaiterBase::onStopRequested() -> void {

@@ -4,6 +4,8 @@
 #include <ilias/detail/intrusive.hpp> // List, Node
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp>
+#include <semaphore> // std::binary_semaphore
+#include <concepts> // srd::convertible_to
 
 ILIAS_NS_BEGIN
 
@@ -21,13 +23,13 @@ public:
     ILIAS_API
     auto await_suspend(runtime::CoroHandle caller) -> void;
 private:
-    auto onWakeupRaw() -> void;
+    auto onWakeupRaw() -> bool;
     auto onStopRequested() -> void;
 
     WaitQueue &mQueue;
     runtime::CoroHandle mCaller;
     runtime::StopRegistration mReg;
-    void (*mOnWakeup)(AwaiterBase &self) = nullptr; // Additional wakeup handler for child classes
+    bool (*mOnWakeup)(AwaiterBase &self) = nullptr; // Additional wakeup handler for child classes, return false on wakeup condition is not satisfied
 template <typename T>
 friend class WaitAwaiter;
 friend class WaitQueue;
@@ -40,12 +42,13 @@ public:
     WaitQueue(const WaitQueue &) = delete;
     ~WaitQueue();
 
-    // Wakeup one, no-op on empty queue
+    // Wakeup one, no-op on empty queue, it will skip the awaiter (if not satisfied the predicate) in the queue
     auto wakeupOne() -> void;
     auto wakeupAll() -> void;
     auto operator =(const WaitQueue &) = delete;
 private:
     intrusive::List<AwaiterBase> mAwaiters;
+    std::binary_semaphore        mSem {1}; // Used as a mutex to protect the mAwaiters
 friend class AwaiterBase;
 };
 
@@ -53,14 +56,27 @@ template <typename T>
 class WaitAwaiter : public AwaiterBase {
 public:
     WaitAwaiter(WaitQueue &queue) : AwaiterBase(queue) {
-        if constexpr (requires(T &t) { t.onWakeup(); }) { // Check if T has onWakeup
+        // Check if T has onWakeup
+        if constexpr (requires(T &t) { { t.onWakeup() } -> std::convertible_to<bool>; }) { // return predicate
             mOnWakeup = proxy;
+        }
+        else if constexpr (requires(T &t) { { t.onWakeup() } -> std::same_as<void>; }) { // no predicate
+            mOnWakeup = proxy2;
+        }
+        else if constexpr (requires(T &t) { t.onWakeup(); }) { // illegal return type
+            static_assert(std::is_same_v<void, T>, "T::onWakeup() must return bool or void");
         }
     }
 private:
     template <char = 0>
-    static auto proxy(AwaiterBase &self) -> void {
+    static auto proxy(AwaiterBase &self) -> bool {
+        return static_cast<T &>(self).onWakeup(); // Call onWakeup
+    }
+
+    template <char = 0>
+    static auto proxy2(AwaiterBase &self) -> bool {
         static_cast<T &>(self).onWakeup(); // Call onWakeup
+        return true;
     }
 };
 
