@@ -6,6 +6,7 @@
 #include <ilias/task.hpp>
 #include <ilias/testing.hpp>
 #include <gtest/gtest.h>
+#include <latch>
 
 using namespace ILIAS_NAMESPACE;
 using namespace std::literals;
@@ -61,6 +62,30 @@ ILIAS_TEST(Sync, MutexCancel) {
     auto handle = spawn(taskA());
     handle.stop();
     EXPECT_FALSE(co_await std::move(handle));
+}
+
+ILIAS_TEST(Sync, MutexCrossThread) {
+    Mutex mtx;
+    int value = 0;
+
+    auto latch = std::latch {2};
+    auto exec = useExecutor<EventLoop>();
+    auto thread = Thread(exec, [&]() -> Task<void> {
+        latch.arrive_and_wait();
+        for (int i = 0; i < 100000; ++i) {
+            auto lock = co_await mtx.lock();
+            value += 1;
+        }
+    });
+
+    latch.arrive_and_wait();
+    for (int i = 0; i < 100000; ++i) {
+        auto lock = co_await mtx.lock();
+        value += 1;
+    }
+
+    co_await thread.join();
+    EXPECT_EQ(value, 200000);
 }
 
 // Locked

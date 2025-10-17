@@ -4,6 +4,7 @@
 #include <ilias/runtime/coro.hpp>
 #include <ilias/log.hpp>
 #include <optional> // std::optional
+#include <atomic> // std::atomic<bool>
 
 ILIAS_NS_BEGIN
 
@@ -16,9 +17,12 @@ class [[nodiscard]] MutexAwaiter : public WaitAwaiter<MutexAwaiter> {
 public:
     MutexAwaiter(Mutex &m);
 
-    auto await_ready() const -> bool;
+    auto await_ready() -> bool;
     auto await_resume() -> MutexGuard;
+    auto onWakeup() -> bool; // Do try lock here
 private:
+    auto tryLock() -> bool;
+
     Mutex &mMutex;
 friend class Mutex;
 };
@@ -68,7 +72,7 @@ private:
 };
 
 /**
- * @brief The coroutine mutex, not thread-safe
+ * @brief The coroutine mutex, it is thread-safe
  * 
  */
 class Mutex {
@@ -79,12 +83,12 @@ public:
     ~Mutex() = default;
 
     /**
-     * @brief Check if the mutex is locked
+     * @brief Check if the mutex is locked, internal use for assert
      * 
      * @return true 
      * @return false 
      */
-    auto isLocked() const noexcept -> bool { return mLocked; }
+    auto isLocked() const noexcept -> bool { return mLocked.load(std::memory_order_relaxed); }
 
     /**
      * @brief Try to lock the mutex
@@ -93,11 +97,17 @@ public:
      */
     [[nodiscard]]
     auto tryLock() noexcept -> std::optional<MutexGuard> {
-        if (mLocked) {
-            return std::nullopt;
+        bool expected = false;
+        if (mLocked.compare_exchange_strong(
+                expected, 
+                true, 
+                std::memory_order_acquire, 
+                std::memory_order_relaxed
+            )) 
+        {
+            return MutexGuard(*this);
         }
-        mLocked = true;
-        return MutexGuard(*this);
+        return std::nullopt;
     }
 
     /**
@@ -106,8 +116,8 @@ public:
      * 
      */
     auto unlockRaw() -> void {
-        ILIAS_ASSERT_MSG(mLocked, "Unlock a unlocked mutex");
-        mLocked = false;
+        auto locked = mLocked.exchange(false, std::memory_order_release);
+        ILIAS_ASSERT_MSG(locked, "Unlock a unlocked mutex");
         mQueue.wakeupOne();
     }
 
@@ -131,8 +141,8 @@ public:
         return lock();
     }
 private:
-    sync::WaitQueue mQueue;
-    bool mLocked = false;
+    sync::WaitQueue   mQueue;
+    std::atomic<bool> mLocked {false};
 friend class sync::MutexAwaiter;
 };
 
@@ -221,13 +231,26 @@ inline sync::MutexAwaiter::MutexAwaiter(Mutex &m) : WaitAwaiter(m.mQueue), mMute
 
 }
 
-inline auto sync::MutexAwaiter::await_ready() const -> bool {
-    return !mMutex.isLocked(); // If the mutex is not locked, we can get the lock immediately
+inline auto sync::MutexAwaiter::await_ready() -> bool {
+    return tryLock();
 }
 
 inline auto sync::MutexAwaiter::await_resume() -> MutexGuard {
-    ILIAS_ASSERT(!mMutex.isLocked()); // We can get the lock right now
-    return *mMutex.tryLock();
+    ILIAS_ASSERT(mMutex.isLocked()); // We own the lock
+    return MutexGuard(mMutex);
+}
+
+inline auto sync::MutexAwaiter::tryLock() -> bool {
+    auto lock = mMutex.tryLock();
+    if (lock) {
+        lock->release(); // Move the lock ownship to the awaiter
+        return true;
+    }
+    return false;
+}
+
+inline auto sync::MutexAwaiter::onWakeup() -> bool {
+    return tryLock();
 }
 
 
