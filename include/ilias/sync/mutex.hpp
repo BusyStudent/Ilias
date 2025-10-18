@@ -17,12 +17,9 @@ class [[nodiscard]] MutexAwaiter : public WaitAwaiter<MutexAwaiter> {
 public:
     MutexAwaiter(Mutex &m);
 
-    auto await_ready() -> bool;
     auto await_resume() -> MutexGuard;
     auto onWakeup() -> bool; // Do try lock here
 private:
-    auto tryLock() -> bool;
-
     Mutex &mMutex;
 friend class Mutex;
 };
@@ -43,6 +40,7 @@ public:
 
     auto unlock() -> void;
     auto release() -> void;
+    auto leak() -> void; // as same as release
 private:
     Mutex *mMutex = nullptr;
 };
@@ -66,6 +64,7 @@ public:
 
     auto unlock() -> void { mGuard.unlock(); mValue = nullptr; }
     auto release() -> void { mGuard.release(); mValue = nullptr; }
+    auto leak() -> void { mGuard.leak(); mValue = nullptr; }
 private:
     MutexGuard mGuard;
     T         *mValue = nullptr;
@@ -132,6 +131,25 @@ public:
     }
 
     /**
+     * @brief Blocking lock the mutex, return the lock guard
+     * @note It will ```BLOCK``` the current thread until the mutex is locked
+     * 
+     * @return MutexGuard 
+     */
+    [[nodiscard]]
+    auto blockingLock() noexcept {
+        mQueue.blockingWait([this]() -> bool {
+            auto lock = tryLock();
+            if (lock) {
+                lock->release(); // Move the ownship to self
+                return true;
+            }
+            return false;
+        });
+        return MutexGuard(*this);
+    }
+
+    /**
      * @brief Lock the mutex, return the lock guard
      * 
      * @return MutexGuard 
@@ -195,6 +213,12 @@ public:
     }
 
     [[nodiscard]]
+    auto blockingLock() noexcept {
+        auto guard = mMutex.blockingLock();
+        return LockedGuard<T>(std::move(guard), mValue);
+    }
+
+    [[nodiscard]]
     auto operator co_await() noexcept {
         return lock();
     }
@@ -227,12 +251,12 @@ inline auto MutexGuard::release() -> void {
     mMutex = nullptr;
 }
 
-inline sync::MutexAwaiter::MutexAwaiter(Mutex &m) : WaitAwaiter(m.mQueue), mMutex(m) {
-
+inline auto MutexGuard::leak() -> void {
+    mMutex = nullptr;
 }
 
-inline auto sync::MutexAwaiter::await_ready() -> bool {
-    return tryLock();
+inline sync::MutexAwaiter::MutexAwaiter(Mutex &m) : WaitAwaiter(m.mQueue), mMutex(m) {
+
 }
 
 inline auto sync::MutexAwaiter::await_resume() -> MutexGuard {
@@ -240,17 +264,13 @@ inline auto sync::MutexAwaiter::await_resume() -> MutexGuard {
     return MutexGuard(mMutex);
 }
 
-inline auto sync::MutexAwaiter::tryLock() -> bool {
+inline auto sync::MutexAwaiter::onWakeup() -> bool {
     auto lock = mMutex.tryLock();
     if (lock) {
         lock->release(); // Move the lock ownship to the awaiter
         return true;
     }
     return false;
-}
-
-inline auto sync::MutexAwaiter::onWakeup() -> bool {
-    return tryLock();
 }
 
 

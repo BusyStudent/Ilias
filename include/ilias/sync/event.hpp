@@ -27,6 +27,7 @@ public:
 
     auto await_ready() const -> bool;
     auto await_resume() -> void;
+    auto onWakeup() -> bool;
 private:
     Event &mEvent;
 friend class Event;
@@ -35,14 +36,15 @@ friend class Event;
 } // namespace sync
 
 /**
- * @brief The Coroutine Event object for sync, it is not thread safe
+ * @brief The Coroutine Event object for sync, it is thread safe (manual clear mode, default)
  * 
+ * @note Don't use the ```AutoClear``` mode in multi-thread environment, it may cause the wakup lose
  */
 class Event {
 public:
     enum Flag : uint32_t {
         None      = 0,
-        AutoClear = 1, //< Auto clear the event when set
+        AutoClear = 1, //< Auto clear the event when set, (not thread safe)
     };
 
     Event() = default;
@@ -55,7 +57,7 @@ public:
      * 
      */
     auto clear() -> void {
-        mIsSet = false;
+        mIsSet.store(false, std::memory_order_release);
     }
 
     /**
@@ -63,12 +65,16 @@ public:
      * 
      */
     auto set() -> void {
+        mIsSet.store(true, std::memory_order_release);
         mQueue.wakeupAll();
-        mIsSet = !mAutoClear;
+        if (mAutoClear) { // Clear it
+            mIsSet.store(false, std::memory_order_release);
+        }
     }
 
     /**
      * @brief Set the Auto Clear Attribute
+     * @note This operation is not atomatic, you should set before use the Event
      * 
      * @param autoClear true on auto clear, false on manual clear
      */
@@ -82,7 +88,7 @@ public:
      * @return true 
      * @return false 
      */
-    auto isSet() const -> bool { return mIsSet; }
+    auto isSet() const -> bool { return mIsSet.load(std::memory_order_acquire); }
     
     /**
      * @brief Wait the event to be set
@@ -95,6 +101,18 @@ public:
     }
 
     /**
+     * @brief Block the current thread to wait the event to be set
+     * 
+     * @note It will ```BLOCK``` the current thread
+     */
+    [[nodiscard]]
+    auto blockingWait() noexcept {
+        return mQueue.blockingWait([&]() {
+            return isSet();
+        });
+    }
+
+    /**
      * @brief Waiting the event to be set
      * 
      * @return co_await 
@@ -103,9 +121,9 @@ public:
         return sync::EventAwaiter {*this};
     }
 private:
-    sync::WaitQueue mQueue;
-    bool mIsSet = false;
-    bool mAutoClear = false;
+    sync::WaitQueue   mQueue;
+    std::atomic<bool> mIsSet     {false};
+    bool              mAutoClear {false};
 friend sync::EventAwaiter;
 };
 
@@ -119,6 +137,10 @@ inline auto sync::EventAwaiter::await_ready() const -> bool {
 
 inline auto sync::EventAwaiter::await_resume() -> void {
 
+}
+
+inline auto sync::EventAwaiter::onWakeup() -> bool {
+    return mEvent.isSet();
 }
 
 ILIAS_NS_END

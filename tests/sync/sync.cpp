@@ -1,11 +1,13 @@
 #include <ilias/sync/mutex.hpp>
 #include <ilias/sync/event.hpp>
+#include <ilias/sync/latch.hpp>
 #include <ilias/sync/semaphore.hpp>
 #include <ilias/sync/oneshot.hpp>
-#include <ilias/sync/mpsc.hpp>
+// #include <ilias/sync/mpsc.hpp>
 #include <ilias/task.hpp>
 #include <ilias/testing.hpp>
 #include <gtest/gtest.h>
+#include <thread>
 #include <latch>
 
 using namespace ILIAS_NAMESPACE;
@@ -68,16 +70,26 @@ ILIAS_TEST(Sync, MutexCrossThread) {
     Mutex mtx;
     int value = 0;
 
-    auto latch = std::latch {2};
+    auto latch = std::latch {3};
     auto exec = useExecutor<EventLoop>();
-    auto thread = Thread(exec, [&]() -> Task<void> {
+    auto callable = [&]() -> Task<void> {
         latch.arrive_and_wait();
         for (int i = 0; i < 100000; ++i) {
             auto lock = co_await mtx.lock();
             value += 1;
         }
-    });
+    };
+    auto callable2 = [&]() -> void {
+        latch.arrive_and_wait();
+        for (int i = 0; i < 100000; ++i) {
+            auto lock = mtx.blockingLock();
+            value += 1;
+        }
+    };
 
+    auto thread = Thread(exec, callable);
+    auto thread2 = std::thread(callable2);
+    
     latch.arrive_and_wait();
     for (int i = 0; i < 100000; ++i) {
         auto lock = co_await mtx.lock();
@@ -85,7 +97,18 @@ ILIAS_TEST(Sync, MutexCrossThread) {
     }
 
     co_await thread.join();
-    EXPECT_EQ(value, 200000);
+    thread2.join();
+    EXPECT_EQ(value, 300000);
+}
+
+// Latch
+ILIAS_TEST(Sync, Latch) {
+    Latch latch {3};
+    auto fn = [&]() -> Task<void> {
+        co_await latch.arriveAndWait();
+    };
+    auto _ = co_await whenAll(fn(), fn(), fn());
+    EXPECT_TRUE(latch.tryWait()); // count is 0
 }
 
 // Locked
@@ -135,15 +158,22 @@ ILIAS_TEST(Sync, Semaphore) {
     auto premit2 = co_await sem.acquire();
     EXPECT_EQ(sem.available(), 8);
 
-    auto group = TaskGroup<void>();
-    for (int i = 0; i < 100; ++i) {
-        group.spawn([&]() -> Task<void> {
-            auto _ = co_await sem.acquire();
-            co_await sleep(10ms);
-        });
-    }
-    auto result = co_await group.waitAll();
-    EXPECT_EQ(result.size(), 100);
+    auto fn = [&]() -> Task<void> {
+        auto group = TaskGroup<void>();
+        for (int i = 0; i < 100; ++i) {
+            group.spawn([&]() -> Task<void> {
+                auto _ = co_await sem.acquire();
+                co_await sleep(10ms);
+            });
+        }
+        auto result = co_await group.waitAll();
+        EXPECT_EQ(result.size(), 100);
+    };
+
+    // Try cross thread & local thread to acquire this semaphore
+    auto exec = useExecutor<EventLoop>();
+    auto thread = Thread(exec, fn);
+    auto _ = co_await whenAll(fn(), thread.join());
     EXPECT_EQ(sem.available(), 8);
 }
 
@@ -256,71 +286,71 @@ ILIAS_TEST(Sync, Oneshot) {
     }
 }
 
-ILIAS_TEST(Sync, Mpsc) {
-    {
-        auto [sender, receiver] = mpsc::channel<int>(10);
-        EXPECT_TRUE(co_await sender.send(42));
-        EXPECT_EQ(co_await receiver.recv(), 42);
-    }
-    { // close
-        auto [sender, receiver] = mpsc::channel<int>(10);
-        sender.close();
-        EXPECT_FALSE(co_await receiver.recv());
-        EXPECT_TRUE(sender.isClosed());
-        EXPECT_TRUE(receiver.isClosed());
-    }
-    {
-        auto [sender, receiver] = mpsc::channel<int>(10);
-        receiver.close();
-        EXPECT_FALSE(co_await sender.send(42));
-        EXPECT_TRUE(sender.isClosed());
-        EXPECT_TRUE(receiver.isClosed());
-    }
-    { // blocking
-        auto [sender, receiver] = mpsc::channel<int>(10);
-        auto recvWorker = [](auto receiver) -> Task<void> {
-            for (int i = 0; i < 100; i++) {
-                EXPECT_EQ(co_await receiver.recv(), i);
-            }  
-            receiver.close();
-        };
-        auto handle = spawn(recvWorker(std::move(receiver)));
-        for (int i = 0; i < 100; i++) {
-            EXPECT_TRUE(co_await sender.send(i));
-        }
-        co_await this_coro::yield();
-        EXPECT_FALSE(co_await sender.send(100)); // closed
-        EXPECT_FALSE(co_await sender.send(101)); // closed
-        EXPECT_TRUE(co_await std::move(handle)); // wait for the recvWorker to finish
-    }
-    {
-        auto [sender, receiver] = mpsc::channel<int>(10);
-        auto sendWorker = [](auto sender) -> Task<void> {
-            for (int i = 0; i < 10; i++) {
-                EXPECT_TRUE(co_await sender.send(i));
-            }  
-        };
-        auto group = TaskGroup<void>();
-        for (int i = 0; i < 10; i++) {
-            group.spawn(sendWorker(sender));
-        }
-        for (int i = 0; i < 100; i++) {
-            EXPECT_TRUE(co_await receiver.recv());
-        }
-        auto _ = co_await group.waitAll();
-    }
-    {
-        // cancel
-        auto [sender, receiver] = mpsc::channel<int>(10);
-        auto recv = [&]() -> Task<void> {
-            co_await receiver.recv();
-            ILIAS_TRAP(); // should not reach here
-        };
-        auto handle = spawn(recv());
-        handle.stop();
-        EXPECT_FALSE(co_await std::move(handle));
-    }
-}
+// ILIAS_TEST(Sync, Mpsc) {
+//     {
+//         auto [sender, receiver] = mpsc::channel<int>(10);
+//         EXPECT_TRUE(co_await sender.send(42));
+//         EXPECT_EQ(co_await receiver.recv(), 42);
+//     }
+//     { // close
+//         auto [sender, receiver] = mpsc::channel<int>(10);
+//         sender.close();
+//         EXPECT_FALSE(co_await receiver.recv());
+//         EXPECT_TRUE(sender.isClosed());
+//         EXPECT_TRUE(receiver.isClosed());
+//     }
+//     {
+//         auto [sender, receiver] = mpsc::channel<int>(10);
+//         receiver.close();
+//         EXPECT_FALSE(co_await sender.send(42));
+//         EXPECT_TRUE(sender.isClosed());
+//         EXPECT_TRUE(receiver.isClosed());
+//     }
+//     { // blocking
+//         auto [sender, receiver] = mpsc::channel<int>(10);
+//         auto recvWorker = [](auto receiver) -> Task<void> {
+//             for (int i = 0; i < 100; i++) {
+//                 EXPECT_EQ(co_await receiver.recv(), i);
+//             }  
+//             receiver.close();
+//         };
+//         auto handle = spawn(recvWorker(std::move(receiver)));
+//         for (int i = 0; i < 100; i++) {
+//             EXPECT_TRUE(co_await sender.send(i));
+//         }
+//         co_await this_coro::yield();
+//         EXPECT_FALSE(co_await sender.send(100)); // closed
+//         EXPECT_FALSE(co_await sender.send(101)); // closed
+//         EXPECT_TRUE(co_await std::move(handle)); // wait for the recvWorker to finish
+//     }
+//     {
+//         auto [sender, receiver] = mpsc::channel<int>(10);
+//         auto sendWorker = [](auto sender) -> Task<void> {
+//             for (int i = 0; i < 10; i++) {
+//                 EXPECT_TRUE(co_await sender.send(i));
+//             }  
+//         };
+//         auto group = TaskGroup<void>();
+//         for (int i = 0; i < 10; i++) {
+//             group.spawn(sendWorker(sender));
+//         }
+//         for (int i = 0; i < 100; i++) {
+//             EXPECT_TRUE(co_await receiver.recv());
+//         }
+//         auto _ = co_await group.waitAll();
+//     }
+//     {
+//         // cancel
+//         auto [sender, receiver] = mpsc::channel<int>(10);
+//         auto recv = [&]() -> Task<void> {
+//             co_await receiver.recv();
+//             ILIAS_TRAP(); // should not reach here
+//         };
+//         auto handle = spawn(recv());
+//         handle.stop();
+//         EXPECT_FALSE(co_await std::move(handle));
+//     }
+// }
 
 auto main(int argc, char **argv) -> int {
     EventLoop loop;

@@ -10,11 +10,11 @@
  */
 #pragma once
 
+#include <ilias/sync/detail/futex.hpp> // FutexMutex
 #include <ilias/runtime/coro.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/result.hpp>
 #include <ilias/log.hpp>
-#include <semaphore> // std::binary_semaphore
 #include <optional>
 #include <concepts>
 #include <memory> // std::unique_ptr
@@ -48,16 +48,16 @@ public:
     }
 
     auto lock() {
-        sem.acquire();
+        mutex.lock();
     }
 
     auto unlock() {
-        sem.release();
+        mutex.unlock();
     }
 
     runtime::CoroHandle   receiver; // The caller that is suspended on the recv operation
+    sync::FutexMutex      mutex;
     std::optional<T>      value;
-    std::binary_semaphore sem {1}; // used as a mutex, it is smaller than std::mutex, replace it to our futex mutex if needed?
 
     // States, TODO: Compress the state to a single byte?
     std::atomic<bool>     finally       {false}; // For blocking recv, set true when sender close or value is set
