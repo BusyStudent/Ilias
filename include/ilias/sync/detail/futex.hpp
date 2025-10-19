@@ -11,7 +11,7 @@ namespace sync {
 
 #if !defined(ILIAS_SYNC_STD_MUTEX)
 // For optimization the size purposes, the std::mutex is too large.
-class FutexMutex final{
+class FutexMutex final {
 public:
     constexpr FutexMutex() = default;
     constexpr FutexMutex(const FutexMutex &) = delete;

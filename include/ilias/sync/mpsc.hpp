@@ -17,6 +17,7 @@
 #include <concepts>
 #include <memory> // std::unique_ptr, std::shared_ptr
 #include <limits>
+#include <atomic> // std::atomic
 #include <deque>
 
 ILIAS_NS_BEGIN
@@ -62,10 +63,19 @@ public:
         return false;
     }
 
+    auto deref() -> void {
+        auto prev = refcount.fetch_sub(1, std::memory_order_acq_rel);
+        ILIAS_ASSERT_MSG(prev != 0, "Can't deref a channel that is already destroyed");
+        if (prev == 1) { // Last one
+            delete this;
+        }
+    }
+
     // States
     const size_t          capacity       {0};     // The capacity of the channel. read only.
     bool                  senderClosed   {false}; // If all the sender is closed.
     bool                  receiverClosed {false};
+    std::atomic<uint8_t>  refcount       {2};     // for sender & receiver, on 0 destroy self
 
     // Sync, all queue's wakeup must call without lock the mutex, we may lock the mutex in the onWakeup. it will deadlock.
     sync::FutexMutex      mutex; // Protect the queue, senderCount, and receiverClosed.
@@ -78,18 +88,16 @@ class ChanSenderDeleter final {
 public:
     template <typename T>
     auto operator ()(Channel<T> *chan) {
-        bool delete_ = false;
+        bool notify = false;
         {
             auto locker = std::lock_guard(chan->mutex);
             chan->senderClosed = true; // All sender is closed.
-            delete_ = chan->receiverClosed; // If the receiver is closed, we can delete the channel.
+            notify = !chan->receiverClosed; // If the receiver is closed, not need to notify.
         }
-        if (delete_) {
-            delete chan;
-        }
-        else { // Receiver is not closed, we should wakeup the receiver.
+        if (notify) { // Receiver is not closed, we should wakeup the receiver.
             chan->receiver.wakeupOne();
         }
+        chan->deref();
     }
 };
 
@@ -97,18 +105,16 @@ class ChanReceiverDeleter final {
 public:
     template <typename T>
     auto operator ()(Channel<T> *chan) {
-        bool delete_ = false;
+        bool notify = false;
         {
             auto locker = std::lock_guard(chan->mutex);
             chan->receiverClosed = true; // All receiver is closed.
-            delete_ = chan->senderClosed; // If the sender is all closed, we can delete the channel.
+            notify = !chan->senderClosed; // If the sender is all closed, not need to notify.
         }
-        if (delete_) {
-            delete chan;
-        }
-        else {
+        if (notify) {
             chan->senders.wakeupAll(); // Because it is multi producer, use wakeupAll
         }
+        chan->deref();
     }
 };
 
@@ -261,8 +267,8 @@ public:
 private:
     explicit Sender(detail::ChanSender<T> chan) : mChan(std::move(chan)) {}
     detail::ChanSender<T> mChan;
-template <Sendable T>
-friend auto channel(size_t capacity) -> Pair<T>;
+template <Sendable U>
+friend auto channel(size_t capacity) -> Pair<U>;
 };
 
 /**
@@ -339,8 +345,8 @@ private:
     explicit Receiver(detail::Channel<T> *chan) : mChan(chan) {}
 
     detail::ChanReceiver<T> mChan;
-template <Sendable T>
-friend auto channel(size_t capacity) -> Pair<T>;
+template <Sendable U>
+friend auto channel(size_t capacity) -> Pair<U>;
 };
 
 /**

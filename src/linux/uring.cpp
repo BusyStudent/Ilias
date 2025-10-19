@@ -4,7 +4,6 @@
 #include <ilias/platform/uring.hpp>
 #include <ilias/task/when_any.hpp>
 #include <ilias/task/task.hpp>
-#include <ilias/sync/event.hpp>
 #include <ilias/net/msghdr.hpp> // MsgHdr
 #include <sys/eventfd.h>
 #include <sys/utsname.h>
@@ -19,7 +18,6 @@ class UringDescriptor final : public IoDescriptor {
 public:
     int           fd;   
     struct ::stat stat; //< The file stat
-    Event         cancel; //< The cancel event
 };
 
 UringContext::UringContext(UringConfig conf) {
