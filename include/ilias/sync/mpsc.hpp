@@ -10,10 +10,12 @@
  */
 #pragma once
 
-#include <ilias/sync/detail/queue.hpp>
+#include <ilias/sync/detail/futex.hpp> // FutexMutex
+#include <ilias/sync/detail/queue.hpp> // WaitQueue
 #include <ilias/task/task.hpp>
+#include <ilias/result.hpp> // Result
 #include <concepts>
-#include <memory>
+#include <memory> // std::unique_ptr, std::shared_ptr
 #include <limits>
 #include <deque>
 
@@ -29,15 +31,85 @@ public:
     Channel(Channel &&) = delete;
     ~Channel() { // Check state
         ILIAS_ASSERT(receiverClosed);
-        ILIAS_ASSERT(senderCount == 0);
+        ILIAS_ASSERT(senderClosed);
     }
 
-    size_t capacity = 0; // The capacity of the channel.
-    size_t senderCount = 0; // The number of senders.
-    sync::WaitQueue senders;
-    sync::WaitQueue receiver;
-    std::deque<T> queue; // For storing the items.
-    bool receiverClosed = false;
+    // For sender
+    auto trySendInternal(Result<void, T> &item) -> bool {
+        auto locker = std::lock_guard(mutex);
+        if (receiverClosed) { // We can't send any more data.
+            return true;
+        }
+        if (queue.size() >= capacity) {
+            return false; // No space, continue to wait.
+        }
+        queue.emplace_back(std::move(item.error()));
+        item = {};
+        return true; // Sended
+    }
+
+    // For receiver
+    auto tryRecvInternal(std::optional<T> &value) -> bool {
+        auto locker = std::lock_guard(mutex);
+        if (!queue.empty()) {
+            value.emplace(std::move(queue.front()));
+            queue.pop_front();
+            return true; // Have data,
+        }
+        if (senderClosed) {
+            return true; // No sender, so we can't receive any more.
+        }
+        return false;
+    }
+
+    // States
+    const size_t          capacity       {0};     // The capacity of the channel. read only.
+    bool                  senderClosed   {false}; // If all the sender is closed.
+    bool                  receiverClosed {false};
+
+    // Sync, all queue's wakeup must call without lock the mutex, we may lock the mutex in the onWakeup. it will deadlock.
+    sync::FutexMutex      mutex; // Protect the queue, senderCount, and receiverClosed.
+    sync::WaitQueue       senders;
+    sync::WaitQueue       receiver;
+    std::deque<T>         queue; // For storing the items.
+};
+
+class ChanSenderDeleter final {
+public:
+    template <typename T>
+    auto operator ()(Channel<T> *chan) {
+        bool delete_ = false;
+        {
+            auto locker = std::lock_guard(chan->mutex);
+            chan->senderClosed = true; // All sender is closed.
+            delete_ = chan->receiverClosed; // If the receiver is closed, we can delete the channel.
+        }
+        if (delete_) {
+            delete chan;
+        }
+        else { // Receiver is not closed, we should wakeup the receiver.
+            chan->receiver.wakeupOne();
+        }
+    }
+};
+
+class ChanReceiverDeleter final {
+public:
+    template <typename T>
+    auto operator ()(Channel<T> *chan) {
+        bool delete_ = false;
+        {
+            auto locker = std::lock_guard(chan->mutex);
+            chan->receiverClosed = true; // All receiver is closed.
+            delete_ = chan->senderClosed; // If the sender is all closed, we can delete the channel.
+        }
+        if (delete_) {
+            delete chan;
+        }
+        else {
+            chan->senders.wakeupAll(); // Because it is multi producer, use wakeupAll
+        }
+    }
 };
 
 template <typename T>
@@ -46,32 +118,15 @@ public:
     SendAwaiter(Channel<T> *c, T value) : sync::WaitAwaiter<SendAwaiter<T> >(c->senders), mChan(c), mResult(Err(std::move(value))) {};
     SendAwaiter(SendAwaiter &&) = default;
 
-    auto await_ready() -> bool {
-        if (mChan->receiverClosed) {
-            return true; // The receiver is closed, so we can't send any more.
-        }
-        if (mChan->queue.size() < mChan->capacity) {
-            mChan->queue.emplace_back(std::move(mResult.error()));
-            mChan->receiver.wakeupOne();
-            mResult = {};
-            return true; // Have space, 
-        }
-        return false; // Wait the queue has space.
-    }
-
     auto await_resume() -> Result<void, T> {
+        if (mResult) { // Is sended
+            mChan->receiver.wakeupOne();
+        }
         return std::move(mResult);
     }
 
-    // Called when we wakup from the WaitQueue.
-    auto onWakeup() {
-        if (mChan->receiverClosed) {
-            return;
-        }
-        // Other wise, we should have space, so we can send the data.
-        ILIAS_ASSERT(mChan->queue.size() < mChan->capacity);
-        mChan->queue.emplace_back(std::move(mResult.error()));
-        mResult = {};
+    auto onWakeup() -> bool {
+        return mChan->trySendInternal(mResult);
     }
 private:
     Channel<T> *mChan;
@@ -84,76 +139,79 @@ public:
     ReceiveAwaiter(Channel<T> *c) : sync::WaitAwaiter<ReceiveAwaiter<T> >(c->receiver), mChan(c) { }
     ReceiveAwaiter(ReceiveAwaiter &&) = default;
 
-    auto await_ready() -> bool {
-        if (!mChan->queue.empty()) {
-            return true; // Have data,
+    auto await_resume() -> std::optional<T> {
+        if (mValue) {
+            mChan->senders.wakeupOne();
         }
-        if (mChan->senderCount == 0) {
-            return true; // No sender, so we can't receive any more.
-        }
-        return false;
+        return std::move(mValue);
     }
 
-    auto await_resume() -> std::optional<T> {
-        if (mChan->queue.empty()) {
-            return std::nullopt;
-        }
-        auto value = std::move(mChan->queue.front());
-        mChan->queue.pop_front();
-        mChan->senders.wakeupOne();
-        return value;
+    auto onWakeup() -> bool {
+        return mChan->tryRecvInternal(mValue);
     }
 private:
-    Channel<T> *mChan;
+    Channel<T>      *mChan;
+    std::optional<T> mValue; // The value we got
 };
 
 template <typename T>
-using ChanRef = std::shared_ptr<Channel<T> >;
+using ChanSender   = std::shared_ptr<Channel<T> >;
+
+template <typename T>
+using ChanReceiver = std::unique_ptr<Channel<T>, ChanReceiverDeleter>;
 
 } // namespace detail
+
+template <typename T>
+concept Sendable = std::movable<T> && (!std::is_reference_v<T>);
+
+template <Sendable T>
+class Sender;
+
+template <Sendable T>
+class Receiver;
+
+template <Sendable T>
+struct Pair {
+    Sender<T>   sender;
+    Receiver<T> receiver;
+};
 
 /**
  * @brief The mpsc sender class. This class is used to send data to the channel. (copy & move able)
  * 
  * @tparam T The item type to be sent.
  */
-template <typename T>
+template <Sendable T>
 class Sender final {
 public:
-    Sender() = default;
+    Sender(const Sender &) = default;
     Sender(Sender &&) = default;
-    Sender(const Sender &other) : Sender(other.mChan) {}
-    ~Sender() { close(); }
-
-    explicit Sender(detail::ChanRef<T> chan) : mChan(std::move(chan)) {
-        if (mChan) {
-            mChan->senderCount++;
-        }
-    }
+    Sender() = default;
+    ~Sender() = default;
 
     /**
      * @brief Close the sender
      * 
      */
     auto close() noexcept -> void {
-        if (!mChan) {
-            return;
-        }
-        mChan->senderCount--;
-        if (mChan->senderCount == 0) {
-            mChan->receiver.wakeupAll();
-        }
         mChan.reset();
     }
 
     /**
      * @brief Check if the channel is closed. we can't send any more data
      * 
+     * @note The return value is only stable on single thread use.
+     * 
      * @return true 
      * @return false 
      */
     auto isClosed() const noexcept -> bool {
-        return !mChan || mChan->receiverClosed;
+        if (!mChan) {
+            return true;
+        }
+        auto locker = std::lock_guard(mChan->mutex);
+        return mChan->receiverClosed;
     }
 
     /**
@@ -176,26 +234,35 @@ public:
         return detail::SendAwaiter<T>(mChan.get(), std::move(item));
     }
 
-    auto operator =(Sender &&other) -> Sender & {
-        close();
-        mChan = std::move(other.mChan);
-        return *this;
-    }
-
-    auto operator =(const Sender &other) -> Sender & {
-        close();
-        mChan = other.mChan;
-        if (mChan) {
-            mChan->senderCount++;
+    /**
+     * @brief Blocking send a item to the channel.
+     * 
+     * @param item 
+     * @note It will ```BLOCK``` the thread, so it is not recommended to use it in the async context, use it in sync code
+     * @return Result<void, T>, if the receiver is closed, return Err(item), else return {}.
+     */
+    [[nodiscard]]
+    auto blockingSend(T item) const -> Result<void, T> {
+        auto result = Result<void, T>(Err(std::move(item))); // First put it to error as unsended.
+        mChan->senders.blockingWait([&]() { return mChan->trySendInternal(result); });
+        if (result) { // Success to send, wakeup the receiver.
+            mChan->receiver.wakeupOne();
         }
-        return *this;
+        return result;
     }
 
+    auto operator =(Sender &&other) -> Sender & = default;
+    auto operator =(const Sender &other) -> Sender & = default;
+
+    // Check the sender is valid
     explicit operator bool() const noexcept {
         return bool(mChan);
     }
 private:
-    detail::ChanRef<T> mChan;
+    explicit Sender(detail::ChanSender<T> chan) : mChan(std::move(chan)) {}
+    detail::ChanSender<T> mChan;
+template <Sendable T>
+friend auto channel(size_t capacity) -> Pair<T>;
 };
 
 /**
@@ -203,26 +270,32 @@ private:
  * 
  * @tparam T The item type to be received.
  */
-template <typename T>
+template <Sendable T>
 class Receiver final {
 public:
     Receiver() = default;
     Receiver(const Receiver &) = delete;
     Receiver(Receiver &&) = default;
-    ~Receiver() { close(); }
-
-    explicit Receiver(detail::ChanRef<T> chan) : mChan(std::move(chan)) {}
+    ~Receiver() = default;
 
     auto close() noexcept -> void {
-        if (mChan) {
-            mChan->receiverClosed = true;
-            mChan->senders.wakeupAll();
-            mChan.reset();
-        }
+        mChan.reset();
     }
 
+    /**
+     * @brief Check if the channel is closed. no sender can send any more data
+     * 
+     * @note The return value is only stable on single thread use.
+     * 
+     * @return true 
+     * @return false 
+     */
     auto isClosed() const noexcept -> bool {
-        return !mChan || mChan->senderCount == 0;
+        if (!mChan) {
+            return true;
+        }
+        auto locker = std::lock_guard(mChan->mutex);
+        return mChan->senderClosed;
     }
 
     /**
@@ -232,44 +305,62 @@ public:
      * @return std::optional<T>, nullopt on the channel is closed
      */
     [[nodiscard]]
-    auto recv() const noexcept {
+    auto recv() noexcept {
         return detail::ReceiveAwaiter<T>(mChan.get());
     }
 
-    auto operator =(const Receiver &other) = delete;
-    auto operator =(Receiver &&other) -> Receiver & {
-        close();
-        mChan = std::move(other.mChan);
-        return *this;
+    /**
+     * @brief Blocking Receive a item from the channel.
+     * @note 
+     *  - Don't use the recv method concurrently, only one thread can use it at a time.
+     * 
+     *  - It will ```BLOCK``` the thread, so it is not recommended to use it in the async context, use it in sync code
+     * 
+     * @return std::optional<T>, nullopt on the channel is closed
+     */
+    [[nodiscard]]
+    auto blockingRecv() noexcept(std::is_nothrow_move_constructible_v<T>) -> std::optional<T> {
+        auto value = std::optional<T>();
+        mChan->receiver.blockingWait([&]() { return mChan->tryRecvInternal(value); });
+        if (value) { // Success to recv, wakeup the sender.
+            mChan->senders.wakeupOne();
+        }
+        return value;
     }
 
+    auto operator =(const Receiver &other) = delete;
+    auto operator =(Receiver &&other) -> Receiver & = default;
+
+    // Check the receiver is valid
     explicit operator bool() const noexcept {
         return bool(mChan);   
     }
 private:
-    detail::ChanRef<T> mChan;
-};
+    explicit Receiver(detail::Channel<T> *chan) : mChan(chan) {}
 
-template <typename T>
-struct Pair {
-    Sender<T> sender;
-    Receiver<T> receiver;
+    detail::ChanReceiver<T> mChan;
+template <Sendable T>
+friend auto channel(size_t capacity) -> Pair<T>;
 };
 
 /**
  * @brief Make a channel for multi producer and single consumer.
  * 
  * @tparam T The item type to be sent and received. (must be moveable)
- * @param capacity The capacity of the channel. (abort on 0)
+ * @param capacity The capacity of the channel. (abort on 0), default on SIZET_MAX (no limit)
  * @return Pair<T> 
  */
-template <std::movable T>
-inline auto channel(size_t capacity) -> Pair<T> {
+template <Sendable T>
+inline auto channel(size_t capacity = std::numeric_limits<size_t>::max()) -> Pair<T> {
     ILIAS_ASSERT_MSG(capacity > 0, "The capacity of the channel must be greater than 0.");
-    auto ptr = std::make_shared<detail::Channel<T> >(capacity);
+    auto ptr = new detail::Channel<T>(capacity);
     return {
-        .sender = Sender<T>(ptr),
-        .receiver = Receiver<T>(ptr)
+        .sender = Sender<T> {
+            detail::ChanSender<T> {
+                ptr, detail::ChanSenderDeleter {}
+            }
+        },
+        .receiver = Receiver<T> {ptr}
     };
 }
 

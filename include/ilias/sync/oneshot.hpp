@@ -66,7 +66,8 @@ public:
     bool                  receiverClose {false};
 };
 
-struct ChanSenderDeleter {
+class ChanSenderDeleter {
+public:
     template <typename T>
     auto operator()(Channel<T> *chan) -> void {
         bool delete_ = false;
@@ -83,7 +84,8 @@ struct ChanSenderDeleter {
     }
 };
 
-struct ChanReceiverDeleter {
+class ChanReceiverDeleter {
+public:
     template <typename T>
     auto operator()(Channel<T> *chan) -> void {
         bool delete_ = false;

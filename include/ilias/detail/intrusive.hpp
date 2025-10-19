@@ -259,8 +259,16 @@ private:
     size_t mCount = 0;
 };
 
+// If user has specified the refcounted object
+template <typename T>
+concept RefCountedLike = requires(T &t) {
+    { t.ref() } -> std::same_as<void>;
+    { t.deref() } -> std::same_as<void>;
+    { t.use_count() } -> std::same_as<size_t>;
+};
+
 // The smart pointer of the refcounted object
-template <typename T> requires (std::is_base_of_v<RefCounted<T>, T>)
+template <RefCountedLike T>
 class Rc final {
 public:
     Rc() = default;
