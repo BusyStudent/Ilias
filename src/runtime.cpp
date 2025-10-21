@@ -8,6 +8,7 @@
 #include <thread> // std::thread
 #include <queue> // std::queue
 #include <mutex> // std::mutex
+#include "singleton.hpp"
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp>
@@ -19,7 +20,7 @@ ILIAS_NS_BEGIN
 using namespace runtime;
 
 // Executor
-static constinit thread_local Executor *currentExecutor = nullptr;
+static thread_local constinit Singleton<Executor*> currentExecutor {};
 
 Executor::~Executor() {
     uninstall();

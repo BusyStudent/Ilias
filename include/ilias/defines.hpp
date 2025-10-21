@@ -90,11 +90,15 @@
 // Library mode
 #if   defined(ILIAS_STATIC) // Static library, no-op
     #define ILIAS_API
-#elif defined(_ILIAS_SOURCE) // Dynamic library
-    #define ILIAS_API ILIAS_EXPORT
+#elif defined(ILIAS_DLL)    // Dynamic library
+    #if defined(_ILIAS_SOURCE) // Dynamic library
+        #define ILIAS_API ILIAS_EXPORT
+    #else
+        #define ILIAS_API ILIAS_IMPORT
+    #endif
 #else
-    #define ILIAS_API ILIAS_IMPORT
-#endif
+    #error "Library mode not specified"
+#endif // ILIAS_STATIC
 
 // Utils macro
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT((x) && (msg))

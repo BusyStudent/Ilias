@@ -85,7 +85,7 @@ if has_config("spdlog") and has_config("log") then
 end
 
 target("ilias")
-    set_kind("shared")
+    set_kind("$(kind)")
     set_configdir("../include/ilias/detail/")
     add_configfiles("../include/ilias/detail/config.hpp.in")
     add_headerfiles("(../include/ilias/**.hpp)")
@@ -153,10 +153,15 @@ target("ilias")
         set_configvar("ILIAS_CORO_TRACE", 1)
     end
 
-    set_configvar("ILIAS_DLL", 1)
+    -- Kind
+    if is_kind("static") then 
+        set_configvar("ILIAS_STATIC", 1)
+    elseif is_kind("shared") then
+        set_configvar("ILIAS_DLL", 1)
+    end
 
-    -- Default verison 0.3.0
+    -- Default verison 0.3.2
     set_configvar("ILIAS_VERSION_MAJOR", 0)
     set_configvar("ILIAS_VERSION_MINOR", 3)
-    set_configvar("ILIAS_VERSION_PATCH", 0)
+    set_configvar("ILIAS_VERSION_PATCH", 2)
 target_end()

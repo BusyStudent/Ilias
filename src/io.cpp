@@ -4,6 +4,7 @@
 #include <ilias/io/error.hpp>
 #include <array>
 #include <tuple>
+#include "singleton.hpp"
 
 ILIAS_NS_BEGIN
 
@@ -84,7 +85,7 @@ auto IoCategory::name() const noexcept -> const char * {
 }
 
 auto IoCategory::instance() noexcept -> const IoCategory & {
-    static constinit IoCategory instance;
+    static constinit Singleton<IoCategory> instance;
     return instance;
 }
 
@@ -168,7 +169,7 @@ auto SystemCategory::equivalent(int value, const std::error_condition &other) co
 }
 
 auto SystemCategory::instance() noexcept -> const SystemCategory & {
-    static constinit SystemCategory instance;
+    static constinit Singleton<SystemCategory> instance;
     return instance;
 }
 
