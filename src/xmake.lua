@@ -103,9 +103,11 @@ target("ilias")
     end
 
     if is_plat("linux") then
-        set_symbols("hidden")
+        if is_mode("release") then 
+            set_symbols("hidden")
+        end 
         add_files("linux/*.cpp")
-        add_syslinks("pthread", "dl", "anl", {public = true})
+        add_syslinks("pthread", "dl", "anl", "rt", {public = true})
     end
 
     -- Set var if

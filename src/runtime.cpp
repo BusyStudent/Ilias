@@ -164,7 +164,25 @@ auto threadpool::submit(CallableRef &callable) -> void {
         ::atexit(cleanup);
     };
 
-    std::call_once(once, init);
+    auto init2 = [&]() {
+#if defined(ILIAS_SHM_SINGLETON) // Using the singleton in the share memory
+        auto &data = singleton::access();
+        if (data.threadpoolInit.test_and_set()) {
+            // already initialized
+            data.threadpool.wait(nullptr); // Wait for the initialization to complete
+            pool = static_cast<ThreadPool *>(data.threadpool.load());
+            return;
+        }
+        // Initialize
+        init();
+        data.threadpool.store(pool);
+        data.threadpool.notify_all();
+#else
+        init();
+#endif
+    };
+
+    std::call_once(once, init2);
     std::lock_guard locker(pool->mutex);
     if (pool->idle == 0) {
         auto hw = std::thread::hardware_concurrency() * 2;

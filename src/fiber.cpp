@@ -4,6 +4,7 @@
 #include <ilias/runtime/executor.hpp> // Executor
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/fiber/fiber.hpp> // Fiber
+#include "singleton.hpp" // Singleton
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp> // CreateFiber
@@ -53,11 +54,14 @@ public:
 };
 
 #if !defined(_WIN32) // Not in windows, we should save it by ourselves
-static constinit thread_local FiberContextImpl *currentContext = nullptr;
+static constinit thread_local Singleton<FiberContext*> currentContext {};
 
 struct CurrentGuard { // RAII guard for manage the current fiber
     CurrentGuard(FiberContextImpl *c) : cur(c) {
-        prev = std::exchange(currentContext, cur);
+        prev = static_cast<FiberContextImpl*>(
+            static_cast<FiberContext*>(currentContext) // Because the Singleton may be a proxy
+        );
+        currentContext = cur;
     }
     ~CurrentGuard() {
         currentContext = prev;

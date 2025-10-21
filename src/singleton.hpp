@@ -13,11 +13,12 @@
 #include <ilias/defines.hpp>
 
 // Only used when build on static library
-#if defined(ILIAS_STATIC)
+#if defined(ILIAS_STATIC) && !defined(ILIAS_NO_SINGLETON)
 #include <unordered_map>
 #include <shared_mutex> // std::shared_mutex
 #include <stdexcept>
 #include <optional>
+#include <cstdarg> // va_list
 #include <string>
 #include <memory>
 #include <thread> // std::thread::id
@@ -26,6 +27,11 @@
 // Import system headers
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp>
+#else
+    #include <sys/mman.h>
+    #include <sys/stat.h>
+    #include <unistd.h>
+    #include <fcntl.h>
 #endif // _WIN32
 
 // Import shared member
@@ -33,6 +39,9 @@
 #include <ilias/io/system_error.hpp>  // SystemCategory
 #include <ilias/io/error.hpp>         // IoCategory
 #include <ilias/net/addrinfo.hpp>     // GaiCategory
+#include <ilias/fiber/fiber.hpp>      // FiberContext
+
+#define ILIAS_SHM_SINGLETON 1
 
 ILIAS_NS_BEGIN
 
@@ -41,6 +50,7 @@ namespace singleton {
 
 // Import some names
 using runtime::Executor;
+using fiber::FiberContext;
 
 // Thread Local wrapper
 template <typename T>
@@ -80,7 +90,7 @@ public:
         store(ptr);
         return *this;
     }
-
+    
     operator T*() const {
         return get();
     }
@@ -101,29 +111,38 @@ public:
 class SharedData {
 public:
     // ABI information
-    size_t                 size    = sizeof(SharedData);    // The size of the shared data
-    std::string_view       version = ILIAS_VERSION_STRING;  // The version string (ILIAS_VERSION_STRING)
+    size_t                     size    = sizeof(SharedData);    // The size of the shared data
+    std::string_view           version = ILIAS_VERSION_STRING;  // The version string (ILIAS_VERSION_STRING)
 
     // Executor (ThreadLocal)
-    ThreadLocal<Executor*> executor; // The executor ptr for this thread (The runtime will set nullptr before thread exit)
+    ThreadLocal<Executor*>     executor; // The executor ptr for this thread (The runtime will set nullptr before thread exit)
 
-    // FiberContext (ThreadLocal)
 #if !defined(_WIN32)
-    ThreadLocal<void*>     fiberContext; // The current fiber context
+    // FiberContext (ThreadLocal)
+    ThreadLocal<FiberContext*> fiberContext; // The current fiber context
+
+    // ThreadPool (only use on linux)
+    std::atomic_flag           threadpoolInit;
+    std::atomic<void*>         threadpool;
 #endif // _WIN32
 
     // ErrorCategory
-    IoCategory             ioCategory;
-    GaiCategory            gaiCategory;
-    SystemCategory         systemCategory;
+    IoCategory                 ioCategory;
+    GaiCategory                gaiCategory;
+    SystemCategory             systemCategory;
 };
 
 // The manager for open / close the shared memory
 class Manager {
 public:
     Manager() {
+        std::string uniqueName;
 
-        std::string uniqueName = "IliasRuntimeSingleton-f4c69531-9f22-4d1f-a4eb-a4c9b7cb422c-";
+#if !defined(_WIN32)
+        uniqueName += "/"; // man says we need / before the name for portable
+#endif
+
+        uniqueName += "IliasRuntimeSingleton-f4c69531-9f22-4d1f-a4eb-a4c9b7cb422c-";
 
 #if   defined(__amd64__) || defined(_M_X64)
         uniqueName += "x64-";
@@ -182,6 +201,39 @@ public:
         if (!mSharedBlock) {
             panic("MapViewOfFile failed %d", ::GetLastError());
         }
+#else
+        uniqueName += std::to_string(::getpid());
+
+        // Get the page size
+        mBlockSize = ::getpagesize();
+        ILIAS_ASSERT(mBlockSize >= sizeof(SharedData) + sizeof(SharedBlock));
+
+        mShmFd = ::shm_open(uniqueName.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+        if (mShmFd == -1) {
+            panic("shm_open failed %d", errno);
+        }
+
+        // Lock it
+        if (::lockf(mShmFd, F_LOCK, 0) == -1) {
+            panic("lockf failed %d", errno);
+        }
+        struct Guard {
+            ~Guard() {
+                ::lockf(fd, F_ULOCK, 0);
+            }
+            int fd;  
+        } guard {mShmFd};
+
+        // Make sure has this size
+        if (::ftruncate(mShmFd, mBlockSize) == -1) {
+            panic("ftruncate failed %d", errno);
+        }
+
+        mSharedBlock = static_cast<SharedBlock*>(::mmap(nullptr, mBlockSize, PROT_READ | PROT_WRITE, MAP_SHARED, mShmFd, 0));
+        if (mSharedBlock == MAP_FAILED) {
+            panic("mmap failed %d", errno);
+        }
+        mShmName = std::move(uniqueName);
 #endif // _WIN32
         // Loaded, accroding to msdn, the first time created the shared memory, the bytes is all zero
         auto refcount = std::atomic_ref {mSharedBlock->refcount}.fetch_add(1);
@@ -226,6 +278,33 @@ public:
         if (!::CloseHandle(mMapHandle)) {
             panic("CloseHandle failed %d", ::GetLastError());
         }
+#else
+        if (::lockf(mShmFd, F_LOCK, 0) == -1) {
+            panic("lockf failed %d", errno);
+        }
+        
+        struct Guard {
+            ~Guard() {
+                ::lockf(fd, F_ULOCK, 0);
+                ::close(fd);
+            }
+            int fd;
+        } guard {mShmFd};
+
+        if (mSharedBlock) {
+            auto refcount = std::atomic_ref {mSharedBlock->refcount}.fetch_sub(1);
+            if (refcount == 1) { // To zero, destroy it
+                std::destroy_at(mSharedData);
+
+                // We are the last one, remove it
+                if (::shm_unlink(mShmName.c_str()) == -1) {
+                    panic("shm_unlink failed %d", errno);
+                }
+            }
+            if (::munmap(mSharedBlock, mBlockSize) == -1) {
+                panic("munmap failed %d", errno);
+            }
+        }
 #endif // _WIN32
     }
 
@@ -245,12 +324,15 @@ private:
 #if defined(_WIN32)
     HANDLE      mMapHandle = nullptr;
     HANDLE      mMutexHandle = nullptr;
+#else
+    int         mShmFd = -1;
+    size_t      mBlockSize = 0;
+    std::string mShmName; // Used for unlink
 #endif // _WIN32
 
     SharedBlock *mSharedBlock = nullptr;
     SharedData  *mSharedData = nullptr;
 friend auto access() -> SharedData &;
-friend auto access2() -> SharedData &;
 };
 
 // Access the shared data
@@ -259,23 +341,13 @@ inline auto access() -> SharedData & {
     return *manager.mSharedData;
 }
 
-// Just for test purpose, test it with multiple instances of manager
-inline auto access2() -> SharedData & {
-#if defined(NDEBUG)
-    return access();
-#else
-    static  Manager manager;
-    return *manager.mSharedData;
-#endif // NDEBUG
-}
-
 } // namespace singleton
 
 // The proxy for singleton
 template <typename T>
 class Singleton;
 
-#define MAKE_SINGLETON(type, name)        \
+#define MAKE_SINGLETON(type, type2, name) \
     template <>                           \
     class Singleton<type> {               \
     public:                               \
@@ -289,37 +361,21 @@ class Singleton;
             return *this;                                      \
         }                                                      \
                                                                \
-        operator type &() const {                              \
+        operator type2() const {                               \
             auto &name = singleton::access().name;             \
             return name;                                       \
         }                                                      \
     };                                                         \
 
-#define MAKE_SINGLETON_TLS(type, name)                         \
-    template <>                                                \
-    class Singleton<type> {                                    \
-    public:                                                    \
-        constexpr Singleton() = default;                       \
-        constexpr ~Singleton() = default;                      \
-                                                               \
-        template <typename T>                                  \
-        auto operator =(T &&what) const -> const Singleton & { \
-            auto &name = singleton::access2().name;            \
-            name = std::forward<T>(what);                      \
-            return *this;                                      \
-        }                                                      \
-                                                               \
-        operator type() const {                                \
-            auto &name = singleton::access2().name;            \
-            return name;                                       \
-        }                                                      \
-    };                                                         \
-
 // For category and any more
-MAKE_SINGLETON_TLS(runtime::Executor *, executor);
-MAKE_SINGLETON(SystemCategory, systemCategory);
-MAKE_SINGLETON(GaiCategory, gaiCategory);
-MAKE_SINGLETON(IoCategory, ioCategory);
+#if !defined(_WIN32)
+MAKE_SINGLETON(fiber::FiberContext *, fiber::FiberContext *, fiberContext);
+#endif // _WIN32
+
+MAKE_SINGLETON(runtime::Executor *, runtime::Executor *, executor);
+MAKE_SINGLETON(SystemCategory, const SystemCategory &,systemCategory);
+MAKE_SINGLETON(GaiCategory, const GaiCategory &, gaiCategory);
+MAKE_SINGLETON(IoCategory, const IoCategory &, ioCategory);
 
 #undef MAKE_SINGLETON
 #undef MAKE_SINGLETON_PTR
