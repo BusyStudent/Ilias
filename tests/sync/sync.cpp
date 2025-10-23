@@ -358,6 +358,51 @@ ILIAS_TEST(Sync, Mpsc) {
         EXPECT_TRUE(res);
         EXPECT_EQ(**res, 42);
     }
+    {
+        // try recv
+        auto [sender, receiver] = mpsc::channel<int>(1);
+        EXPECT_EQ(receiver.tryRecv(), Err(mpsc::TryRecvError::Empty));
+
+        // send an value
+        EXPECT_TRUE(co_await sender.send(42));
+        EXPECT_EQ(receiver.tryRecv(), 42);
+
+        // closed
+        sender.close();
+        EXPECT_EQ(receiver.tryRecv(), Err(mpsc::TryRecvError::Closed));
+    }
+
+    {
+        // try send
+        auto [sender, receiver] = mpsc::channel<int>(1);
+        EXPECT_TRUE(sender.trySend(42));
+        EXPECT_EQ(sender.trySend(42).error().reason, mpsc::TrySendError::Full);
+
+        EXPECT_EQ(co_await receiver.recv(), 42);
+        receiver.close();
+
+        EXPECT_EQ(sender.trySend(42).error().reason, mpsc::TrySendError::Closed);
+    }
+
+    {
+        // permit
+        auto [sender, receiver] = mpsc::channel<int>(1);
+        auto permit = sender.tryReserve();
+        EXPECT_TRUE(permit);
+        permit->send(42);
+
+        // Then it should be full
+        EXPECT_EQ(sender.tryReserve(), Err(mpsc::TrySendError::Full));
+
+        // Get the value
+        EXPECT_EQ(co_await receiver.recv(), 42);
+
+        // reserve & give the slot back
+        EXPECT_TRUE(co_await sender.reserve());
+
+        receiver.close();
+        EXPECT_EQ(sender.tryReserve(), Err(mpsc::TrySendError::Closed));
+    }
 
     // Try Blocking Send, Cross the thread
     {

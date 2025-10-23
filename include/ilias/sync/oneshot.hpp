@@ -56,8 +56,8 @@ public:
     }
 
     runtime::CoroHandle   receiver; // The caller that is suspended on the recv operation
-    sync::FutexMutex      mutex;
     std::optional<T>      value;
+    sync::FutexMutex      mutex;
 
     // States, TODO: Compress the state to a single byte?
     std::atomic<bool>     finally       {false}; // For blocking recv, set true when sender close or value is set

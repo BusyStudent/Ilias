@@ -137,13 +137,13 @@ auto WaitQueue::blockingWait(Fn pred) -> void {
             if (mFn()) { // Fast path, check the predicate
                 return;
             }
-            mQueue.lock();
-            if (mFn()) { // Atomic check and suspend
-                mQueue.unlock();
-                return;
+            else {
+                auto locker = std::lock_guard(mQueue);
+                if (mFn()) { // Atomic check and suspend
+                    return;
+                }
+                mQueue.mWaiters.push_back(*this);
             }
-            mQueue.mWaiters.push_back(*this);
-            mQueue.unlock();
 
             std::atomic_ref {mBlocking}.wait(true); // Wait it to be set to false
         }

@@ -23,9 +23,18 @@
 ILIAS_NS_BEGIN
 
 namespace mpsc {
+
+// Forward declaration
+template <typename T>
+concept Sendable = std::movable<T> && (!std::is_reference_v<T>);
+
+template <Sendable T>
+class Permit;
+
+// Implementation
 namespace detail {
 
-template <typename T>
+template <Sendable T>
 class Channel final {
 public:
     Channel(size_t c) : capacity(c) { }
@@ -41,12 +50,24 @@ public:
         if (receiverClosed) { // We can't send any more data.
             return true;
         }
-        if (queue.size() >= capacity) {
+        if (queue.size() + reserved >= capacity) {
             return false; // No space, continue to wait.
         }
         queue.emplace_back(std::move(item.error()));
         item = {};
         return true; // Sended
+    }
+
+    auto tryReserveInternal() -> bool {
+        auto locker = std::lock_guard(mutex);
+        if (receiverClosed) { // We can't send any more data.
+            return true;
+        }
+        if (queue.size() + reserved >= capacity) {
+            return false; // No space, continue to wait.
+        }
+        ++reserved;
+        return true; // Reserved
     }
 
     // For receiver
@@ -78,15 +99,16 @@ public:
     std::atomic<uint8_t>  refcount       {2};     // for sender & receiver, on 0 destroy self
 
     // Sync, all queue's wakeup must call without lock the mutex, we may lock the mutex in the onWakeup. it will deadlock.
-    sync::FutexMutex      mutex; // Protect the queue, senderCount, and receiverClosed.
+    sync::FutexMutex      mutex; // Protect the queue, reserved, senderCount, and receiverClosed.
     sync::WaitQueue       senders;
     sync::WaitQueue       receiver;
     std::deque<T>         queue; // For storing the items.
+    size_t                reserved {0}; // The num of reserved items
 };
 
 class ChanSenderDeleter final {
 public:
-    template <typename T>
+    template <Sendable T>
     auto operator ()(Channel<T> *chan) {
         bool notify = false;
         {
@@ -103,7 +125,7 @@ public:
 
 class ChanReceiverDeleter final {
 public:
-    template <typename T>
+    template <Sendable T>
     auto operator ()(Channel<T> *chan) {
         bool notify = false;
         {
@@ -118,7 +140,24 @@ public:
     }
 };
 
-template <typename T>
+// Used for Permit<T>
+class ChanPermitDeleter final {
+public:
+    template <Sendable T>
+    auto operator ()(Channel<T> *chan) { // Give the reserved item slot back to the channel.
+        bool notify = false;
+        {
+            auto locker = std::lock_guard(chan->mutex);
+            chan->reserved -= 1; // Release the reserved item
+            notify = chan->queue.size() + chan->reserved < chan->capacity; // If we have space, we should wakeup the an sender.
+        }
+        if (notify) {
+            chan->senders.wakeupOne();
+        }
+    }
+};
+
+template <Sendable T>
 class SendAwaiter final : public sync::WaitAwaiter<SendAwaiter<T> > {
 public:
     SendAwaiter(Channel<T> *c, T value) : sync::WaitAwaiter<SendAwaiter<T> >(c->senders), mChan(c), mResult(Err(std::move(value))) {};
@@ -139,7 +178,7 @@ private:
     Result<void, T> mResult;
 };
 
-template <typename T>
+template <Sendable T>
 class ReceiveAwaiter final : public sync::WaitAwaiter<ReceiveAwaiter<T> > {
 public:
     ReceiveAwaiter(Channel<T> *c) : sync::WaitAwaiter<ReceiveAwaiter<T> >(c->receiver), mChan(c) { }
@@ -160,16 +199,41 @@ private:
     std::optional<T> mValue; // The value we got
 };
 
-template <typename T>
-using ChanSender   = std::shared_ptr<Channel<T> >;
+template <Sendable T>
+class ReserveAwaiter final : public sync::WaitAwaiter<ReserveAwaiter<T> > {
+public:
+    ReserveAwaiter(Channel<T> *c) : sync::WaitAwaiter<ReserveAwaiter<T> >(c->senders), mChan(c) { }
+    ReserveAwaiter(ReserveAwaiter &&) = default;
 
-template <typename T>
-using ChanReceiver = std::unique_ptr<Channel<T>, ChanReceiverDeleter>;
+    auto await_resume() -> std::optional<Permit<T> > {
+        if (!mGot) {
+            return std::nullopt;
+        }
+        return Permit<T>(mChan);
+    }
+
+    auto onWakeup() -> bool {
+        mGot = mChan->tryReserveInternal();
+        return mGot;
+    }
+private:
+    Channel<T> *mChan;
+    bool        mGot = false;
+};
+
+template <Sendable T>
+using ChanSender     = std::shared_ptr<Channel<T> >;
+
+template <Sendable T>
+using ChanWeakSender = std::weak_ptr<Channel<T> >;
+
+template <Sendable T>
+using ChanPermit     = std::unique_ptr<Channel<T>, ChanPermitDeleter>;
+
+template <Sendable T>
+using ChanReceiver   = std::unique_ptr<Channel<T>, ChanReceiverDeleter>;
 
 } // namespace detail
-
-template <typename T>
-concept Sendable = std::movable<T> && (!std::is_reference_v<T>);
 
 template <Sendable T>
 class Sender;
@@ -181,6 +245,72 @@ template <Sendable T>
 struct Pair {
     Sender<T>   sender;
     Receiver<T> receiver;
+};
+
+enum class TryRecvError {
+    Empty,
+    Closed
+};
+
+enum class TrySendError {
+    Full,
+    Closed
+};
+
+template <typename T>
+struct TrySendErrorResult {
+    T            item;
+    TrySendError reason;
+};
+
+/**
+ * @brief The mpsc permit class, this class is used to reserve a item slot for the channel.
+ * 
+ * @tparam T 
+ */
+template <Sendable T>
+class Permit final {
+public:
+    Permit() = default;
+    Permit(Permit &&) = default;
+
+    /**
+     * @brief Send the item to the channel. it will ```CONSUME``` the permit.
+     * 
+     * @param item 
+     */
+    auto send(T item) -> void {
+        auto ptr = std::exchange(mChan, nullptr);
+        ILIAS_ASSERT_MSG(ptr, "Can't send on a invalid permit");
+        {
+            auto locker = std::lock_guard(ptr->mutex);
+            ptr->queue.emplace_back(std::move(item));
+            ptr->reserved -= 1;
+        }
+        ptr->receiver.wakeupOne();
+        ptr.release(); // Don't decrease the reserved count, we already do it
+    }
+
+    // Give up the permit
+    auto close() -> void {
+        mChan.reset();
+    }
+
+    auto operator =(Permit &&) -> Permit & = default;
+    auto operator =(const Permit &) -> Permit & = delete;
+
+    // Check the permit is valid
+    explicit operator bool() const noexcept {
+        return bool(mChan);
+    }
+private:
+    Permit(detail::Channel<T> *ptr) : mChan(ptr) { }
+
+    detail::ChanPermit<T> mChan;
+template <Sendable U>
+friend class Sender;
+template <Sendable U>
+friend class detail::ReserveAwaiter;
 };
 
 /**
@@ -231,6 +361,7 @@ public:
 
     /**
      * @brief Send a item to the channel.
+     * @note Cancellation: If the send is cancelled, the item will be lost.
      * 
      * @param item The item to be sent.
      * @return Result<void, T>, if the receiver is closed, return Err(item), else return {}.
@@ -241,10 +372,35 @@ public:
     }
 
     /**
+     * @brief Try send a item to the channel.
+     * 
+     * @param item The item to be sent.
+     * @return Result<void, TrySendErrorResult<T> >
+     */
+    [[nodiscard]]
+    auto trySend(T item) const -> Result<void, TrySendErrorResult<T> > {
+        auto locker = std::unique_lock(mChan->mutex);
+
+        // Do check
+        if (mChan->receiverClosed) {
+            return Err(TrySendErrorResult<T> { .item = std::move(item), .reason = TrySendError::Closed });
+        }
+        if (mChan->queue.size() + mChan->reserved >= mChan->capacity) {
+            return Err(TrySendErrorResult<T> { .item = std::move(item), .reason = TrySendError::Full });
+        }
+        mChan->queue.emplace_back(std::move(item));
+        locker.unlock();
+
+        // Success to send, wakeup the receiver.
+        mChan->receiver.wakeupOne();
+        return {};
+    }
+
+    /**
      * @brief Blocking send a item to the channel.
+     * @note It will ```BLOCK``` the thread, so it is not recommended to use it in the async context, use it in sync code
      * 
      * @param item 
-     * @note It will ```BLOCK``` the thread, so it is not recommended to use it in the async context, use it in sync code
      * @return Result<void, T>, if the receiver is closed, return Err(item), else return {}.
      */
     [[nodiscard]]
@@ -255,6 +411,47 @@ public:
             mChan->receiver.wakeupOne();
         }
         return result;
+    }
+
+    /**
+     * @brief Reserve a item slot for the channel.
+     * 
+     * @return std::optional<Permit<T> >, nullopt on closed channel.
+     */
+    [[nodiscard]]
+    auto reserve() const noexcept {
+        return detail::ReserveAwaiter<T>(mChan.get());
+    }
+
+    /**
+     * @brief Try reserve a item slot for the channel.
+     * 
+     * @return Result<Permit<T>, TrySendError> 
+     */
+    [[nodiscard]]
+    auto tryReserve() const -> Result<Permit<T>, TrySendError> {
+        auto locker = std::unique_lock(mChan->mutex);
+
+        // Do check
+        if (mChan->receiverClosed) {
+            return Err(TrySendError::Closed);
+        }
+        if (mChan->queue.size() + mChan->reserved >= mChan->capacity) {
+            return Err(TrySendError::Full);
+        }
+
+        mChan->reserved++;
+        return Permit<T>(mChan.get());
+    }
+
+    /**
+     * @brief Get the refcount of all the senders.
+     * 
+     * @return size_t 
+     */
+    [[nodiscard]]
+    auto useCount() const noexcept -> size_t {
+        return mChan ? mChan.use_count() : 0;
     }
 
     auto operator =(Sender &&other) -> Sender & = default;
@@ -269,6 +466,33 @@ private:
     detail::ChanSender<T> mChan;
 template <Sendable U>
 friend auto channel(size_t capacity) -> Pair<U>;
+template <Sendable U>
+friend class WeakSender;
+};
+
+/**
+ * @brief The weak sender, it doesn't prevent the channel from being closed.
+ * 
+ * @tparam T The item type to be sent.
+ */
+template <Sendable T>
+class WeakSender final {
+public:
+    WeakSender() = default;
+    WeakSender(const WeakSender &) = default;
+    WeakSender(WeakSender &&) = default;
+    ~WeakSender() = default;
+
+    auto close() noexcept -> void {
+        mChan.reset();
+    }
+
+    // Try upgrade the weak to strong
+    auto lock() -> Sender<T> {
+        return Sender<T>(mChan.lock());
+    }
+private:
+    detail::ChanWeakSender<T> mChan;
 };
 
 /**
@@ -306,7 +530,7 @@ public:
 
     /**
      * @brief Receive a item from the channel.
-     * @note Don't use the recv method concurrently, only one task can use it at a time.
+     * @note Don't use the recv or blockingRecv method concurrently, only one task can use it at a time.
      * 
      * @return std::optional<T>, nullopt on the channel is closed
      */
@@ -316,9 +540,32 @@ public:
     }
 
     /**
+     * @brief Try receive a item from the channel.
+     * 
+     * @return Result<T, TryRecvError> 
+     */
+    [[nodiscard]]
+    auto tryRecv() noexcept(std::is_nothrow_move_constructible_v<T>) -> Result<T, TryRecvError> {
+        auto locker = std::unique_lock(mChan->mutex);
+        if (mChan->senderClosed) {
+            return Err(TryRecvError::Closed);
+        }
+        if (mChan->queue.empty()) {
+            return Err(TryRecvError::Empty);
+        }
+        auto value = mChan->queue.front();
+        mChan->queue.pop_front();
+        locker.unlock();
+
+        // Success to recv, wakeup the sender.
+        mChan->senders.wakeupOne();
+        return std::move(value);
+    }
+
+    /**
      * @brief Blocking Receive a item from the channel.
      * @note 
-     *  - Don't use the recv method concurrently, only one thread can use it at a time.
+     *  - Don't use the recv or blockingRecv method concurrently, only one thread can use it at a time.
      * 
      *  - It will ```BLOCK``` the thread, so it is not recommended to use it in the async context, use it in sync code
      * 
