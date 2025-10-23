@@ -11,11 +11,13 @@ on:
 
 jobs:
   build:
-    name: Build ${{ matrix.backend }}
+    name: Build ${{ matrix.backend }} (${{ matrix.kind }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         backend: [epoll, io_uring]
+        kind: [shared, static]
         include:
           - backend: epoll
             config_args: ""
@@ -32,7 +34,7 @@ jobs:
     - name: Install dependencies
       run: sudo apt install -y lcov
     - name: Configure
-      run: xmake f -m coverage --fmt=y ${{ matrix.config_args }} -y
+      run: xmake f -m coverage --fmt=y -k ${{ matrix.kind }} ${{ matrix.config_args }} -y
     - name: Build
       run: xmake -y
     - name: Run Test and collect coverage
