@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/runtime/timer.hpp>
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/net/sockfd.hpp>
@@ -78,29 +79,6 @@ public:
     } aio;
 #endif // defined(__linux__)
 
-};
-
-/**
- * @brief The internal QObject::startTimer implementation for sleep(ms) function
- * 
- */
-class QTimerAwaiter final {
-public:
-    QTimerAwaiter(QIoContext *context, uint64_t ms) : mCtxt(context), mMs(ms) { }
-
-    auto await_ready() -> bool { return mMs == 0; }
-    auto await_suspend(runtime::CoroHandle caller) -> bool;
-    auto await_resume() -> void;
-private:
-    auto onStopRequested() -> void;
-    auto onTimeout() -> void;
-
-    QIoContext *mCtxt;
-    uint64_t   mMs;
-    int        mTimerId = 0;
-    runtime::CoroHandle mCaller;
-    runtime::StopRegistration mRegistration;
-friend class QIoContext;
 };
 
 /**
@@ -194,17 +172,28 @@ public:
 protected:
     auto timerEvent(QTimerEvent *event) -> void override;
 private:
-    auto submitTimer(uint64_t ms, QTimerAwaiter *awaiter) -> int;
-    auto cancelTimer(int timerId) -> void;
-
     SockInitializer mInit;
     size_t mNumOfDescriptors = 0; //< How many descriptors are added
-    std::map<int, QTimerAwaiter *> mTimers; //< Timer map
+    int    mTimerId = 0; //< The timer id
+    runtime::TimerService mService; //< Timer set impl
 friend class QTimerAwaiter;
 };
 
 inline QIoContext::QIoContext(QObject *parent) : QObject(parent) {
     setObjectName("IliasQIoContext");
+
+    // Handle the timepoint changed
+    mService.setCallback([this](auto timepoint) {
+        if (mTimerId != 0) {
+            killTimer(std::exchange(mTimerId, 0));
+        }
+        if (timepoint) { // Has timers
+            auto now = std::chrono::steady_clock::now();
+            auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(*timepoint - now);
+            auto interval = diff.count() <= 0 ? 1 : diff.count(); // If already elapsed, set 1ms
+            mTimerId = startTimer(interval, Qt::PreciseTimer);
+        }
+    });
 }
 
 inline QIoContext::~QIoContext() {
@@ -359,7 +348,7 @@ inline auto QIoContext::cancel(IoDescriptor *fd) -> IoResult<void> {
 }
 
 inline auto QIoContext::sleep(uint64_t ms) -> Task<void> {
-    co_return co_await QTimerAwaiter {this, ms};
+    co_return co_await mService.sleep(ms);
 }
 
 inline auto QIoContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
@@ -632,60 +621,10 @@ inline auto QIoContext::poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_
 
 // Timer
 inline auto QIoContext::timerEvent(QTimerEvent *event) -> void {
-    auto iter = mTimers.find(event->timerId());
-    if (iter == mTimers.end()) {
-        ILIAS_WARN("QIo", "Timer {} not found", event->timerId());
+    if (event->timerId() != mTimerId) {
         return;
     }
-    auto [id, awaiter] = *iter;
-    killTimer(id);
-    awaiter->onTimeout();
-    mTimers.erase(iter);
-}
-
-inline auto QIoContext::submitTimer(uint64_t timeout, QTimerAwaiter *awaiter) -> int {
-    auto id = startTimer(std::chrono::milliseconds(timeout));
-    if (id == 0) {
-        return 0;
-    }
-    mTimers.emplace(id, awaiter);
-    return id;
-}
-
-inline auto QIoContext::cancelTimer(int id) -> void {
-    if (id == 0) {
-        return;
-    }
-    killTimer(id);
-    mTimers.erase(id);
-}
-
-inline auto QTimerAwaiter::await_suspend(runtime::CoroHandle caller) -> bool {
-    mCaller = caller;
-    mTimerId = mCtxt->submitTimer(mMs, this);
-    mRegistration.register_<&QTimerAwaiter::onStopRequested>(caller.stopToken(), this);
-    if (mTimerId == 0) {
-        ILIAS_WARN("QIo", "Timer could not be created");
-    }
-    return mTimerId != 0; // If the timer was not created, we can't suspend
-}
-
-inline auto QTimerAwaiter::await_resume() -> void {
-    ILIAS_ASSERT(mTimerId == 0);
-}
-
-inline auto QTimerAwaiter::onStopRequested() -> void {
-    if (mTimerId == 0) {
-        return;
-    }
-    mCtxt->cancelTimer(mTimerId);
-    mTimerId = 0;
-    mCaller.setStopped();
-}
-
-inline auto QTimerAwaiter::onTimeout() -> void {
-    mTimerId = 0;
-    mCaller.schedule();
+    mService.updateTimers();
 }
 
 // Poll

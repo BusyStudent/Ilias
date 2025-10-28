@@ -85,6 +85,9 @@ public:
     // Start the thread
     ILIAS_API
     auto start() -> void;
+
+    ILIAS_API
+    auto setName(std::string_view name) -> void;
 protected:
     ThreadBase() = default;
     ~ThreadBase() = default;
@@ -234,6 +237,13 @@ public:
      * 
      */
     auto stop() noexcept { return mHandle->stop(); }
+
+    /**
+     * @brief Set thread name for debugging
+     * 
+     * @param name 
+     */
+    auto setName(std::string_view name) { return mHandle->setName(name); }
 
     /**
      * @brief Blocking current thread until the thread is done, return the result of the task

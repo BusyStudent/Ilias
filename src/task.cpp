@@ -3,6 +3,10 @@
 #include <utility> // std::exchange
 #include <atomic> // std::atomic_ref
 
+#if defined(_WIN32)
+    #include <ilias/detail/win32defs.hpp>
+#endif // _WIN32
+
 ILIAS_NS_BEGIN
 
 using namespace task;
@@ -411,6 +415,16 @@ auto ThreadBase::start() -> void {
             caller.resume();
         });
     });
+}
+
+auto ThreadBase::setName(std::string_view name) -> void {
+
+#if defined(_WIN32)
+    win32::setThreadName(mThread.native_handle(), name);
+#else
+    ::pthread_setname_np(mThread.native_handle(), std::string(name).c_str());
+#endif // _WIN32
+
 }
 
 ILIAS_NS_END

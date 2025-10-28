@@ -20,7 +20,7 @@
 
 /**
  * @brief The range for for the Generator<T>
- * @note Because for(xxx; xxx; co_await(++it)) compile failed in gcc, so we have to use if instead
+ * @note Because for(xxx; xxx; co_await(++it)) compile failed in gcc, so we have to use it instead
  * 
  * @code {.cpp}
  * ilias_for_await(const auto &val, generator()) {

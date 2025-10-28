@@ -65,6 +65,11 @@ IocpContext::IocpContext() : mNt(ntdll()) {
         }
         mAfdDevice = *afd;
     }
+
+    // Using high resolution timer if available
+    if (mNt.hasWaitCompletionPacket()) {
+        initTimer();
+    }
 }
 
 IocpContext::~IocpContext() {
@@ -83,6 +88,16 @@ IocpContext::~IocpContext() {
             ILIAS_WARN("IOCP", "Failed to close iocp handle: {}", ::GetLastError());
         }
     }
+    if (mTimerFd) {
+        if (!::CloseHandle(mTimerFd)) {
+            ILIAS_WARN("IOCP", "Failed to close timer handle: {}", ::GetLastError());
+        }
+    }
+    if (mTimerPacket) {
+        if (!::CloseHandle(mTimerPacket)) {
+            ILIAS_WARN("IOCP", "Failed to close timer packet handle: {}", ::GetLastError());
+        }
+    }
 }
 
 #pragma region Executor
@@ -97,15 +112,21 @@ auto IocpContext::post(void (*fn)(void *), void *args) -> void {
 }
 
 auto IocpContext::run(runtime::StopToken token) -> void {
+    auto running = true;
+    auto cb = runtime::StopCallback(token, [&, this]() {
+        schedule([&]() { running = false; });
+    });
     DWORD timeout = INFINITE;
-    while (!token.stop_requested()) {
-        auto nextTimepoint = mService.nextTimepoint();
-        if (nextTimepoint) {
-            auto diffRaw = *nextTimepoint - std::chrono::steady_clock::now();
-            auto diffMs = std::chrono::duration_cast<std::chrono::milliseconds>(diffRaw).count();
-            timeout = std::clamp<int64_t>(diffMs, 0, INFINITE - 1);
+    while (running) {
+        if (!mTimerFd) { // Use iocp's timeout as timer
+            auto nextTimepoint = mService.nextTimepoint();
+            if (nextTimepoint) {
+                auto diffRaw = *nextTimepoint - std::chrono::steady_clock::now();
+                auto diffMs = std::chrono::duration_cast<std::chrono::milliseconds>(diffRaw).count();
+                timeout = std::clamp<int64_t>(diffMs, 0, INFINITE - 1);
+            }
+            mService.updateTimers();
         }
-        mService.updateTimers();
         processCompletion(timeout);
     }
 }
@@ -186,6 +207,82 @@ auto IocpContext::processCompletionEx(DWORD timeout) -> void {
             ILIAS_WARN("IOCP", "GetQueuedCompletionStatusEx returned nullptr overlapped, idx {}", mEntriesIdx);
         }
     }
+}
+
+#pragma region Timer
+auto IocpContext::initTimer() -> void {
+    if (auto status = mNt.NtCreateWaitCompletionPacket(&mTimerPacket, GENERIC_ALL, nullptr); FAILED(status)) {
+        ILIAS_WARN("Win32", "NtCreateWaitCompletionPacket failed: {}", SystemError(mNt.RtlNtStatusToDosError(status)));
+        return;
+    }
+    mTimerFd = ::CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    if (!mTimerFd) {
+        ILIAS_WARN("IOCP", "Failed to create timer: {}", ::GetLastError());
+        return;
+    }
+
+    // Bind it to iocp
+    BOOLEAN alreadySignaled = FALSE;
+    if (auto err = submitTimerWait(mTimerPacket, mTimerFd, &alreadySignaled); err != 0 || alreadySignaled) { // Impossible for alreadySignaled to be true
+        ILIAS_WARN("IOCP", "Failed to associate timer packet with iocp: {}", SystemError(err));
+        ::CloseHandle(mTimerFd);
+        mTimerFd = nullptr;
+        return;
+    }
+    mService.setCallback([this](auto timepoint) {
+        if (!timepoint) { // No timers
+            ::CancelWaitableTimer(mTimerFd);
+            return;
+        }
+        // Convert the timeout to FILETIME
+        auto now = std::chrono::steady_clock::now();
+        auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(*timepoint - now);
+        auto time = LARGE_INTEGER {
+            .QuadPart = -(diff.count() / 100) // 100 nanoseconds per tick, negative value means relative time
+        };
+        if (time.QuadPart > 0) { // The diff is negative, so we need to set the time to 0
+            time.QuadPart = 0;
+        }
+        if (!::SetWaitableTimer(mTimerFd, &time, 0, nullptr, nullptr, FALSE)) { // Oneshot
+            ILIAS_WARN("IOCP", "Failed to set timer: {}", ::GetLastError());
+        }
+    });
+}
+
+auto IocpContext::processTimer() -> void {
+    ILIAS_TRACE("IOCP", "System Timer signaled, processing");
+    BOOLEAN alreadySignaled = TRUE;
+    while (alreadySignaled) {
+        mService.updateTimers(); // Update the timers group
+
+        // Re-arm it
+        if (auto err = submitTimerWait(mTimerPacket, mTimerFd, &alreadySignaled); err != 0) {
+            ILIAS_WARN("IOCP", "Failed to associate timer packet with iocp: {}", SystemError(err));
+            return;
+        }
+    }
+}
+
+auto IocpContext::submitTimerWait(HANDLE packet, HANDLE handle, BOOLEAN *alreadySignaled) -> DWORD {
+    auto callback = [](void *ctxt) {
+        return static_cast<IocpContext*>(ctxt)->processTimer();
+    };
+    auto ptr = static_cast<void (*)(void*)>(callback);
+    auto status = mNt.NtAssociateWaitCompletionPacket(
+        packet,
+        mIocpFd,
+        handle,
+        reinterpret_cast<void*>(ptr), // CompletionKey callback fn (using function pointer as key)
+        this,                         // Overlapped callback args (this)
+        0,
+        0x114514,                     // Callback magic
+        alreadySignaled
+    );
+    if (status != STATUS_SUCCESS) {
+        status = mNt.RtlNtStatusToDosError(status);
+    }
+    ILIAS_TRACE("IOCP", "Submitted timer wait, status = {}, alreadySignaled = {}", status, *alreadySignaled);
+    return status;
 }
 
 auto IocpContext::sleep(uint64_t ms) -> Task<void> {

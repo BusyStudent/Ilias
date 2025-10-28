@@ -60,14 +60,21 @@ public:
     auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void> override;
     auto waitObject(HANDLE handle) -> IoTask<void> override;
 private:
+    auto submitTimerWait(HANDLE handle, HANDLE packet, PBOOLEAN alreadySignaled) -> DWORD;
     auto processCompletion(DWORD timeout) -> void;
     auto processCompletionEx(DWORD timeout) -> void;
+    auto processTimer() -> void;
+    auto initTimer() -> void;
 
     SockInitializer       mInit;
-    runtime::TimerService mService;
     HANDLE mIocpFd = nullptr;
     HANDLE mAfdDevice = nullptr; // For poll
     NtDll &mNt;
+    
+    // Timer
+    HANDLE mTimerFd = nullptr;
+    HANDLE mTimerPacket = nullptr;
+    runtime::TimerService mService;
 
     // NtCompletionPacket
     std::deque<void *> mCompletionPackets;

@@ -360,6 +360,10 @@ ILIAS_TEST(Net, Udp) {
     }
 }
 
+ILIAS_TEST(Net, Timers) {
+    auto _ = co_await whenAll(sleep(10ms), sleep(20ms), sleep(30ms));
+}
+
 ILIAS_TEST(Net, Http) {
     auto info = (co_await AddressInfo::fromHostname("www.baidu.com", "http")).value();
     auto client = (co_await TcpStream::connect(info.endpoints().at(0))).value();

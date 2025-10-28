@@ -29,8 +29,8 @@ extern auto ILIAS_API toUtf8(std::wstring_view str) -> std::string;
 
 extern auto ILIAS_API pipe(HANDLE *read, HANDLE *write, SECURITY_ATTRIBUTES *attr = nullptr) -> bool;
 
-extern auto ILIAS_API setThreadName(std::string_view name) -> bool;
-extern auto ILIAS_API threadName() -> std::string;
+extern auto ILIAS_API setThreadName(HANDLE thread, std::string_view name) -> bool;
+extern auto ILIAS_API threadName(HANDLE thread) -> std::string;
 
 } // namespace win32
 

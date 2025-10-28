@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <ilias/runtime/functional.hpp>
 #include <ilias/runtime/executor.hpp>
 #include <ilias/runtime/coro.hpp>
 #include <ilias/log.hpp>
@@ -33,6 +34,7 @@ class TimerService final {
 public:
     using TimePoint = std::chrono::steady_clock::time_point;
     using TimerId = std::multimap<TimePoint, TimerAwaiter *>::iterator;
+    using Callback = SmallFunction<void (std::optional<TimePoint> nextTimepoint)>;
 
     TimerService() { }
     TimerService(const TimerService &) = delete;
@@ -55,6 +57,14 @@ public:
      * @return std::optional<std::chrono::steady_clock::time_point> 
      */
     auto nextTimepoint() const -> std::optional<TimePoint>;
+
+    /**
+     * @brief Set the Callback when the nextTimepoint is updated
+     * @note Caller should only do update the timerfd in it, don't enter the event loop, it may cause undefined behavior
+     * 
+     * @param callback The callback (it can be nullptr)
+     */
+    auto setCallback(Callback callback) -> void;
 
     /**
      * @brief Sleep for a specified amount of time, make task
@@ -81,11 +91,16 @@ private:
      */
     auto cancelTimer(TimerId timerId) -> void;
 
-    std::multimap<
-        TimePoint, 
-        TimerAwaiter *
-    > mTimers;
-friend class TimerAwaiter;
+    /**
+     * @brief Try to update the next timepoint & call the callback, if the callback is set
+     * 
+     */
+    auto timerChanged() -> void;
+
+    std::multimap<TimePoint, TimerAwaiter * > mTimers; // The timer queue
+    std::optional<TimePoint>                  mPrevTimepoint; // The previous timepoint (only used when mCallback is set)
+    Callback                                  mCallback; // Invoke when the nextTimepoint is updated
+    friend class TimerAwaiter;
 };
 
 
@@ -114,7 +129,7 @@ friend class TimerService;
 };
 
 
-inline auto TimerService::nextTimepoint() const -> std::optional<std::chrono::steady_clock::time_point> {
+inline auto TimerService::nextTimepoint() const -> std::optional<TimePoint> {
     if (mTimers.empty()) {
         return std::nullopt;
     }
@@ -127,6 +142,7 @@ inline auto TimerService::updateTimers() -> void {
         return;
     }
     auto now = std::chrono::steady_clock::now();
+    auto changed = false;
     for (auto iter = mTimers.begin(); iter != mTimers.end(); ) {
         auto &[timepoint, awaiter] = *iter;
         if (timepoint > now) {
@@ -134,8 +150,16 @@ inline auto TimerService::updateTimers() -> void {
         }
         ILIAS_TRACE("TimerSevice", "Submit timer at {}, diff {}, awaiter {}", timepoint.time_since_epoch(), now - timepoint, (void*) awaiter);
         awaiter->onTimeout();
+        changed = true;
         iter = mTimers.erase(iter);
     }
+    if (changed) {
+        timerChanged();
+    }
+}
+
+inline auto TimerService::setCallback(Callback callback) -> void {
+    mCallback = callback;
 }
 
 inline auto TimerService::sleep(uint64_t ms) -> TimerAwaiter {
@@ -144,12 +168,26 @@ inline auto TimerService::sleep(uint64_t ms) -> TimerAwaiter {
 
 inline auto TimerService::submitTimer(TimePoint timepoint, TimerAwaiter *awaiter) -> TimerId {
     ILIAS_TRACE("TimerSevice", "Submit timer(on {}, awaiter {})", timepoint.time_since_epoch(), (void *) awaiter);
-    return mTimers.emplace(timepoint, awaiter);
+    auto id = mTimers.emplace(timepoint, awaiter);
+    timerChanged();
+    return id;
 }
 
 inline auto TimerService::cancelTimer(TimerId id) -> void {
     ILIAS_TRACE("TimerSevice", "Cancel timer(on {}, awaiter {})", id->first.time_since_epoch(), (void *) id->second);
     mTimers.erase(id);
+    timerChanged();
+}
+
+inline auto TimerService::timerChanged() -> void {
+    if (!mCallback) {
+        return;
+    }
+    auto timepoint = nextTimepoint();
+    if (mPrevTimepoint != timepoint) {
+        mPrevTimepoint = timepoint;
+        mCallback(timepoint);
+    }
 }
 
 

@@ -635,7 +635,9 @@ inline auto blocking(Fn fn) {
 // Sleep for a duration
 [[nodiscard]]
 inline auto sleep(std::chrono::milliseconds duration) -> Task<void> {
-    return runtime::Executor::currentThread()->sleep(duration.count());
+    auto count = duration.count();
+    auto ucount = uint64_t(count < 0 ? 0 : count);
+    return runtime::Executor::currentThread()->sleep(ucount);
 }
 
 // Abstraction for awaitable

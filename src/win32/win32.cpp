@@ -93,18 +93,18 @@ namespace {
     }
 }
 
-auto win32::setThreadName(std::string_view name) -> bool {
+auto win32::setThreadName(HANDLE thread, std::string_view name) -> bool {
     std::call_once(once, init);
     if (apis.SetThreadDescription) {
-        return SUCCEEDED(apis.SetThreadDescription(::GetCurrentThread(), toWide(name).c_str()));
+        return SUCCEEDED(apis.SetThreadDescription(thread, toWide(name).c_str()));
     }
     return false;
 }
 
-auto win32::threadName() -> std::string {
+auto win32::threadName(HANDLE thread) -> std::string {
     std::call_once(once, init);
     LPWSTR name = nullptr;
-    if (apis.GetThreadDescription && SUCCEEDED(apis.GetThreadDescription(::GetCurrentThread(), &name))) {
+    if (apis.GetThreadDescription && SUCCEEDED(apis.GetThreadDescription(thread, &name))) {
         auto str = toUtf8(name);
         ::LocalFree(name);
         return str;

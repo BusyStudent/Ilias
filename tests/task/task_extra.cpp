@@ -86,6 +86,17 @@ ILIAS_TEST(Task, TaskGroup) {
         handle.stop();
         EXPECT_FALSE(co_await std::move(handle));
     }
+
+    { // Test already completed handle
+        auto group = TaskGroup<void>();
+        auto handle = spawn([]() -> Task<void> {
+            co_return;
+        });
+        co_await sleep(10ms);
+        group.insert(std::move(handle)); // This handle should alreayd be completed
+
+        co_await group.shutdown();
+    }
     co_return;
 }
 
@@ -237,6 +248,7 @@ ILIAS_TEST(Task, Thread) {
     auto thread3 = Thread(exec, []() -> Task<void> {
         co_return; 
     });
+    thread3.setName("thread3"); // Test set the name of it
     co_await sleep(10ms);
     EXPECT_TRUE(co_await thread3.join());
 }
