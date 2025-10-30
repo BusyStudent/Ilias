@@ -14,7 +14,6 @@ namespace openssl {
 
 // Internal BIO Method
 static constinit BIO_METHOD *bioMethod = nullptr;
-static constinit std::once_flag init;
 
 #pragma region OpenSSL
 class TlsStateImpl : public TlsState {
@@ -230,6 +229,11 @@ auto registerBioMethod() -> void {
 	});
 }
 
+auto unregisterBioMethod() -> void {
+	BIO_meth_free(bioMethod);
+	bioMethod = nullptr;
+}
+
 } // namespace openssl
 
 #pragma region Export
@@ -237,12 +241,17 @@ using namespace openssl;
 
 // Tls Context...
 auto context::make() -> void * {
-	std::call_once(openssl::init, []() {
-		SSL_library_init();
-		openssl::registerBioMethod();
-	});
-	auto ctxt = SSL_CTX_new(TLS_method());
+	struct Initializer {
+		Initializer() {
+			openssl::registerBioMethod();
+		}
+		~Initializer() {
+			openssl::unregisterBioMethod();
+		}
+	};
+	static Initializer init;
 
+	auto ctxt = SSL_CTX_new(TLS_method());
 	return ctxt;
 }
 

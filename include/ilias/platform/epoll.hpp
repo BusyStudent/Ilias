@@ -78,13 +78,18 @@ public:
 private:
     auto processCompletion(std::stop_token &token) -> void;
     auto processEvents(std::span<const epoll_event> events) -> void;
+    auto processTimer() -> void;
     auto pollCallbacks() -> void;
 
     using Callback = std::pair<void (*)(void *), void *>;
 
+    static constexpr uintptr_t KindEventFd = 0;
+    static constexpr uintptr_t KindTimerFd = 1;
+
     ///> @brief The epoll file descriptor
     int                    mEpollFd = -1;
     int                    mEventFd = -1; // For wakeup the epoll, there is some new callback in the queue
+    int                    mTimerFd = -1; // For timer service, use timerfd for high resolution
     runtime::TimerService  mService;
     std::deque<Callback>   mCallbacks; // The callbacks in current thread, non mutex
     std::deque<Callback>   mPendingCallbacks; // The callbacks from another thread, protected by mMutex

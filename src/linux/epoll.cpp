@@ -1,3 +1,4 @@
+#include <ilias/detail/intrusive.hpp>
 #include <ilias/platform/epoll.hpp>
 #include <ilias/runtime/token.hpp>
 #include <ilias/io/system_error.hpp>
@@ -7,6 +8,7 @@
 #include <ilias/net/msghdr.hpp>
 #include <ilias/net/sockfd.hpp>
 
+#include <sys/timerfd.h>
 #include <sys/eventfd.h>
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -22,20 +24,9 @@ ILIAS_NS_BEGIN
 
 namespace linux {
 
-class EpollAwaiter;
-class EpollDescriptor final : public IoDescriptor {
-public:
-    int                fd         = -1;
-    int                epollFd    = -1;
-    IoDescriptor::Type type       = Unknown;
-    bool               pollable   = false;
+class EpollDescriptor;
 
-    // Poll Status
-    std::list<EpollAwaiter *> awaiters;
-    uint32_t                  events = 0; // Current all combined events
-};
-
-class EpollAwaiter {
+class EpollAwaiter final : public intrusive::Node<EpollAwaiter> {
 public:
     EpollAwaiter(EpollDescriptor *fd, uint32_t events) : mFd(fd), mEvents(events) { }
 
@@ -48,12 +39,23 @@ public:
 private:
     auto onStopRequested() -> void;
 
-    EpollDescriptor                *mFd = nullptr;
-    IoResult<uint32_t>              mResult; //< The result of the awaiter
-    uint32_t                        mEvents  = 0; //< Events to wait for
-    runtime::CoroHandle             mCaller;
-    runtime::StopRegistration       mRegistration;
-    std::list<EpollAwaiter *>::iterator mIt;
+    EpollDescriptor          *mFd = nullptr;
+    IoResult<uint32_t>        mResult; //< The result of the awaiter
+    uint32_t                  mEvents  = 0; //< Events to wait for
+    runtime::CoroHandle       mCaller;
+    runtime::StopRegistration mRegistration;
+};
+
+class EpollDescriptor final : public IoDescriptor {
+public:
+    int                fd         = -1;
+    int                epollFd    = -1;
+    IoDescriptor::Type type       = Unknown;
+    bool               pollable   = false;
+
+    // Poll Status
+    intrusive::List<EpollAwaiter> awaiters;
+    uint32_t                      events = 0; // Current all combined events
 };
 
 [[maybe_unused]]
@@ -102,7 +104,6 @@ inline std::string epollToString(uint32_t events) {
 }
 
 auto EpollAwaiter::await_ready() -> bool {
-    mIt = mFd->awaiters.end(); // Mark it
     if ((mFd->events & mEvents) == mEvents) { // The registered events are contains current events, no need to register on epoll
         return false;
     }
@@ -120,8 +121,8 @@ auto EpollAwaiter::await_ready() -> bool {
 }
 
 auto EpollAwaiter::await_suspend(runtime::CoroHandle caller) -> void {
-    mIt           = mFd->awaiters.insert(mFd->awaiters.end(), this);
-    mCaller       = caller;
+    mFd->awaiters.push_back(*this);
+    mCaller = caller;
     mRegistration.register_<&EpollAwaiter::onStopRequested>(caller.stopToken(), this);
 }
 
@@ -130,10 +131,6 @@ auto EpollAwaiter::await_resume() -> IoResult<uint32_t> {
 }
 
 auto EpollAwaiter::onNotify(IoResult<uint32_t> revents) -> void {
-    if (mIt == mFd->awaiters.end()) { // Already Got Event or Stopped
-        return;
-    }
-    mIt = mFd->awaiters.end();
     mResult = revents;
     mCaller.schedule();
 }
@@ -143,37 +140,72 @@ auto EpollAwaiter::events() const -> uint32_t {
 }
 
 auto EpollAwaiter::onStopRequested() -> void {
-    if (mIt == mFd->awaiters.end()) { // Already Got Event or Stopped
+    if (!isLinked()) { // Already Got Event or Stopped
         return;
     }
-    mFd->awaiters.erase(mIt);
-    mIt = mFd->awaiters.end();
+    unlink();
     mCaller.setStopped();
 }
 
 EpollContext::EpollContext() {
+    // Prepare the system resources
     mEpollFd = ::epoll_create1(EPOLL_CLOEXEC);
     if (mEpollFd == -1) {
-        ILIAS_WARN("Epoll", "Failed to create epoll file descriptor");
-        ILIAS_ASSERT(false);
+        ILIAS_ERROR("Epoll", "Failed to create epoll file descriptor");
+        ILIAS_THROW(std::system_error(SystemError::fromErrno(), "epoll_create1"));
     }
     mEventFd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (mEventFd == -1) {
-        ILIAS_WARN("Epoll", "Failed to create eventfd file descriptor");
-        ILIAS_ASSERT(false);
+        ILIAS_ERROR("Epoll", "Failed to create eventfd file descriptor");
+        ILIAS_THROW(std::system_error(SystemError::fromErrno(), "eventfd"));
     }
-    epoll_event event;
+    mTimerFd = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+    if (mTimerFd == -1) {
+        ILIAS_ERROR("Epoll", "Failed to create timerfd file descriptor");
+        ILIAS_THROW(std::system_error(SystemError::fromErrno(), "timerfd_create"));
+    }
+    // Bind eventfd
+    ::epoll_event event;
     event.events = EPOLLIN;
-    event.data.ptr = nullptr; // Special ptr, mark eventfd
+    event.data.ptr = reinterpret_cast<void*>(KindEventFd); // Special ptr, mark eventfd
     if (::epoll_ctl(mEpollFd, EPOLL_CTL_ADD, mEventFd, &event) == -1) {
-        ILIAS_WARN("Epoll", "Failed to add eventfd to epoll");
-        ILIAS_ASSERT(false);
+        ILIAS_ERROR("Epoll", "Failed to add eventfd to epoll");
+        ILIAS_THROW(std::system_error(SystemError::fromErrno(), "epoll_ctl"));
     }
+    // Bind timerfd
+    event.events = EPOLLIN;
+    event.data.ptr = reinterpret_cast<void*>(KindTimerFd); // Special ptr, mark timerfd
+    if (::epoll_ctl(mEpollFd, EPOLL_CTL_ADD, mTimerFd, &event) == -1) {
+        ILIAS_ERROR("Epoll", "Failed to add timerfd to epoll");
+        ILIAS_THROW(std::system_error(SystemError::fromErrno(), "epoll_ctl"));
+    }
+
+    // Bind the service
+    mService.setCallback([this](auto timepoint) {
+        ::itimerspec timerval {};
+        if (timepoint) { // If the next timepoint is set, set the timer, other wise, disable it
+            auto now = std::chrono::steady_clock::now();
+            auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(*timepoint - now);
+            if (diff.count() < 0) {
+                diff = std::chrono::nanoseconds(1);
+            }
+            // Just one shot
+            timerval.it_interval.tv_sec  = 0;
+            timerval.it_interval.tv_nsec = 0;
+            timerval.it_value.tv_sec  = diff.count() / 1000000000;
+            timerval.it_value.tv_nsec = diff.count() % 1000000000;
+        }
+        if (::timerfd_settime(mTimerFd, 0, &timerval, nullptr) == -1) {
+            ILIAS_WARN("Epoll", "Failed to set timerfd time: {}", SystemError::fromErrno());
+        }
+        ILIAS_TRACE("Epoll", "Update timerfd time");
+    });
 }
 
 EpollContext::~EpollContext() {
     ::close(mEpollFd);
     ::close(mEventFd);
+    ::close(mTimerFd);
 }
 
 auto EpollContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor *> {
@@ -233,7 +265,7 @@ auto EpollContext::cancel(IoDescriptor *fd) -> IoResult<void> {
     ILIAS_TRACE("Epoll", "Cancel fd {} all pending operations for {}", nfd->fd, nfd->awaiters.size());
     if (nfd->pollable) { // if descriptor is pollable, cancel all poll awaiter
         for (auto &awaiter : nfd->awaiters) {
-            awaiter->onNotify(Err(SystemError::Canceled));
+            awaiter.onNotify(Err(SystemError::Canceled));
         }
         nfd->awaiters.clear();
     }
@@ -286,12 +318,7 @@ auto EpollContext::processCompletion(runtime::StopToken &token) -> void {
     // Time to wait
     std::array<epoll_event, 64> events;
     std::span view { events };
-    int timeout = -1; // Wait forever        
-    if (auto nextTimepoint = mService.nextTimepoint(); nextTimepoint) {
-        auto diffRaw = *nextTimepoint - ::std::chrono::steady_clock::now();
-        auto diffMs  = ::std::chrono::duration_cast<::std::chrono::milliseconds>(diffRaw).count();
-        timeout = ::std::clamp<int64_t>(diffMs, 0, ::std::numeric_limits<int>::max() - 1);
-    }
+    int timeout = -1; // Wait forever until we got any events (callbacks, io, timer)
     if (auto res = ::epoll_wait(mEpollFd, view.data(), view.size(), timeout); res > 0) { // Got any events
         processEvents(view.subspan(0, res));
     }
@@ -309,12 +336,24 @@ auto EpollContext::pollCallbacks() -> void {
     }
 }
 
+auto EpollContext::processTimer() -> void {
+    uint64_t expiredCount = 0;
+    ILIAS_TRACE("Epoll", "Process timer fd");
+    while (::read(mTimerFd, &expiredCount, sizeof(expiredCount)) == sizeof(uint64_t)) {
+        mService.updateTimers();
+    }
+}
+
 auto EpollContext::processEvents(std::span<const epoll_event> eventsArray) -> void {
     for (const auto &item : eventsArray) {
         auto events = item.events;
         auto ptr = item.data.ptr;
-        if (ptr == nullptr) { // From the event fd, wakeup epoll and poll callbacks
+        if (ptr == reinterpret_cast<void*>(KindEventFd)) { // From the event fd, wakeup epoll and poll callbacks
             pollCallbacks();
+            continue;
+        }
+        if (ptr == reinterpret_cast<void*>(KindTimerFd)) { // From the timer fd, update timers
+            processTimer();
             continue;
         }
 
@@ -323,17 +362,17 @@ auto EpollContext::processEvents(std::span<const epoll_event> eventsArray) -> vo
         ILIAS_TRACE("Epoll", "Got epoll event for fd: {}, events: {}", nfd->fd, epollToString(events));
         uint32_t newEvents = 0; // New interested events
         for (auto it = nfd->awaiters.begin(); it != nfd->awaiters.end();) {
-            auto awaiter = *it;
-            bool isInterested = awaiter->events() & events;
+            auto &awaiter = *it;
+            bool isInterested = awaiter.events() & events;
             bool isErrorOrHup = events & EPOLLERR || events & EPOLLHUP;
             bool shouldNotify = isInterested || isErrorOrHup; // Notify if interested or error or hangup
 
             if (shouldNotify) {
-                awaiter->onNotify(events);
+                awaiter.onNotify(events);
                 it = nfd->awaiters.erase(it);    
             }
             else {
-                newEvents |= awaiter->events(); // Collect the new interested events
+                newEvents |= awaiter.events(); // Collect the new interested events
                 ++it;
             }
         }
@@ -356,7 +395,7 @@ auto EpollContext::processEvents(std::span<const epoll_event> eventsArray) -> vo
             nfd->events = 0;
             auto error = SystemError::fromErrno();
             for (auto &awaiter : nfd->awaiters) {
-                awaiter->onNotify(Err(error));
+                awaiter.onNotify(Err(error));
             }
             nfd->awaiters.clear();
         }
@@ -554,6 +593,9 @@ auto EpollContext::sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> Io
         }
         else if (auto err = errno; ret == -1 && (err != EINTR && err != EAGAIN && err != EWOULDBLOCK)) {
             co_return Err(SystemError(err));
+        }
+        if (auto pollRet = co_await poll(nfd, EPOLLOUT); !pollRet) {
+            co_return Err(pollRet.error());
         }
     }
 }
