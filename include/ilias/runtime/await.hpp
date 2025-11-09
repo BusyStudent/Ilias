@@ -4,6 +4,7 @@
 #include <ilias/defines.hpp>
 #include <coroutine>
 #include <concepts>
+#include <ranges>
 
 ILIAS_NS_BEGIN
 
@@ -41,12 +42,30 @@ concept HasCoAwait = requires(T &&t) {
 };
 
 /**
- * @brief Check the type can be co_await
+ * @brief Check the type can be directly co_await
  * 
  * @tparam T 
  */
 template <typename T>
-concept Awaitable = Awaiter<T> || HasCoAwait<T> || HasMemberCoAwait<T>;
+concept RawAwaitable = Awaiter<T> || HasCoAwait<T> || HasMemberCoAwait<T>;
+
+/**
+ * @brief Types that can be cast into an awaitable using ADL
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept IntoRawAwaitableADL = requires(T t) {
+    { toAwaitable(std::forward<T>(t)) } -> RawAwaitable;
+};
+
+/**
+ * @brief Check the type is an raw awaitable or can be casted into an awaitable
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept Awaitable = RawAwaitable<T> || IntoRawAwaitableADL<T>;
 
 /**
  * @brief Check the type is a sequence of awaitable like (std::vector<Task<void> >)
@@ -54,10 +73,7 @@ concept Awaitable = Awaiter<T> || HasCoAwait<T> || HasMemberCoAwait<T>;
  * @tparam T 
  */
 template <typename T>
-concept AwaitableSequence = requires(T &t) {
-    { *std::begin(t) } -> Awaitable;
-    { *std::end(t)  } -> Awaitable;
-};
+concept AwaitableSequence = std::ranges::range<T> && Awaitable<std::ranges::range_value_t<T> >;
 
 /**
  * @brief The result type of the awaiter
@@ -83,6 +99,9 @@ auto toAwaiter(T &&val) noexcept -> decltype(auto) {
     }
     else if constexpr (HasMemberCoAwait<T>) {
         return std::forward<T>(val).operator co_await();
+    }
+    else if constexpr (IntoRawAwaitableADL<T>) {
+        return toAwaiter(toAwaitable(std::forward<T>(val)));
     }
     else {
         static_assert(std::is_same_v<T, void>, "Emm?, impossible");
@@ -113,17 +132,7 @@ using AwaitableResult = typename AwaitableResultImpl<T>::type;
  * @tparam T 
  */
 template <AwaitableSequence T>
-using AwaitableSequenceValue = decltype(*std::begin(std::declval<T>()));
-
-/**
- * @brief Types that can be cast into an awaitable
- * 
- * @tparam T 
- */
-template <typename T>
-concept IntoAwaitable = requires(T t) {
-    { toAwaitable(std::forward<T>(t)) } -> Awaitable;
-};
+using AwaitableSequenceValue = AwaitableResult<std::ranges::range_value_t<T> >;
 
 } // namespace runtime
 

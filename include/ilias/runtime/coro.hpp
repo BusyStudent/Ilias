@@ -133,7 +133,7 @@ public:
         mException = std::current_exception();
     }
 
-    template <Awaitable T>
+    template <RawAwaitable T>
     auto await_transform(T &&awaitable, CaptureSource source = {}) -> decltype(auto) { // We apply the environment on here
         if constexpr (requires { awaitable.setContext(*mContext, source); }) { // It support setContext & with source
             awaitable.setContext(*mContext, source);
@@ -145,7 +145,7 @@ public:
         return std::forward<T>(awaitable);
     }
 
-    template <IntoAwaitable T>
+    template <IntoRawAwaitableADL T>
     auto await_transform(T &&object) {
         return await_transform(toAwaitable(std::forward<T>(object)));
     }

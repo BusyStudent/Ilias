@@ -203,4 +203,46 @@ auto TaskGroup<T>::waitAll() -> Task<Vector> {
     co_return vec;
 }
 
+// Sequence version of the whenAny & whenll
+/**
+ * @brief When any of the tasks in the sequence is completed, return the result of the task.
+ * 
+ * @tparam T 
+ * @param seq The sequence of tasks. (can't be empty)
+ * @return The value of the task that has been completed first.
+ */
+template <AwaitableSequence T>
+[[nodiscard]]
+inline auto whenAny(T seq) -> Task<typename TaskGroup<AwaitableSequenceValue<T> >::value_type> {
+    auto group = TaskGroup<AwaitableSequenceValue<T> > {};
+    for (auto &&task : seq) {
+        group.spawn(std::move(task));
+    }
+    ILIAS_ASSERT(!group.empty());
+
+    // Get one
+    auto value = co_await group.next();    
+    co_await group.shutdown();
+
+    // Because we didn't call stop on the group, it can't be nullopt
+    co_return std::move(*value);
+}
+
+/**
+ * @brief When all of the tasks in the sequence is completed, return the result of all tasks.
+ * 
+ * @tparam T 
+ * @param seq The sequence of tasks. (can be empty)
+ * @return The vector of the result of all tasks.
+ */
+template <AwaitableSequence T>
+[[nodiscard]]
+inline auto whenAll(T seq) -> Task<typename TaskGroup<AwaitableSequenceValue<T> >::Vector> {
+    auto group = TaskGroup<AwaitableSequenceValue<T> > {};
+    for (auto &&task : seq) {
+        group.spawn(std::move(task));
+    }
+    co_return co_await group.waitAll();
+}
+
 ILIAS_NS_END

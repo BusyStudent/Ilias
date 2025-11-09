@@ -5,8 +5,9 @@
 #include <sys/syscall.h> // pidfd
 #include <sys/poll.h> // POLLIN
 #include <sys/wait.h> // waitpid
-#include <csignal> // SIGCHLD
 #include <unistd.h> // pipe, vfork, execve
+#include <csignal> // SIGCHLD
+#include <spawn.h>
 
 ILIAS_NS_BEGIN
 
@@ -23,100 +24,63 @@ namespace {
 
 auto Process::spawn(std::string_view exec, std::vector<std::string_view> args, uint32_t flags) -> IoResult<Process> {
     // Dup it on the stack
-    auto program = strndupa(exec.data(), exec.size());
+    auto program = std::string(exec);
+    auto arguments = std::vector<std::string>(args.begin(), args.end());
     // Allocate argv array with space for program name + args + nullptr
-    auto vec = (char**) alloca((args.size() + 2) * sizeof(char*));
-    vec[0] = program;
+    auto vec = std::make_unique<char *[]>(args.size() + 2);
+    vec[0] = program.data();
     for (size_t i = 0; i < args.size(); i++) {
-        vec[i + 1] = strndupa(args[i].data(), args[i].size());
+        vec[i + 1] = arguments[i].data();
     }
     vec[args.size() + 1] = nullptr;
 
     // Prepare the env, pipes...
     struct State {
+        State() {
+            ::posix_spawn_file_actions_init(&action);
+        }
         ~State() {
-            closepair(errpipe);
             closepair(in);
             closepair(out);
             closepair(err);
+            ::posix_spawn_file_actions_destroy(&action);
         }
 
-        int errpipe[2] = {-1, -1}; // for report error for execve
         int in[2]  = {-1, -1}; // read -> write
         int out[2] = {-1, -1};
         int err[2] = {-1, -1};
+        ::posix_spawn_file_actions_t action;
     } state;
-
-    if (::pipe2(state.errpipe, O_CLOEXEC) == -1) {
-        return Err(SystemError::fromErrno());
-    }
 
     // For redirecting...
     if (flags & Process::RedirectStdin) {
         if (::pipe2(state.in, O_CLOEXEC) == -1) {
             return Err(SystemError::fromErrno());
         }
+        ::posix_spawn_file_actions_adddup2(&state.action, state.in[0], STDIN_FILENO);
+        ::posix_spawn_file_actions_addclose(&state.action, state.in[1]);
     }
     if (flags & Process::RedirectStdout) {
         if (::pipe2(state.out, O_CLOEXEC) == -1) {
             return Err(SystemError::fromErrno());
         }
+        ::posix_spawn_file_actions_adddup2(&state.action, state.out[1], STDOUT_FILENO);
+        ::posix_spawn_file_actions_addclose(&state.action, state.out[0]);
+        
     }
     if (flags & Process::RedirectStderr) {
         if (::pipe2(state.err, O_CLOEXEC) == -1) {
             return Err(SystemError::fromErrno());
         }
+        ::posix_spawn_file_actions_adddup2(&state.action, state.err[1], STDERR_FILENO);
+        ::posix_spawn_file_actions_addclose(&state.action, state.err[0]);
     }
 
-    // Begin fork, I think 16k is enough for simple exec
-    auto pid = ::fork();
-    if (pid == -1) {
-        return Err(SystemError::fromErrno());
+    // Begin the spawn
+    ::pid_t pid = 0;
+    if (auto err = ::posix_spawnp(&pid, program.c_str(), &state.action, nullptr, vec.get(), nullptr); err != 0) {
+        return Err(SystemError(err));
     }
-    if (pid == 0) {
-        // Child
-        auto redirect = [](int &from, int to) -> bool {
-            int flags = ::fcntl(from, F_GETFL, 0);
-            if (flags == -1) {
-                return false;
-            }
-            // Remove CLOEXEC
-            flags &= ~O_CLOEXEC;
-            if (::fcntl(from, F_SETFL, flags) == -1) {
-                return false;
-            }
-            if (::dup2(from, to) == -1) {
-                return false;
-            }
-            ::close(from);
-            from = -1;
-            return true;
-        };
-        auto spawn = [&]() -> int {
-            if (flags & Process::RedirectStdin) {
-                if (!redirect(state.in[0], STDIN_FILENO)) {
-                    return errno;
-                }
-            }
-            if (flags & Process::RedirectStdout) {
-                if (!redirect(state.out[1], STDOUT_FILENO)) {
-                    return errno;
-                }
-            }
-            if (flags & Process::RedirectStderr) {
-                if (!redirect(state.err[1], STDERR_FILENO)) {
-                    return errno;
-                }
-            }
-            ::execvp(program, vec);
-            return errno;
-        };
-        auto err = spawn();
-        ::write(state.errpipe[1], &err, sizeof(err));
-        ::_Exit(EXIT_FAILURE);
-    }
-    // Close the write end of the error pipes
-    ::close(std::exchange(state.errpipe[1], -1));
 
     // Parent
     struct Guard {
@@ -128,11 +92,6 @@ auto Process::spawn(std::string_view exec, std::vector<std::string_view> args, u
         }
         pid_t pid;
     } guard {pid};
-
-    int err = 0;
-    if (::read(state.errpipe[0], &err, sizeof(err)) == sizeof(err)) { // We Got an execve error
-        return Err(SystemError(err));
-    }
 
     // Open pidfd
     Process proc;

@@ -100,6 +100,24 @@ ILIAS_TEST(Task, TaskGroup) {
     co_return;
 }
 
+ILIAS_TEST(Task, WhenAllSequence) {
+    auto vec = std::vector<Task<int> > {};
+    for (auto i : views::iota(0, 10)) {
+        vec.emplace_back(returnAfterSleep(i));
+    }
+    auto result = co_await whenAll(std::move(vec));
+    EXPECT_EQ(result.size(), 10);
+}
+
+ILIAS_TEST(Task, WhenAnySequence) {
+    auto vec = std::vector<Task<int> > {};
+    for (auto i : views::iota(0, 10)) {
+        vec.emplace_back(returnAfterSleep(i));
+    }
+    auto result = co_await whenAny(std::move(vec));
+    EXPECT_TRUE(result < 10 && result >= 0);
+}
+
 ILIAS_TEST(Task, Unstoppable) {
     auto fn = []() -> Task<void> {
         co_await unstoppable(sleep(10ms));
