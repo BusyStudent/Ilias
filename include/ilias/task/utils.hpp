@@ -168,7 +168,38 @@ private:
     Fn mFn;
 };
 
+// Implement await on an stop token
+class StopTokenAwaiter final {
+public:
+    StopTokenAwaiter(runtime::StopToken token) : mToken(std::move(token)) {}
+    StopTokenAwaiter(StopTokenAwaiter &&) = default;
+    ~StopTokenAwaiter() = default;
+
+    auto await_ready() -> bool { return mToken.stop_requested(); }
+    auto await_resume() -> void {}
+
+    ILIAS_API
+    auto await_suspend(runtime::CoroHandle caller) -> void;
+private:
+    auto onStopRequested() -> void;
+    auto onRuntimeStopRequested() -> void;
+
+    bool mCompleted {false}; // We use std::atomic_ref internal, make the compiler happy:(, std::atomic<T> can't move
+    runtime::StopToken mToken;
+    runtime::CoroHandle mCaller;
+    runtime::StopRegistration mReg;
+    runtime::StopRegistration mRuntimeReg;
+};
+
 } // namespace task
+
+// Add transform
+namespace runtime {
+    template <typename T> requires(std::is_same_v<std::remove_cvref_t<T>, StopToken>)
+    struct IntoRawAwaitableTraits<T> {
+        static auto into(T &&token) -> task::StopTokenAwaiter { return {std::forward<T>(token)}; }
+    };
+} // namespace runtime
 
 // Dispatch tags
 namespace task {

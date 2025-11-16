@@ -145,9 +145,9 @@ public:
         return std::forward<T>(awaitable);
     }
 
-    template <IntoRawAwaitableADL T>
-    auto await_transform(T &&object) {
-        return await_transform(toAwaitable(std::forward<T>(object)));
+    template <IntoRawAwaitable T>
+    auto await_transform(T &&object, CaptureSource source = {}) {
+        return await_transform(IntoRawAwaitableTraits<T>::into(std::forward<T>(object)), source);
     }
 
     // Our runtime interface

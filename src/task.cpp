@@ -368,6 +368,27 @@ auto FinallyAwaiterBase::onFinallyCompletion() -> void {
     }
 }
 
+#pragma region StopTokenAwaiter
+auto StopTokenAwaiter::await_suspend(CoroHandle caller) -> void {
+    mCaller = caller;
+    mReg.register_<&StopTokenAwaiter::onStopRequested>(mToken, this);
+    mRuntimeReg.register_<&StopTokenAwaiter::onRuntimeStopRequested>(caller.stopToken(), this);
+}
+
+auto StopTokenAwaiter::onStopRequested() -> void {
+    auto prev = std::atomic_ref {mCompleted}.exchange(true);
+    if (!prev) {
+        mCaller.schedule();
+    }
+}
+
+auto StopTokenAwaiter::onRuntimeStopRequested() -> void {
+    auto prev = std::atomic_ref {mCompleted}.exchange(true);
+    if (!prev) {
+        mCaller.setStopped();
+    }
+}
+
 #pragma region Thread
 auto ThreadBase::start() -> void {
     if (!mInit) {

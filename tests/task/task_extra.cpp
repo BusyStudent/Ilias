@@ -271,6 +271,27 @@ ILIAS_TEST(Task, Thread) {
     EXPECT_TRUE(co_await thread3.join());
 }
 
+ILIAS_TEST(Task, StopToken) {
+    {
+        // Test cancel
+        auto stopSource = std::stop_source {};
+        auto [stop, other] = co_await whenAny(stopSource.get_token(), std::suspend_never{});
+        EXPECT_FALSE(stop);
+        EXPECT_TRUE(other);
+    }
+
+    {
+        // Test normal condition
+        auto stopSource = std::stop_source {};
+        auto handle = spawn([token = stopSource.get_token()]() -> Task<void> {
+            co_return co_await token;
+        });
+        co_await sleep(10ms);
+        stopSource.request_stop();
+        EXPECT_TRUE(co_await std::move(handle)); // This token is stopped
+    }
+}
+
 auto main(int argc, char** argv) -> int {
     ::testing::InitGoogleTest(&argc, argv);
     EventLoop loop;
