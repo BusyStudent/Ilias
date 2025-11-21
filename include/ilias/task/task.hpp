@@ -131,7 +131,7 @@ public:
 // Awaiter
 class TaskAwaiterBase {
 public:
-    TaskAwaiterBase(TaskAwaiterBase &&other) : 
+    TaskAwaiterBase(TaskAwaiterBase &&other) noexcept : 
         mTask(std::exchange(other.mTask, nullptr)) 
     {
 
@@ -146,7 +146,7 @@ public:
         mTask.setPrevAwaiting(caller);
     }
 protected:
-    TaskAwaiterBase(TaskHandle<> task) : mTask(task) { }
+    TaskAwaiterBase(TaskHandle<> task) noexcept : mTask(task) { }
     ~TaskAwaiterBase() {
         if (mTask) {
             mTask.destroy();
@@ -159,7 +159,7 @@ protected:
 template <typename T>
 class TaskAwaiter final : public TaskAwaiterBase {
 public:
-    TaskAwaiter(TaskHandle<T> task) : TaskAwaiterBase(task) { }
+    TaskAwaiter(TaskHandle<T> task) noexcept : TaskAwaiterBase(task) { }
 
     /**
      * @brief Get the result of the task
@@ -252,17 +252,8 @@ class TaskSpawnContext final : public RefCounted<TaskSpawnContext>,
                                private TaskContext
 {
 public:
-    TaskSpawnContext(TaskHandle<> task) : TaskContext(task) {
-        auto executor = runtime::Executor::currentThread();
-        ILIAS_ASSERT_MSG(executor, "The current thread has no executor");
-
-        mTask.setCompletionHandler(TaskSpawnContext::onComplete);
-        this->setStoppedHandler(TaskSpawnContext::onComplete);
-        this->setExecutor(*executor);
-
-        this->ref(); // Ref it, we will deref it when it completed
-        mTask.schedule(); // Schedule the task in the executor
-    }
+    ILIAS_API
+    TaskSpawnContext(TaskHandle<> task);
     TaskSpawnContext(const TaskSpawnContext &) = delete;
 
     // Send the stop request of the spawn task
@@ -319,28 +310,8 @@ public:
         };
     }
 private:
-    static auto onComplete(CoroContext &_self) -> void { 
-        auto &self = static_cast<TaskSpawnContext &>(_self);
-
-        // Done..
-        self.mCompleted = true;
-        if (self.mCompletionHandler) { // Notify we are stopped
-            self.mCompletionHandler(self);
-            self.mCompletionHandler = nullptr;
-        }
-        if (self.use_count() == 1) { // We are the last one, only can be deref in the event loop
-            self.executor().post(TaskSpawnContext::derefSelf, &self);
-        }
-        else { // For avoid the derefSelf call after quit, we can deref the self
-            self.deref();
-        }
-    }
-
-    // deref self in event loop
-    static auto derefSelf(void *_self) -> void {
-        auto ptr = static_cast<TaskSpawnContext *>(_self);
-        ptr->deref();
-    }
+    // Call on the task completed or stopped
+    static auto onComplete(CoroContext &_self) -> void;
 
     SmallFunction<void (TaskSpawnContext &)> mCompletionHandler; // The completion handler, call when the task is completed or stopped
     std::string mName; // The name of the spawn task
@@ -350,7 +321,7 @@ friend class TaskSpawnAwaiterBase;
 
 class TaskSpawnAwaiterBase {
 public:
-    TaskSpawnAwaiterBase(Rc<TaskSpawnContext> ptr) : mCtxt(ptr) {}
+    TaskSpawnAwaiterBase(Rc<TaskSpawnContext> ptr) : mCtxt(std::move(ptr)) {}
 
     auto await_ready() const noexcept { return mCtxt->isCompleted(); }
     auto await_suspend(CoroHandle caller) {
@@ -451,10 +422,10 @@ public:
     using handle_type = std::coroutine_handle<promise_type>;
     using value_type = T;
 
-    Task() = default;
-    Task(std::nullptr_t) { }
+    Task() noexcept = default;
+    Task(std::nullptr_t) noexcept {}
     Task(const Task &) = delete;
-    Task(Task &&other) noexcept : mHandle(other._leak()) { }
+    Task(Task &&other) noexcept : mHandle(other._leak()) {}
     ~Task() noexcept { 
         if (mHandle) {
             mHandle.destroy();
@@ -598,7 +569,7 @@ friend auto spawn(Task<U> task) -> WaitHandle<U>;
 // Spawn a task running on the current thread executor
 template <typename T>
 inline auto spawn(Task<T> task) -> WaitHandle<T> {
-    auto handle = WaitHandle<T>();
+    auto handle = WaitHandle<T> {};
     handle.mPtr = task::Rc<task::TaskSpawnContext>::make(task._leak());
     return handle;
 }
@@ -664,12 +635,6 @@ inline auto blockingWait(T awaitable) -> AwaitableResult<T> {
 inline auto blockingWait() -> task::BlockingWaitTags {
     return {};
 }
-
-// Concepts
-template <typename T>
-concept IntoTask = requires (T t) {
-    toTask(std::forward<T>(t));
-};
 
 // Tags invoke
 template <Awaitable T>

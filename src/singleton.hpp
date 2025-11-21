@@ -114,6 +114,10 @@ public:
     size_t                     size    = sizeof(SharedData);    // The size of the shared data
     std::string_view           version = ILIAS_VERSION_STRING;  // The version string (ILIAS_VERSION_STRING)
 
+    // ABI information about the core components
+    size_t                     promiseSize = sizeof(runtime::CoroPromise);
+    size_t                     contextSize = sizeof(runtime::CoroContext);
+
     // Executor (ThreadLocal)
     ThreadLocal<Executor*>     executor; // The executor ptr for this thread (The runtime will set nullptr before thread exit)
 
@@ -245,9 +249,9 @@ public:
         }
 
         // Check ABI
-        if (mSharedData->size != sizeof(SharedData)) {
-            panic("ABI mismatch want %zu, got %zu", sizeof(SharedData), mSharedData->size);
-        }
+        checkAbi<SharedData>(mSharedData->size);
+        checkAbi<runtime::CoroPromise>(mSharedData->promiseSize);
+        checkAbi<runtime::CoroContext>(mSharedData->contextSize);
         if (mSharedData->version != ILIAS_VERSION_STRING) {
             panic("ABI mismatch want %s, got %s", ILIAS_VERSION_STRING, mSharedData->version.data());
         }
@@ -306,6 +310,13 @@ public:
             }
         }
 #endif // _WIN32
+    }
+
+    template <typename T>
+    auto checkAbi(size_t got) -> void {
+        if (got != sizeof(T)) {
+            panic("ABI mismatch want %zu, got %zu", sizeof(T), got);
+        }
     }
 
     [[noreturn]]

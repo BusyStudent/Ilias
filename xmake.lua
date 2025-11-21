@@ -20,3 +20,4 @@ end
 includes("./src")
 includes("./tests")
 includes("./example")
+includes("./benchmark")

@@ -120,7 +120,7 @@ void ilias_main() {
     // 转化成 std::span<const std::byte> (Buffer) 或 std::span<std::byte> (MutableBuffer)
     // read 和 write 的参数分别为 MutableBuffer 和 Buffer
     // read 和 write 会返回 IoTask<size_t>
-    // IoTask<T> 是 Task<Result<T, Error>> 的别名,代表可能有错误(具体见错误处理部分)
+    // IoTask<T> 是 Task<Result<T, std::error_code>> 的别名,代表可能有错误(具体见错误处理部分)
     
     std::string_view sv = "HELLO WORLD";
     if (auto res = co_await client.write(ilias::makeBuffer(sv)); !res) {
@@ -141,16 +141,16 @@ using ilias::TcpStream;
 using ilias::IPEndpoint;
 
 // 处理客户端连接的协程
-auto handleClient(TcpStream client) -> ilias::Task<void> {
+auto handleClient(TcpStream stream) -> ilias::Task<void> {
     std::array<std::byte, 1024> buffer;
     
     // 读取数据并回显
     while (true) {
-        auto n = co_await client.read(buffer);
+        auto n = co_await stream.read(buffer);
         if (!n || n == 0) {
             break;
         }
-        co_await client.write(ilias::makeBuffer(buffer.data(), *n));
+        co_await stream.write(ilias::makeBuffer(buffer.data(), *n));
     }
 }
 
@@ -158,9 +158,9 @@ void ilias_main() {
     auto listener = (co_await TcpListener::bind("127.0.0.1:8080")).value();
     
     while (true) {
-        auto [client, endpoint] = (co_await listener.accept()).value();
+        auto [stream, endpoint] = (co_await listener.accept()).value();
         // 为每个客户端启动一个新协程
-        auto handle = ilias::spawn(handleClient(std::move(client)));
+        auto handle = ilias::spawn(handleClient(std::move(stream)));
         // handle 可以用于检查是否完成或等待完成
         // 如果丢弃 handle 则相当于 detach
     }

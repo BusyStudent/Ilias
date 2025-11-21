@@ -37,7 +37,7 @@ auto statusString(int statusCode) -> const char * {
     }
 }
 
-auto sendReply(BufferedStream<TcpStream> &stream, int statusCode, std::span<const std::byte> content) -> IoTask<void> {
+auto sendReply(BufStream<TcpStream> &stream, int statusCode, std::span<const std::byte> content) -> IoTask<void> {
     char headers[1024] {0};
     ::sprintf(headers, 
         "HTTP/1.1 %d %s\r\nContent-Length: %d\r\nConnection: keep-alive\r\nServer: ILIAS\r\n\r\n", 
@@ -55,19 +55,19 @@ auto sendReply(BufferedStream<TcpStream> &stream, int statusCode, std::span<cons
     co_return {};
 }
 
-auto sendReply(BufferedStream<TcpStream> &stream, int statusCode, std::string_view content) {
+auto sendReply(BufStream<TcpStream> &stream, int statusCode, std::string_view content) {
     return sendReply(stream, statusCode, makeBuffer(content));
 }
 
-auto handleHelloPage(BufferedStream<TcpStream> &stream) -> IoTask<void> {
+auto handleHelloPage(BufStream<TcpStream> &stream) -> IoTask<void> {
     return sendReply(stream, 200, "<html>Hello World</html>");
 }
 
-auto handle404(BufferedStream<TcpStream> &stream) -> IoTask<void> {
+auto handle404(BufStream<TcpStream> &stream) -> IoTask<void> {
     return sendReply(stream, 404, "<html>Not Found</html>");
 }
 
-auto handleMainPage(BufferedStream<TcpStream> &stream) -> IoTask<void> {
+auto handleMainPage(BufStream<TcpStream> &stream) -> IoTask<void> {
     char buffer[1024] {0};
     ::sprintf(
         buffer,
@@ -84,7 +84,7 @@ auto handleMainPage(BufferedStream<TcpStream> &stream) -> IoTask<void> {
     co_return co_await sendReply(stream, 200, std::string_view(buffer));
 }
 
-auto handleFilesytem(BufferedStream<TcpStream> &client, std::string_view pathString) -> IoTask<void> {
+auto handleFilesytem(BufStream<TcpStream> &client, std::string_view pathString) -> IoTask<void> {
     pathString.remove_prefix(3);
     std::u8string u8((const char8_t *) pathString.data(), pathString.size());
     if (u8.empty()) {

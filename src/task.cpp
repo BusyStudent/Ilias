@@ -11,6 +11,38 @@ ILIAS_NS_BEGIN
 
 using namespace task;
 
+#pragma region TaskSpawn
+TaskSpawnContext::TaskSpawnContext(TaskHandle<> task) : TaskContext(task) {
+    auto executor = runtime::Executor::currentThread();
+    ILIAS_ASSERT_MSG(executor, "The current thread has no executor");
+
+    mTask.setCompletionHandler(TaskSpawnContext::onComplete);
+    this->setStoppedHandler(TaskSpawnContext::onComplete);
+    this->setExecutor(*executor);
+
+    this->ref(); // Ref it, we will deref it when it completed
+    mTask.schedule(); // Schedule the task in the executor
+}
+
+auto TaskSpawnContext::onComplete(CoroContext &_self) -> void {
+    auto &self = static_cast<TaskSpawnContext &>(_self);
+
+    // Done..
+    self.mCompleted = true;
+    if (self.mCompletionHandler) { // Notify we are stopped
+        self.mCompletionHandler(self);
+        self.mCompletionHandler = nullptr;
+    }
+    if (self.use_count() == 1) { // We are the last one, only can be deref in the event loop
+        self.executor().schedule([ptr = &self]() { 
+            ptr->deref();
+        });
+    }
+    else { // For avoid the derefSelf call after quit, we can deref the self
+        self.deref();
+    }
+}
+
 #pragma region TaskGroup
 TaskGroupBase::TaskGroupBase() {
     
