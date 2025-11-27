@@ -116,7 +116,7 @@
 	</Expand>
 </Type>
 
-<Type Name="ilias::UdpClient">
+<Type Name="ilias::UdpSocket">
 	<DisplayString>{mHandle}</DisplayString>
 	<Expand>
 		<ExpandedItem>mHandle</ExpandedItem>

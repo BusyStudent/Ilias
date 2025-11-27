@@ -37,11 +37,6 @@ auto testTask() -> Task<void> {
     co_return;
 }
 
-auto range(int start, int end) -> Generator<int> {
-    for (int i = start; i < end; ++i) {
-        co_yield i;
-    }
-}
 
 TEST(Task, DefaultConstructor) {
     testTask().wait();
@@ -51,7 +46,7 @@ TEST(Task, Spawn) {
     auto handle = spawn(testTask());
     auto val = std::move(handle).wait();
     EXPECT_TRUE(val.has_value());
-
+    
     auto handle2 = spawn(testTask());
     handle2.stop();
     auto val2 = std::move(handle2).wait();
@@ -62,11 +57,23 @@ TEST(Task, SpawnCallable) {
     spawn([]() -> Task<void> {
         co_return;
     }).wait();
-
+    
     spawn([i = 42]() -> Task<int> {
         assert(i == 42);
         co_return i;
     }).wait();
+    
+    // Check lifetime
+    // When the spawn task is completed, the argument & captured value should be destroyed
+    auto value = std::make_shared<int>(42);
+    auto weak = std::weak_ptr {value};
+    auto handle = spawn([value = std::move(value)]() -> Task<int> {
+        co_return *value;
+    });
+    auto stopHandle = StopHandle {handle};
+    auto val = std::move(handle).wait();
+    EXPECT_TRUE(weak.expired());
+    EXPECT_EQ(val, 42);
 }
 
 TEST(Task, SpawnAwait) {
@@ -81,11 +88,17 @@ TEST(Task, SpawnBlocking) {
         return 42;
     }).wait().value();
     EXPECT_EQ(val, 42);
-
+    
     EXPECT_THROW(spawnBlocking([]() {
         std::cout << "Hello Exception!" << std::endl;
         throw std::exception();
     }).wait(), std::exception);
+}
+
+auto range(int start, int end) -> Generator<int> {
+    for (int i = start; i < end; ++i) {
+        co_yield i;
+    }
 }
 
 ILIAS_TEST(Task, Generator) {

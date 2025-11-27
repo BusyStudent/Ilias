@@ -151,9 +151,13 @@ public:
     }
 
     // Our runtime interface
+    auto takeException() noexcept {
+        return std::exchange(mException, nullptr);
+    }
+
     auto rethrowIfNeeded() {
         if (mException) {
-            std::rethrow_exception(std::exchange(mException, nullptr));
+            std::rethrow_exception(takeException());
         }
     }
 

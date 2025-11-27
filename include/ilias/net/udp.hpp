@@ -18,13 +18,13 @@
 ILIAS_NS_BEGIN
 
 /**
- * @brief The Udp Client, wraps a UDP socket.
+ * @brief The Udp Socket wrapper.
  * 
  */
-class UdpClient {
+class UdpSocket {
 public:
-    UdpClient() = default;
-    UdpClient(IoHandle<Socket> h) : mHandle(std::move(h)) {}
+    UdpSocket() = default;
+    UdpSocket(IoHandle<Socket> h) : mHandle(std::move(h)) {}
 
     auto close() { return mHandle.close(); }
     auto cancel() { return mHandle.cancel(); }
@@ -136,15 +136,15 @@ public:
         return mHandle.poll(events);
     }
 
-    auto operator <=>(const UdpClient &) const = default;
+    auto operator <=>(const UdpSocket &) const = default;
 
     /**
      * @brief Bind the socket to the specified endpoint.
      * 
      * @param endpoint 
-     * @return IoTask<UdpClient> 
+     * @return IoTask<UdpSocket> 
      */
-    static auto bind(IPEndpoint endpoint) -> IoTask<UdpClient> {
+    static auto bind(IPEndpoint endpoint) -> IoTask<UdpSocket> {
         auto sockfd = Socket::make(endpoint.family(), SOCK_DGRAM, IPPROTO_UDP);
         if (!sockfd) {
             co_return Err(sockfd.error());
@@ -161,7 +161,7 @@ public:
      * @param fn
      */
     template <typename Fn> requires (std::invocable<Fn, SocketView>)
-    static auto bind(IPEndpoint endpoint, Fn fn) -> IoTask<UdpClient> {
+    static auto bind(IPEndpoint endpoint, Fn fn) -> IoTask<UdpSocket> {
         auto sockfd = Socket::make(endpoint.family(), SOCK_DGRAM, IPPROTO_UDP)
             .and_then([&](Socket self) -> IoResult<Socket> {
                 if (auto res = fn(SocketView(self)); !res) {
@@ -176,12 +176,12 @@ public:
     }
 
     /**
-     * @brief Wrap a socket into a UdpClient.
+     * @brief Wrap a socket into a UdpSocket.
      * 
      * @param socket 
-     * @return IoResult<UdpClient> 
+     * @return IoResult<UdpSocket> 
      */
-    static auto from(Socket socket) -> IoResult<UdpClient> {
+    static auto from(Socket socket) -> IoResult<UdpSocket> {
         if (socket.type() != SOCK_DGRAM) {
             return Err(IoError::InvalidArgument);
         }
@@ -189,7 +189,7 @@ public:
         if (!handle) {
             return Err(handle.error());
         }
-        return UdpClient(std::move(*handle));
+        return UdpSocket(std::move(*handle));
     }
 
     /**
@@ -200,7 +200,7 @@ public:
      */
     explicit operator bool() const { return bool(mHandle); }
 private:
-    static auto bindImpl(Socket sockfd, const IPEndpoint &endpoint) -> IoResult<UdpClient> {
+    static auto bindImpl(Socket sockfd, const IPEndpoint &endpoint) -> IoResult<UdpSocket> {
         if (auto res = sockfd.bind(endpoint); !res) {
             return Err(res.error());
         }
@@ -208,10 +208,13 @@ private:
         if (!handle) {
             return Err(handle.error());
         }
-        return UdpClient(std::move(*handle));
+        return UdpSocket(std::move(*handle));
     }
 
     IoHandle<Socket> mHandle;
 };
+
+// For compatibility with the old API
+using UdpClient = UdpSocket;
 
 ILIAS_NS_END

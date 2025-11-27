@@ -294,7 +294,7 @@ ILIAS_TEST(Net, Tcp) {
 
 ILIAS_TEST(Net, Udp) {
     std::byte buffer[1024] {};
-    auto client = (co_await UdpClient::bind("127.0.0.1:0")).value();
+    auto client = (co_await UdpSocket::bind("127.0.0.1:0")).value();
 
     EXPECT_TRUE((co_await client.poll(PollEvent::Out)).has_value());
     // Test the cancel
@@ -319,7 +319,7 @@ ILIAS_TEST(Net, Udp) {
     }
 
     // Test send data
-    auto receiver = (co_await UdpClient::bind("127.0.0.1:0")).value();
+    auto receiver = (co_await UdpSocket::bind("127.0.0.1:0")).value();
     auto endpoint = receiver.localEndpoint().value();
 
     { // Test normal sendto & recvfrom
@@ -356,7 +356,7 @@ ILIAS_TEST(Net, Udp) {
         auto configure = [](SocketView view) {
             return view.setOption(sockopt::ReuseAddress(true));
         };
-        auto any = (co_await UdpClient::bind("127.0.0.1:0", configure)).value();
+        auto any = (co_await UdpSocket::bind("127.0.0.1:0", configure)).value();
     }
 }
 

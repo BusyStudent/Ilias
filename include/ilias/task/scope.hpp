@@ -103,10 +103,10 @@ public:
     }
 private:
     auto cleanup(std::optional<runtime::StopToken> token) -> Task<void>; // Use the stop token
-    auto insertImpl(intrusive::Rc<task::TaskSpawnContext> task) -> StopHandle;
-    auto onTaskCompleted(task::TaskSpawnContext &ctxt) -> void;
+    auto insertImpl(intrusive::Rc<task::TaskSpawnContextBase> task) -> StopHandle;
+    auto onTaskCompleted(task::TaskSpawnContextBase &ctxt) -> void;
 
-    using List = intrusive::List<task::TaskSpawnContext>;
+    using List = intrusive::List<task::TaskSpawnContextBase>;
 
     List   mRunning;
     size_t mNumRunning = 0;

@@ -27,14 +27,14 @@ public:
     // API for TaskGroup<T>
     auto size() const noexcept -> size_t;
     auto stop() -> void;
-    auto insert(Rc<TaskSpawnContext> task) -> StopHandle;
+    auto insert(Rc<TaskSpawnContextBase> task) -> StopHandle;
     auto hasCompletion() const noexcept -> bool;
-    auto nextCompletion() noexcept -> Rc<TaskSpawnContext>;
+    auto nextCompletion() noexcept -> Rc<TaskSpawnContextBase>;
 private:
     auto notifyCompletion() -> void;
-    auto onTaskCompleted(TaskSpawnContext &ctxt) -> void;
+    auto onTaskCompleted(TaskSpawnContextBase &ctxt) -> void;
 
-    using List = intrusive::List<TaskSpawnContext>; // intrusive list doesn't have O(1) size()
+    using List = intrusive::List<TaskSpawnContextBase>; // intrusive list doesn't have O(1) size()
     using Awaiter = TaskGroupAwaiterBase;
 
     List     mRunning;
@@ -80,7 +80,7 @@ public:
         if (mId) {
             *mId = ctxt->id();
         }
-        return ctxt->template value<T>();
+        return static_cast<TaskSpawnContext<T> &>(*ctxt).value();
     }
 private:
     uintptr_t *mId;

@@ -12,34 +12,41 @@ ILIAS_NS_BEGIN
 using namespace task;
 
 #pragma region TaskSpawn
-TaskSpawnContext::TaskSpawnContext(TaskHandle<> task) : TaskContext(task) {
+TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task) : TaskContext(task) {
     auto executor = runtime::Executor::currentThread();
     ILIAS_ASSERT_MSG(executor, "The current thread has no executor");
 
-    mTask.setCompletionHandler(TaskSpawnContext::onComplete);
-    this->setStoppedHandler(TaskSpawnContext::onComplete);
+    // Bind the task to self
+    auto handler = [](CoroContext &_self) -> void{
+        auto &self = static_cast<TaskSpawnContextBase &>(_self);
+        self.executor().schedule([self = &self]() { self->onComplete(); });
+    };
+    mTask.setCompletionHandler(handler);
+    this->setStoppedHandler(handler);
     this->setExecutor(*executor);
 
     this->ref(); // Ref it, we will deref it when it completed
     mTask.schedule(); // Schedule the task in the executor
 }
 
-auto TaskSpawnContext::onComplete(CoroContext &_self) -> void {
-    auto &self = static_cast<TaskSpawnContext &>(_self);
-
+auto TaskSpawnContextBase::onComplete() -> void {
     // Done..
-    self.mCompleted = true;
-    if (self.mCompletionHandler) { // Notify we are stopped
-        self.mCompletionHandler(self);
-        self.mCompletionHandler = nullptr;
+    mCompleted = true;
+    // Call the child class to store the result
+    this->mManager(*this, Ops::SetValue);
+    this->setTask(nullptr); // Drop the task, to make sure when the task is completed, the argument is released
+
+    if (mCompletionHandler) { // Notify we are stopped
+        mCompletionHandler(*this);
+        mCompletionHandler = nullptr;
     }
-    if (self.use_count() == 1) { // We are the last one, only can be deref in the event loop
-        self.executor().schedule([ptr = &self]() { 
-            ptr->deref();
+    if (use_count() == 1) { // We are the last one, only can be deref in the event loop
+        executor().schedule([this]() { 
+            this->deref();
         });
     }
     else { // For avoid the derefSelf call after quit, we can deref the self
-        self.deref();
+        deref();
     }
 }
 
@@ -83,7 +90,7 @@ auto TaskGroupBase::size() const noexcept -> size_t {
     return mNumRunning + mNumCompleted;
 }
 
-auto TaskGroupBase::insert(Rc<TaskSpawnContext> task) -> StopHandle {
+auto TaskGroupBase::insert(Rc<TaskSpawnContextBase> task) -> StopHandle {
     ILIAS_ASSERT(task != nullptr);
     task->ref(); // Increase the ref, the group will share the ownership of the task
     if (mStopRequested) {
@@ -102,7 +109,7 @@ auto TaskGroupBase::insert(Rc<TaskSpawnContext> task) -> StopHandle {
     return StopHandle(std::move(task));
 }
 
-auto TaskGroupBase::onTaskCompleted(TaskSpawnContext &ctxt) -> void {
+auto TaskGroupBase::onTaskCompleted(TaskSpawnContextBase &ctxt) -> void {
     ILIAS_ASSERT(ctxt.isLinked()); // Should be linked the running list
     ILIAS_ASSERT(ctxt.isCompleted()); // Should be completed
     ILIAS_ASSERT(mNumRunning > 0); // Should have at least one running task
@@ -132,7 +139,7 @@ auto TaskGroupBase::stop() -> void {
 
     // The stop may immediately stop the task, and then onTaskCompleted was called, the mRunning will be changed in iteration, so we need to copy it
     // TODO: Think a better way?
-    std::vector<TaskSpawnContext *> running;
+    std::vector<TaskSpawnContextBase *> running;
     running.reserve(mNumRunning);
     for (auto &task : mRunning) {
         running.emplace_back(&task);
@@ -147,10 +154,10 @@ auto TaskGroupBase::hasCompletion() const noexcept -> bool {
     return !mCompleted.empty();
 }
 
-auto TaskGroupBase::nextCompletion() noexcept -> Rc<TaskSpawnContext> {
+auto TaskGroupBase::nextCompletion() noexcept -> Rc<TaskSpawnContextBase> {
     ILIAS_ASSERT_MSG(hasCompletion(), "No completion, invalid call?");
     auto &front = mCompleted.front();
-    auto ptr = Rc<TaskSpawnContext>{&front};
+    auto ptr = Rc<TaskSpawnContextBase>{&front};
     mCompleted.pop_front();
     mNumCompleted -= 1;
     ptr->deref(); // We remove the task out of the group, so we need to decrease the ref
@@ -232,7 +239,7 @@ auto TaskScope::cleanup(std::optional<runtime::StopToken> token) -> Task<void> {
     co_return co_await Awaiter { *this };
 }
 
-auto TaskScope::insertImpl(Rc<TaskSpawnContext> task) -> StopHandle {
+auto TaskScope::insertImpl(Rc<TaskSpawnContextBase> task) -> StopHandle {
     ILIAS_ASSERT(task != nullptr);
     if (!task->isCompleted()) { // Adding to running list
         task->ref();
@@ -248,7 +255,7 @@ auto TaskScope::insertImpl(Rc<TaskSpawnContext> task) -> StopHandle {
     return StopHandle(std::move(task));
 }
 
-auto TaskScope::onTaskCompleted(TaskSpawnContext &ctxt) -> void {
+auto TaskScope::onTaskCompleted(TaskSpawnContextBase &ctxt) -> void {
     ILIAS_ASSERT(ctxt.isLinked()); // As same as TaskGroup
     ILIAS_ASSERT(ctxt.isCompleted());
     ILIAS_ASSERT(mNumRunning > 0);

@@ -114,6 +114,10 @@ public:
         return promise<promise_type>().value();
     }
 
+    auto takeException() const -> std::exception_ptr {
+        return promise<promise_type>().takeException();
+    }
+
     /**
      * @brief Cast the task handle to another type
      * @note It is UB if the task is not the same type
@@ -246,25 +250,30 @@ private:
     StopSource mStopExecutor; // The stop source of the executor
 };
 
-// Environment for the spawn task
-class TaskSpawnContext final : public RefCounted<TaskSpawnContext>,
-                               public Node<TaskSpawnContext>,
-                               private TaskContext
+// Environment for the spawn task common part
+class TaskSpawnContextBase : public RefCounted<TaskSpawnContextBase>,
+                             public Node<TaskSpawnContextBase>,
+                             protected TaskContext
 {
 public:
     ILIAS_API
-    TaskSpawnContext(TaskHandle<> task);
-    TaskSpawnContext(const TaskSpawnContext &) = delete;
+    TaskSpawnContextBase(TaskHandle<> task);
+    TaskSpawnContextBase(const TaskSpawnContextBase &) = delete;
 
     // Send the stop request of the spawn task
     using TaskContext::stop;
+    using TaskContext::isStopped;
 
     // Get the executor of this ctxt
     using TaskContext::executor;
 
     // Expose the memory
     using TaskContext::operator new;
-    using TaskContext::operator delete;
+    
+    // Impl the virtual delete
+    auto operator delete(TaskSpawnContextBase *self, std::destroying_delete_t) -> void {
+        self->mManager(*self, Ops::Delete);
+    }
 
     // Blocking enter the executor
     auto enter() -> void {
@@ -277,18 +286,6 @@ public:
         }
     }
 
-    // Get the value of the task, nullopt if the task is stopped
-    template <typename T>
-    auto value() -> Option<T> {
-        ILIAS_ASSERT_MSG(mCompleted, "??? INTERNAL BUG");
-        if (isStopped()) {
-            return std::nullopt;
-        }
-        return makeOption([&]() {
-            return TaskHandle<T>::cast(mTask).value();
-        });
-    }
-
     // Get the id of the spawn task
     auto id() const noexcept -> uintptr_t {
         return reinterpret_cast<uintptr_t>(this);
@@ -298,30 +295,79 @@ public:
     auto isCompleted() const -> bool { return mCompleted; }
 
     // Set the handle when the task is completed
-    auto setCompletionHandler(SmallFunction<void (TaskSpawnContext &)> handler) -> void {
+    auto setCompletionHandler(SmallFunction<void (TaskSpawnContextBase &)> handler) -> void {
         mCompletionHandler = handler;
     }
 
     // Set the handler when the task is completed, more convenient
     template <auto Method, typename Object>
     auto setCompletionHandler(Object *obj) -> void {
-        mCompletionHandler = [obj](TaskSpawnContext &ctxt) {
+        mCompletionHandler = [obj](TaskSpawnContextBase &ctxt) {
             (obj->*Method)(ctxt);
         };
     }
-private:
+protected:
     // Call on the task completed or stopped
-    static auto onComplete(CoroContext &_self) -> void;
+    auto onComplete() -> void;
 
-    SmallFunction<void (TaskSpawnContext &)> mCompletionHandler; // The completion handler, call when the task is completed or stopped
+    SmallFunction<void (TaskSpawnContextBase &)> mCompletionHandler; // The completion handler, call when the task is completed or stopped
+    std::exception_ptr mException; // The exception of the task
     std::string mName; // The name of the spawn task
     bool mCompleted = false;
-friend class TaskSpawnAwaiterBase;
+
+    // Virtual method
+    enum Ops : uint8_t { Delete, SetValue };
+    void (*mManager)(TaskSpawnContextBase &self, Ops) = nullptr;
 };
 
+// Environment for the spawn task<T>, store the return value
+template <typename T>
+class TaskSpawnContext final : public TaskSpawnContextBase {
+public:
+    TaskSpawnContext(TaskHandle<T> task) : TaskSpawnContextBase(task) {
+        mManager = TaskSpawnContext::manager;
+    }
+
+    // Get the value of the task, nullopt if the task is stopped
+    auto value() -> Option<T> {
+        ILIAS_ASSERT_MSG(mCompleted, "??? INTERNAL BUG");
+        if (mException) {
+            std::rethrow_exception(std::exchange(mException, nullptr));
+        }
+        return std::move(mValue);
+    }
+protected:
+    static auto manager(TaskSpawnContextBase &_self, Ops op) -> void {
+        auto &self = static_cast<TaskSpawnContext &>(_self);
+        switch (op) {
+            case Ops::Delete: {
+                self.~TaskSpawnContext(); 
+                TaskContext::operator delete(&self, sizeof(self));
+                break;
+            }
+            case Ops::SetValue: {
+                ILIAS_ASSERT(self.isCompleted());
+                auto handle = TaskHandle<T>::cast(self.mTask);
+                if (self.isStopped()) {
+                    return;
+                }
+                self.mException = handle.takeException();
+                if (self.mException) {
+                    return;
+                }
+                self.mValue = makeOption([&]() { return handle.value(); });
+                return;
+            }
+        }
+    }
+
+    Option<T> mValue;
+};
+
+// The bridge for spawn task
 class TaskSpawnAwaiterBase {
 public:
-    TaskSpawnAwaiterBase(Rc<TaskSpawnContext> ptr) : mCtxt(std::move(ptr)) {}
+    TaskSpawnAwaiterBase(Rc<TaskSpawnContextBase> ptr) : mCtxt(std::move(ptr)) {}
 
     auto await_ready() const noexcept { return mCtxt->isCompleted(); }
     auto await_suspend(CoroHandle caller) {
@@ -334,20 +380,15 @@ protected:
         mCtxt->stop();
     }
 
-    auto onCompletion(TaskSpawnContext &) -> void {
+    auto onCompletion(TaskSpawnContextBase &) -> void {
         if (mCtxt->isStopped() && mHandle.isStopRequested()) { // The target is stopped and the caller was requested to stop
             mHandle.setStopped();
             return; // Forward the stop
         }
-        if (mCtxt->isStopped()) {
-            mHandle.schedule(); // We should resume the caller by ourself
-            return;
-        }
-        // Let the mTask resume the caller
-        mCtxt->mTask.setPrevAwaiting(mHandle);
+        mHandle.schedule(); // We should resume the caller by ourself
     }
 
-    Rc<TaskSpawnContext> mCtxt;
+    Rc<TaskSpawnContextBase> mCtxt;
     StopRegistration mReg;
     CoroHandle mHandle;
 };
@@ -359,18 +400,18 @@ public:
     using TaskSpawnAwaiterBase::TaskSpawnAwaiterBase;
 
     auto await_resume() -> Option<T> {
-        return mCtxt->value<T>();
+        return static_cast<TaskSpawnContext<T> &>(*mCtxt).value();
     }
 };
 
 // Awaiter for spawnBlocking && blocking
 template <std::invocable Fn>
-class TaskSpawnBlockingAwaiter final : public runtime::CallableImpl<TaskSpawnBlockingAwaiter<Fn> > {
+class TaskBlockingAwaiter final : public runtime::CallableImpl<TaskBlockingAwaiter<Fn> > {
 public:
     using T = std::invoke_result_t<Fn>;
 
-    TaskSpawnBlockingAwaiter(Fn fn) : mFn(std::move(fn)) {}
-    TaskSpawnBlockingAwaiter(TaskSpawnBlockingAwaiter &&) = default;
+    TaskBlockingAwaiter(Fn fn) : mFn(std::move(fn)) {}
+    TaskBlockingAwaiter(TaskBlockingAwaiter &&) = default;
 
     auto await_ready() const noexcept { return false; }
     auto await_suspend(CoroHandle caller) {
@@ -505,7 +546,7 @@ public:
     StopHandle(std::nullptr_t) {}
     StopHandle(const StopHandle &) = default;
     StopHandle(StopHandle &&) = default;
-    explicit StopHandle(task::Rc<task::TaskSpawnContext> ptr) : mPtr(std::move(ptr)) {}
+    explicit StopHandle(task::Rc<task::TaskSpawnContextBase> ptr) : mPtr(std::move(ptr)) {}
 
     // Request the stop of the task
     auto id() const { return mPtr->id(); }
@@ -518,7 +559,7 @@ public:
         return bool(mPtr);
     }
 protected:
-    task::Rc<task::TaskSpawnContext> mPtr;
+    task::Rc<task::TaskSpawnContextBase> mPtr;
 };
 
 template <typename T>
@@ -533,13 +574,14 @@ public:
 
     // Blocking wait for the task to be done, nullopt on task stopped
     auto wait() -> Option<T> { 
+        ILIAS_ASSERT_MSG(mPtr, "WaitHandle is not valid");
         auto ptr = std::exchange(mPtr, nullptr);
         ptr->enter();
-        return ptr->value<T>();
+        return static_cast<task::TaskSpawnContext<T> &>(*ptr).value();
     }
 
     // Get the internal context ptr
-    auto _leak() -> task::Rc<task::TaskSpawnContext> {
+    auto _leak() -> task::Rc<task::TaskSpawnContextBase> {
         return std::exchange(mPtr, nullptr);
     }
 
@@ -561,7 +603,7 @@ public:
         return bool(mPtr);
     }
 private:
-    task::Rc<task::TaskSpawnContext> mPtr;
+    task::Rc<task::TaskSpawnContextBase> mPtr;
 template <typename U>
 friend auto spawn(Task<U> task) -> WaitHandle<U>;
 };
@@ -570,7 +612,7 @@ friend auto spawn(Task<U> task) -> WaitHandle<U>;
 template <typename T>
 inline auto spawn(Task<T> task) -> WaitHandle<T> {
     auto handle = WaitHandle<T> {};
-    handle.mPtr = task::Rc<task::TaskSpawnContext>::make(task._leak());
+    handle.mPtr.reset(new task::TaskSpawnContext<T>(task._leak()));
     return handle;
 }
 
@@ -592,7 +634,7 @@ inline auto spawn(Fn fn) -> WaitHandle<typename std::invoke_result_t<Fn>::value_
 template <std::invocable Fn>
 inline auto spawnBlocking(Fn fn) -> WaitHandle<typename std::invoke_result_t<Fn> > {
     return spawn([](auto fn) -> Task<typename std::invoke_result_t<Fn> > {
-        co_return co_await task::TaskSpawnBlockingAwaiter<decltype(fn)>(std::move(fn));
+        co_return co_await task::TaskBlockingAwaiter<decltype(fn)>(std::move(fn));
     }(std::forward<Fn>(fn)));
 }
 
@@ -600,7 +642,7 @@ inline auto spawnBlocking(Fn fn) -> WaitHandle<typename std::invoke_result_t<Fn>
 template <std::invocable Fn>
 [[nodiscard]]
 inline auto blocking(Fn fn) {
-    return task::TaskSpawnBlockingAwaiter<decltype(fn)>(std::move(fn));
+    return task::TaskBlockingAwaiter<decltype(fn)>(std::move(fn));
 }
 
 // Sleep for a duration
