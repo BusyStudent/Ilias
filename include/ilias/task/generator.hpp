@@ -209,9 +209,9 @@ public:
     static_assert(!std::is_void_v<T>, "Generator can't be used with void type");
 
     Generator() = default;
-    Generator(std::nullptr_t) { }
+    Generator(std::nullptr_t) noexcept {}
     Generator(const Generator &) = delete;
-    Generator(Generator &&other) : mHandle(std::exchange(other.mHandle, nullptr)) { }
+    Generator(Generator &&other) noexcept : mHandle(std::exchange(other.mHandle, nullptr)) {}
     ~Generator() { clear(); }
 
     auto clear() -> void {
@@ -246,7 +246,7 @@ public:
     }
 
     auto operator =(Generator &&other) -> Generator & {
-        if (&other != this) {
+        if (&other == this) {
             return *this;
         }
         clear();

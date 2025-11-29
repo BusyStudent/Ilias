@@ -105,6 +105,21 @@ ILIAS_TEST(Task, Generator) {
     ilias_for_await(int i, range(0, 10)) {
         EXPECT_TRUE(i >= 0 && i < 10);
     }
+
+    {
+        auto gen = range(0, 10);
+        ilias_for_await(int i, gen) {
+            EXPECT_TRUE(i >= 0 && i < 10);
+        }
+    }
+
+    {
+        auto gen = Generator<int> {};
+        gen = range(0, 10);
+        ilias_for_await(int i, gen) {
+            EXPECT_TRUE(i >= 0 && i < 10);
+        }
+    }
 }
 
 ILIAS_TEST(Task, WhenAll) {

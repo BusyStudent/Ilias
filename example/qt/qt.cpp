@@ -147,8 +147,8 @@ private:
 
 auto main(int argc, char **argv) -> int {
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
-    QIoContext ctxt;
     QApplication app(argc, argv);
+    QIoContext ctxt;
     App win;
     ctxt.install();
     win.show();
