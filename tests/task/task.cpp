@@ -201,11 +201,23 @@ ILIAS_TEST(Task, Executor) {
 
 ILIAS_TEST(Task, Stacktrace) {
     auto fn = []() -> Task<void> {
-        for (auto &frame : co_await this_coro::stacktrace()) {
-            std::cout << "Frame: " << frame.toString() << std::endl;
-        }
+        auto trace = co_await this_coro::stacktrace() ;
+        std::cout << trace.toString() << std::endl;
     };
+    std::cout << "Stacktrace for basic fn" << std::endl;
     co_await fn();
+
+    // Check spawn
+    std::cout << "Stacktrace for spawn fn" << std::endl;
+    auto handle = spawn(fn());
+    co_await std::move(handle);
+
+    // Check with whenAny & whenAll
+    std::cout << "Stacktrace for whenAny" << std::endl;
+    std::ignore = co_await whenAll(fn());
+
+    std::cout << "Stacktrace for whenAny" << std::endl;
+    std::ignore = co_await whenAny(fn());
 }
 
 auto main(int argc, char** argv) -> int {

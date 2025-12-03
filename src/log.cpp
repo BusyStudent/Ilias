@@ -51,12 +51,12 @@ namespace {
 
     auto getLevelColor(LogLevel level) -> const char * {
         switch (level) {
-            case LogLevel::Trace: return "\033[1;34m";
-            case LogLevel::Debug: return "\033[1;36m";
-            case LogLevel::Info:  return "\033[1;32m";
-            case LogLevel::Warn:  return "\033[1;33m";
-            case LogLevel::Error: return "\033[1;31m";
-            default: return "\033[1;30m";
+            case LogLevel::Trace: return "\033[38;5;244m"; 
+            case LogLevel::Debug: return "\033[38;5;75m";  
+            case LogLevel::Info:  return "\033[38;5;113m";  
+            case LogLevel::Warn:  return "\033[38;5;220m"; 
+            case LogLevel::Error: return "\033[38;5;196m"; 
+            default: return "\033[0m";
         }
     }
 }

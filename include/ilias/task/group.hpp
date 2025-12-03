@@ -108,23 +108,44 @@ public:
      * @brief Insert a handle to the group, the group take the ownership of the handle.
      * 
      * @param handle The handle to insert. (can't be empty)
+     * @return StopHandle
      */
     auto insert(WaitHandle<T> handle) -> StopHandle {
         return mGroup.insert(std::move(handle)._leak());
     }
 
-    auto spawn(Task<T> task) -> StopHandle {
-        return insert(ILIAS_NAMESPACE::spawn(std::move(task)));
+    /**
+     * @brief Spawn a task and to the group, 
+     * 
+     * @param task The task to spawn. (can't be empty)
+     * @return StopHandle
+     */
+    auto spawn(Task<T> task, runtime::CaptureSource source = {}) -> StopHandle {
+        return insert(ILIAS_NAMESPACE::spawn(std::move(task), source));
     }
 
+    /**
+     * @brief Spawn a task and to the group,
+     * 
+     * @tparam Fn 
+     * @param fn the function that creates the task.
+     * @return StopHandle
+     */
     template <std::invocable Fn> requires (std::is_same_v<std::invoke_result_t<Fn>, Task<T> >)
-    auto spawn(Fn fn) -> StopHandle {
-        return insert(ILIAS_NAMESPACE::spawn(std::move(fn)));
+    auto spawn(Fn fn, runtime::CaptureSource source = {}) -> StopHandle {
+        return insert(ILIAS_NAMESPACE::spawn(std::move(fn), source));
     }
 
+    /**
+     * @brief Spawn an blocking callable as a task to the group
+     * 
+     * @tparam Fn
+     * @param fn The blcoking function
+     * @return StopHandle (the stop won't work if the function doesn't handle the stop request)
+     */
     template <std::invocable Fn> requires (std::is_same_v<std::invoke_result_t<Fn>, T>)
-    auto spawnBlocking(Fn fn) -> StopHandle {
-        return insert(ILIAS_NAMESPACE::spawnBlocking(std::move(fn)));
+    auto spawnBlocking(Fn fn, runtime::CaptureSource source = {}) -> StopHandle {
+        return insert(ILIAS_NAMESPACE::spawnBlocking(std::move(fn), source));
     }
 
     /**

@@ -70,12 +70,55 @@ public:
         mUser = user;
     }
 
-    // Get the stacktrace of the ctxt
+
+    // TRACING: Set the parent of the ctxt
+    auto setParent(CoroContext &parent) noexcept {
+#if defined(ILIAS_CORO_TRACE)
+        mParent = &parent;
+#else
+        static_cast<void>(parent);
+#endif
+    }
+
+    // TRACING: Push the frame to the stack, return the index of the frame
+    template <typename ...Args>
+    auto pushFrame(Args &&...args) noexcept {
+#if defined(ILIAS_CORO_TRACE)
+        mFrames.emplace_back(std::forward<Args>(args)...);
+        return mFrames.size() - 1;
+#else
+        (static_cast<void>(args), ...);
+        return 0;
+#endif // defined(ILIAS_CORO_TRACE)
+    }
+
+    // TRACING: Pop the frame from the stack
+    auto popFrame() noexcept {
+#if defined(ILIAS_CORO_TRACE)
+        ILIAS_ASSERT(!mFrames.empty());
+        mFrames.pop_back();
+#endif // defined(ILIAS_CORO_TRACE)
+    }
+
+    // TRACING: Get the top frame of the ctxt (return pointer, nullptr on empty)
+    auto topFrame() noexcept {
+#if defined(ILIAS_CORO_TRACE)
+        return mFrames.empty() ? nullptr : &mFrames.back();
+#else
+        return nullptr;
+#endif // defined(ILIAS_CORO_TRACE)
+    }
+
+    // TRACING: Get the stacktrace of the ctxt
     auto stacktrace() const noexcept {
 #if defined(ILIAS_CORO_TRACE)
-        return std::vector<StackFrame> { mFrames.rbegin(), mFrames.rend() };
+        auto vec = std::vector<StackFrame> {};
+        for (auto cur = this; cur != nullptr; cur = cur->mParent) {
+            vec.insert(vec.end(), cur->mFrames.rbegin(), cur->mFrames.rend());
+        }
+        return Stacktrace { std::move(vec) };
 #else
-        return std::vector<StackFrame> {};
+        return Stacktrace {};
 #endif // defined(ILIAS_CORO_TRACE)
     }
 
@@ -88,14 +131,15 @@ public:
         return deallocate(ptr, n);
     }
 private:
-    StopSource  mStopSource;                               // Use this to try to stop the coroutine
-    Executor   *mExecutor = nullptr;
-    void      (*mStoppedHandler)(CoroContext &) = nullptr; // Called when coroutine is stopped
-    void       *mUser = nullptr;                           // The user data, useful in the callback
-    bool        mStopped = false;
-    [[ILIAS_NO_UNIQUE_ADDRESS]]                            // To make it as 0-sized when disabled
-    StackFrameVec mFrames;                                 // The frames of the coroutine,
-friend class CoroPromise;
+    StopSource    mStopSource;                               // Use this to try to stop the coroutine
+    Executor     *mExecutor = nullptr;
+    void        (*mStoppedHandler)(CoroContext &) = nullptr; // Called when coroutine is stopped
+    void         *mUser = nullptr;                           // The user data, useful in the callback
+    bool          mStopped = false;
+#if defined(ILIAS_CORO_TRACE)
+    CoroContext  *mParent = nullptr;                         // Use for stacktrace to dump the whole stack
+    std::vector<StackFrame> mFrames;                         // The frames of the coroutine,
+#endif // defined(ILIAS_CORO_TRACE)
 friend class CoroHandle;
 };
 
@@ -121,11 +165,8 @@ public:
         if (mCompletionHandler) {
             mCompletionHandler(*mContext);
         }
-#if defined(ILIAS_CORO_TRACE)
-        // Cleanup the frame belong to us
-        ILIAS_ASSERT(!mContext->mFrames.empty());
-        mContext->mFrames.pop_back();
-#endif // defined(ILIAS_CORO_TRACE)
+        // TRACING: Cleanup the frame belong to us
+        mContext->popFrame();
         return {mPrevAwaiting};
     }
 
@@ -135,6 +176,15 @@ public:
 
     template <RawAwaitable T>
     auto await_transform(T &&awaitable, CaptureSource source = {}) -> decltype(auto) { // We apply the environment on here
+#if defined(ILIAS_CORO_TRACE)
+        // TRACING: Update the current await point's line number
+        // Our frame should be the top frame of the context
+        // co_await sth; 
+        auto frame = mContext->topFrame();
+        ILIAS_ASSERT(frame); // Already push on init
+        frame->setLine(source.toLocation().line());
+        frame->setMessage({}); // Clear it
+#endif // defined(ILIAS_CORO_TRACE)
         if constexpr (requires { awaitable.setContext(*mContext, source); }) { // It support setContext & with source
             awaitable.setContext(*mContext, source);
         }
@@ -164,9 +214,8 @@ public:
     // Doing sth before the coroutine starts
     auto init() noexcept -> void {
         ILIAS_ASSERT_MSG(mContext, "Coroutine context must be set before coroutine starts");
-#if defined(ILIAS_CORO_TRACE)
-        mContext->mFrames.push_back(StackFrame {"", toLocation(mCreation)});
-#endif // defined(ILIAS_CORO_TRACE)
+        // TRACING: Push the frame, we are start now
+        mContext->pushFrame(mCreation);
     }
 
     // Memory pool for coroutines (maybe.)

@@ -31,7 +31,14 @@ public:
 
     // Set the context of the task, call on await_transform
     auto setContext(runtime::CoroContext &ctxt) {
+#if defined(ILIAS_CORO_TRACE)
+        // TRACING: mark the current await point is unstoppable
+        if (auto frame = mCtxt.topFrame(); frame) {
+            frame->setMessage("unstoppable");
+        }
+#endif // defined(ILIAS_CORO_TRACE)
         // We just need the executor info from the context
+        mCtxt.setParent(ctxt);
         mCtxt.setExecutor(ctxt.executor());
     }
 private:

@@ -12,7 +12,7 @@ ILIAS_NS_BEGIN
 using namespace task;
 
 #pragma region TaskSpawn
-TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task) : TaskContext(task) {
+TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task, CaptureSource source) : TaskContext(task) {
     auto executor = runtime::Executor::currentThread();
     ILIAS_ASSERT_MSG(executor, "The current thread has no executor");
 
@@ -24,6 +24,7 @@ TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task) : TaskContext(task
     mTask.setCompletionHandler(handler);
     this->setStoppedHandler(handler);
     this->setExecutor(*executor);
+    this->pushFrame("spawn", source); // TRACING: trace the spawn point
 
     this->ref(); // Ref it, we will deref it when it completed
     mTask.schedule(); // Schedule the task in the executor

@@ -58,9 +58,16 @@ public:
 
     auto await_ready() -> bool {
         // Start all first
+#if defined(ILIAS_CORO_TRACE)
+        // TRACING: mark the current await point we are on whenAll
+        if (auto frame = mContext.topFrame(); frame) {
+            frame->setMessage("whenAll");
+        }
+#endif // defined(ILIAS_CORO_TRACE)
         mLeft = mTasks.size();
         for (auto &ctxt: mTasks) {
             ctxt.mAwaiter = this;
+            ctxt.setParent(mContext);
             ctxt.setExecutor(mContext.executor());
             ctxt.setStoppedHandler(&onTaskCompleted);
             ctxt.task().setCompletionHandler(&onTaskCompleted);

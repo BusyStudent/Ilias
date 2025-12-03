@@ -18,6 +18,7 @@
 #include <coroutine>
 #include <cstring>
 #include <memory>
+#include <array>
 
 ILIAS_NS_BEGIN
 
@@ -70,7 +71,7 @@ public:
     /**
      * @brief Get the current thread's executor
      * 
-     * @return Executor* 
+     * @return Executor * (nullptr on no executor installed)
      */
     static auto currentThread() -> Executor *;
 

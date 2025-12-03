@@ -221,12 +221,13 @@ protected:
 // Environment for the blocking wait task
 class TaskBlockingContext final : private TaskContext {
 public:
-    TaskBlockingContext(TaskHandle<> task) : TaskContext(task, std::nostopstate) {
+    TaskBlockingContext(TaskHandle<> task, CaptureSource source) : TaskContext(task, std::nostopstate) {
         auto executor = runtime::Executor::currentThread();
         ILIAS_ASSERT_MSG(executor, "The current thread has no executor");
 
         mTask.setCompletionHandler(TaskBlockingContext::onComplete);
         this->setExecutor(*executor);
+        this->pushFrame("wait", source); // TRACING: trace the blocking point
     }
     TaskBlockingContext(const TaskBlockingContext &) = delete;
 
@@ -257,7 +258,7 @@ class TaskSpawnContextBase : public RefCounted<TaskSpawnContextBase>,
 {
 public:
     ILIAS_API
-    TaskSpawnContextBase(TaskHandle<> task);
+    TaskSpawnContextBase(TaskHandle<> task, CaptureSource source);
     TaskSpawnContextBase(const TaskSpawnContextBase &) = delete;
 
     // Send the stop request of the spawn task
@@ -324,7 +325,7 @@ protected:
 template <typename T>
 class TaskSpawnContext final : public TaskSpawnContextBase {
 public:
-    TaskSpawnContext(TaskHandle<T> task) : TaskSpawnContextBase(task) {
+    TaskSpawnContext(TaskHandle<T> task, CaptureSource source) : TaskSpawnContextBase(task, source) {
         mManager = TaskSpawnContext::manager;
     }
 
@@ -504,8 +505,8 @@ public:
      * 
      * @return T 
      */
-    auto wait() -> T {
-        auto context = task::TaskBlockingContext(_leak());
+    auto wait(runtime::CaptureSource source = {}) -> T {
+        auto context = task::TaskBlockingContext(_leak(), source);
         context.enter();
         return context.value<T>();
     }
@@ -562,6 +563,11 @@ protected:
     task::Rc<task::TaskSpawnContextBase> mPtr;
 };
 
+/**
+ * @brief The wait handle of an spawned task (used for co_await or blcokingWait)
+ * 
+ * @tparam T 
+ */
 template <typename T>
 class WaitHandle final {
 public:
@@ -605,37 +611,38 @@ public:
 private:
     task::Rc<task::TaskSpawnContextBase> mPtr;
 template <typename U>
-friend auto spawn(Task<U> task) -> WaitHandle<U>;
+friend auto spawn(Task<U> task, runtime::CaptureSource source) -> WaitHandle<U>;
 };
 
 // Spawn a task running on the current thread executor
 template <typename T>
-inline auto spawn(Task<T> task) -> WaitHandle<T> {
+inline auto spawn(Task<T> task, runtime::CaptureSource source = {}) -> WaitHandle<T> {
     auto handle = WaitHandle<T> {};
-    handle.mPtr.reset(new task::TaskSpawnContext<T>(task._leak()));
+    auto ptr = new task::TaskSpawnContext<T>(task._leak(), source);
+    handle.mPtr.reset(ptr);
     return handle;
 }
 
 // Spawn a task by using given callable
 template <std::invocable Fn>
-inline auto spawn(Fn fn) -> WaitHandle<typename std::invoke_result_t<Fn>::value_type> {
+inline auto spawn(Fn fn, runtime::CaptureSource source = {}) -> WaitHandle<typename std::invoke_result_t<Fn>::value_type> {
     if constexpr (std::is_function_v<Fn> || std::is_empty_v<Fn>) { // We didn't need to capture the function
-        return spawn(fn());
+        return spawn(fn(), source);
     }
     else {
         auto wrapper = [](auto fn) -> std::invoke_result_t<Fn> {
             co_return co_await fn();
         };
-        return spawn(wrapper(fn));
+        return spawn(wrapper(fn), source);
     }
 }
 
 // Spawn a blocking task by using given callable, it doesn't support stop
 template <std::invocable Fn>
-inline auto spawnBlocking(Fn fn) -> WaitHandle<typename std::invoke_result_t<Fn> > {
+inline auto spawnBlocking(Fn fn, runtime::CaptureSource source = {}) -> WaitHandle<typename std::invoke_result_t<Fn> > {
     return spawn([](auto fn) -> Task<typename std::invoke_result_t<Fn> > {
         co_return co_await task::TaskBlockingAwaiter<decltype(fn)>(std::move(fn));
-    }(std::forward<Fn>(fn)));
+    }(std::forward<Fn>(fn)), source);
 }
 
 // Awaiting a blocking task by using given callable
@@ -670,8 +677,8 @@ inline auto toTask() -> task::ToTaskTags {
 
 // Blocking wait an awaitable complete
 template <Awaitable T>
-inline auto blockingWait(T awaitable) -> AwaitableResult<T> {
-    return toTask(std::move(awaitable)).wait();
+inline auto blockingWait(T awaitable, runtime::CaptureSource source = {}) -> AwaitableResult<T> {
+    return toTask(std::move(awaitable)).wait(source);
 }
 
 inline auto blockingWait() -> task::BlockingWaitTags {
