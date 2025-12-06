@@ -92,6 +92,17 @@ public:
 
     ILIAS_API
     auto await_suspend(runtime::CoroHandle caller) -> void;
+
+    // TRACING: mark the await point is scheduleOn
+#if defined(ILIAS_CORO_TRACE)
+    auto setContext(runtime::CoroContext &ctxt) {
+        if (auto frame = ctxt.topFrame(); frame) {
+            frame->setMessage("scheduleOn");
+        }
+        this->setParent(ctxt);
+    }
+#endif // defined(ILIAS_CORO_TRACE)
+
 protected:
     enum State : uint8_t {
         Running     = 0,
@@ -105,6 +116,7 @@ protected:
     auto invoke() -> void;
     static auto onCompletion(runtime::CoroContext &_self) -> void;
 
+    // SAFETY: Compiler pin awaiter on await start
     State mState {Running}; // We use std::atomic_ref internal, make the compiler happy:(, std::atomic<T> can't move
     TaskHandle<> mHandle;
     runtime::Executor &mExecutor;
@@ -125,7 +137,7 @@ public:
 // Add an async cleanup handler to an awaitable
 class FinallyAwaiterBase {
 public:
-    FinallyAwaiterBase(TaskHandle<> main, TaskHandle<> finally) : mMainCtxt(main), mFinallyCtxt(finally, std::nostopstate) {}
+    FinallyAwaiterBase(TaskHandle<> main) : mContext(main) {}
     FinallyAwaiterBase(FinallyAwaiterBase &&) = default;
     ~FinallyAwaiterBase() = default;
 
@@ -134,45 +146,80 @@ public:
     auto await_ready() -> bool { return false; } // Always suspend, because althrough the task is ready, we need to call the finally handler
 
     auto setContext(runtime::CoroContext &ctxt) noexcept {
-        mMainCtxt.setExecutor(ctxt.executor());
-        mFinallyCtxt.setExecutor(ctxt.executor());
+#if defined(ILIAS_CORO_TRACE)
+        // TRACING: mark the current await point is finally
+        if (auto frame = ctxt.topFrame(); frame) {
+            frame->setMessage("finally");
+        }
+#endif // defined(ILIAS_CORO_TRACE)
+        mContext->setParent(ctxt);
+        mContext->setExecutor(ctxt.executor());
     }
 protected:
-    TaskContext mMainCtxt;
-    TaskContext mFinallyCtxt;
+    // Virtual method ...
+    TaskHandle<>             (*mOnTaskCompletion)(FinallyAwaiterBase &self) = nullptr;
+    std::optional<TaskContext> mContext;
 private:
     auto onTaskCompletion() -> void;
     auto onFinallyCompletion() -> void;
 
+    bool mStopped = false; // Did main ctxt receive the stop request and actually stopped ?
     runtime::CoroHandle mCaller;
     runtime::StopRegistration mReg;
 };
 
-template <typename T>
+template <typename T, typename Cleanup>
 class FinallyAwaiter final : public FinallyAwaiterBase {
 public:
-    FinallyAwaiter(TaskHandle<T> main, TaskHandle<> finally) : FinallyAwaiterBase(main, finally) {}
-
-    auto await_resume() -> T {
-        return TaskHandle<T>::cast(mMainCtxt.task()).value();
-    }
-};
-
-template <typename T, std::invocable Fn>
-class FinallyFnAwaiter final : public FinallyAwaiterBase {
-public:
-    FinallyFnAwaiter(TaskHandle<T> main, Fn fn) : FinallyAwaiterBase(main, nullptr), mFn(std::move(fn)) {}
-
-    auto await_resume() -> T {
-        return TaskHandle<T>::cast(mMainCtxt.task()).value();
+    FinallyAwaiter(TaskHandle<T> main, Cleanup cleanup) : FinallyAwaiterBase(main), mCleanup(std::move(cleanup)) {
+        mOnTaskCompletion = FinallyAwaiter::onCompletion;
     }
 
-    auto setContext(runtime::CoroContext &ctxt) { // Lazy initialization until co_await
-        mFinallyCtxt.setTask(toTask(mFn())._leak());
-        FinallyAwaiterBase::setContext(ctxt);
+    auto await_resume() -> T {
+        if (mException) {
+            std::rethrow_exception(mException);
+        }
+        return unwrapOption(std::move(mValue));
     }
 private:
-    Fn mFn;
+    template <typename U>
+    auto makeCleanup(Task<U> &task) -> TaskHandle<> {
+        return std::exchange(task, {})._leak();
+    }
+
+    template <std::invocable U>
+    auto makeCleanup(U &&fn) -> TaskHandle<> {
+        if constexpr (requires { fn(mValue); }) { // Check the cleanup function can take the value reference?
+            return fn(mValue)._leak();
+        }
+        else {
+            return fn()._leak();
+        }
+    }
+
+    static auto onCompletion(FinallyAwaiterBase &_self) -> TaskHandle<> {
+        auto &self = static_cast<FinallyAwaiter &>(_self);
+        do {
+            auto &ctxt = *(self.mContext);
+            auto handle = TaskHandle<T>::cast(ctxt.task());
+            if (ctxt.isStopped()) {
+                break; // Nothing to do
+            }
+            self.mException = handle.takeException();
+            if (self.mException) {
+                break;
+            }
+            self.mValue = makeOption([&]() { return handle.value(); });
+            break;
+        }
+        while (0);
+        // Prepare the cleanup task
+        return self.makeCleanup(self.mCleanup);
+    }
+
+    std::exception_ptr mException;
+    Cleanup   mCleanup;
+    Option<T> mValue;
 };
 
 // Implement await on an stop token
@@ -191,6 +238,7 @@ private:
     auto onStopRequested() -> void;
     auto onRuntimeStopRequested() -> void;
 
+    // SAFETY: Compiler pin awaiter on await start
     bool mCompleted {false}; // We use std::atomic_ref internal, make the compiler happy:(, std::atomic<T> can't move
     runtime::StopToken mToken;
     runtime::CoroHandle mCaller;
@@ -256,14 +304,14 @@ inline auto unstoppable(T awaitable) -> task::UnstoppableAwaiter<AwaitableResult
 // Add an async cleanup task to an awaitable
 template <Awaitable T, typename U>
 [[nodiscard]]
-inline auto finally(T awaitable, Task<U> finally) -> task::FinallyAwaiter<AwaitableResult<T> > {
-    return {toTask(std::move(awaitable))._leak(), finally._leak()};
+inline auto finally(T awaitable, Task<U> cleanup) -> task::FinallyAwaiter<AwaitableResult<T>, Task<U> > {
+    return {toTask(std::move(awaitable))._leak(), std::move(cleanup)};
 }
 
 // Add an async cleanup handler to an awaitable
 template <Awaitable T, std::invocable Fn>
 [[nodiscard]]
-inline auto finally(T awaitable, Fn fn) -> task::FinallyFnAwaiter<AwaitableResult<T>, Fn> {
+inline auto finally(T awaitable, Fn fn) -> task::FinallyAwaiter<AwaitableResult<T>, Fn> {
     return {toTask(std::move(awaitable))._leak(), std::move(fn)};
 }
 

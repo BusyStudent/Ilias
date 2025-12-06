@@ -77,6 +77,8 @@ public:
     auto register_(StopToken &&token, Object *self) -> void {
         mCallback.emplace(std::move(token), Callback{methodProxy<Method, Object>, self});
     }
+
+    auto reset() -> void { mCallback.reset(); }
 private:
     struct Callback {
         void (*fn)(void *);

@@ -364,47 +364,54 @@ auto ScheduleAwaiterBase::invoke() -> void  { // In the caller thread
 
 #pragma region FinallyAwaiter
 auto FinallyAwaiterBase::await_suspend(CoroHandle caller) -> std::coroutine_handle<> {
-    auto mainHandle = mMainCtxt.task();
-    auto finallyHandle = mFinallyCtxt.task();
-
-    // Bind the ctxt to self first
-    mMainCtxt.setUserdata(this);
-    mFinallyCtxt.setUserdata(this);
+    auto mainHandle = mContext->task();
 
     // The callbacks
     auto mainCallback = [](runtime::CoroContext &ctxt) {
         return static_cast<FinallyAwaiterBase*>(ctxt.userdata())->onTaskCompletion();
     };
-    auto finallyCallback = [](runtime::CoroContext &ctxt) {
-        return static_cast<FinallyAwaiterBase*>(ctxt.userdata())->onFinallyCompletion();
-    };
-
     mCaller = caller;
-    mReg.register_<&TaskContext::stop>(caller.stopToken(), &mMainCtxt); // Forward the stop to the handle task
-    mainHandle.setContext(mMainCtxt);
-    mainHandle.setCompletionHandler(mainCallback);
-    mMainCtxt.setStoppedHandler(mainCallback);
+    mReg.register_<&TaskContext::stop>(caller.stopToken(), &*mContext); // Forward the stop to the handle task
 
-    finallyHandle.setContext(mFinallyCtxt);
-    finallyHandle.setCompletionHandler(finallyCallback);
+    // Bind the ctxt to self first
+    mContext->setUserdata(this);
+    mContext->setStoppedHandler(mainCallback);
+    mainHandle.setContext(*mContext);
+    mainHandle.setCompletionHandler(mainCallback);
     return mainHandle.toStd(); // Switch into it, caller -> task -> finally -> (caller or caller.setStopped())
 }
 
 auto FinallyAwaiterBase::onTaskCompletion() -> void {
-    if (mMainCtxt.isStopped()) { // The main task is stopped, we should call the finally on event loop
-        mFinallyCtxt.task().schedule();
-    }
-    else { // Otherwise, let the min call the finally. short-cut :)
-        mMainCtxt.task().setPrevAwaiting(mFinallyCtxt.task());
-    }
+    mContext->executor().schedule([this]() {
+        auto finallyCallback = [](runtime::CoroContext &ctxt) {
+            return static_cast<FinallyAwaiterBase*>(ctxt.userdata())->onFinallyCompletion();
+        };
+
+        // Store the context info
+        auto &executor = mContext->executor();
+        mStopped = mContext->isStopped();
+        mReg.reset();
+
+        // Call the child to store the result
+        auto handle = mOnTaskCompletion(*this);
+        mContext.reset(); // Destroy the task， quit the scope
+        
+        // Invoke the finally
+        mContext.emplace(handle, std::nostopstate);
+        mContext->setUserdata(this);
+        mContext->setExecutor(executor);
+        handle.setContext(*mContext);
+        handle.setCompletionHandler(finallyCallback);
+        handle.resume();
+    });
 }
 
 auto FinallyAwaiterBase::onFinallyCompletion() -> void {
-    if (mMainCtxt.isStopped()) { // Forward the stop completion to the caller
+    if (mStopped) { // Forward the stop completion to the caller
         mCaller.setStopped();
     }
     else { // Switch into caller
-        mFinallyCtxt.task().setPrevAwaiting(mCaller);
+        mContext->task().setPrevAwaiting(mCaller);
     }
 }
 
