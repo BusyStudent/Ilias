@@ -154,7 +154,7 @@ public:
     auto initial_suspend() noexcept {
         struct Awaiter {
             auto await_ready() noexcept { return false; }
-            auto await_suspend(std::coroutine_handle<> handle) noexcept {}
+            auto await_suspend([[maybe_unused]] std::coroutine_handle<> handle) noexcept {}
             auto await_resume() noexcept { self.init(); }
             CoroPromise &self;
         };

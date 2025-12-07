@@ -16,9 +16,7 @@
 #include <version>
 #include <string>
 
-#if !defined(ILIAS_NAMESPACE)
-    #define ILIAS_NAMESPACE ilias
-#endif
+#define ILIAS_NAMESPACE ilias
 
 #if !defined(ILIAS_ASSERT)
     #define ILIAS_ASSERT(x) assert(x)

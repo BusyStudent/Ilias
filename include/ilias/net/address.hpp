@@ -412,7 +412,7 @@ public:
      * @param n must be sizeof(::in6_addr)
      * @return IPAddress6 
      */
-    static auto fromRaw(const void *mem, size_t n) -> IPAddress6 {
+    static auto fromRaw(const void *mem, [[maybe_unused]] size_t n) -> IPAddress6 {
         return *reinterpret_cast<const ::in6_addr *>(mem);
     }
 

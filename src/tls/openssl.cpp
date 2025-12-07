@@ -79,7 +79,7 @@ public:
         return 1;
 	}
 
-	auto bioCtrl(int cmd, long num, void *ptr) -> long {
+	auto bioCtrl(int cmd, [[maybe_unused]] long num, [[maybe_unused]] void *ptr) -> long {
         switch (cmd) {
             case BIO_CTRL_FLUSH: mFlush = true; return 1;
         }

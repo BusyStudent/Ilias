@@ -85,7 +85,7 @@ private:
 // Schedule task on another executor
 class ScheduleAwaiterBase : private TaskContext {
 public:
-    ScheduleAwaiterBase(runtime::Executor &exec, TaskHandle<> handle) : TaskContext(handle), mExecutor(exec), mHandle(handle) {}
+    ScheduleAwaiterBase(runtime::Executor &exec, TaskHandle<> handle) : TaskContext(handle), mHandle(handle), mExecutor(exec) {}
     ScheduleAwaiterBase(ScheduleAwaiterBase &&) = default;
 
     auto await_ready() -> bool { return false; }

@@ -110,6 +110,11 @@ private:
  */
 class Stacktrace {
 public:
+    enum ColorMode {
+        Color,
+        NoColor
+    };
+
     explicit Stacktrace(std::vector<StackFrame> frames) : mFrames(std::move(frames)) {}
     Stacktrace() = default;
     Stacktrace(const Stacktrace &) = default;
@@ -121,31 +126,53 @@ public:
     auto size() const noexcept { return mFrames.size(); }
 
     // Formatting
-    auto toString() const -> std::string {
+    auto toString(ColorMode mode = Color) const -> std::string {
+        constexpr auto rst    = "\033[0m";
+        constexpr auto gray   = "\033[90m";
+        constexpr auto green  = "\033[1;32m"; // Bold Green for Function
+        constexpr auto cyan   = "\033[36m";   // Cyan for File
+        constexpr auto yellow = "\033[33m";   // Yellow for Line
+        constexpr auto magenta= "\033[1;35m"; // Bold Magenta for Msg
+
         auto str = std::string {};
         auto idx = size_t {0};
+        auto append = [&](std::string_view content, std::string_view color = {}) {
+            if (color.empty()) {
+                str += content;
+                return;
+            }
+            if (mode == Color) {
+                str += color;
+                str += content;
+                str += rst;
+            }
+            else {
+                str += content;
+            }
+        };
+        str.reserve(mFrames.size() * 64);
         if (mFrames.empty()) {
             str = "<Empty Stacktrace>";
             return str;
         }
 
         for (auto &frame : mFrames) {
-            str += "#";
-            str += std::to_string(idx);
-            str += " ";
-            str += frame.function();
-            str += "\n";
+            append("#", gray);
+            append(std::to_string(idx), gray);
+            append("  "); 
+            append(frame.function(), green);
+            append("\n");
 
-            str += "      at ";
-            str += frame.filename();
-            str += ":";
-            str += std::to_string(frame.line());
+            append("      at ", gray);
+            append(frame.filename(), cyan);
+            append(":", gray);
+            append(std::to_string(frame.line()), yellow);
 
             auto msg = frame.message();
             if (!msg.empty()) {
-                str += " [";
-                str += msg;
-                str += "]";
+                append(" [", gray);
+                append(msg, magenta);
+                append("]", gray);
             }
             
             str += "\n";
@@ -169,7 +196,7 @@ private:
  */
 class CaptureSource {
 public:
-    consteval CaptureSource(std::source_location loc = std::source_location::current()) noexcept : mLoc(loc) {}
+    constexpr CaptureSource(std::source_location loc = std::source_location::current()) noexcept : mLoc(loc) {}
     constexpr CaptureSource(const CaptureSource &) = default;
 
     auto toLocation() const noexcept { return mLoc; }

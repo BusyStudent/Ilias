@@ -58,7 +58,7 @@ public:
     // Try cancel the operation, note it will unlink self in the list
     auto cancel() -> void {
         unlink();
-        auto ret = ::aio_cancel(this->aio_fildes, this);
+        [[maybe_unused]] auto ret = ::aio_cancel(this->aio_fildes, this);
         ILIAS_TRACE("POSIX::aio", "Cancel op on fd {}, res {}", this->aio_fildes, ret);
     }
 protected:

@@ -1,4 +1,5 @@
 set_languages("c++latest")
+set_warnings("all")
 
 option("fmt")
     set_default(false)
@@ -33,7 +34,7 @@ option_end()
 option("fiber")
     set_default(true)
     set_showmenu(true)
-    set_description("Enable fiber support")
+    set_description("Enable stackful coroutine 'fiber' support")
 option_end()
 
 option("spdlog")
@@ -48,10 +49,10 @@ option("io_uring")
     set_description("Use io uring as platform context")
 option_end()
 
-option("task_trace")
+option("coro_trace")
     set_default(false)
     set_showmenu(true)
-    set_description("Add task stacktrace for debug use")
+    set_description("Add coroutine stacktrace for debug use")
 option_end()
 
 option("io")
@@ -151,7 +152,7 @@ target("ilias")
         set_configvar("ILIAS_USE_IO_URING", 1)
     end
 
-    if has_config("task_trace") then
+    if has_config("coro_trace") then
         set_configvar("ILIAS_CORO_TRACE", 1)
     end
 

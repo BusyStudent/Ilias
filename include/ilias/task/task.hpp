@@ -270,6 +270,7 @@ public:
 
     // Expose the memory
     using TaskContext::operator new;
+    using TaskContext::operator delete;
     
     // Impl the virtual delete
     auto operator delete(TaskSpawnContextBase *self, std::destroying_delete_t) -> void {

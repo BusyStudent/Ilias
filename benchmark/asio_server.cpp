@@ -75,6 +75,7 @@ private:
         acceptor_.async_accept(
             [this](std::error_code ec, tcp::socket socket) {
                 if (!ec) {
+                    socket.set_option(asio::ip::tcp::no_delay(true));
                     std::make_shared<HTTPSession>(std::move(socket))->start();
                 }
                 do_accept();

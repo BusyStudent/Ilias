@@ -184,7 +184,7 @@ auto AddressInfo::fromHostname(std::string_view name, std::string_view service, 
         }
 
         auto onStopRequested() -> void {
-            auto ret = ::gai_cancel(cb);
+            [[maybe_unused]] auto ret = ::gai_cancel(cb);
         }
 
         ::gaicb *cb;
