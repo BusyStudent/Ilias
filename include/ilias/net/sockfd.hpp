@@ -287,9 +287,9 @@ public:
     auto family() const -> IoResult<int> {
 
 #if defined(_WIN32)
-        ::WSAPROTOCOL_INFO info;
+        ::WSAPROTOCOL_INFOW info;
         ::socklen_t len = sizeof(info);
-        if (::getsockopt(mFd, SOL_SOCKET, SO_PROTOCOL_INFO, (char*) &info, &len) != 0) {
+        if (::getsockopt(mFd, SOL_SOCKET, SO_PROTOCOL_INFOW, (char*) &info, &len) != 0) {
             return Err(SystemError::fromErrno());
         }
         return info.iAddressFamily;

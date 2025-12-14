@@ -9,6 +9,10 @@
 
 ILIAS_NS_BEGIN
 
+// Forward declarations
+enum class TlsRole;
+
+// The implementation of the tls
 namespace tls {
 
 // INTERNAL, use pimpl to hide the implementation
@@ -29,12 +33,12 @@ public:
     auto shutdown(StreamView stream) -> IoTask<void>;
 
     // Tls
-    auto handshake(StreamView stream) -> IoTask<void>;
+    auto handshake(StreamView stream, TlsRole role) -> IoTask<void>;
     auto setHostname(std::string_view hostname) -> void;
     auto setAlpnProtocols(std::span<const std::string_view> protocols) -> bool;
     auto alpnSelected() const -> std::string_view;
 
-    static auto make(void *ctxt, bool isServer) -> TlsState *;
+    static auto make(void *ctxt) -> TlsState *;
 protected:
     TlsState() = default;
     ~TlsState() = default;
@@ -49,6 +53,15 @@ namespace context {
 using TlsHandle = std::unique_ptr<TlsState, TlsState::Deleter>;
 
 } // namespace tls
+
+/**
+ * @brief The role of the TlsStream, used for handshake
+ * 
+ */
+enum class TlsRole {
+    Client,
+    Server
+};
 
 /**
  * @brief The TlsContext
@@ -80,7 +93,7 @@ class TlsStream final : public StreamMethod<TlsStream<T> > {
 public:
     TlsStream() = default;
     TlsStream(TlsStream &&other) = default;
-    TlsStream(TlsContext &ctxt, T &&stream) : mHandle(tls::TlsState::make(ctxt.d.get(), false)), mStream(std::move(stream)) {}
+    TlsStream(TlsContext &ctxt, T &&stream) : mHandle(tls::TlsState::make(ctxt.d.get())), mStream(std::move(stream)) {}
     ~TlsStream() = default;
 
     // Readable
@@ -102,8 +115,9 @@ public:
     }
 
     // Tls specific
-    auto handshake() -> IoTask<void> {
-        return mHandle->handshake(mStream);
+    // User should call handshake before use any read / write
+    auto handshake(TlsRole role) -> IoTask<void> {
+        return mHandle->handshake(mStream, role);
     }
 
     auto setHostname(std::string_view hostname) -> void {

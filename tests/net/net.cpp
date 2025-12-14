@@ -402,7 +402,7 @@ ILIAS_TEST(Net, Https) {
     auto alpn = std::to_array({"http/1.1"sv});
     ssl.setHostname("www.baidu.com");
     ssl.setAlpnProtocols(alpn);
-    (co_await ssl.handshake()).value();
+    (co_await ssl.handshake(TlsRole::Client)).value();
 
     std::cout << "Alpn Result : " << ssl.alpnSelected() << std::endl;
 

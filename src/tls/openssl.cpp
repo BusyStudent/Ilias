@@ -126,7 +126,13 @@ public:
 		co_return {};
 	}
 	
-	auto handshakeImpl(StreamView stream) -> IoTask<void> {
+	auto handshakeImpl(StreamView stream, TlsRole role) -> IoTask<void> {
+		if (role == TlsRole::Client) {
+			SSL_set_connect_state(mSsl);
+		}
+		else {
+			SSL_set_accept_state(mSsl);
+		}
 		while (true) {
 			int ret = SSL_do_handshake(mSsl);
 			if (ret == 1) {
@@ -264,15 +270,9 @@ auto TlsState::destroy() -> void {
 	delete static_cast<TlsStateImpl *>(this);
 }
 
-auto TlsState::make(void *ctxt, bool isServer) -> TlsState * {
+auto TlsState::make(void *ctxt) -> TlsState * {
 	auto impl = static_cast<SSL_CTX*>(ctxt);
 	auto ptr = std::make_unique<TlsStateImpl>(impl);
-	if (isServer) {
-	    SSL_set_accept_state(ptr->mSsl);
-	}
-	else {
-	    SSL_set_connect_state(ptr->mSsl);
-	}
 	return ptr.release();
 }
 
@@ -295,8 +295,8 @@ auto TlsState::shutdown(StreamView stream) -> IoTask<void> {
 }
 
 // Tls
-auto TlsState::handshake(StreamView stream) -> IoTask<void> {
-	return static_cast<TlsStateImpl *>(this)->handshakeImpl(stream);
+auto TlsState::handshake(StreamView stream, TlsRole role) -> IoTask<void> {
+	return static_cast<TlsStateImpl *>(this)->handshakeImpl(stream, role);
 }
 
 auto TlsState::setHostname(std::string_view hostname) -> void {

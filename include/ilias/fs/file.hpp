@@ -180,7 +180,9 @@ public:
      * @return IoTask<File> 
      */
     static auto open(const char *path, std::string_view mode) -> IoTask<File> {
-        auto fd = fd_utils::open(path, mode);
+        auto fd = co_await blocking([&]() {
+            return fd_utils::open(path, mode);
+        });
         if (!fd) {
             co_return Err(fd.error());
         }

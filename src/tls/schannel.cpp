@@ -74,7 +74,6 @@ public:
     ::SecPkgContext_ApplicationProtocol mAlpnResult { }; // The ALPN selected result
     bool mIsHandshakeDone = false;
     bool mIsShutdown = false;
-    bool mIsServer = false;
     bool mIsExpired = false;
 
     // Tls Configure
@@ -87,7 +86,7 @@ public:
     FixedStreamBuffer<16384 + 100> mReadBuffer;  //< The incoming buffer 2 ** 14 (MAX TLS SIZE) + header + trailer
     FixedStreamBuffer<16384 + 100> mWriteBuffer;
 
-    TlsStateImpl(TlsContextImpl &ctxt, bool isServer) : mTable(ctxt.mTable), mCredHandle(ctxt.mCredHandle), mIsServer(isServer) {
+    TlsStateImpl(TlsContextImpl &ctxt) : mTable(ctxt.mTable), mCredHandle(ctxt.mCredHandle) {
 
     }    
 
@@ -212,8 +211,8 @@ public:
         co_return {};
     }
 
-    auto handshakeImpl(StreamView stream) -> IoTask<void> {
-        if (mIsServer) {
+    auto handshakeImpl(StreamView stream, TlsRole role) -> IoTask<void> {
+        if (role == TlsRole::Server) {
             // return handshakeAsServer(stream);
             ::abort(); // TODO: Not implemented
         }
@@ -238,9 +237,7 @@ public:
     // Read
     auto readImpl(StreamView stream, MutableBuffer buffer) -> IoTask<size_t> {
         if (!mIsHandshakeDone) {
-            if (auto res = co_await handshakeImpl(stream); !res) {
-                co_return Err(res.error());
-            }
+            co_return Err(IoError::Tls);
         }
         if (buffer.empty()) {
             co_return 0;
@@ -312,9 +309,7 @@ public:
     // Write
     auto writeImpl(StreamView stream, Buffer buffer) -> IoTask<size_t> {
         if (!mIsHandshakeDone) {
-            if (auto res = co_await handshakeImpl(stream); !res) {
-                co_return Err(res.error());
-            }
+            co_return Err(IoError::Tls);
         }
         auto sended = size_t(0);
         while (buffer.size() > 0) {
@@ -383,8 +378,8 @@ auto context::destroy(void *data) -> void {
 }
 
 // Tls
-auto TlsState::handshake(StreamView stream) -> IoTask<void> {
-    return static_cast<TlsStateImpl *>(this)->handshakeAsClient(stream);
+auto TlsState::handshake(StreamView stream, TlsRole role) -> IoTask<void> {
+    return static_cast<TlsStateImpl *>(this)->handshakeImpl(stream, role);        
 }
 
 auto TlsState::setHostname(std::string_view name) -> void {
@@ -460,9 +455,9 @@ auto TlsState::destroy() -> void {
     delete static_cast<TlsStateImpl *>(this);
 }
 
-auto TlsState::make(void *ctxt, bool isServer) -> TlsState * {
+auto TlsState::make(void *ctxt) -> TlsState * {
     auto impl = static_cast<TlsContextImpl *>(ctxt);
-    return new TlsStateImpl(*impl, isServer);
+    return new TlsStateImpl(*impl);
 }
 
 } // namespace tls

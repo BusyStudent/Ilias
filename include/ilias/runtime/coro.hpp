@@ -328,7 +328,6 @@ public:
 private:
     std::coroutine_handle<> mHandle;
     CoroPromise            *mPromise = nullptr;
-friend class std::hash<CoroHandle>;
 };
 
 } // namespace runtime
@@ -451,6 +450,6 @@ ILIAS_NS_END
 template <>
 struct std::hash<ILIAS_NAMESPACE::runtime::CoroHandle> {
     auto operator()(const ILIAS_NAMESPACE::runtime::CoroHandle &h) const noexcept -> std::size_t {
-        return std::hash<std::coroutine_handle<> >()(h.mHandle);
+        return std::hash<std::coroutine_handle<> >()(h.toStd());
     }
 };

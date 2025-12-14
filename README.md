@@ -2,6 +2,12 @@
 
 > 一个基于 C++20 无栈协程的轻量级异步 IO 库,类似 Tokio 的设计理念
 
+<!-- Project Info Badges -->
+[![License](https://img.shields.io/github/license/BusyStudent/Ilias)](LICENSE)
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
+[![Build System](https://img.shields.io/badge/build-xmake-green)](https://xmake.io)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)](https://github.com/BusyStudent/Ilias)
+
 [English](README_en.md) | 中文
 
 ## ✨ 特性
