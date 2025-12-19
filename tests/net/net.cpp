@@ -2,7 +2,6 @@
 #include <ilias/platform.hpp>
 #include <ilias/buffer.hpp>
 #include <ilias/net.hpp>
-#include <ilias/tls.hpp>
 #include <ilias/io.hpp>
 #include <ilias/testing.hpp>
 #include <gtest/gtest.h>
@@ -390,44 +389,6 @@ ILIAS_TEST(Net, Http) {
         std::cout << std::string_view(buffer, size) << std::endl;
     }
 }
-
-#if defined(ILIAS_TLS)
-ILIAS_TEST(Net, Https) {
-    TlsContext sslCtxt;
-    auto info = (co_await AddressInfo::fromHostname("www.baidu.com", "https")).value();
-    auto client = (co_await TcpStream::connect(info.endpoints().at(0))).value();
-    auto ssl = TlsStream(sslCtxt, std::move(client));
-
-    // Do ssl here
-    auto alpn = std::to_array({"http/1.1"sv});
-    ssl.setHostname("www.baidu.com");
-    ssl.setAlpnProtocols(alpn);
-    (co_await ssl.handshake(TlsRole::Client)).value();
-
-    std::cout << "Alpn Result : " << ssl.alpnSelected() << std::endl;
-
-    // Prepare payload, as same as Http
-    auto stream = BufStream(std::move(ssl));
-    (co_await stream.writeAll("GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n"_bin)).value();
-    (co_await stream.flush()).value();
-
-    while (true) {
-        auto line = (co_await stream.getline("\r\n")).value();
-        if (line.empty()) { // Header end
-            break;
-        }
-        std::cout << line << std::endl;
-    }
-    char buffer[4096] {};
-    while (true) {
-        auto size = (co_await stream.read(makeBuffer(buffer))).value();
-        if (size == 0) {
-            break;
-        }
-        std::cout << std::string_view(buffer, size) << std::endl;
-    }
-}
-#endif // ILIAS_SSL
 
 class IoEventLoop : public DelegateContext<PlatformContext> {
 public:

@@ -161,13 +161,14 @@ public:
         return Awaiter {*this};
     }
 
-    auto final_suspend() noexcept -> SwitchCoroutine {
-        if (mCompletionHandler) {
-            mCompletionHandler(*mContext);
-        }
-        // TRACING: Cleanup the frame belong to us
-        mContext->popFrame();
-        return {mPrevAwaiting};
+    auto final_suspend() noexcept {
+        struct Awaiter {
+            auto await_ready() noexcept { return false; }
+            auto await_suspend(std::coroutine_handle<> handle) noexcept { return self.done(); }
+            auto await_resume() noexcept {} // UNREACHABLE here
+            CoroPromise &self;
+        };
+        return Awaiter {*this};
     }
 
     auto unhandled_exception() noexcept { 
@@ -216,6 +217,16 @@ public:
         ILIAS_ASSERT_MSG(mContext, "Coroutine context must be set before coroutine starts");
         // TRACING: Push the frame, we are start now
         mContext->pushFrame(mCreation);
+    }
+
+    // Doing sth after the coroutine done
+    auto done() noexcept -> std::coroutine_handle<> {
+        if (mCompletionHandler) {
+            mCompletionHandler(*mContext);
+        }
+        // TRACING: Cleanup the frame belong to us
+        mContext->popFrame();
+        return mPrevAwaiting;
     }
 
     // Memory pool for coroutines (maybe.)

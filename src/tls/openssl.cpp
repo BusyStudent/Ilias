@@ -3,9 +3,17 @@
 #include <ilias/tls.hpp>
 #include <mutex> // std::once_flag
 
+#include <openssl/x509.h>
+#include <openssl/pem.h>
 #include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+
+#if defined(_WIN32)
+	#include <ilias/detail/scope_exit.hpp>
+	#include <ilias/detail/win32defs.hpp>
+	#include <wincrypt.h>
+#endif // _WIN32
 
 ILIAS_NS_BEGIN
 
@@ -16,6 +24,24 @@ namespace openssl {
 static constinit BIO_METHOD *bioMethod = nullptr;
 
 #pragma region OpenSSL
+class TlsCategoryImpl : public std::error_category {
+public:
+    auto name() const noexcept -> const char * override {
+        return "openssl";
+    }
+
+    auto message(int code) const noexcept -> std::string override {
+        char buf[512] {0};
+        ERR_error_string_n(code, buf, sizeof(buf));
+        return buf;
+    }
+
+	static auto instance() -> const TlsCategoryImpl & {
+	    static const constinit TlsCategoryImpl instance;
+		return instance;
+	}
+};
+
 class TlsStateImpl : public TlsState {
 public:
 	// OpenSSL State
@@ -54,7 +80,7 @@ public:
         auto span = mReadBuffer.data();
         if (span.empty()) {
             BIO_set_retry_read(mBio);
-            return 0;
+            return -1;
         }
         len = std::min(len, span.size());
         std::memcpy(data, span.data(), len);
@@ -71,7 +97,7 @@ public:
         auto span = mWriteBuffer.prepare(len);
         if (span.empty()) {
             BIO_set_retry_write(mBio);
-            return 0;
+            return -1;
         }
         ::memcpy(span.data(), data, len);
         mWriteBuffer.commit(len);
@@ -82,8 +108,8 @@ public:
 	auto bioCtrl(int cmd, [[maybe_unused]] long num, [[maybe_unused]] void *ptr) -> long {
         switch (cmd) {
             case BIO_CTRL_FLUSH: mFlush = true; return 1;
+			default: return 0;
         }
-        return 0;
 	}
 
 	// Our method
@@ -116,7 +142,22 @@ public:
 		case SSL_ERROR_SSL: {
 			// Tls Error
 			mFail = true; // In documentation it says that this error is not recoverable
-			co_return Err(IoError::Tls);
+
+			// We just return the first error
+			auto errc = std::error_code { IoError::Tls };
+			if (auto c = ERR_peek_error(); c) {
+				errc = { static_cast<int>(c), TlsCategoryImpl::instance() };
+			}
+
+			// Begin debug dump the error stack
+			while (auto code = ERR_get_error()) {
+				char buf[512] {0};
+				ERR_error_string_n(code, buf, sizeof(buf));
+				ILIAS_WARN("OpenSSL", "Tls Error: {} => {}", code, buf);
+			}
+
+			// Done
+			co_return Err(errc);
 		}
 		default: {
 			// Unknown Error
@@ -184,8 +225,11 @@ public:
 
 	auto shutdownImpl(StreamView stream) -> IoTask<void> {
 		while (!mFail) { // In documentation it says, after SSL_ERROR_SSL, we should not call SSL_shutdown
-		    int ret = SSL_shutdown(mSsl);
-			if (ret == 1) { // Done in ssl layer, flush self and then call lowerlayer shutdown
+		    auto ret = SSL_shutdown(mSsl);
+			if (ret == 1) { // We got the peer shutdown
+				break;
+			}
+			if (ret == 0) { // We are shutdown, but we didn't get the peer shutdown
 				break;
 			}
 			int err = SSL_get_error(mSsl, ret);
@@ -193,6 +237,7 @@ public:
 			    co_return Err(res.error());
 			}
 		}
+		// Flush self and then call lowerlayer shutdown
 		if (auto res = co_await flushImpl(stream); !res) {
 			co_return Err(res.error());
 		}
@@ -246,7 +291,7 @@ auto unregisterBioMethod() -> void {
 using namespace openssl;
 
 // Tls Context...
-auto context::make() -> void * {
+auto context::make(uint32_t flags) -> void * {
 	struct Initializer {
 		Initializer() {
 			openssl::registerBioMethod();
@@ -258,11 +303,130 @@ auto context::make() -> void * {
 	static Initializer init;
 
 	auto ctxt = SSL_CTX_new(TLS_method());
+
+	// Configue
+	// Enable verify
+	if (!(flags & TlsContext::NoVerify)) {
+		context::setVerify(ctxt, true);
+	}
+	if (!(flags & TlsContext::NoDefaultRootCerts)) {
+		if (!context::loadDefaultRootCerts(ctxt)) {
+			ILIAS_WARN("OpenSSL", "Failed to load default root certificates");
+		}
+	}
 	return ctxt;
 }
 
 auto context::destroy(void *ptr) -> void {
 	SSL_CTX_free(static_cast<SSL_CTX *>(ptr));
+}
+
+auto context::backend() -> TlsBackend {
+	return TlsBackend::OpenSSL;
+}
+
+auto context::setVerify(void *ptr, bool verify) -> void {
+	auto ctxt = static_cast<SSL_CTX*>(ptr);
+	auto flags = verify ? SSL_VERIFY_PEER : SSL_VERIFY_NONE;
+	SSL_CTX_set_verify(ctxt, flags, nullptr);
+}
+
+auto context::loadDefaultRootCerts(void *ptr) -> bool {
+    auto ctxt = static_cast<SSL_CTX *>(ptr);
+
+	// Using windows cert store as fallback
+#if defined(_WIN32)
+	// Try to load the root certificates from the system store
+	auto store = SSL_CTX_get_cert_store(ctxt);
+	auto certStore = ::CertOpenSystemStoreW(0, L"ROOT");
+	if (!certStore) {
+		return false;
+	}
+
+	// Begin enumerate
+	::PCCERT_CONTEXT cert = nullptr;
+	::X509 *x509 = nullptr;
+	auto _ = ScopeExit([=] {
+		::CertCloseStore(certStore, 0);
+	});
+	while (cert = ::CertEnumCertificatesInStore(certStore, cert)) {
+		auto buffer = reinterpret_cast<const unsigned char *>(cert->pbCertEncoded);
+		auto x509 = d2i_X509(nullptr, &buffer, cert->cbCertEncoded);
+		if (!x509) {
+			continue;
+		}
+		if (X509_STORE_add_cert(store, x509) != 1) {
+			ILIAS_WARN("OpenSSL", "Failed to add certificate to store");
+		}
+		X509_free(x509);
+	}
+	return true;
+#else
+	return SSL_CTX_set_default_verify_paths(ctxt) == 1;
+#endif // _WIN32
+}
+
+auto context::loadRootCerts(void *ptr, Buffer certs) -> bool {
+	auto ctxt = static_cast<SSL_CTX*>(ptr);
+	auto store = SSL_CTX_get_cert_store(ctxt);
+	auto bio = BIO_new_mem_buf(certs.data(), certs.size());
+	if (!bio) {
+	    return false;
+	}
+	auto added = false;
+	while (true) {
+		auto x509 = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+		if (!x509) {
+			break;
+		}
+		X509_STORE_add_cert(store, x509);
+		X509_free(x509);
+		added = true;
+	}
+	BIO_free(bio);
+	return added;
+}
+
+auto context::useCert(void *ptr, Buffer cert) -> bool {
+	auto ctxt = static_cast<SSL_CTX*>(ptr);
+	auto bio = BIO_new_mem_buf(cert.data(), cert.size());
+	if (!bio) {
+	    return false;
+	}
+	auto x509 = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+	BIO_free(bio);
+
+	// Try use d2i_X509, maybe binary formatted
+	if (!x509) {
+		auto buffer = reinterpret_cast<const unsigned char*>(cert.data());
+		x509 = d2i_X509(nullptr, &buffer, cert.size());
+		if (!x509) {
+			return false;
+		}
+	}
+	auto ok = SSL_CTX_use_certificate(ctxt, x509) == 1;
+	X509_free(x509);
+	return ok;
+}
+
+auto context::usePrivateKey(void *ptr, Buffer key, std::string_view password) -> bool {
+	auto ctxt = static_cast<SSL_CTX*>(ptr);
+	auto bio = BIO_new_mem_buf(key.data(), key.size());
+	if (!bio) {
+		return false;
+	}
+	auto pkey = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
+	if (!pkey) {
+		auto buffer = reinterpret_cast<const unsigned char*>(key.data());
+		pkey = d2i_AutoPrivateKey(nullptr, &buffer, key.size());
+		if (!pkey) {
+		    return false;
+		}
+	}
+	BIO_free(bio);
+	auto ok = SSL_CTX_use_PrivateKey(ctxt, pkey) == 1;
+	EVP_PKEY_free(pkey);
+	return ok;
 }
 
 // Tls State

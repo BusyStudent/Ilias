@@ -45,11 +45,17 @@
             _ilias_test_##prefix().wait();                              \
         }                                                               \
         catch (ILIAS_NAMESPACE::BadResultAccess<std::error_code> &e) {  \
-            auto errc = e.error();                                              \
-            ::fprintf(stderr, "ilias::IoError (%s)\n", errc.message().c_str()); \
-            FAIL();                                                             \
-        }                                                                       \
-    }                                                                           \
+            auto errc = e.error();                                      \
+            ::fprintf(                                                  \
+                stderr,                                                 \
+                "[ilias::Test(%s)] Err %s: (%s)\n",                     \
+                #prefix,                                                \
+                errc.category().name(),                                 \
+                errc.message().c_str()                                  \
+            );                                                          \
+            FAIL();                                                     \
+        }                                                               \
+    }                                                                   \
     static auto _ilias_test_##prefix() -> ILIAS_NAMESPACE::Task<void>
 
 /**

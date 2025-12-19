@@ -369,7 +369,7 @@ public:
 using namespace schannel;
 
 // Export to user
-auto context::make() -> void * { // Does it safe for exception?
+auto context::make(uint32_t flags) -> void * { // Does it safe for exception?
     return std::make_unique<TlsContextImpl>().release();
 }
 
