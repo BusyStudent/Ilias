@@ -23,8 +23,8 @@ namespace openssl {
 // Internal BIO Method
 static constinit BIO_METHOD *bioMethod = nullptr;
 
-#pragma region OpenSSL
-class TlsCategoryImpl : public std::error_category {
+// MARK: OpenSSL
+class TlsCategoryImpl final : public std::error_category {
 public:
     auto name() const noexcept -> const char * override {
         return "openssl";
@@ -287,7 +287,7 @@ auto unregisterBioMethod() -> void {
 
 } // namespace openssl
 
-#pragma region Export
+// MARK: Export
 using namespace openssl;
 
 // Tls Context...

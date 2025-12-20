@@ -61,6 +61,7 @@ TEST(Io, Error) {
 
     ASSERT_EQ(make_error_code(IoError::Canceled), std::errc::operation_canceled);
     std::cout << ec.message() << std::endl;
+    std::cout << canceled.message() << std::endl;
 }
 
 ILIAS_TEST(Io, Read) {

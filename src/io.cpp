@@ -186,6 +186,12 @@ auto SystemError::toString() const -> std::string {
     std::string buf(len - 1, '\0'); //< This len includes the null terminator
     len = ::WideCharToMultiByte(CP_UTF8, 0, args, -1, &buf[0], len, nullptr, nullptr);
     ::LocalFree(args);
+
+    // MSDN: The FormatMessage function will add \r\n to the end of the message string.
+    if (buf.ends_with("\r\n")) {
+        buf.pop_back();
+        buf.pop_back();
+    }
     return buf;
 #else
     return ::strerror(mErr);

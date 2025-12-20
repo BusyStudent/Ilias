@@ -12,9 +12,12 @@
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/stream.hpp>
 #include <ilias/tls.hpp>
+#include "../win32/ntdll.hpp"
 
+#define SCHANNEL_USE_BLACKLISTS // For SCH_CREDENTIALS
 #define SECURITY_WIN32
 #include <VersionHelpers.h>
+#include <winternl.h>
 #include <security.h>
 #include <schannel.h>
 #include <shlwapi.h>
@@ -22,59 +25,130 @@
 
 ILIAS_NS_BEGIN
 
-#pragma region Schannel
+// MARK: Schannel
 namespace tls {
 namespace schannel {
 
+// Context Here
+#define WIN32_IMPORT(fn, dll) decltype(::fn) *fn = reinterpret_cast<decltype(::fn) *>(::GetProcAddress(dll, #fn))
+#define CRYPT_IMPORT(fn) WIN32_IMPORT(fn, mCryptDll)
+#define SECUR_IMPORT(fn) WIN32_IMPORT(fn, mSecurDll)
+
 struct TlsContextImpl {
-    TlsContextImpl() {
-        mDll = ::LoadLibraryW(L"secur32.dll");
-        if (mDll == nullptr) {
-            ILIAS_ERROR("Schannel", "Failed to load secur32.dll");
+    TlsContextImpl(uint32_t flags) {
+        SecInvalidateHandle(&mClientCred);
+        SecInvalidateHandle(&mServerCred);
+        if (!InitSecurityInterfaceW) {
+            ILIAS_ERROR("Schannel", "Failed to load crypto library secur32.dll");
             ILIAS_THROW(std::system_error(SystemError::fromErrno()));
         }
-        auto InitInterfaceW = (decltype(::InitSecurityInterfaceW) *) ::GetProcAddress(mDll, "InitSecurityInterfaceW");
-        mTable = InitInterfaceW();
+        mTable = InitSecurityInterfaceW();
+        mVerifyPeer = !(flags & TlsContext::NoVerify);
+    }
 
+    ~TlsContextImpl() {
+        if (mTable) {
+            if (SecIsValidHandle(&mClientCred)) {
+                mTable->FreeCredentialsHandle(&mClientCred);
+            }
+            if (SecIsValidHandle(&mServerCred)) {
+                mTable->FreeCredentialsHandle(&mServerCred);
+            }
+        }
+        if (mRootStore) {
+            CertCloseStore(mRootStore, 0);
+        }
+        if (mSecurDll) {
+            ::FreeLibrary(mSecurDll);
+        }
+        if (mCryptDll) {
+            ::FreeLibrary(mCryptDll);
+        }
+    }
+
+    // Lazy init the cred handle
+    auto credHandle(TlsRole role) -> ::CredHandle {
         // Get Credentials
         wchar_t unispNname [] = UNISP_NAME_W;
-        SCHANNEL_CRED cred { };
-        cred.dwVersion = SCHANNEL_CRED_VERSION;
-        cred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_AUTO_CRED_VALIDATION | SCH_USE_STRONG_CRYPTO;
-        auto status = mTable->AcquireCredentialsHandleW(nullptr, unispNname, SECPKG_CRED_OUTBOUND, nullptr, &cred, nullptr, nullptr, &mCredHandle, nullptr);
+        ::DWORD flags = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_AUTO_CRED_VALIDATION | SCH_USE_STRONG_CRYPTO;
+        ::DWORD bound = role == TlsRole::Client ? SECPKG_CRED_OUTBOUND : SECPKG_CRED_INBOUND;
+        auto handle = role == TlsRole::Client ? &mClientCred : &mServerCred;
+        if (SecIsValidHandle(handle)) {
+            return *handle;   
+        }
+
+        // Try new api (Windows 10)
+#if defined(SCH_CREDENTIALS_VERSION)
+        if (win32::ntdll().isWindows10OrGreater()) {
+            ::SCH_CREDENTIALS schCredentials {
+                .dwVersion = SCH_CREDENTIALS_VERSION,
+                .dwFlags = flags,
+            };
+            auto status = mTable->AcquireCredentialsHandleW(nullptr, unispNname, bound, nullptr, &schCredentials, nullptr, nullptr, handle, nullptr); 
+            if (status == SEC_E_OK) {
+                return *handle;
+            }
+        }
+#endif // SCH_CREDENTIALS_VERSION
+
+        // Legacy
+        ::SCHANNEL_CRED schCred {
+            .dwVersion = SCHANNEL_CRED_VERSION,
+            .dwFlags = flags,
+        };
+        auto status = mTable->AcquireCredentialsHandleW(nullptr, unispNname, bound, nullptr, &schCred, nullptr, nullptr, handle, nullptr);
         if (status != SEC_E_OK) {
             ILIAS_ERROR("Schannel", "Failed to AcquireCredentialsHandleW : {}", status);
             ILIAS_THROW(std::system_error(SystemError::fromErrno()));
         }
-    }
-    ~TlsContextImpl() {
-        if (mTable) {
-            mTable->FreeCredentialsHandle(&mCredHandle);
-        }
-        if (mDll) {
-            ::FreeLibrary(mDll);
-        }
+        return *handle;
     }
 
-    ::HMODULE mDll = nullptr;
+    // Basic State
+    ::HMODULE mSecurDll = ::LoadLibraryW(L"secur32.dll");
+    ::HMODULE mCryptDll = ::LoadLibraryW(L"crypt32.dll");
     ::PSecurityFunctionTableW mTable = nullptr;
-    ::CredHandle mCredHandle {}; //<
-    bool mHasAlpn = ::IsWindows8OrGreater(); // ALPN is on the Windows 8.1 and later
+    bool mHasAlpn = win32::ntdll().IsWindows8Point1OrGreater(); // ALPN is on the Windows 8.1 and later
+
+    // Configure
+    bool mVerifyPeer = true;
+
+    // Credentials
+    ::CredHandle mClientCred {}; // Use for client SECPKG_CRED_OUTBOUND
+    ::CredHandle mServerCred {}; // Use for server SECPKG_CRED_INBOUND
+    ::HCERTSTORE mRootStore = nullptr;
+
+    // Function
+    CRYPT_IMPORT(CertFreeCertificateContext);
+    CRYPT_IMPORT(PFXImportCertStore);
+    CRYPT_IMPORT(CertFindCertificateInStore);
+    CRYPT_IMPORT(CertOpenSystemStoreW);
+    CRYPT_IMPORT(CertAddStoreToCollection);
+    CRYPT_IMPORT(CertAddEncodedCertificateToStore);
+    CRYPT_IMPORT(CryptQueryObject);
+    CRYPT_IMPORT(CertOpenStore);
+    CRYPT_IMPORT(CertCloseStore);
+    SECUR_IMPORT(InitSecurityInterfaceW);
 };
 
-// State Here
+#undef SECUR_IMPORT
+#undef CRYPT_IMPORT
+#undef WIN32_IMPORT
 
+// State Here
 class TlsStateImpl final : public TlsState {
 public:
     // Tls State
+    TlsContextImpl &mCtxt;
     ::PSecurityFunctionTableW mTable = nullptr;
     ::CredHandle mCredHandle {}; // The credentials handle, taken from the context
     ::CtxtHandle mTls {}; // The current tls handle from schannel
-    ::SecPkgContext_StreamSizes mStreamSizes { };
-    ::SecPkgContext_ApplicationProtocol mAlpnResult { }; // The ALPN selected result
+    ::SecPkgContext_StreamSizes mStreamSizes {};
+    ::SecPkgContext_ApplicationProtocol mAlpnResult {}; // The ALPN selected result
     bool mIsHandshakeDone = false;
     bool mIsShutdown = false;
     bool mIsExpired = false;
+    bool mVerifyPeer = false;
 
     // Tls Configure
     std::vector<std::byte> mAlpn;
@@ -86,18 +160,22 @@ public:
     FixedStreamBuffer<16384 + 100> mReadBuffer;  //< The incoming buffer 2 ** 14 (MAX TLS SIZE) + header + trailer
     FixedStreamBuffer<16384 + 100> mWriteBuffer;
 
-    TlsStateImpl(TlsContextImpl &ctxt) : mTable(ctxt.mTable), mCredHandle(ctxt.mCredHandle) {
-
+    TlsStateImpl(TlsContextImpl &ctxt) : mCtxt(ctxt), mTable(ctxt.mTable), mVerifyPeer(ctxt.mVerifyPeer) {
+        // Mark as not initialized
+        SecInvalidateHandle(&mCredHandle);
+        SecInvalidateHandle(&mTls);
     }    
 
     ~TlsStateImpl() {
         if (!mIsShutdown) {
             std::ignore = applyControl(SCHANNEL_SHUTDOWN);
         }
-        mTable->DeleteSecurityContext(&mTls);
+        if (SecIsValidHandle(&mTls)) {
+            mTable->DeleteSecurityContext(&mTls);
+        }
     }
 
-    // Method
+    // MARK: Handshake
     auto handshakeAsClient(StreamView stream) -> IoTask<void> {
         ILIAS_DEBUG("Schannel", "Handshake begin for {}", win32::toUtf8(mHostname));
         // Prepare
@@ -127,6 +205,9 @@ public:
 
             ::DWORD flags = ISC_REQ_USE_SUPPLIED_CREDS | ISC_REQ_ALLOCATE_MEMORY | 
                         ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
+            if (!mVerifyPeer) { // Skip peer verification if set
+                flags |= ISC_REQ_MANUAL_CRED_VALIDATION;
+            }
             auto host = mHostname.empty() ? nullptr : mHostname.data();
             auto status = mTable->InitializeSecurityContextW(
                 &mCredHandle,
@@ -211,10 +292,16 @@ public:
         co_return {};
     }
 
+    auto handshakeAsServer(StreamView stream) -> IoTask<void> {
+        co_return Err(IoError::Unknown);
+    }
+
     auto handshakeImpl(StreamView stream, TlsRole role) -> IoTask<void> {
+        if (!SecIsValidHandle(&mCredHandle)) {
+            mCredHandle = mCtxt.credHandle(role);
+        }
         if (role == TlsRole::Server) {
-            // return handshakeAsServer(stream);
-            ::abort(); // TODO: Not implemented
+            return handshakeAsServer(stream);
         }
         else {
             return handshakeAsClient(stream);
@@ -234,7 +321,7 @@ public:
         return {};
     }
 
-    // Read
+    // MARK: Read
     auto readImpl(StreamView stream, MutableBuffer buffer) -> IoTask<size_t> {
         if (!mIsHandshakeDone) {
             co_return Err(IoError::Tls);
@@ -306,7 +393,7 @@ public:
         }
     }
 
-    // Write
+    // MARK: Write
     auto writeImpl(StreamView stream, Buffer buffer) -> IoTask<size_t> {
         if (!mIsHandshakeDone) {
             co_return Err(IoError::Tls);
@@ -364,13 +451,13 @@ public:
 
 } // namespace schannel
 
-#pragma region Export
+// MARK: Export
 
 using namespace schannel;
 
 // Export to user
 auto context::make(uint32_t flags) -> void * { // Does it safe for exception?
-    return std::make_unique<TlsContextImpl>().release();
+    return std::make_unique<TlsContextImpl>(flags).release();
 }
 
 auto context::destroy(void *data) -> void {
@@ -392,6 +479,12 @@ auto TlsState::setAlpnProtocols(std::span<const std::string_view> protocols) -> 
         ILIAS_WARN("Schannel", "ALPN is not supported by the context");
         return false;
     }
+    if (protocols.empty()) {
+        static_cast<TlsStateImpl *>(this)->mAlpn.clear();
+        return true;
+    }
+
+    // [4 len][4 type][2 len] [1 len][alpn1][alpn2]...
     uint8_t buffer[128];
     auto now = buffer;
 
