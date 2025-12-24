@@ -165,7 +165,12 @@ public:
         struct Awaiter {
             auto await_ready() noexcept { return false; }
             auto await_suspend(std::coroutine_handle<> handle) noexcept { return self.done(); }
-            auto await_resume() noexcept {} // UNREACHABLE here
+            [[noreturn]]
+            auto await_resume() noexcept { // UNREACHABLE here, we can't resume an done coroutine
+#if defined(__cpp_lib_unreachable)
+                std::unreachable();
+#endif // defined(__cpp_lib_unreachable)
+            }
             CoroPromise &self;
         };
         return Awaiter {*this};
@@ -189,7 +194,7 @@ public:
         if constexpr (requires { awaitable.setContext(*mContext, source); }) { // It support setContext & with source
             awaitable.setContext(*mContext, source);
         }
-        if constexpr (requires { awaitable.setContext(*mContext); }) { // It support setContext
+        else if constexpr (requires { awaitable.setContext(*mContext); }) { // It support setContext
             static_cast<void>(source);
             awaitable.setContext(*mContext);
         }

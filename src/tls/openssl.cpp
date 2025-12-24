@@ -19,6 +19,7 @@ ILIAS_NS_BEGIN
 
 namespace tls {
 namespace openssl {
+namespace {
 
 // Internal BIO Method
 static constinit BIO_METHOD *bioMethod = nullptr;
@@ -285,6 +286,7 @@ auto unregisterBioMethod() -> void {
 	bioMethod = nullptr;
 }
 
+} // namespace
 } // namespace openssl
 
 // MARK: Export

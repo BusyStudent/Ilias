@@ -8,6 +8,7 @@
  * @copyright Copyright (c) 2024
  * 
  */
+#include <ilias/detail/scope_exit.hpp>
 #include <ilias/detail/win32defs.hpp>
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/stream.hpp>
@@ -21,6 +22,8 @@
 #include <security.h>
 #include <schannel.h>
 #include <shlwapi.h>
+#include <ncrypt.h>
+#include <ranges>
 #include <vector>
 
 ILIAS_NS_BEGIN
@@ -28,11 +31,14 @@ ILIAS_NS_BEGIN
 // MARK: Schannel
 namespace tls {
 namespace schannel {
+namespace {
 
 // Context Here
 #define WIN32_IMPORT(fn, dll) decltype(::fn) *fn = reinterpret_cast<decltype(::fn) *>(::GetProcAddress(dll, #fn))
-#define CRYPT_IMPORT(fn) WIN32_IMPORT(fn, mCryptDll)
 #define SECUR_IMPORT(fn) WIN32_IMPORT(fn, mSecurDll)
+#define CRYPT_IMPORT(fn) WIN32_IMPORT(fn, mCryptDll)
+#define NCRYPT_IMPORT(fn) WIN32_IMPORT(fn, mNCryptDll)
+#define ADVAPI_IMPORT(fn) WIN32_IMPORT(fn, mAdvapiDll)
 
 struct TlsContextImpl {
     TlsContextImpl(uint32_t flags) {
@@ -43,7 +49,25 @@ struct TlsContextImpl {
             ILIAS_THROW(std::system_error(SystemError::fromErrno()));
         }
         mTable = InitSecurityInterfaceW();
-        mVerifyPeer = !(flags & TlsContext::NoVerify);
+
+        // Initialize the root store
+        mRootStore = CertOpenStore(CERT_STORE_PROV_COLLECTION, 0, 0, 0, nullptr);
+        mRootMemStore = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, 0, nullptr);
+        if (!mRootStore || !mRootMemStore) {
+            ILIAS_ERROR("Schannel", "Failed to create root store");
+            ILIAS_THROW(std::system_error(SystemError::fromErrno()));
+        }
+        if (!CertAddStoreToCollection(mRootStore, mRootMemStore, 0, 0)) {
+            ILIAS_ERROR("Schannel", "Failed to add root store to collection");
+            ILIAS_THROW(std::system_error(SystemError::fromErrno()));
+        }
+        // Check if we need to add the system roots
+        if (!(flags & TlsContext::NoDefaultRootCerts)) {
+            loadDefaultRootCerts();
+        }
+        if (!(flags & TlsContext::NoVerify)) {
+            setVerify(true);
+        }
     }
 
     ~TlsContextImpl() {
@@ -55,8 +79,28 @@ struct TlsContextImpl {
                 mTable->FreeCredentialsHandle(&mServerCred);
             }
         }
+        if (mRootMemStore) {
+            CertCloseStore(mRootMemStore, 0);
+        }
         if (mRootStore) {
             CertCloseStore(mRootStore, 0);
+        }
+        if (mCertContext) {
+            CertFreeCertificateContext(mCertContext);
+        }
+        if (mCertKey) {
+            CryptDestroyKey(mCertKey);
+        }
+        if (mCertKeyProvider) {
+            CryptReleaseContext(mCertKeyProvider, 0);
+        }
+        if (!mCertContainer.empty()) {
+            // Remove the container, avoid leak the fucking shit !!!!!!!
+            ::HCRYPTPROV fuckShitAPI {};
+            auto ok = CryptAcquireContextW(&fuckShitAPI, mCertContainer.c_str(), MS_ENH_RSA_AES_PROV_W, PROV_RSA_AES, CRYPT_DELETEKEYSET);
+            if (!ok) {
+                ILIAS_WARN("Schannel", "Failed to delete key container in destructor, err {}", SystemError::fromErrno());
+            }
         }
         if (mSecurDll) {
             ::FreeLibrary(mSecurDll);
@@ -64,15 +108,240 @@ struct TlsContextImpl {
         if (mCryptDll) {
             ::FreeLibrary(mCryptDll);
         }
+        // if (mNCryptDll) {
+        //     ::FreeLibrary(mNCryptDll);
+        // }
+        if (mAdvapiDll) {
+            ::FreeLibrary(mAdvapiDll);
+        }
     }
 
-    // Lazy init the cred handle
+    // MARK: Public API
+    auto setVerify(bool verify) -> void {
+        mVerifyPeer = verify;
+    }
+
+    auto loadDefaultRootCerts() -> bool {
+        if (mDefaultRootCertsLoaded) {
+            return true;
+        }
+        auto root = CertOpenSystemStoreW(0, L"ROOT");
+        if (!root) {
+            return false;
+        }
+        auto ok = CertAddStoreToCollection(mRootStore, root, 0, 0);
+        CertCloseStore(root, 0);
+        mDefaultRootCertsLoaded = ok;
+        return ok;
+    }
+
+    auto loadRootCerts(Buffer buffer) -> bool {
+        auto certsString = std::string_view { reinterpret_cast<const char *>(buffer.data()), buffer.size() };
+        auto delim = std::string_view {"-----END CERTIFICATE-----"};
+        auto added = false;
+        for (;;) {
+            auto pos = certsString.find(delim);
+            if (pos == std::string_view::npos) {
+                break;
+            }
+            // Advance
+            auto sub = certsString.substr(0, pos + delim.size());
+            certsString.remove_prefix(pos + delim.size());
+
+            auto der = pemToBinary(makeBuffer(sub));
+            if (der.empty()) {
+                break;
+            }
+            added = CertAddEncodedCertificateToStore(mRootMemStore, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, reinterpret_cast<const BYTE *>(der.data()), der.size(), CERT_STORE_ADD_REPLACE_EXISTING, nullptr);
+        }
+        return added;
+    }
+
+    auto useCert(Buffer buffer) -> bool {
+        if (auto prev = std::exchange(mCertContext, nullptr); prev) {
+            CertFreeCertificateContext(prev);
+        }
+        auto der = pemToBinary(buffer);
+        if (der.empty()) {
+            return false;
+        }
+        mCertContext = CertCreateCertificateContext(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, reinterpret_cast<const BYTE *>(der.data()), der.size());
+        if (!mCertContext) {
+            return false;
+        }
+        return true;
+    }
+
+    // MARK: Private Key
+    auto usePrivateKey(Buffer buffer, std::string_view password) -> bool {
+        if (!mCertContext || !password.empty()) { // Not cert loaded, or the use the password (We currently unsupport it) 
+            return false;
+        }
+        auto der = pemToBinary(buffer);
+        if (der.empty()) {
+            return false;
+        }
+
+        // Parse the RSA private key
+        auto keyBlob = std::vector<std::byte> {};
+        auto ecc = false;
+        if (auto keyInfo = decodeObject(der, PKCS_PRIVATE_KEY_INFO); !keyInfo.empty()) { // PKCS#8
+            auto key = reinterpret_cast<const ::CRYPT_PRIVATE_KEY_INFO *>(keyInfo.data());
+            if (key->Algorithm.pszObjId == std::string_view {szOID_RSA_RSA}) {
+                // PKCS#1 Got the key
+                auto span = std::span { reinterpret_cast<const std::byte *>(key->PrivateKey.pbData), key->PrivateKey.cbData };
+                keyBlob = decodeObject(span, PKCS_RSA_PRIVATE_KEY);
+            }
+            else if (key->Algorithm.pszObjId == std::string_view(szOID_ECC_PUBLIC_KEY)) {
+                // TODO: Support ECC
+                ecc = true;
+                return false;
+            }
+            else {
+                // Unsupported
+                return false;
+            }
+        }
+        else {
+            return false;
+        }
+
+        // Check parsed?
+        if (keyBlob.empty()) {
+            return false;
+        }
+
+        // Import RSA
+        ::HCRYPTPROV provHandle {};
+        ::HCRYPTKEY keyHandle {};
+        std::wstring provContainer {};
+        auto scope = ScopeExit([&]() {
+            if (keyHandle) {
+                CryptDestroyKey(keyHandle);
+            }
+            if (provHandle) {
+                CryptReleaseContext(provHandle, 0);
+            }
+            if (!provContainer.empty()) {
+                ::HCRYPTPROV fuckShitAPI {};
+                auto ok = CryptAcquireContextW(&fuckShitAPI, provContainer.c_str(), MS_ENH_RSA_AES_PROV_W, PROV_RSA_AES, CRYPT_DELETEKEYSET);
+                if (!ok) {
+                    ILIAS_WARN("Schannel", "Failed to delete key container");
+                }
+            }
+        });
+        provContainer += L"IliasTlsKeyContainer-";
+        provContainer += std::to_wstring(::GetCurrentProcessId());
+        provContainer += std::to_wstring(reinterpret_cast<uintptr_t>(this));
+        provContainer += std::to_wstring(::GetTickCount());
+        if (!CryptAcquireContextW(&provHandle, provContainer.c_str(), MS_ENH_RSA_AES_PROV_W, PROV_RSA_AES, CRYPT_SILENT | CRYPT_NEWKEYSET)) {
+            return false;
+        }
+        if (!CryptImportKey(provHandle, reinterpret_cast<const BYTE *>(keyBlob.data()), keyBlob.size(), 0, 0, &keyHandle)) {
+            return false;
+        }
+
+        // Link it
+        ::CRYPT_KEY_PROV_INFO keyProvInfo {};
+        keyProvInfo.pwszContainerName = const_cast<wchar_t *>(provContainer.c_str());
+        keyProvInfo.pwszProvName = const_cast<wchar_t *>(MS_ENH_RSA_AES_PROV_W);
+        keyProvInfo.dwProvType = PROV_RSA_AES;
+        keyProvInfo.dwFlags = CRYPT_SILENT;
+        keyProvInfo.dwKeySpec = AT_KEYEXCHANGE;
+        if (!CertSetCertificateContextProperty(mCertContext, CERT_KEY_PROV_INFO_PROP_ID, 0, &keyProvInfo)) {
+            ILIAS_ERROR("Schannel", "CertSetCertificateContextProperty failed");
+            return false;
+        }
+
+        // Done
+        mCertKeyProvider = std::exchange(provHandle, {});
+        mCertKey = std::exchange(keyHandle, {});
+        mCertContainer.swap(provContainer);
+        return true;
+    }
+
+    auto diagnoseKeyImport() -> void {
+        if (!mCertContext) {
+            ILIAS_ERROR("Schannel", "No certificate loaded");
+            return;
+        }
+
+        auto pubKeyInfo = &mCertContext->pCertInfo->SubjectPublicKeyInfo;
+        ILIAS_TRACE("Schannel", "Certificate public key algorithm: {}",  pubKeyInfo->Algorithm.pszObjId);
+        ILIAS_TRACE("Schannel", "Certificate public key size: {} bits", pubKeyInfo->PublicKey.cbData * 8);
+
+        // Check private key
+        ::HCRYPTPROV_OR_NCRYPT_KEY_HANDLE keyHandle{};
+        ::DWORD keySpec{};
+        ::BOOL callerFree{};        
+        if (CryptAcquireCertificatePrivateKey(
+            mCertContext, 
+            CRYPT_ACQUIRE_SILENT_FLAG | CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG, 
+            nullptr,
+            &keyHandle, 
+            &keySpec, 
+            &callerFree
+        )) {
+            ILIAS_TRACE("Schannel", "Private key found! keySpec={}", keySpec);
+            if (callerFree) {
+                if (keySpec == CERT_NCRYPT_KEY_SPEC) {
+                    // NCrypt key
+                }
+                else {
+                    CryptReleaseContext(keyHandle, 0);
+                }
+            }
+        }
+        else {
+            ILIAS_ERROR("Schannel", "No private key associated: {:#x}", ::GetLastError());
+        }
+    }
+
+    // MARK: Convert Utils
+    auto pemToBinary(Buffer buffer) -> std::vector<std::byte> {
+        ::DWORD resultLen = 0;
+        auto str = reinterpret_cast<const char *>(buffer.data());
+        auto result = std::vector<std::byte> {};
+        if (!CryptStringToBinaryA(str, buffer.size(), CRYPT_STRING_ANY, nullptr, &resultLen, nullptr, nullptr)) {
+            return result;
+        }
+        result.resize(resultLen);
+        if (!CryptStringToBinaryA(str, buffer.size(), CRYPT_STRING_ANY, reinterpret_cast<BYTE *>(result.data()), &resultLen, nullptr, nullptr)) {
+            result.clear();
+        }
+        return result;
+    }
+    
+    auto decodeObject(Buffer buffer, LPCSTR keyType) -> std::vector<std::byte> {
+        ::DWORD blobSize = 0;
+        auto blob = std::vector<std::byte> {};
+        if (!CryptDecodeObjectEx(PKCS_7_ASN_ENCODING | X509_ASN_ENCODING, keyType, reinterpret_cast<const BYTE *>(buffer.data()), buffer.size(), 0, nullptr, nullptr, &blobSize)) {
+            return blob;
+        }
+        blob.resize(blobSize);
+        if (!CryptDecodeObjectEx(PKCS_7_ASN_ENCODING | X509_ASN_ENCODING, keyType, reinterpret_cast<const BYTE *>(buffer.data()), buffer.size(), 0, nullptr, blob.data(), &blobSize)) {
+            blob.clear();
+        }
+        return blob;
+    }
+
+    // MARK: Lazy init the cred handle
     auto credHandle(TlsRole role) -> ::CredHandle {
         // Get Credentials
         wchar_t unispNname [] = UNISP_NAME_W;
         ::DWORD flags = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_AUTO_CRED_VALIDATION | SCH_USE_STRONG_CRYPTO;
         ::DWORD bound = role == TlsRole::Client ? SECPKG_CRED_OUTBOUND : SECPKG_CRED_INBOUND;
         auto handle = role == TlsRole::Client ? &mClientCred : &mServerCred;
+
+        // The user certs we use
+        ::PCCERT_CONTEXT certs[1] = { nullptr };
+        ::DWORD nCerts = 0;
+        if (mCertContext) {
+            certs[0] = mCertContext;
+            nCerts = 1;
+        }
+
+        // Do lazy, if already init, no need to do anything
         if (SecIsValidHandle(handle)) {
             return *handle;   
         }
@@ -82,6 +351,9 @@ struct TlsContextImpl {
         if (win32::ntdll().isWindows10OrGreater()) {
             ::SCH_CREDENTIALS schCredentials {
                 .dwVersion = SCH_CREDENTIALS_VERSION,
+                .cCreds = nCerts, // useCert
+                .paCred = certs,
+                .hRootStore = mRootStore,
                 .dwFlags = flags,
             };
             auto status = mTable->AcquireCredentialsHandleW(nullptr, unispNname, bound, nullptr, &schCredentials, nullptr, nullptr, handle, nullptr); 
@@ -94,41 +366,75 @@ struct TlsContextImpl {
         // Legacy
         ::SCHANNEL_CRED schCred {
             .dwVersion = SCHANNEL_CRED_VERSION,
+            .cCreds = nCerts, // useCert
+            .paCred = certs,
+            .hRootStore = mRootStore,
             .dwFlags = flags,
         };
         auto status = mTable->AcquireCredentialsHandleW(nullptr, unispNname, bound, nullptr, &schCred, nullptr, nullptr, handle, nullptr);
         if (status != SEC_E_OK) {
+            if (nCerts != 0) {
+                diagnoseKeyImport();
+            }
             ILIAS_ERROR("Schannel", "Failed to AcquireCredentialsHandleW : {}", status);
             ILIAS_THROW(std::system_error(SystemError::fromErrno()));
         }
         return *handle;
     }
 
+    // MARK: Context Member
     // Basic State
     ::HMODULE mSecurDll = ::LoadLibraryW(L"secur32.dll");
     ::HMODULE mCryptDll = ::LoadLibraryW(L"crypt32.dll");
+    // ::HMODULE mNCryptDll = ::LoadLibraryW(L"ncrypt.dll");
+    ::HMODULE mAdvapiDll = ::LoadLibraryW(L"advapi32.dll");
     ::PSecurityFunctionTableW mTable = nullptr;
     bool mHasAlpn = win32::ntdll().IsWindows8Point1OrGreater(); // ALPN is on the Windows 8.1 and later
 
     // Configure
-    bool mVerifyPeer = true;
+    bool mDefaultRootCertsLoaded = false;
+    bool mVerifyPeer = false;
 
     // Credentials
     ::CredHandle mClientCred {}; // Use for client SECPKG_CRED_OUTBOUND
     ::CredHandle mServerCred {}; // Use for server SECPKG_CRED_INBOUND
-    ::HCERTSTORE mRootStore = nullptr;
+    ::HCERTSTORE mRootStore = nullptr;    // Collection for root ([optional] system + custom)
+    ::HCERTSTORE mRootMemStore = nullptr; // The custom root store
 
-    // Function
-    CRYPT_IMPORT(CertFreeCertificateContext);
+    ::PCCERT_CONTEXT mCertContext = nullptr; // The certificate context (for useCert)
+    ::HCRYPTPROV     mCertKeyProvider {}; // The key context (for usePrivateKey)
+    ::HCRYPTKEY      mCertKey {}; // The key context (for usePrivateKey)
+    std::wstring     mCertContainer {};
+
+    // Secur32
+    SECUR_IMPORT(InitSecurityInterfaceW);
+    
+    // Crypt32
     CRYPT_IMPORT(PFXImportCertStore);
     CRYPT_IMPORT(CertFindCertificateInStore);
     CRYPT_IMPORT(CertOpenSystemStoreW);
     CRYPT_IMPORT(CertAddStoreToCollection);
+    CRYPT_IMPORT(CertFreeCertificateContext);
+    CRYPT_IMPORT(CertCreateCertificateContext);
     CRYPT_IMPORT(CertAddEncodedCertificateToStore);
-    CRYPT_IMPORT(CryptQueryObject);
+    CRYPT_IMPORT(CertSetCertificateContextProperty);
     CRYPT_IMPORT(CertOpenStore);
     CRYPT_IMPORT(CertCloseStore);
-    SECUR_IMPORT(InitSecurityInterfaceW);
+    CRYPT_IMPORT(CryptAcquireCertificatePrivateKey);
+    CRYPT_IMPORT(CryptStringToBinaryA);
+    CRYPT_IMPORT(CryptDecodeObjectEx);
+    CRYPT_IMPORT(CryptQueryObject);
+
+    // NCrypt for ECC
+    // NCRYPT_IMPORT(NCryptImportKey);
+    // NCRYPT_IMPORT(NCryptFreeObject);
+    // NCRYPT_IMPORT(NCryptOpenStorageProvider);
+
+    // Advapi for RSA
+    ADVAPI_IMPORT(CryptAcquireContextW);
+    ADVAPI_IMPORT(CryptReleaseContext);
+    ADVAPI_IMPORT(CryptImportKey);
+    ADVAPI_IMPORT(CryptDestroyKey);
 };
 
 #undef SECUR_IMPORT
@@ -449,6 +755,7 @@ public:
     }
 };
 
+} // namespace
 } // namespace schannel
 
 // MARK: Export
@@ -460,8 +767,28 @@ auto context::make(uint32_t flags) -> void * { // Does it safe for exception?
     return std::make_unique<TlsContextImpl>(flags).release();
 }
 
-auto context::destroy(void *data) -> void {
-    delete static_cast<TlsContextImpl *>(data);
+auto context::destroy(void *ctxt) -> void {
+    delete static_cast<TlsContextImpl *>(ctxt);
+}
+
+auto context::setVerify(void *ctxt, bool verify) -> void {
+    return static_cast<TlsContextImpl *>(ctxt)->setVerify(verify);
+}
+
+auto context::loadDefaultRootCerts(void *ctxt) -> bool {
+    return static_cast<TlsContextImpl *>(ctxt)->loadDefaultRootCerts();
+}
+
+auto context::loadRootCerts(void *ctxt, Buffer buffer) -> bool {
+    return static_cast<TlsContextImpl *>(ctxt)->loadRootCerts(buffer);
+}
+
+auto context::useCert(void *ctxt, Buffer buffer) -> bool {
+    return static_cast<TlsContextImpl *>(ctxt)->useCert(buffer);
+}
+
+auto context::usePrivateKey(void *ctxt, Buffer buffer, std::string_view password) -> bool {
+    return static_cast<TlsContextImpl *>(ctxt)->usePrivateKey(buffer, password);
 }
 
 // Tls
