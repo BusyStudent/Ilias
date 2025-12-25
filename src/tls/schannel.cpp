@@ -348,7 +348,11 @@ struct TlsContextImpl {
 
         // Try new api (Windows 10)
 #if defined(SCH_CREDENTIALS_VERSION)
-        if (win32::ntdll().isWindows10OrGreater()) {
+        if (win32::ntdll().isWindows10OrGreater() && nCerts == 0) {
+            // WARNING: using PROV_RSA_AES (Legacy CryptoAPI).
+            // This provider DOES NOT support TLS 1.3 RSA-PSS signatures.
+            // Ensure protocol is limited to TLS 1.2, otherwise handshake will fail.
+            // TODO: Maybe we need to use CNG provider (ncrypt.dll) instead?
             ::SCH_CREDENTIALS schCredentials {
                 .dwVersion = SCH_CREDENTIALS_VERSION,
                 .cCreds = nCerts, // useCert
@@ -454,6 +458,7 @@ public:
     bool mIsHandshakeDone = false;
     bool mIsShutdown = false;
     bool mIsExpired = false;
+    bool mIsClient = false;
     bool mVerifyPeer = false;
 
     // Tls Configure
@@ -473,17 +478,17 @@ public:
     }    
 
     ~TlsStateImpl() {
-        if (!mIsShutdown) {
-            std::ignore = applyControl(SCHANNEL_SHUTDOWN);
-        }
         if (SecIsValidHandle(&mTls)) {
+            if (!mIsShutdown) {
+                std::ignore = applyControl(SCHANNEL_SHUTDOWN);
+            }
             mTable->DeleteSecurityContext(&mTls);
         }
     }
 
-    // MARK: Handshake
+    // MARK: Client handshake
     auto handshakeAsClient(StreamView stream) -> IoTask<void> {
-        ILIAS_DEBUG("Schannel", "Handshake begin for {}", win32::toUtf8(mHostname));
+        ILIAS_DEBUG("Schannel", "Client handshake begin for {}", win32::toUtf8(mHostname));
         // Prepare
         ::CtxtHandle *ctxt = nullptr;
 
@@ -594,12 +599,133 @@ public:
             co_return Err(SystemError(err));
         }
         mIsHandshakeDone = true;
-        ILIAS_DEBUG("Schannel", "Handshake done, streamSize {{ .header = {}, trailer = {}, maxMessage = {} }}", mStreamSizes.cbHeader, mStreamSizes.cbTrailer, mStreamSizes.cbMaximumMessage);
+        mIsClient = true;
+        ILIAS_DEBUG("Schannel", "Client handshake done, streamSize {{ .header = {}, trailer = {}, maxMessage = {} }}", mStreamSizes.cbHeader, mStreamSizes.cbTrailer, mStreamSizes.cbMaximumMessage);
         co_return {};
     }
 
+    // MARK: Server handshake
     auto handshakeAsServer(StreamView stream) -> IoTask<void> {
-        co_return Err(IoError::Unknown);
+        ILIAS_DEBUG("Schannel", "Server handshake begin");
+        
+        // Prepare
+        ::CtxtHandle *ctxt = nullptr;
+        ::SECURITY_STATUS status = SEC_E_OK;
+
+        for (;;) {
+            // We need read more data
+            if (mReadBuffer.empty() || status == SEC_E_INCOMPLETE_MESSAGE) {
+                auto data = mReadBuffer.prepare(mReadBuffer.capacity() - mReadBuffer.size());
+                if (data.empty()) {
+                    ILIAS_WARN("Schannel", "Handshake buffer full");
+                    co_return Err(IoError::Tls);
+                }
+
+                auto n = co_await stream.read(data);
+                if (!n) {
+                    ILIAS_WARN("Schannel", "Handshake recv failed {}", n.error().message());
+                    co_return Err(n.error());
+                }
+                if (*n == 0) {
+                    co_return Err(IoError::UnexpectedEOF);
+                }
+                mReadBuffer.commit(*n);
+            }
+            auto readBuffer = mReadBuffer.data();
+
+            // Input buffer, read from client
+            ::SecBuffer inbuffers[2] { };
+            inbuffers[0].BufferType = SECBUFFER_TOKEN;
+            inbuffers[0].pvBuffer = readBuffer.data();
+            inbuffers[0].cbBuffer = readBuffer.size();
+            inbuffers[1].BufferType = SECBUFFER_EMPTY;
+
+            ::SecBufferDesc indesc { SECBUFFER_VERSION, ARRAYSIZE(inbuffers), inbuffers };
+
+            // Output buffer, send back to client
+            ::SecBuffer outbuffers[1] { };
+            outbuffers[0].BufferType = SECBUFFER_TOKEN;
+
+            ::SecBufferDesc outdesc { SECBUFFER_VERSION, ARRAYSIZE(outbuffers), outbuffers };
+
+            // The flags
+            ::DWORD reqFlags = ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_CONFIDENTIALITY | 
+                               ASC_REQ_REPLAY_DETECT | ASC_REQ_SEQUENCE_DETECT | ASC_REQ_STREAM;
+            ::DWORD retFlags = 0;
+
+            status = mTable->AcceptSecurityContext(
+                &mCredHandle,
+                ctxt,
+                &indesc,
+                reqFlags,
+                0,
+                ctxt ? nullptr : &mTls,
+                &outdesc,
+                &retFlags,
+                nullptr
+            );
+            
+            ctxt = &mTls;
+
+            // Schannel use part of the input buffer
+            if (inbuffers[1].BufferType == SECBUFFER_EXTRA) {
+                ILIAS_TRACE("Schannel", "SECBUFFER_EXTRA for {}", inbuffers[1].cbBuffer);
+                mReadBuffer.consume(mReadBuffer.size() - inbuffers[1].cbBuffer);
+            }
+            else if (status != SEC_E_INCOMPLETE_MESSAGE) {
+                mReadBuffer.consume(mReadBuffer.size());
+            }
+
+            // Check we need output
+            if (outbuffers[0].cbBuffer > 0 && outbuffers[0].pvBuffer) {
+                auto freeBuffer = [this](uint8_t *mem) {
+                    mTable->FreeContextBuffer(mem);
+                };
+                auto buffer = (uint8_t*) outbuffers[0].pvBuffer;
+                auto size = outbuffers[0].cbBuffer;
+                std::unique_ptr<uint8_t, decltype(freeBuffer)> guard(buffer, freeBuffer);
+
+                if (auto res = co_await stream.writeAll(makeBuffer(buffer, size)); !res) {
+                    ILIAS_WARN("Schannel", "Failed to send server handshake token {}", res.error().message());
+                    co_return Err(res.error());
+                }
+            }
+
+            // Done
+            if (status == SEC_E_OK) {
+                break;
+            }
+            else if (status == SEC_I_CONTINUE_NEEDED) {
+                continue;
+            }
+            else if (status == SEC_E_INCOMPLETE_MESSAGE) {
+                continue;
+            }
+            else {
+                // Fatal Error
+                ILIAS_WARN("Schannel", "AcceptSecurityContext failed: {}, {}", status, SystemError(status));
+                co_return Err(SystemError(status));
+            }
+        }
+
+        // Get ALPN Result (if negotiated)
+        if (!mAlpn.empty()) {
+            if (auto err = mTable->QueryContextAttributesW(ctxt, SECPKG_ATTR_APPLICATION_PROTOCOL, &mAlpnResult); err != SEC_E_OK) {
+                // Not fatal usually, but good to know
+                ILIAS_TRACE("Schannel", "ALPN Query failed or not negotiated: {}", err);
+            }
+        }
+        
+        // Get Stream Sizes
+        if (auto err = mTable->QueryContextAttributesW(ctxt, SECPKG_ATTR_STREAM_SIZES, &mStreamSizes); err != SEC_E_OK) {
+            ILIAS_WARN("Schannel", "Failed to get stream sizes {}", err);
+            co_return Err(SystemError(err));
+        }
+
+        mIsHandshakeDone = true;
+        mIsClient = false;
+        ILIAS_DEBUG("Schannel", "Server Handshake done");
+        co_return {};
     }
 
     auto handshakeImpl(StreamView stream, TlsRole role) -> IoTask<void> {
@@ -745,13 +871,85 @@ public:
         co_return sended;
     }
 
-    // Currently no-op, TODO: implement
     auto flushImpl(StreamView stream) -> IoTask<void> {
         return stream.flush();
     }
 
     auto shutdownImpl(StreamView stream) -> IoTask<void> {
-        return stream.shutdown();
+        if (!mIsHandshakeDone) {
+            co_return Err(IoError::Tls);
+        }
+        if (mIsShutdown) {
+            co_return {}; // Ignore
+        }
+        mIsShutdown = true;
+
+        // Begin shutdown
+        if (auto res = co_await flushImpl(stream); !res) {
+            co_return Err(res.error());
+        }
+        if (auto res = applyControl(SCHANNEL_SHUTDOWN); !res) {
+            co_return Err(res.error());
+        }
+        
+        // Generate the shutdown message
+        ::SecBuffer outBuffers[1] {};
+        outBuffers[0].BufferType = SECBUFFER_TOKEN;
+        outBuffers[0].pvBuffer = nullptr;
+        outBuffers[0].cbBuffer = 0;
+        
+        ::SecBufferDesc outDesc { SECBUFFER_VERSION, 1, outBuffers };
+        ::SECURITY_STATUS status {};
+        if (mIsClient) {
+            ::DWORD flags = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_CONFIDENTIALITY | 
+                ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
+            
+            status = mTable->InitializeSecurityContextW(
+                &mCredHandle,
+                &mTls,
+                nullptr,
+                flags,
+                0,
+                0,
+                nullptr,
+                0,
+                nullptr,
+                &outDesc,
+                &flags,
+                nullptr
+            );
+        }
+        else {
+            ::DWORD flags = ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_CONFIDENTIALITY | 
+                            ASC_REQ_REPLAY_DETECT | ASC_REQ_SEQUENCE_DETECT | ASC_REQ_STREAM;
+            
+            status = mTable->AcceptSecurityContext(
+                &mCredHandle,
+                &mTls,
+                nullptr,
+                flags,
+                0,
+                nullptr,
+                &outDesc,
+                &flags,
+                nullptr
+            );
+        }
+        // Has output ?
+        if (outBuffers[0].pvBuffer && outBuffers[0].cbBuffer > 0) {
+            auto freeBuffer = [this](void *mem) {
+                mTable->FreeContextBuffer(mem);
+            };
+            std::unique_ptr<void, decltype(freeBuffer)> guard(outBuffers[0].pvBuffer, freeBuffer);
+            
+            auto buffer = makeBuffer(outBuffers[0].pvBuffer, outBuffers[0].cbBuffer);
+            ILIAS_TRACE("Schannel", "{} sending close_notify ({} bytes)",  mIsClient ? "Client" : "Server", buffer.size());
+            
+            if (auto res = co_await stream.writeAll(buffer); !res) {
+                ILIAS_WARN("Schannel", "Failed to send close_notify: {}", res.error().message());
+            }
+        }
+        co_return co_await stream.shutdown();
     }
 };
 

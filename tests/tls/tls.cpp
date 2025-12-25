@@ -46,16 +46,15 @@ auto onClient(TlsContext &tlsCtxt, DuplexStream duplexStream) -> IoTask<void> {
     co_return {};
 }
 
-#if !defined(_WIN32) // TODO: The Schannel implementation of tls currently does not support certificates
 ILIAS_TEST(Tls, Local) {
-    auto clientCtxt = TlsContext { TlsContext::NoDefaultRootCerts };
+    auto clientCtxt = TlsContext { TlsContext::NoDefaultRootCerts | TlsContext::NoVerify };
     auto serverCtxt = TlsContext { TlsContext::NoDefaultRootCerts };
 
     // Configure it
-    serverCtxt.useCert(makeBuffer(tlsCertString));
-    serverCtxt.usePrivateKey(makeBuffer(tlsKeyString));
+    EXPECT_TRUE(serverCtxt.useCert(makeBuffer(tlsCertString)));
+    EXPECT_TRUE(serverCtxt.usePrivateKey(makeBuffer(tlsKeyString)));
 
-    clientCtxt.loadRootCerts(makeBuffer(tlsCertString));
+    EXPECT_TRUE(clientCtxt.loadRootCerts(makeBuffer(tlsCertString)));
 
     auto [clientStream, serverStream] = DuplexStream::make(4096);
     auto [client, server] = co_await whenAll(
@@ -65,7 +64,6 @@ ILIAS_TEST(Tls, Local) {
     EXPECT_TRUE(client);
     EXPECT_TRUE(server);
 }
-#endif // !defined(_WIN32)
 
 auto doHttps(TlsContext &tlsCtxt, std::string_view hostname) -> Task<void> {
     auto info = (co_await AddressInfo::fromHostname(hostname, "https")).value();
