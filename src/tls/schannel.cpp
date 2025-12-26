@@ -89,18 +89,14 @@ struct TlsContextImpl {
             CertFreeCertificateContext(mCertContext);
         }
         if (mCertKey) {
-            CryptDestroyKey(mCertKey);
+            // This key is named key, so we need to delete it
+            if (auto status = NCryptDeleteKey(mCertKey, 0); status != ERROR_SUCCESS) {
+                // Accroding to the MSDN, if NCryptDeleteKey fails, we need to call NCryptFreeObject to do the cleanup
+                NCryptFreeObject(mCertKey);
+            }
         }
         if (mCertKeyProvider) {
-            CryptReleaseContext(mCertKeyProvider, 0);
-        }
-        if (!mCertContainer.empty()) {
-            // Remove the container, avoid leak the fucking shit !!!!!!!
-            ::HCRYPTPROV fuckShitAPI {};
-            auto ok = CryptAcquireContextW(&fuckShitAPI, mCertContainer.c_str(), MS_ENH_RSA_AES_PROV_W, PROV_RSA_AES, CRYPT_DELETEKEYSET);
-            if (!ok) {
-                ILIAS_WARN("Schannel", "Failed to delete key container in destructor, err {}", SystemError::fromErrno());
-            }
+            NCryptFreeObject(mCertKeyProvider);
         }
         if (mSecurDll) {
             ::FreeLibrary(mSecurDll);
@@ -108,11 +104,8 @@ struct TlsContextImpl {
         if (mCryptDll) {
             ::FreeLibrary(mCryptDll);
         }
-        // if (mNCryptDll) {
-        //     ::FreeLibrary(mNCryptDll);
-        // }
-        if (mAdvapiDll) {
-            ::FreeLibrary(mAdvapiDll);
+        if (mNCryptDll) {
+            ::FreeLibrary(mNCryptDll);
         }
     }
 
@@ -148,6 +141,14 @@ struct TlsContextImpl {
             auto sub = certsString.substr(0, pos + delim.size());
             certsString.remove_prefix(pos + delim.size());
 
+            // Remove the trailing \r\n or \n, because the each cert may use \n to split
+            if (sub.starts_with("\r\n")) {
+                sub.remove_prefix(2);
+            }
+            else if (sub.starts_with("\n")) {
+                sub.remove_prefix(1);
+            }
+
             auto der = pemToBinary(makeBuffer(sub));
             if (der.empty()) {
                 break;
@@ -182,72 +183,70 @@ struct TlsContextImpl {
             return false;
         }
 
-        // Parse the RSA private key
-        auto keyBlob = std::vector<std::byte> {};
-        auto ecc = false;
-        if (auto keyInfo = decodeObject(der, PKCS_PRIVATE_KEY_INFO); !keyInfo.empty()) { // PKCS#8
-            auto key = reinterpret_cast<const ::CRYPT_PRIVATE_KEY_INFO *>(keyInfo.data());
-            if (key->Algorithm.pszObjId == std::string_view {szOID_RSA_RSA}) {
-                // PKCS#1 Got the key
-                auto span = std::span { reinterpret_cast<const std::byte *>(key->PrivateKey.pbData), key->PrivateKey.cbData };
-                keyBlob = decodeObject(span, PKCS_RSA_PRIVATE_KEY);
-            }
-            else if (key->Algorithm.pszObjId == std::string_view(szOID_ECC_PUBLIC_KEY)) {
-                // TODO: Support ECC
-                ecc = true;
-                return false;
-            }
-            else {
-                // Unsupported
-                return false;
-            }
-        }
-        else {
-            return false;
-        }
-
-        // Check parsed?
-        if (keyBlob.empty()) {
-            return false;
-        }
-
         // Import RSA
-        ::HCRYPTPROV provHandle {};
-        ::HCRYPTKEY keyHandle {};
-        std::wstring provContainer {};
+        ::NCRYPT_PROV_HANDLE provHandle {};
+        ::NCRYPT_KEY_HANDLE keyHandle {};
         auto scope = ScopeExit([&]() {
             if (keyHandle) {
-                CryptDestroyKey(keyHandle);
-            }
-            if (provHandle) {
-                CryptReleaseContext(provHandle, 0);
-            }
-            if (!provContainer.empty()) {
-                ::HCRYPTPROV fuckShitAPI {};
-                auto ok = CryptAcquireContextW(&fuckShitAPI, provContainer.c_str(), MS_ENH_RSA_AES_PROV_W, PROV_RSA_AES, CRYPT_DELETEKEYSET);
-                if (!ok) {
-                    ILIAS_WARN("Schannel", "Failed to delete key container");
+                if (auto status = NCryptDeleteKey(keyHandle, 0); status != 0) {
+                    NCryptFreeObject(keyHandle);
                 }
             }
+            if (provHandle) {
+                NCryptFreeObject(provHandle);
+            }
         });
-        provContainer += L"IliasTlsKeyContainer-";
-        provContainer += std::to_wstring(::GetCurrentProcessId());
-        provContainer += std::to_wstring(reinterpret_cast<uintptr_t>(this));
-        provContainer += std::to_wstring(::GetTickCount());
-        if (!CryptAcquireContextW(&provHandle, provContainer.c_str(), MS_ENH_RSA_AES_PROV_W, PROV_RSA_AES, CRYPT_SILENT | CRYPT_NEWKEYSET)) {
-            return false;
-        }
-        if (!CryptImportKey(provHandle, reinterpret_cast<const BYTE *>(keyBlob.data()), keyBlob.size(), 0, 0, &keyHandle)) {
+        if (auto status = NCryptOpenStorageProvider(&provHandle, MS_KEY_STORAGE_PROVIDER, 0); status != 0) {
+            ILIAS_ERROR("Schannel", "NCryptOpenStorageProvider failed, err {}", SystemError(status));
             return false;
         }
 
-        // Link it
-        ::CRYPT_KEY_PROV_INFO keyProvInfo {};
-        keyProvInfo.pwszContainerName = const_cast<wchar_t *>(provContainer.c_str());
-        keyProvInfo.pwszProvName = const_cast<wchar_t *>(MS_ENH_RSA_AES_PROV_W);
-        keyProvInfo.dwProvType = PROV_RSA_AES;
-        keyProvInfo.dwFlags = CRYPT_SILENT;
-        keyProvInfo.dwKeySpec = AT_KEYEXCHANGE;
+        // Use the named key, because the in memory key fail to work :(
+        std::wstring keyName {};
+        keyName += L"IliasTlsKeyContainer-";
+        keyName += std::to_wstring(::GetCurrentProcessId());
+        keyName += std::to_wstring(reinterpret_cast<uintptr_t>(this));
+        keyName += std::to_wstring(::GetTickCount());
+        ::NCryptBuffer nameBuf { 
+            .cbBuffer = static_cast<::ULONG>((keyName.size() + 1) * sizeof(wchar_t)),
+            .BufferType = NCRYPTBUFFER_PKCS_KEY_NAME,
+            .pvBuffer = keyName.data()
+        };
+        ::NCryptBufferDesc paramList {
+            .ulVersion = NCRYPTBUFFER_VERSION,
+            .cBuffers = 1,
+            .pBuffers = &nameBuf
+        };
+        if (auto status = NCryptImportKey(
+            provHandle, 
+            0, 
+            NCRYPT_PKCS8_PRIVATE_KEY_BLOB, 
+            &paramList, 
+            &keyHandle, 
+            reinterpret_cast<BYTE *>(der.data()), 
+            der.size(), 
+            NCRYPT_OVERWRITE_KEY_FLAG | NCRYPT_DO_NOT_FINALIZE_FLAG
+        ); status != 0) {
+            ILIAS_ERROR("Schannel", "NCryptImportKey failed, err {}", SystemError(status));
+            return false;
+        }
+        
+        // Set key usage
+        ::DWORD keyUsage = NCRYPT_ALLOW_ALL_USAGES;
+        if (auto status = NCryptSetProperty(keyHandle, NCRYPT_KEY_USAGE_PROPERTY, reinterpret_cast<BYTE *>(&keyUsage), sizeof(keyUsage), 0); status != 0) {
+            ILIAS_ERROR("Schannel", "NCryptSetProperty failed, err {}", SystemError(status));
+            return false;
+        }
+        if (auto status = NCryptFinalizeKey(keyHandle, 0); status != 0) {
+            ILIAS_ERROR("Schannel", "NCryptFinalizeKey failed, err {}", SystemError(status));
+            return false;
+        }
+
+        // Bind it
+        ::CRYPT_KEY_PROV_INFO keyProvInfo {
+            .pwszContainerName = keyName.data(),
+            .pwszProvName = const_cast<wchar_t *>(MS_KEY_STORAGE_PROVIDER),
+        };
         if (!CertSetCertificateContextProperty(mCertContext, CERT_KEY_PROV_INFO_PROP_ID, 0, &keyProvInfo)) {
             ILIAS_ERROR("Schannel", "CertSetCertificateContextProperty failed");
             return false;
@@ -256,7 +255,6 @@ struct TlsContextImpl {
         // Done
         mCertKeyProvider = std::exchange(provHandle, {});
         mCertKey = std::exchange(keyHandle, {});
-        mCertContainer.swap(provContainer);
         return true;
     }
 
@@ -271,9 +269,9 @@ struct TlsContextImpl {
         ILIAS_TRACE("Schannel", "Certificate public key size: {} bits", pubKeyInfo->PublicKey.cbData * 8);
 
         // Check private key
-        ::HCRYPTPROV_OR_NCRYPT_KEY_HANDLE keyHandle{};
-        ::DWORD keySpec{};
-        ::BOOL callerFree{};        
+        ::HCRYPTPROV_OR_NCRYPT_KEY_HANDLE keyHandle {};
+        ::DWORD keySpec {};
+        ::BOOL callerFree {};        
         if (CryptAcquireCertificatePrivateKey(
             mCertContext, 
             CRYPT_ACQUIRE_SILENT_FLAG | CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG, 
@@ -286,9 +284,10 @@ struct TlsContextImpl {
             if (callerFree) {
                 if (keySpec == CERT_NCRYPT_KEY_SPEC) {
                     // NCrypt key
+                    NCryptFreeObject(keyHandle);
                 }
                 else {
-                    CryptReleaseContext(keyHandle, 0);
+                    // CryptReleaseContext(keyHandle, 0);
                 }
             }
         }
@@ -326,7 +325,7 @@ struct TlsContextImpl {
     }
 
     // MARK: Lazy init the cred handle
-    auto credHandle(TlsRole role) -> ::CredHandle {
+    auto credHandle(TlsRole role) -> IoResult<::CredHandle> {
         // Get Credentials
         wchar_t unispNname [] = UNISP_NAME_W;
         ::DWORD flags = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_AUTO_CRED_VALIDATION | SCH_USE_STRONG_CRYPTO;
@@ -348,11 +347,7 @@ struct TlsContextImpl {
 
         // Try new api (Windows 10)
 #if defined(SCH_CREDENTIALS_VERSION)
-        if (win32::ntdll().isWindows10OrGreater() && nCerts == 0) {
-            // WARNING: using PROV_RSA_AES (Legacy CryptoAPI).
-            // This provider DOES NOT support TLS 1.3 RSA-PSS signatures.
-            // Ensure protocol is limited to TLS 1.2, otherwise handshake will fail.
-            // TODO: Maybe we need to use CNG provider (ncrypt.dll) instead?
+        if (win32::ntdll().isWindows10OrGreater()) {
             ::SCH_CREDENTIALS schCredentials {
                 .dwVersion = SCH_CREDENTIALS_VERSION,
                 .cCreds = nCerts, // useCert
@@ -363,6 +358,9 @@ struct TlsContextImpl {
             auto status = mTable->AcquireCredentialsHandleW(nullptr, unispNname, bound, nullptr, &schCredentials, nullptr, nullptr, handle, nullptr); 
             if (status == SEC_E_OK) {
                 return *handle;
+            }
+            if (nCerts != 0) {
+                diagnoseKeyImport();
             }
         }
 #endif // SCH_CREDENTIALS_VERSION
@@ -381,7 +379,7 @@ struct TlsContextImpl {
                 diagnoseKeyImport();
             }
             ILIAS_ERROR("Schannel", "Failed to AcquireCredentialsHandleW : {}", status);
-            ILIAS_THROW(std::system_error(SystemError::fromErrno()));
+            return Err(SystemError(status));
         }
         return *handle;
     }
@@ -390,8 +388,7 @@ struct TlsContextImpl {
     // Basic State
     ::HMODULE mSecurDll = ::LoadLibraryW(L"secur32.dll");
     ::HMODULE mCryptDll = ::LoadLibraryW(L"crypt32.dll");
-    // ::HMODULE mNCryptDll = ::LoadLibraryW(L"ncrypt.dll");
-    ::HMODULE mAdvapiDll = ::LoadLibraryW(L"advapi32.dll");
+    ::HMODULE mNCryptDll = ::LoadLibraryW(L"ncrypt.dll");
     ::PSecurityFunctionTableW mTable = nullptr;
     bool mHasAlpn = win32::ntdll().IsWindows8Point1OrGreater(); // ALPN is on the Windows 8.1 and later
 
@@ -405,10 +402,9 @@ struct TlsContextImpl {
     ::HCERTSTORE mRootStore = nullptr;    // Collection for root ([optional] system + custom)
     ::HCERTSTORE mRootMemStore = nullptr; // The custom root store
 
-    ::PCCERT_CONTEXT mCertContext = nullptr; // The certificate context (for useCert)
-    ::HCRYPTPROV     mCertKeyProvider {}; // The key context (for usePrivateKey)
-    ::HCRYPTKEY      mCertKey {}; // The key context (for usePrivateKey)
-    std::wstring     mCertContainer {};
+    ::PCCERT_CONTEXT     mCertContext = nullptr; // The certificate context (for useCert)
+    ::NCRYPT_PROV_HANDLE mCertKeyProvider {}; // The key context (for usePrivateKey)
+    ::NCRYPT_KEY_HANDLE  mCertKey {}; // The key context (for usePrivateKey)
 
     // Secur32
     SECUR_IMPORT(InitSecurityInterfaceW);
@@ -429,16 +425,13 @@ struct TlsContextImpl {
     CRYPT_IMPORT(CryptDecodeObjectEx);
     CRYPT_IMPORT(CryptQueryObject);
 
-    // NCrypt for ECC
-    // NCRYPT_IMPORT(NCryptImportKey);
-    // NCRYPT_IMPORT(NCryptFreeObject);
-    // NCRYPT_IMPORT(NCryptOpenStorageProvider);
-
-    // Advapi for RSA
-    ADVAPI_IMPORT(CryptAcquireContextW);
-    ADVAPI_IMPORT(CryptReleaseContext);
-    ADVAPI_IMPORT(CryptImportKey);
-    ADVAPI_IMPORT(CryptDestroyKey);
+    // NCrypt
+    NCRYPT_IMPORT(NCryptImportKey);
+    NCRYPT_IMPORT(NCryptDeleteKey);
+    NCRYPT_IMPORT(NCryptFinalizeKey);
+    NCRYPT_IMPORT(NCryptFreeObject);
+    NCRYPT_IMPORT(NCryptSetProperty);
+    NCRYPT_IMPORT(NCryptOpenStorageProvider);
 };
 
 #undef SECUR_IMPORT
@@ -538,7 +531,7 @@ public:
 
             // Check buffer here
             if (inbuffers[1].BufferType == SECBUFFER_EXTRA) {
-                ILIAS_TRACE("Schannel", "SECBUFFER_EXTRA for {}", inbuffers[1].cbBuffer);
+                ILIAS_TRACE("Schannel", "Client SECBUFFER_EXTRA for {}", inbuffers[1].cbBuffer);
                 mReadBuffer.consume(mReadBuffer.size() - inbuffers[1].cbBuffer);
             }
             else {
@@ -546,11 +539,8 @@ public:
                 mReadBuffer.consume(mReadBuffer.size());
             }
 
-            if (status == SEC_E_OK) {
-                break;
-            }
-            else if (status == SEC_I_CONTINUE_NEEDED) {
-                // We need to send the output buffer to remote
+            // Check if we need to send the output buffer to remote
+            if (outbuffers[0].cbBuffer > 0 && outbuffers[0].pvBuffer) {
                 auto freeBuffer = [this](uint8_t *mem) {
                     mTable->FreeContextBuffer(mem);
                 };
@@ -563,7 +553,17 @@ public:
                     ILIAS_WARN("Schannel", "Failed to send handshake {}", res.error().message());
                     co_return Err(res.error());
                 }
+                if (auto res = co_await stream.flush(); !res) {
+                    co_return Err(res.error());
+                }
                 // Done
+            }
+
+            if (status == SEC_E_OK) {
+                break;
+            }
+            else if (status == SEC_I_CONTINUE_NEEDED) {
+                continue;
             }
             else if (status != SEC_E_INCOMPLETE_MESSAGE) {
                 ILIAS_WARN("Schannel", "Failed to handshake {}", status);
@@ -600,7 +600,10 @@ public:
         }
         mIsHandshakeDone = true;
         mIsClient = true;
+#if defined(ILIAS_USE_LOG)
         ILIAS_DEBUG("Schannel", "Client handshake done, streamSize {{ .header = {}, trailer = {}, maxMessage = {} }}", mStreamSizes.cbHeader, mStreamSizes.cbTrailer, mStreamSizes.cbMaximumMessage);
+        checkProtocol();
+#endif // defined(ILIAS_USE_LOG)
         co_return {};
     }
 
@@ -669,7 +672,7 @@ public:
 
             // Schannel use part of the input buffer
             if (inbuffers[1].BufferType == SECBUFFER_EXTRA) {
-                ILIAS_TRACE("Schannel", "SECBUFFER_EXTRA for {}", inbuffers[1].cbBuffer);
+                ILIAS_TRACE("Schannel", "Server SECBUFFER_EXTRA for {}", inbuffers[1].cbBuffer);
                 mReadBuffer.consume(mReadBuffer.size() - inbuffers[1].cbBuffer);
             }
             else if (status != SEC_E_INCOMPLETE_MESSAGE) {
@@ -686,7 +689,12 @@ public:
                 std::unique_ptr<uint8_t, decltype(freeBuffer)> guard(buffer, freeBuffer);
 
                 if (auto res = co_await stream.writeAll(makeBuffer(buffer, size)); !res) {
+                    if (status == SEC_E_OK) break; // Maybe Tls1.3, the handshake is done, NewSessionTicket is sent (but peer is closed, treat it as done)
                     ILIAS_WARN("Schannel", "Failed to send server handshake token {}", res.error().message());
+                    co_return Err(res.error());
+                }
+                if (auto res = co_await stream.flush(); !res) {
+                    if (status == SEC_E_OK) break; // As same as above
                     co_return Err(res.error());
                 }
             }
@@ -724,19 +732,26 @@ public:
 
         mIsHandshakeDone = true;
         mIsClient = false;
-        ILIAS_DEBUG("Schannel", "Server Handshake done");
+#if defined(ILIAS_USE_LOG)
+        ILIAS_DEBUG("Schannel", "Server Handshake done streamSize {{ .header = {}, trailer = {}, maxMessage = {} }}", mStreamSizes.cbHeader, mStreamSizes.cbTrailer, mStreamSizes.cbMaximumMessage);
+        checkProtocol();
+#endif // defined(ILIAS_USE_LOG)
         co_return {};
     }
 
     auto handshakeImpl(StreamView stream, TlsRole role) -> IoTask<void> {
         if (!SecIsValidHandle(&mCredHandle)) {
-            mCredHandle = mCtxt.credHandle(role);
+            auto handle = mCtxt.credHandle(role);
+            if (!handle) {
+                co_return Err(handle.error());
+            }
+            mCredHandle = *handle;
         }
         if (role == TlsRole::Server) {
-            return handshakeAsServer(stream);
+            co_return co_await handshakeAsServer(stream);
         }
         else {
-            return handshakeAsClient(stream);
+            co_return co_await handshakeAsClient(stream);
         }
     }
 
@@ -753,12 +768,35 @@ public:
         return {};
     }
 
+    auto checkProtocol() -> void {
+        ::SecPkgContext_ConnectionInfo connectionInfo = {};
+        auto status = mTable->QueryContextAttributesW(&mTls, SECPKG_ATTR_CONNECTION_INFO, &connectionInfo);
+        
+        if (status == SEC_E_OK) {
+            const char *protoStr = "Unknown";
+            if (connectionInfo.dwProtocol & SP_PROT_TLS1_2_SERVER) protoStr = "TLS 1.2";
+            else if (connectionInfo.dwProtocol & SP_PROT_TLS1_2_CLIENT) protoStr = "TLS 1.2";
+            else if (connectionInfo.dwProtocol & SP_PROT_TLS1_3_SERVER) protoStr = "TLS 1.3";
+            else if (connectionInfo.dwProtocol & SP_PROT_TLS1_3_CLIENT) protoStr = "TLS 1.3";
+            
+            ILIAS_TRACE("Schannel", "Negotiated Protocol: {}, Cipher: {:#x}, Hash: {:#x}, KeyEx: {:#x}", 
+                protoStr, 
+                connectionInfo.aiCipher, 
+                connectionInfo.aiHash, 
+                connectionInfo.aiExch
+            );
+        }
+        else {
+            ILIAS_WARN("Schannel", "Failed to query connection info: {:#x}", status);
+        }
+    }
+
     // MARK: Read
     auto readImpl(StreamView stream, MutableBuffer buffer) -> IoTask<size_t> {
         if (!mIsHandshakeDone) {
             co_return Err(IoError::Tls);
         }
-        if (buffer.empty()) {
+        if (buffer.empty() || mIsExpired) {
             co_return 0;
         }
         SECURITY_STATUS status;
@@ -858,7 +896,9 @@ public:
             }
 
             // Send all encrypted message to
-            // mWriteBuffer.commit(tmpbuf.size()); We don't use commit, because we just temporarily use it
+            // mWriteBuffer.commit(total); We don't use commit, because we just temporarily use it
+            auto total = inbuffers[0].cbBuffer + inbuffers[1].cbBuffer + inbuffers[2].cbBuffer;
+            tmpbuf = tmpbuf.subspan(0, total);
             if (auto res = co_await stream.writeAll(tmpbuf); !res) {
                 ILIAS_WARN("Schannel", "Failed to send encrypted message {}", res.error().message());
                 co_return Err(res.error());
@@ -948,6 +988,9 @@ public:
             if (auto res = co_await stream.writeAll(buffer); !res) {
                 ILIAS_WARN("Schannel", "Failed to send close_notify: {}", res.error().message());
             }
+            if (auto res = co_await stream.flush(); !res) {
+                co_return Err(res.error());
+            }
         }
         co_return co_await stream.shutdown();
     }
@@ -967,6 +1010,10 @@ auto context::make(uint32_t flags) -> void * { // Does it safe for exception?
 
 auto context::destroy(void *ctxt) -> void {
     delete static_cast<TlsContextImpl *>(ctxt);
+}
+
+auto context::backend() -> TlsBackend {
+    return TlsBackend::Schannel;
 }
 
 auto context::setVerify(void *ctxt, bool verify) -> void {
@@ -1010,7 +1057,7 @@ auto TlsState::setAlpnProtocols(std::span<const std::string_view> protocols) -> 
     }
 
     // [4 len][4 type][2 len] [1 len][alpn1][alpn2]...
-    uint8_t buffer[128];
+    uint8_t buffer[256];
     auto now = buffer;
 
     // First 4 bytes are the length of the buffer
@@ -1028,6 +1075,12 @@ auto TlsState::setAlpnProtocols(std::span<const std::string_view> protocols) -> 
     // Generate the extension here
     auto cur = now;
     for (std::string_view str : protocols) {
+        // Boundary check
+        if (cur + 1 + str.size() > buffer + sizeof(buffer)) {
+            ILIAS_WARN("Schannel", "ALPN buffer overflow");
+            return false;
+        }
+
         *cur = uint8_t(str.size());
         ++cur;
         ::memcpy(cur, str.data(), str.size());
