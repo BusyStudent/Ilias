@@ -1,0 +1,232 @@
+# IliasConfig.cmake.in - Package configuration file for Ilias library
+# This file is used by find_package() to locate and configure the Ilias library
+
+@PACKAGE_INIT@
+
+# =============================================================================
+# Package Information
+# =============================================================================
+
+set(ILIAS_VERSION "@PROJECT_VERSION@")
+set(ILIAS_VERSION_MAJOR "@PROJECT_VERSION_MAJOR@")
+set(ILIAS_VERSION_MINOR "@PROJECT_VERSION_MINOR@")
+set(ILIAS_VERSION_PATCH "@PROJECT_VERSION_PATCH@")
+
+# =============================================================================
+# Feature Configuration
+# =============================================================================
+
+# Store the configuration that was used to build this installation
+set(ILIAS_ENABLE_TLS @ILIAS_ENABLE_TLS@)
+set(ILIAS_ENABLE_FIBER @ILIAS_ENABLE_FIBER@)
+set(ILIAS_ENABLE_LOGGING @ILIAS_ENABLE_LOGGING@)
+set(ILIAS_ENABLE_IO @ILIAS_ENABLE_IO@)
+set(ILIAS_USE_FMT @ILIAS_USE_FMT@)
+set(ILIAS_USE_SPDLOG @ILIAS_USE_SPDLOG@)
+set(ILIAS_USE_IO_URING @ILIAS_USE_IO_URING@)
+set(ILIAS_FORCE_OPENSSL @ILIAS_FORCE_OPENSSL@)
+set(ILIAS_CPP20_COMPAT @ILIAS_CPP20_COMPAT@)
+set(ILIAS_ENABLE_CORO_TRACE @ILIAS_ENABLE_CORO_TRACE@)
+
+# Library type information
+set(ILIAS_LIBRARY_TYPE "@ILIAS_LIBRARY_TYPE@")
+set(ILIAS_IS_SHARED_LIBRARY @ILIAS_IS_SHARED_LIBRARY@)
+
+# Platform information
+set(ILIAS_PLATFORM "@ILIAS_PLATFORM@")
+
+# =============================================================================
+# Dependency Management
+# =============================================================================
+
+# Include CMakeFindDependencyMacro for find_dependency
+include(CMakeFindDependencyMacro)
+
+# Find required dependencies based on the configuration
+# This ensures that consumers get the same dependencies that were used to build Ilias
+
+# TLS dependencies
+if(ILIAS_ENABLE_TLS)
+    if(NOT WIN32 OR ILIAS_FORCE_OPENSSL)
+        find_dependency(OpenSSL REQUIRED)
+    endif()
+endif()
+
+# fmt dependency
+if(ILIAS_USE_FMT)
+    find_dependency(fmt REQUIRED)
+endif()
+
+# spdlog dependency
+if(ILIAS_USE_SPDLOG AND ILIAS_ENABLE_LOGGING)
+    find_dependency(spdlog REQUIRED)
+endif()
+
+# io_uring dependency (Linux only)
+if(ILIAS_USE_IO_URING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_dependency(PkgConfig REQUIRED)
+    pkg_check_modules(LIBURING REQUIRED liburing)
+endif()
+
+# =============================================================================
+# Target Import
+# =============================================================================
+
+# Include the exported targets file
+# This file contains the actual target definitions
+if(NOT TARGET ilias::ilias)
+    include("${CMAKE_CURRENT_LIST_DIR}/IliasTargets.cmake")
+endif()
+
+# =============================================================================
+# Compatibility Checks
+# =============================================================================
+
+# Check C++ standard compatibility
+if(CMAKE_CXX_STANDARD AND CMAKE_CXX_STANDARD LESS 23)
+    message(WARNING 
+        "Ilias requires C++23 but CMAKE_CXX_STANDARD is set to ${CMAKE_CXX_STANDARD}. "
+        "Consider setting CMAKE_CXX_STANDARD to 23 or higher.")
+endif()
+
+# Check compiler compatibility
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "11.0")
+        message(FATAL_ERROR 
+            "Ilias requires GCC 11.0 or later, but found ${CMAKE_CXX_COMPILER_VERSION}")
+    endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "14.0")
+        message(FATAL_ERROR 
+            "Ilias requires Clang 14.0 or later, but found ${CMAKE_CXX_COMPILER_VERSION}")
+    endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "19.30")
+        message(FATAL_ERROR 
+            "Ilias requires MSVC 19.30 or later (Visual Studio 2022), but found ${CMAKE_CXX_COMPILER_VERSION}")
+    endif()
+endif()
+
+# =============================================================================
+# Feature Validation
+# =============================================================================
+
+# Validate platform-specific features
+if(ILIAS_USE_IO_URING AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(WARNING 
+        "This Ilias installation was built with io_uring support, "
+        "but io_uring is only available on Linux. "
+        "Some features may not be available on ${CMAKE_SYSTEM_NAME}.")
+endif()
+
+# =============================================================================
+# Usage Information
+# =============================================================================
+
+# Provide helpful information about the found package
+if(NOT Ilias_FIND_QUIETLY)
+    message(STATUS "Found Ilias ${ILIAS_VERSION}")
+    message(STATUS "  Library type: ${ILIAS_LIBRARY_TYPE}")
+    message(STATUS "  Platform: ${ILIAS_PLATFORM}")
+    message(STATUS "  Features:")
+    message(STATUS "    TLS support: ${ILIAS_ENABLE_TLS}")
+    message(STATUS "    Fiber support: ${ILIAS_ENABLE_FIBER}")
+    message(STATUS "    Logging support: ${ILIAS_ENABLE_LOGGING}")
+    message(STATUS "    I/O support: ${ILIAS_ENABLE_IO}")
+    if(ILIAS_USE_FMT)
+        message(STATUS "    Using fmt library")
+    endif()
+    if(ILIAS_USE_SPDLOG)
+        message(STATUS "    Using spdlog library")
+    endif()
+    if(ILIAS_USE_IO_URING)
+        message(STATUS "    Using io_uring (Linux)")
+    endif()
+endif()
+
+# =============================================================================
+# Component Support
+# =============================================================================
+
+# Define available components
+set(Ilias_KNOWN_COMPONENTS TLS Fiber Logging IO)
+
+# Check requested components
+foreach(component ${Ilias_FIND_COMPONENTS})
+    if(component STREQUAL "TLS")
+        if(NOT ILIAS_ENABLE_TLS)
+            set(Ilias_${component}_FOUND FALSE)
+            if(Ilias_FIND_REQUIRED_${component})
+                message(FATAL_ERROR "Ilias component '${component}' was requested but not available in this installation")
+            endif()
+        else()
+            set(Ilias_${component}_FOUND TRUE)
+        endif()
+    elseif(component STREQUAL "Fiber")
+        if(NOT ILIAS_ENABLE_FIBER)
+            set(Ilias_${component}_FOUND FALSE)
+            if(Ilias_FIND_REQUIRED_${component})
+                message(FATAL_ERROR "Ilias component '${component}' was requested but not available in this installation")
+            endif()
+        else()
+            set(Ilias_${component}_FOUND TRUE)
+        endif()
+    elseif(component STREQUAL "Logging")
+        if(NOT ILIAS_ENABLE_LOGGING)
+            set(Ilias_${component}_FOUND FALSE)
+            if(Ilias_FIND_REQUIRED_${component})
+                message(FATAL_ERROR "Ilias component '${component}' was requested but not available in this installation")
+            endif()
+        else()
+            set(Ilias_${component}_FOUND TRUE)
+        endif()
+    elseif(component STREQUAL "IO")
+        if(NOT ILIAS_ENABLE_IO)
+            set(Ilias_${component}_FOUND FALSE)
+            if(Ilias_FIND_REQUIRED_${component})
+                message(FATAL_ERROR "Ilias component '${component}' was requested but not available in this installation")
+            endif()
+        else()
+            set(Ilias_${component}_FOUND TRUE)
+        endif()
+    else()
+        message(WARNING "Unknown Ilias component: ${component}")
+        set(Ilias_${component}_FOUND FALSE)
+        if(Ilias_FIND_REQUIRED_${component})
+            message(FATAL_ERROR "Unknown Ilias component '${component}' was requested")
+        endif()
+    endif()
+endforeach()
+
+# =============================================================================
+# Final Validation
+# =============================================================================
+
+# Ensure the main target exists and is properly configured
+if(NOT TARGET ilias::ilias)
+    message(FATAL_ERROR "Ilias target 'ilias::ilias' was not found")
+endif()
+
+# Validate target properties
+get_target_property(ILIAS_TARGET_TYPE ilias::ilias TYPE)
+if(NOT ILIAS_TARGET_TYPE)
+    message(FATAL_ERROR "Ilias target 'ilias::ilias' is not properly configured")
+endif()
+
+# Set standard CMake variables
+set(Ilias_FOUND TRUE)
+set(ILIAS_FOUND TRUE)
+
+# Provide the target for consumers
+set(Ilias_TARGETS ilias::ilias)
+set(ILIAS_TARGETS ilias::ilias)
+
+# Mark variables as advanced
+mark_as_advanced(
+    ILIAS_VERSION
+    ILIAS_VERSION_MAJOR
+    ILIAS_VERSION_MINOR
+    ILIAS_VERSION_PATCH
+    ILIAS_LIBRARY_TYPE
+    ILIAS_PLATFORM
+)

@@ -2,6 +2,7 @@
 /.xmake
 /build
 /.cache
+/.kiro
 compile_commands.json
 a.out
 *.o

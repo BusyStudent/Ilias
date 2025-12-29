@@ -1,0 +1,166 @@
+# IliasConfigVersion.cmake.in - Version configuration file for Ilias library
+# This file is used by find_package() to check version compatibility
+
+# =============================================================================
+# Version Information
+# =============================================================================
+
+set(PACKAGE_VERSION "@PROJECT_VERSION@")
+
+# =============================================================================
+# Version Compatibility Logic
+# =============================================================================
+
+# Check if the requested version is compatible with the installed version
+# Ilias follows semantic versioning (MAJOR.MINOR.PATCH)
+
+# Extract version components
+set(PACKAGE_VERSION_MAJOR "@PROJECT_VERSION_MAJOR@")
+set(PACKAGE_VERSION_MINOR "@PROJECT_VERSION_MINOR@")
+set(PACKAGE_VERSION_PATCH "@PROJECT_VERSION_PATCH@")
+
+# Initialize compatibility flags
+set(PACKAGE_VERSION_EXACT FALSE)
+set(PACKAGE_VERSION_COMPATIBLE FALSE)
+set(PACKAGE_VERSION_UNSUITABLE FALSE)
+
+# =============================================================================
+# Exact Version Match
+# =============================================================================
+
+if(PACKAGE_FIND_VERSION STREQUAL PACKAGE_VERSION)
+    set(PACKAGE_VERSION_EXACT TRUE)
+    set(PACKAGE_VERSION_COMPATIBLE TRUE)
+    return()
+endif()
+
+# =============================================================================
+# Version Parsing
+# =============================================================================
+
+# Parse the requested version
+if(PACKAGE_FIND_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+    set(REQUESTED_MAJOR ${CMAKE_MATCH_1})
+    set(REQUESTED_MINOR ${CMAKE_MATCH_2})
+    set(REQUESTED_PATCH ${CMAKE_MATCH_3})
+else()
+    # Invalid version format
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+    return()
+endif()
+
+# =============================================================================
+# Semantic Versioning Compatibility Rules
+# =============================================================================
+
+# Major version compatibility
+if(REQUESTED_MAJOR GREATER PACKAGE_VERSION_MAJOR)
+    # Requested major version is newer than installed - incompatible
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+    return()
+elseif(REQUESTED_MAJOR LESS PACKAGE_VERSION_MAJOR)
+    # Requested major version is older than installed - incompatible
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+    return()
+endif()
+
+# At this point, major versions match
+# Check minor version compatibility
+
+if(REQUESTED_MINOR GREATER PACKAGE_VERSION_MINOR)
+    # Requested minor version is newer than installed - incompatible
+    # (installed version lacks features that might be required)
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+    return()
+elseif(REQUESTED_MINOR LESS PACKAGE_VERSION_MINOR)
+    # Requested minor version is older than installed - compatible
+    # (installed version has additional features but maintains backward compatibility)
+    set(PACKAGE_VERSION_COMPATIBLE TRUE)
+    return()
+endif()
+
+# At this point, major and minor versions match
+# Check patch version compatibility
+
+if(REQUESTED_PATCH GREATER PACKAGE_VERSION_PATCH)
+    # Requested patch version is newer than installed - incompatible
+    # (installed version might lack bug fixes)
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+    return()
+else()
+    # Requested patch version is same or older than installed - compatible
+    set(PACKAGE_VERSION_COMPATIBLE TRUE)
+    return()
+endif()
+
+# =============================================================================
+# Special Version Handling
+# =============================================================================
+
+# Handle development versions (e.g., 0.x.y)
+# For major version 0, we use stricter compatibility rules
+# since the API is not considered stable
+
+if(PACKAGE_VERSION_MAJOR EQUAL 0)
+    # For 0.x.y versions, only exact minor.patch compatibility is allowed
+    if(REQUESTED_MINOR EQUAL PACKAGE_VERSION_MINOR AND 
+       REQUESTED_PATCH EQUAL PACKAGE_VERSION_PATCH)
+        set(PACKAGE_VERSION_COMPATIBLE TRUE)
+    else()
+        set(PACKAGE_VERSION_UNSUITABLE TRUE)
+    endif()
+    return()
+endif()
+
+# =============================================================================
+# Range Version Support
+# =============================================================================
+
+# Support for version ranges (if CMake supports it)
+if(PACKAGE_FIND_VERSION_RANGE)
+    # Check if the installed version falls within the requested range
+    if(PACKAGE_FIND_VERSION_RANGE_MIN STREQUAL "INCLUDE")
+        set(MIN_INCLUSIVE TRUE)
+    else()
+        set(MIN_INCLUSIVE FALSE)
+    endif()
+    
+    if(PACKAGE_FIND_VERSION_RANGE_MAX STREQUAL "INCLUDE")
+        set(MAX_INCLUSIVE TRUE)
+    else()
+        set(MAX_INCLUSIVE FALSE)
+    endif()
+    
+    # Check minimum version
+    if(PACKAGE_VERSION VERSION_LESS PACKAGE_FIND_VERSION_MIN)
+        set(PACKAGE_VERSION_COMPATIBLE FALSE)
+        return()
+    elseif(PACKAGE_VERSION VERSION_EQUAL PACKAGE_FIND_VERSION_MIN AND NOT MIN_INCLUSIVE)
+        set(PACKAGE_VERSION_COMPATIBLE FALSE)
+        return()
+    endif()
+    
+    # Check maximum version
+    if(PACKAGE_VERSION VERSION_GREATER PACKAGE_FIND_VERSION_MAX)
+        set(PACKAGE_VERSION_COMPATIBLE FALSE)
+        return()
+    elseif(PACKAGE_VERSION VERSION_EQUAL PACKAGE_FIND_VERSION_MAX AND NOT MAX_INCLUSIVE)
+        set(PACKAGE_VERSION_COMPATIBLE FALSE)
+        return()
+    endif()
+    
+    # If we reach here, the version is within the range
+    set(PACKAGE_VERSION_COMPATIBLE TRUE)
+    return()
+endif()
+
+# =============================================================================
+# Fallback Compatibility Check
+# =============================================================================
+
+# If none of the above rules applied, do a simple version comparison
+if(PACKAGE_FIND_VERSION VERSION_LESS_EQUAL PACKAGE_VERSION)
+    set(PACKAGE_VERSION_COMPATIBLE TRUE)
+else()
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+endif()

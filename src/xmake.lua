@@ -1,4 +1,4 @@
-set_languages("c++latest")
+set_languages("c++23")
 set_warnings("all")
 
 option("fmt")
