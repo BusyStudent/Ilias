@@ -14,6 +14,10 @@
     #define NOMINMAX 1
 #endif // defined(NOMINMAX)
 
+#if !defined(WIN32_LEAN_AND_MEAN)
+    #define WIN32_LEAN_AND_MEAN 1
+#endif // defined(WIN32_LEAN_AND_MEAN)
+
 #include <ilias/defines.hpp>
 #include <WinSock2.h> // It must be included before windows.h
 #include <Windows.h>

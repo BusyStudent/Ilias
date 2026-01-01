@@ -13,8 +13,9 @@
 #include <ilias/io/method.hpp>
 #include <ilias/io/traits.hpp> // Readable Writable
 #include <ilias/buffer.hpp> // Buffer MutableBuffer
-#include <utility> // std::exchange
+#include <utility> // std::min
 #include <string> // std::string
+#include <vector> // std::vector
 #include <array> // std::array
 #include <limits>
 
@@ -55,28 +56,15 @@ public:
      * 
      * @param maxCapacity The max capacity of the buffer
      */
-    StreamBuffer(size_t maxCapacity) : mMaxCapacity(maxCapacity) { }
+    StreamBuffer(size_t maxCapacity) : mMaxCapacity(maxCapacity) {}
 
     /**
      * @brief Construct a new Stream Buffer object by moving another
      * 
      * @param other 
      */
-    StreamBuffer(StreamBuffer &&other) : 
-        mBuffer(std::exchange(other.mBuffer, {})),
-        mPos(std::exchange(other.mPos, 0)),
-        mTail(std::exchange(other.mTail, 0))
-    {
-        
-    }
-
+    StreamBuffer(StreamBuffer &&other) = default;
     StreamBuffer(const StreamBuffer &) = delete;
-
-    ~StreamBuffer() {
-        if (!mBuffer.empty()) {
-            std::free(mBuffer.data());
-        }
-    }
 
     // Output window
     /**
@@ -101,13 +89,9 @@ public:
         auto space = mBuffer.size() - mTail; // The space left in the buffer
         if (space < size) { //< Reallocate the buffer if there is not enough space
             auto newSize = std::min((mBuffer.size() + size) * 2, mMaxCapacity);
-            auto newBuffer = static_cast<std::byte *>(::realloc(mBuffer.data(), newSize));
-            if (newBuffer == nullptr) { //< What?, failed to allocate memory
-                return {};
-            }
-            mBuffer = {newBuffer, newSize};
+            mBuffer.resize(newSize);
         }
-        return mBuffer.subspan(mTail, size);
+        return std::span(mBuffer).subspan(mTail, size);
     }
 
     /**
@@ -128,7 +112,7 @@ public:
      * @return Buffer 
      */
     auto data() const -> Buffer {
-        return mBuffer.subspan(mPos, mTail - mPos);
+        return std::span(mBuffer).subspan(mPos, mTail - mPos);
     }
 
     /**
@@ -137,7 +121,7 @@ public:
      * @return MutableBuffer 
      */
     auto data() -> MutableBuffer {
-        return mBuffer.subspan(mPos, mTail - mPos);
+        return std::span(mBuffer).subspan(mPos, mTail - mPos);
     }
 
     /**
@@ -199,9 +183,7 @@ public:
             mTail -= mPos;
             mPos = 0;
         }
-        auto newBuffer = static_cast<std::byte *>(::realloc(mBuffer.data(), mTail));
-        ILIAS_ASSERT_MSG(newBuffer != nullptr, "Failed to allocate memory");
-        mBuffer = {newBuffer, mTail};
+        mBuffer.resize(mTail);
     }
 
     /**
@@ -218,8 +200,7 @@ public:
      * 
      */
     auto clear() -> void {
-        ::free(mBuffer.data());
-        mBuffer = { };
+        mBuffer.clear();
         mPos = 0;
         mTail = 0;
     }
@@ -230,22 +211,14 @@ public:
      * @param other 
      * @return StreamBuffer& 
      */
-    auto operator = (StreamBuffer &&other) -> StreamBuffer & {
-        if (this == &other) {
-            return *this;
-        }
-        mBuffer = std::exchange(other.mBuffer, mBuffer); //< Exchange the buffer
-        mPos = std::exchange(other.mPos, 0);
-        mTail = std::exchange(other.mTail, 0);
-        return *this;
-    }
+    auto operator = (StreamBuffer &&other) -> StreamBuffer & = default;
     auto operator = (const StreamBuffer &) = delete;
 private:
     /**
      *  Memory Layout | Input Window  | Output Window | mCapacity
      * 
      */
-    std::span<std::byte> mBuffer;
+    std::vector<std::byte> mBuffer;
     size_t mPos = 0; //< Current position to read (input window)
     size_t mTail = 0; //< Current position to write (output window)
     size_t mMaxCapacity = std::numeric_limits<size_t>::max(); //< The maximum capacity of the buffer
@@ -369,6 +342,10 @@ public:
     auto capacity() const -> size_t {
         return N;
     }
+
+    auto maxCapacity() const -> size_t {
+        return N;
+    }
 private:
     std::array<std::byte, N> mBuffer;
     size_t mPos = 0;
@@ -381,19 +358,35 @@ enum class FillPolicy {
 };
 
 /**
- * @brief Wrap an readable stream with a buffer
+ * @brief The default buffer capacity when you create a BufReader / BufWriter / BufStream, currently 4K
+ * 
+ */
+inline constexpr size_t DEFAULT_BUFFER_CAPACITY = 4096;
+
+/**
+ * @brief Wrap a readable stream with a buffer
  * 
  * @tparam T 
  */
 template <Readable T>
 class BufReader final : public StreamMethod<BufReader<T> > {
 public:
-    BufReader(T stream) : mStream(std::move(stream)) {}
+    /**
+     * @brief Construct a new Buf Reader with capacity 
+     * 
+     * @param stream The stream to wrap
+     * @param capacity The capacity of the buffer
+     */
+    BufReader(T stream, size_t capacity = DEFAULT_BUFFER_CAPACITY) : mBuffer(capacity), mStream(std::move(stream)) {}
     BufReader(BufReader &&) = default;
     BufReader() = default;
 
     // Readable
     auto read(MutableBuffer buffer) -> IoTask<size_t> {
+        // No data cached && This buffer is much bigger, read directly
+        if (mBuffer.empty() && buffer.size() >= mBuffer.maxCapacity() / 2) {
+            co_return co_await mStream.read(buffer);
+        }
         auto data = co_await fill();
         if (!data) {
             co_return Err(data.error());
@@ -407,7 +400,14 @@ public:
         co_return size;
     }
 
-    // Readline, append the data back to the str, the str contains the deliminator (on EOF, it doesn't contains it)
+    /**
+     * @brief Read a line from stream and append to string
+     * 
+     * @param str The string to append data to
+     * @param delim The delimiter to look for (default: "\n")
+     * @return IoTask<size_t> Number of bytes read (including delimiter), 
+     *         or error if read fails
+     */
     auto readline(std::string &str, std::string_view delim = "\n") -> IoTask<size_t> {
         auto policy = FillPolicy::None;
         while (true) {
@@ -433,7 +433,12 @@ public:
         }
     }
 
-    // Get an new line, the return string doesn't contains the deliminator
+    /**
+     * @brief Get a line from stream
+     * 
+     * @param delim The delimiter to search for (default: "\n")
+     * @return IoTask<std::string> The line without delimiter, or error if read fails
+     */
     auto getline(std::string_view delim = "\n") -> IoTask<std::string> {
         std::string line;
         if (auto res = co_await readline(line, delim); !res) {
@@ -448,12 +453,17 @@ public:
     /**
      * @brief Fill the internal buffer
      * 
-     * @param policy The policy of filling the buffer (None or More) if None, it will only fill the buffer when it's empty
-     * @return IoTask<Buffer> The filled buffer, Error if lowerlayer stream failed, UnexpectedEOF when policy is More and the stream is EOF
+     * @param policy Fill policy: None (fill only when empty) or More (always try to fill)
+     * @return IoTask<Buffer> The buffer data, or error. Returns UnexpectedEOF if 
+     *         policy is More and stream reaches EOF
      */
     auto fill(FillPolicy policy = FillPolicy::None) -> IoTask<Buffer> {
         if (mBuffer.empty() || policy == FillPolicy::More) {
-            auto buf = mBuffer.prepare(1024 * 4);
+            auto bufsize = mBuffer.maxCapacity() - mBuffer.size(); // Get the remaining capacity of the buffer
+            if (bufsize == 0 && policy == FillPolicy::More) {
+                co_return Err(IoError::NoBufferSpaceAvailable); // Failed to fill the buffer with more data
+            }
+            auto buf = mBuffer.prepare(bufsize);
             auto res = co_await mStream.read(buf);
             if (!res) {
                 co_return Err(res.error());
@@ -519,23 +529,36 @@ private:
 template <Writable T>
 class BufWriter final : public StreamMethod<BufWriter<T> > {
 public:
-    BufWriter(T stream) : mStream(std::move(stream)) {}
+    /**
+     * @brief Construct a new Buf Writer with capacity
+     * 
+     * @param stream The stream to wrap
+     * @param capacity The capacity of the buffer
+     */
+    BufWriter(T stream, size_t capacity = DEFAULT_BUFFER_CAPACITY) : mBuffer(capacity), mStream(std::move(stream)) {}
     BufWriter(BufWriter &&) = default;
     BufWriter() = default;
 
     // Writable
     auto write(Buffer buffer) -> IoTask<size_t> {
-        // Less than 4KB, added to buffer
-        if (buffer.size() < 1024 * 4) {
-            auto data = mBuffer.prepare(buffer.size());
-            ::memcpy(data.data(), buffer.data(), buffer.size());
-            mBuffer.commit(buffer.size());
-            co_return buffer.size();
+        // Bigger than capacity / 2, write directly
+        if (buffer.size() >= mBuffer.maxCapacity() / 2) {
+            if (auto res = co_await flush(); !res) {
+                co_return Err(res.error());
+            }
+            co_return co_await mStream.write(buffer);
         }
-        if (auto res = co_await flush(); !res) {
-            co_return Err(res.error());
+        // No room in buffer
+        if (mBuffer.maxCapacity() - mBuffer.size() < buffer.size()) {
+            if (auto res = co_await flush(); !res) {
+                co_return Err(res.error());
+            }
         }
-        co_return co_await mStream.write(buffer);
+        // Copy into buffer
+        auto data = mBuffer.prepare(buffer.size());
+        ::memcpy(data.data(), buffer.data(), buffer.size());
+        mBuffer.commit(buffer.size());
+        co_return buffer.size();
     }
 
     auto flush() -> IoTask<void> {
@@ -605,34 +628,53 @@ private:
 template <Stream T>
 class BufStream final : public StreamMethod<BufStream<T> > {
 public:
-    BufStream(T stream) : mStream(std::move(stream)) {}
+    /**
+     * @brief Construct a new Buf Stream with capacity
+     * 
+     * @param stream The stream to wrap
+     * @param readerCapacity The capacity of the reader buffer
+     * @param writerCapacity The capacity of the writer buffer
+     */
+    BufStream(T stream, size_t readerCapacity, size_t writerCapacity) : 
+        mStream {
+            BufReader {
+                BufWriter { std::move(stream), writerCapacity } , readerCapacity
+            }
+        }
+    {
+
+    }
+
+    BufStream(T stream) : BufStream(std::move(stream), DEFAULT_BUFFER_CAPACITY, DEFAULT_BUFFER_CAPACITY) {}
     BufStream(BufStream &&) = default;
     BufStream() = default;
 
     // Readable
     auto read(MutableBuffer buffer) -> IoTask<size_t> {
-        return mStream.nextLayer().read(buffer);
+        return mStream.read(buffer);
     }
 
+    /// @copydoc BufReader::readline
     auto readline(std::string &str, std::string_view delim = "\n") -> IoTask<size_t> {
-        return mStream.nextLayer().readline(str, delim);
+        return mStream.readline(str, delim);
     }
 
+    /// @copydoc BufReader::getline
     auto getline(std::string_view delim = "\n") -> IoTask<std::string> {
-        return mStream.nextLayer().getline(delim);
+        return mStream.getline(delim);
     }
 
     // Writable
     auto write(Buffer buffer) -> IoTask<size_t> {
-        return mStream.write(buffer);
+        return mStream.nextLayer().write(buffer);
     }
 
     auto shutdown() -> IoTask<void> {
-        return mStream.shutdown();
+        return mStream.nextLayer().shutdown();
     }
 
     auto flush() -> IoTask<void> {
-        return mStream.flush();
+        return mStream.nextLayer().flush();
     }
 
     // Get
@@ -641,33 +683,38 @@ public:
     }
 
     // Reader
+    /// @copydoc BufReader::fill
     [[nodiscard]]
-    auto fill(FillPolicy p) -> IoTask<Buffer> {
-        return mStream.nextLayer().fill(p);
+    auto fill(FillPolicy p = FillPolicy::None) -> IoTask<Buffer> {
+        return mStream.fill(p);
     }
 
+    /// @copydoc BufReader::buffer
     [[nodiscard]]
     auto buffer() -> MutableBuffer {
-        return mStream.nextLayer().buffer();
+        return mStream.buffer();
     }
 
+    /// @copydoc BufReader::consume
     auto consume(size_t size) -> void {
-        return mStream.nextLayer().consume(size);
+        return mStream.consume(size);
     }
 
     // Writer
+    /// @copydoc BufWriter::prepare
     [[nodiscard]]
     auto prepare(size_t n) -> MutableBuffer {
-        return mStream.prepare(n);
+        return mStream.nextLayer().prepare(n);
     }
 
+    /// @copydoc BufWriter::commit
     auto commit(size_t n) -> void {
-        return mStream.commit(n);
+        return mStream.nextLayer().commit(n);
     }
 
     [[nodiscard]] 
     auto detach() -> T {
-        return std::move(nextLayer());
+        return mStream.detach().detach();
     }
 
     auto operator =(BufStream &&) -> BufStream & = default;
@@ -677,7 +724,7 @@ public:
         return bool(mStream);
     }
 private:
-    BufWriter<BufReader<T> > mStream;
+    BufReader<BufWriter<T> > mStream;
 };
 
 

@@ -121,7 +121,7 @@ public:
      * @return StopHandle
      */
     auto spawn(Task<T> task, runtime::CaptureSource source = {}) -> StopHandle {
-        return insert(ILIAS_NAMESPACE::spawn(std::move(task), source));
+        return insert(::ILIAS_NAMESPACE::spawn(std::move(task), source));
     }
 
     /**
@@ -133,7 +133,7 @@ public:
      */
     template <std::invocable Fn> requires (std::is_same_v<std::invoke_result_t<Fn>, Task<T> >)
     auto spawn(Fn fn, runtime::CaptureSource source = {}) -> StopHandle {
-        return insert(ILIAS_NAMESPACE::spawn(std::move(fn), source));
+        return insert(::ILIAS_NAMESPACE::spawn(std::move(fn), source));
     }
 
     /**
@@ -145,7 +145,7 @@ public:
      */
     template <std::invocable Fn> requires (std::is_same_v<std::invoke_result_t<Fn>, T>)
     auto spawnBlocking(Fn fn, runtime::CaptureSource source = {}) -> StopHandle {
-        return insert(ILIAS_NAMESPACE::spawnBlocking(std::move(fn), source));
+        return insert(::ILIAS_NAMESPACE::spawnBlocking(std::move(fn), source));
     }
 
     /**

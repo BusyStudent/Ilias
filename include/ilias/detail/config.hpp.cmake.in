@@ -17,9 +17,6 @@
 // Feature Configuration Macros
 // =============================================================================
 
-// Namespace configuration
-#cmakedefine ILIAS_NAMESPACE @ILIAS_NAMESPACE@
-
 // Core feature switches
 #cmakedefine ILIAS_ENABLE_TLS
 #cmakedefine ILIAS_ENABLE_FIBER

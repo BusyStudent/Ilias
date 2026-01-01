@@ -102,16 +102,30 @@ ILIAS_TEST(Io, BufRead) {
 }
 
 ILIAS_TEST(Io, BufWrite) {
-    auto content = std::string();
-    auto writer = StringWriter(content);
-    auto bufWriter = BufWriter(writer);
+    {
+        auto content = std::string();
+        auto writer = StringWriter(content);
+        auto bufWriter = BufWriter(writer);
 
-    std::ignore = co_await bufWriter.write("Hello, First!\n"_bin);
-    std::ignore = co_await bufWriter.write("Hello, Next!\n"_bin);
+        std::ignore = co_await bufWriter.write("Hello, First!\n"_bin);
+        std::ignore = co_await bufWriter.write("Hello, Next!\n"_bin);
 
-    EXPECT_TRUE(content.empty());
-    EXPECT_TRUE(co_await bufWriter.flush());
-    EXPECT_EQ(content, "Hello, First!\nHello, Next!\n");
+        EXPECT_TRUE(content.empty());
+        EXPECT_TRUE(co_await bufWriter.flush());
+        EXPECT_EQ(content, "Hello, First!\nHello, Next!\n");
+    }
+
+    // Test Capacity
+    {
+        auto content = std::string();
+        auto writer = StringWriter(content);
+        auto bufWriter = BufWriter(writer, 0); // 0 Capacity
+
+        std::ignore = co_await bufWriter.write("Hello, First!\n"_bin);
+        EXPECT_EQ(content, "Hello, First!\n");
+        std::ignore = co_await bufWriter.write("Hello, Next!\n"_bin);
+        EXPECT_EQ(content, "Hello, First!\nHello, Next!\n");
+    }
 }
 
 ILIAS_TEST(Io, Duplex) {

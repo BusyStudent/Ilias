@@ -140,11 +140,11 @@ private:
  * @return std::error_condition 
  */
 inline auto toKind(IoError err) noexcept -> std::error_condition {
-    return {int(err), IoCategory::instance()};
+    return {static_cast<int>(err), IoCategory::instance()};
 }
 
 inline auto toKind(IoError::Code err) noexcept -> std::error_condition {
-    return {int(err), IoCategory::instance()};
+    return {static_cast<int>(err), IoCategory::instance()};
 }
 
 ILIAS_DECLARE_ERROR(IoError::Code, IoCategory);
