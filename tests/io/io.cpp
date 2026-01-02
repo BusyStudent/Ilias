@@ -28,7 +28,7 @@ public:
     StringWriter(std::string &str) : mStr(str) {};
 
     auto write(Buffer buffer) -> IoTask<size_t> {
-        auto view = std::string_view(reinterpret_cast<const char*>(buffer.data()), buffer.size());
+        auto view = std::string_view {reinterpret_cast<const char*>(buffer.data()), buffer.size()};
         mStr += view;
         co_return buffer.size();
     }
@@ -64,17 +64,55 @@ TEST(Io, Error) {
     std::cout << canceled.message() << std::endl;
 }
 
+TEST(Io, StreamBuffer) {
+    auto buf = StreamBuffer {100};
+    ASSERT_EQ(buf.maxCapacity(), 100);
+    ASSERT_EQ(buf.size(), 0);
+
+    // Test prepare
+    {
+        auto prep = buf.prepare(10);
+        ASSERT_EQ(prep.size(), 10);
+    }
+    ASSERT_EQ(buf.size(), 0);
+
+
+    {
+        auto prep = buf.prepare(10);
+        ASSERT_EQ(prep.size(), 10);
+        ::memset(prep.data(), 0, prep.size());
+
+        // Try commit
+        buf.commit(prep.size());
+        ASSERT_EQ(buf.size(), 10);
+    }
+
+    {
+        // Try oversize prepare
+        auto prep = buf.prepare(100); // oversize
+        ASSERT_TRUE(prep.empty());
+    }
+
+    buf.consume(10);
+    ASSERT_EQ(buf.size(), 0);
+
+    {
+        auto prep = buf.prepare(100);
+        ASSERT_EQ(prep.size(), 100);
+    }
+}
+
 ILIAS_TEST(Io, Read) {
     char buffer[13];
-    auto reader = SpanReader("Hello, world!"_bin);
+    auto reader = SpanReader{"Hello, world!"_bin};
 
     EXPECT_EQ(co_await reader.read(makeBuffer(buffer)), 13);
     EXPECT_EQ(std::string_view(buffer, 13), "Hello, world!");
 }
 
 ILIAS_TEST(Io, Write) {
-    auto content = std::string();
-    auto writer = StringWriter(content);
+    auto content = std::string{};
+    auto writer = StringWriter{content};
 
     EXPECT_EQ(co_await writer.write("Hello, world!"_bin), 13);
     EXPECT_EQ(content, "Hello, world!");
@@ -82,8 +120,8 @@ ILIAS_TEST(Io, Write) {
 
 ILIAS_TEST(Io, BufRead) {
     {
-        auto reader = SpanReader("Hello, First!\nHello, Next!\n"_bin);
-        auto bufReader = BufReader(reader);
+        auto reader = SpanReader{"Hello, First!\nHello, Next!\n"_bin};
+        auto bufReader = BufReader{reader};
 
         EXPECT_EQ(co_await bufReader.getline(), "Hello, First!");
         EXPECT_EQ(co_await bufReader.getline(), "Hello, Next!");
@@ -91,8 +129,8 @@ ILIAS_TEST(Io, BufRead) {
     }
 
     {
-        auto reader = SpanReader("Hello, First!\nHello, Next!\nHello, Final!"_bin);
-        auto bufReader = BufReader(reader);
+        auto reader = SpanReader{"Hello, First!\nHello, Next!\nHello, Final!"_bin};
+        auto bufReader = BufReader{reader};
 
         EXPECT_EQ(co_await bufReader.getline(), "Hello, First!");
         EXPECT_EQ(co_await bufReader.getline(), "Hello, Next!");
@@ -103,9 +141,9 @@ ILIAS_TEST(Io, BufRead) {
 
 ILIAS_TEST(Io, BufWrite) {
     {
-        auto content = std::string();
-        auto writer = StringWriter(content);
-        auto bufWriter = BufWriter(writer);
+        auto content = std::string{};
+        auto writer = StringWriter{content};
+        auto bufWriter = BufWriter{writer};
 
         std::ignore = co_await bufWriter.write("Hello, First!\n"_bin);
         std::ignore = co_await bufWriter.write("Hello, Next!\n"_bin);
@@ -117,9 +155,9 @@ ILIAS_TEST(Io, BufWrite) {
 
     // Test Capacity
     {
-        auto content = std::string();
-        auto writer = StringWriter(content);
-        auto bufWriter = BufWriter(writer, 0); // 0 Capacity
+        auto content = std::string{};
+        auto writer = StringWriter{content};
+        auto bufWriter = BufWriter{writer, 0}; // 0 Capacity
 
         std::ignore = co_await bufWriter.write("Hello, First!\n"_bin);
         EXPECT_EQ(content, "Hello, First!\n");
@@ -163,16 +201,16 @@ TEST(Experimental, IoVec) {
     EXPECT_EQ(vec, IoVec{}); 
     EXPECT_NE(vec, vec2);
 
-    auto buf = Buffer(vec);
+    auto buf = Buffer{vec};
 
     // Mutable Version
     char hello[5] = {'H', 'e', 'l', 'l', 'o'};
-    auto mutVec = MutableIoVec(makeBuffer(hello));
+    auto mutVec = MutableIoVec{makeBuffer(hello)};
     EXPECT_FALSE(mutVec.empty());
     EXPECT_EQ(mutVec.size(), 5);
 
-    auto buf1 = Buffer(mutVec);
-    auto mutBuf = MutableBuffer(mutVec);
+    auto buf1 = Buffer{mutVec};
+    auto mutBuf = MutableBuffer{mutVec};
 
     // Sequence
     std::vector<Buffer> buffers;
@@ -183,7 +221,7 @@ TEST(Experimental, IoVec) {
 
     std::vector<MutableIoVec> mutableBuffers;
     std::byte subBuffer[1145];
-    mutableBuffers.emplace_back(MutableBuffer(subBuffer));
+    mutableBuffers.emplace_back(MutableBuffer{subBuffer});
     auto seq1 = makeIoSequence(mutableBuffers); // Mutable -> Const, OK!
 }
 

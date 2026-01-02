@@ -104,6 +104,7 @@ public:
     }
 
     // Inherit flags from MsgHdr
+    using MsgHdr::flags;
 };
 
 ILIAS_NS_END

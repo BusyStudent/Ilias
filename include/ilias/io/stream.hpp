@@ -69,9 +69,10 @@ public:
     // Output window
     /**
      * @brief Prepare a buffer for writing into the stream buffer (it make previous parepared buffer to invalid)
+     * @note if the size is too large, it will return an empty buffer
      * 
      * @param size The size of the buffer to prepare
-     * @return MutableBuffer 
+     * @return MutableBuffer
      */
     auto prepare(size_t size) -> MutableBuffer {
         if (mPos == mTail) { //< Input window is empty, move it and us to the begin of the buffer
@@ -89,9 +90,13 @@ public:
         auto space = mBuffer.size() - mTail; // The space left in the buffer
         if (space < size) { //< Reallocate the buffer if there is not enough space
             auto newSize = std::min((mBuffer.size() + size) * 2, mMaxCapacity);
+            auto newSpace = newSize - mTail;
+            if (newSpace < size) { // The new buffer is still not enough, we reach the limit
+                return {};
+            }
             mBuffer.resize(newSize);
         }
-        return std::span(mBuffer).subspan(mTail, size);
+        return std::span{mBuffer}.subspan(mTail, size);
     }
 
     /**
@@ -112,7 +117,7 @@ public:
      * @return Buffer 
      */
     auto data() const -> Buffer {
-        return std::span(mBuffer).subspan(mPos, mTail - mPos);
+        return std::span{mBuffer}.subspan(mPos, mTail - mPos);
     }
 
     /**
@@ -121,7 +126,7 @@ public:
      * @return MutableBuffer 
      */
     auto data() -> MutableBuffer {
-        return std::span(mBuffer).subspan(mPos, mTail - mPos);
+        return std::span{mBuffer}.subspan(mPos, mTail - mPos);
     }
 
     /**
@@ -261,7 +266,7 @@ public:
         if (space < size) {
             return {};
         }
-        return std::span(mBuffer).subspan(mTail, size);
+        return std::span{mBuffer}.subspan(mTail, size);
     }
 
     /**

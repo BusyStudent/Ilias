@@ -120,6 +120,8 @@ public:
     }
 
     // size & empty are inherited from IoVec
+    using IoVec::size;
+    using IoVec::empty;
 
     // Allow cast to MutableBuffer && Buffer
     constexpr operator MutableBuffer() const noexcept {

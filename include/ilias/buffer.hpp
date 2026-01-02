@@ -11,9 +11,10 @@
 #pragma once
 
 #include <ilias/defines.hpp>
-#include <cstring> // memcpy
-#include <string>
-#include <span>
+#include <utility> // std::swap
+#include <array> // std::array
+#include <span> // std::span
+#include <bit> // std::bit_cast
 
 ILIAS_NS_BEGIN
 
@@ -167,6 +168,95 @@ template <IntoSpan T>
 inline auto makeBuffer(T &object) {
     auto span = std::span(object);
     return makeBuffer(span.data(), span.size_bytes());
+}
+
+// Endianess
+/**
+ * @brief Check if the system is in network byte order
+ * 
+ * @return true 
+ * @return false 
+ */
+consteval auto isNetworkOrder() noexcept -> bool {
+    return std::endian::native == std::endian::big;
+}
+
+/**
+ * @brief Swap the bytes of the value
+ * 
+ * @tparam T 
+ */
+template <std::integral T>
+constexpr auto byteswap(const T value) noexcept -> T { // std::byteswap is C++23, so we need to implement it by ourselves
+    if constexpr (sizeof(T) == 1) {
+        return value;
+    }
+#if defined(__GNUC__) || defined(__clang__)
+    else if constexpr (sizeof(T) == 2) {
+        return std::bit_cast<T>(__builtin_bswap16(std::bit_cast<uint16_t>(value)));
+    }
+    else if constexpr (sizeof(T) == 4) {
+        return std::bit_cast<T>(__builtin_bswap32(std::bit_cast<uint32_t>(value)));
+    }
+    else if constexpr (sizeof(T) == 8) {
+        return std::bit_cast<T>(__builtin_bswap64(std::bit_cast<uint64_t>(value)));
+    }
+#elif defined(_MSC_VER)
+    else if constexpr (sizeof(T) == 2) {
+        if (!std::is_constant_evaluated()) 
+            return std::bit_cast<T>(_byteswap_ushort(std::bit_cast<uint16_t>(value)));
+    }
+    else if constexpr (sizeof(T) == 4) {
+        if (!std::is_constant_evaluated()) 
+            return std::bit_cast<T>(_byteswap_ulong(std::bit_cast<uint32_t>(value)));
+    }
+    else if constexpr (sizeof(T) == 8) {
+        if (!std::is_constant_evaluated()) 
+            return std::bit_cast<T>(_byteswap_uint64(std::bit_cast<uint64_t>(value)));
+    }
+#endif // defined(_MSC_VER)
+
+    // Fallback
+    auto bytes = std::bit_cast<std::array<std::byte, sizeof(T)> >(value);
+    for (size_t i = 0; i < bytes.size() / 2; ++i) {
+        std::swap(bytes[i], bytes[bytes.size() - i - 1]);
+    }
+    return std::bit_cast<T>(bytes);
+}
+
+
+/**
+ * @brief Convert the value from host to network byte order
+ * 
+ * @tparam T 
+ * @param value 
+ * @return T 
+ */
+template <std::integral T>
+constexpr auto hostToNetwork(const T value) noexcept -> T {
+    if constexpr (isNetworkOrder()) { // Network is big endian
+        return value;
+    }
+    else {
+        return byteswap(value);
+    }
+}
+
+/**
+ * @brief Convert the value from network to host byte order
+ * 
+ * @tparam T 
+ * @param value 
+ * @return T 
+ */
+template <std::integral T>
+constexpr auto networkToHost(const T value) noexcept -> T {
+    if constexpr (isNetworkOrder()) { // Network is big endian
+        return value;
+    }
+    else {
+        return byteswap(value);
+    }
 }
 
 namespace literals {

@@ -13,9 +13,7 @@
 
 #include <ilias/io/system_error.hpp>
 #include <ilias/result.hpp>
-#include <algorithm>
-#include <array>
-#include <bit>
+#include <ilias/buffer.hpp>
 
 // --- Import system header files ---
 #if defined(_WIN32)
@@ -153,63 +151,6 @@ inline auto SockInitializer::uninitialize() -> IoResult<void> {
     }
 #endif
     return {};
-}
-
-// Endianess
-/**
- * @brief Check if the system is in network byte order
- * 
- * @return true 
- * @return false 
- */
-consteval auto isNetworkOrder() noexcept -> bool {
-    return std::endian::native == std::endian::big;
-}
-
-/**
- * @brief Swap the bytes of the value
- * 
- * @tparam T 
- */
-template <std::integral T> requires(std::has_unique_object_representations_v<T>)
-constexpr auto byteswap(const T value) noexcept -> T { // std::byteswap is C++23, so we need to implement it by ourselves
-    auto bytes = std::bit_cast<std::array<std::byte, sizeof(T)> >(value);
-    std::reverse(bytes.begin(), bytes.end());
-    return std::bit_cast<T>(bytes);
-}
-
-/**
- * @brief Convert the value from host to network byte order
- * 
- * @tparam T 
- * @param value 
- * @return T 
- */
-template <std::integral T>
-constexpr auto hostToNetwork(const T value) noexcept -> T {
-    if constexpr (isNetworkOrder()) { // Network is big endian
-        return value;
-    }
-    else {
-        return byteswap(value);
-    }
-}
-
-/**
- * @brief Convert the value from network to host byte order
- * 
- * @tparam T 
- * @param value 
- * @return T 
- */
-template <std::integral T>
-constexpr auto networkToHost(const T value) noexcept -> T {
-    if constexpr (isNetworkOrder()) { // Network is big endian
-        return value;
-    }
-    else {
-        return byteswap(value);
-    }
 }
 
 ILIAS_NS_END
