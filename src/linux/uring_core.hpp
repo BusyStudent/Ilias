@@ -17,7 +17,7 @@
 
 ILIAS_NS_BEGIN
 
-namespace linux {
+namespace os_linux {
 
 /**
  * @brief The Callback of the io_uring, store in the cqe/sqe's user_data
@@ -188,6 +188,6 @@ private:
 };
 
 
-} // namespace detail
+} // namespace os_linux
 
 ILIAS_NS_END

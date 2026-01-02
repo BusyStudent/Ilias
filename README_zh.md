@@ -66,7 +66,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     ilias
-    GIT_REPOSITORY https://github.com/your-username/ilias.git
+    GIT_REPOSITORY https://github.com/BusyStudent/Ilias.git
+    GIT_TAG main
 )
 
 FetchContent_MakeAvailable(ilias)

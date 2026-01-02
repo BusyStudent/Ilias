@@ -18,7 +18,7 @@
 
 ILIAS_NS_BEGIN
 
-namespace linux {
+namespace os_linux {
 
 /**
  * @brief Awaiter wrapping the sendmsg
@@ -216,6 +216,6 @@ private:
     std::optional<size_t> mOffset;    
 };
 
-}
+} // namespace os_linux
 
 ILIAS_NS_END

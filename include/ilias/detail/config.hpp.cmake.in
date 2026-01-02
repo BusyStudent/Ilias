@@ -13,148 +13,28 @@
 
 #include <version>
 
-// =============================================================================
-// Feature Configuration Macros
-// =============================================================================
-
-// Core feature switches
-#cmakedefine ILIAS_ENABLE_TLS
-#cmakedefine ILIAS_ENABLE_FIBER
-#cmakedefine ILIAS_ENABLE_LOGGING
-#cmakedefine ILIAS_ENABLE_IO
-
-// Dependency selection
+// Config from build system
+#cmakedefine ILIAS_CORO_TRACE
+#cmakedefine ILIAS_CPP20
+#cmakedefine ILIAS_TLS
+#cmakedefine ILIAS_DLL
+#cmakedefine ILIAS_STATIC
+#cmakedefine ILIAS_USE_LOG
 #cmakedefine ILIAS_USE_FMT
+#cmakedefine ILIAS_USE_FIBER
 #cmakedefine ILIAS_USE_SPDLOG
 #cmakedefine ILIAS_USE_IO_URING
 
-// Platform and compatibility options
-#cmakedefine ILIAS_FORCE_OPENSSL
-#cmakedefine ILIAS_CPP20_COMPAT
-#cmakedefine ILIAS_ENABLE_CORO_TRACE
-
-// Library type macros
-#cmakedefine ILIAS_DLL
-#cmakedefine ILIAS_STATIC
-
-// Debug configuration
-#cmakedefine ILIAS_BUILD_DEBUG
-
-// =============================================================================
-// Version Information
-// =============================================================================
-
+// Version from build system
 #define ILIAS_VERSION_MAJOR @ILIAS_VERSION_MAJOR@
 #define ILIAS_VERSION_MINOR @ILIAS_VERSION_MINOR@
 #define ILIAS_VERSION_PATCH @ILIAS_VERSION_PATCH@
 
-#define ILIAS_VERSION_STRING "@ILIAS_VERSION_MAJOR@.@ILIAS_VERSION_MINOR@.@ILIAS_VERSION_PATCH@"
-
-// =============================================================================
-// Git Information
-// =============================================================================
-
+// Git information
 #define ILIAS_GIT_COMMIT      "@ILIAS_GIT_COMMIT@"
 #define ILIAS_GIT_COMMIT_LONG "@ILIAS_GIT_COMMIT_LONG@"
 #define ILIAS_GIT_COMMIT_DATE "@ILIAS_GIT_COMMIT_DATE@"
 #define ILIAS_GIT_BRANCH      "@ILIAS_GIT_BRANCH@"
 #define ILIAS_GIT_TAG         "@ILIAS_GIT_TAG@"
 #define ILIAS_GIT_TAG_LONG    "@ILIAS_GIT_TAG_LONG@"
-#define ILIAS_GIT_CUSTOM      "@ILIAS_GIT_CUSTOM@"
-
-// =============================================================================
-// Platform Detection
-// =============================================================================
-
-// Platform macros (set by CMake)
-#cmakedefine ILIAS_PLATFORM_WINDOWS
-#cmakedefine ILIAS_PLATFORM_LINUX
-#cmakedefine ILIAS_PLATFORM_MACOS
-
-// =============================================================================
-// Compiler Information
-// =============================================================================
-
-#define ILIAS_COMPILER_ID     "@CMAKE_CXX_COMPILER_ID@"
-#define ILIAS_COMPILER_VERSION "@CMAKE_CXX_COMPILER_VERSION@"
-
-// =============================================================================
-// Build Information
-// =============================================================================
-
-#define ILIAS_BUILD_TYPE      "@CMAKE_BUILD_TYPE@"
-#define ILIAS_CMAKE_VERSION   "@CMAKE_VERSION@"
-
-// =============================================================================
-// API Decoration Macros
-// =============================================================================
-
-#if defined(ILIAS_DLL)
-    #if defined(_WIN32)
-        #if defined(_ILIAS_SOURCE)
-            #define ILIAS_API __declspec(dllexport)
-        #else
-            #define ILIAS_API __declspec(dllimport)
-        #endif
-    #else
-        #if defined(_ILIAS_SOURCE)
-            #define ILIAS_API __attribute__((visibility("default")))
-        #else
-            #define ILIAS_API
-        #endif
-    #endif
-#else
-    #define ILIAS_API
-#endif
-
-// =============================================================================
-// Compatibility and Feature Detection
-// =============================================================================
-
-// C++20 compatibility checks
-#if defined(ILIAS_CPP20_COMPAT) && __cplusplus < 202002L
-    #error "C++20 compatibility mode requires C++20 or later"
-#endif
-
-// Feature availability checks
-#if defined(ILIAS_USE_IO_URING) && !defined(ILIAS_PLATFORM_LINUX)
-    #error "io_uring is only available on Linux platforms"
-#endif
-
-#if defined(ILIAS_USE_SPDLOG) && !defined(ILIAS_ENABLE_LOGGING)
-    #error "spdlog usage requires logging support to be enabled"
-#endif
-
-// =============================================================================
-// Configuration Summary (for debugging)
-// =============================================================================
-
-#ifdef ILIAS_BUILD_DEBUG
-namespace ilias::config {
-    constexpr const char* version_string = ILIAS_VERSION_STRING;
-    constexpr const char* git_commit = ILIAS_GIT_COMMIT;
-    constexpr const char* build_type = ILIAS_BUILD_TYPE;
-    constexpr const char* compiler_id = ILIAS_COMPILER_ID;
-    
-    constexpr bool tls_enabled = 
-#ifdef ILIAS_ENABLE_TLS
-        true;
-#else
-        false;
-#endif
-    
-    constexpr bool fiber_enabled = 
-#ifdef ILIAS_ENABLE_FIBER
-        true;
-#else
-        false;
-#endif
-    
-    constexpr bool logging_enabled = 
-#ifdef ILIAS_ENABLE_LOGGING
-        true;
-#else
-        false;
-#endif
-}
-#endif // ILIAS_BUILD_DEBUG
+#define ILIAS_GIT_CUSTOM      "@ILIAS_GIT_TAG@-@ILIAS_GIT_COMMIT@"

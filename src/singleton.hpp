@@ -122,8 +122,11 @@ public:
     ThreadLocal<Executor*>     executor; // The executor ptr for this thread (The runtime will set nullptr before thread exit)
 
 #if !defined(_WIN32)
+
+#if defined(ILIAS_USE_FIBER)
     // FiberContext (ThreadLocal)
     ThreadLocal<FiberContext*> fiberContext; // The current fiber context
+#endif // ILIAS_USE_FIBER
 
     // ThreadPool (only use on linux)
     std::atomic_flag           threadpoolInit;
@@ -379,7 +382,7 @@ class Singleton;
     };                                                         \
 
 // For category and any more
-#if !defined(_WIN32)
+#if !defined(_WIN32) && defined(ILIAS_USE_FIBER)
 MAKE_SINGLETON(fiber::FiberContext *, fiber::FiberContext *, fiberContext);
 #endif // _WIN32
 
