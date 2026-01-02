@@ -12,11 +12,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # The basic configuration
 option(ILIAS_CORO_TRACE     "Enable Coroutine Trace" OFF)
-option(ILIAS_CPP20          "Enable C++20 features/polyfill" ON)
+option(ILIAS_CPP20          "Enable C++20 features/polyfill" OFF)
 option(ILIAS_TLS            "Enable TLS support" ON)
-option(ILIAS_USE_LOG        "Enable Logging" ON)
-option(ILIAS_USE_FMT        "Use fmt lib" ON)
-option(ILIAS_USE_FIBER      "Use Fiber" OFF)
+option(ILIAS_USE_LOG        "Enable Logging" OFF)
+option(ILIAS_USE_FMT        "Use fmt lib" OFF)
+option(ILIAS_USE_FIBER      "Use Fiber" ON)
 option(ILIAS_USE_SPDLOG     "Use spdlog" OFF)
 option(ILIAS_USE_IO_URING   "Use io_uring (Linux only)" OFF)
 
@@ -134,10 +134,7 @@ if(WIN32)
     target_compile_definitions(ilias PRIVATE _WIN32_WINNT=0x0A00 NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 if(BUILD_SHARED_LIBS)
-    target_compile_definitions(ilias PUBLIC ILIAS_DLL)
     target_compile_definitions(ilias PRIVATE _ILIAS_SOURCE)
-else()
-    target_compile_definitions(ilias PUBLIC ILIAS_STATIC)
 endif()
 
 # Install & Export
