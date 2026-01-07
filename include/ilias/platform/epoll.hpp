@@ -25,7 +25,7 @@
 
 ILIAS_NS_BEGIN
 
-namespace linux {
+namespace os_linux {
 
 class ILIAS_API EpollContext final : public IoContext {
 public:
@@ -97,10 +97,10 @@ private:
     std::thread::id        mThreadId { std::this_thread::get_id() };
 };
 
-} // namespace linux
+} // namespace os_linux
 
 
 // Export for user
-using linux::EpollContext;
+using os_linux::EpollContext;
 
 ILIAS_NS_END

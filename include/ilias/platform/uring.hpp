@@ -18,7 +18,7 @@
 
 ILIAS_NS_BEGIN
 
-namespace linux {
+namespace os_linux {
 
 /**
  * @brief The Configuration for io_uring
@@ -84,9 +84,9 @@ private:
     } mFeatures;
 };
 
-} // namespace linux
+} // namespace os_linux
 
-using linux::UringContext;
-using linux::UringConfig;
+using os_linux::UringContext;
+using os_linux::UringConfig;
 
 ILIAS_NS_END

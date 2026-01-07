@@ -12,7 +12,7 @@
 
 ILIAS_NS_BEGIN
 
-namespace linux {
+namespace os_linux {
 
 class UringDescriptor final : public IoDescriptor {
 public:
@@ -241,7 +241,7 @@ auto UringContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     co_return co_await UringPollAwaiter {mRing, nfd->fd, events};
 }
 
-} // namespace linux
+} // namespace os_linux
 
 ILIAS_NS_END
 

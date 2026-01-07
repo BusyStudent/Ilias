@@ -163,8 +163,8 @@ target("ilias")
         set_configvar("ILIAS_DLL", 1)
     end
 
-    -- Default verison 0.3.2
+    -- Default verison 0.3.3
     set_configvar("ILIAS_VERSION_MAJOR", 0)
     set_configvar("ILIAS_VERSION_MINOR", 3)
-    set_configvar("ILIAS_VERSION_PATCH", 2)
+    set_configvar("ILIAS_VERSION_PATCH", 3)
 target_end()

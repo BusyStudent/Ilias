@@ -22,7 +22,7 @@
 
 ILIAS_NS_BEGIN
 
-namespace linux {
+namespace os_linux {
 
 class EpollDescriptor;
 
@@ -637,6 +637,6 @@ auto EpollContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     co_return co_await EpollAwaiter {nfd, events};
 }
 
-} // namespace linux
+} // namespace os_linux
 
 ILIAS_NS_END

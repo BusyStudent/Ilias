@@ -9,6 +9,7 @@
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp> // CreateFiber
 #elif __has_include(<ucontext.h>)
+    #include <sys/mman.h> // mmap
     #include <ucontext.h> // getcontext, makecontext
 #else
     #error "No fiber support on this platform"
@@ -16,8 +17,7 @@
 
 ILIAS_NS_BEGIN
 
-using namespace fiber;
-
+namespace fiber {
 namespace {
 
 #pragma region Impl
@@ -41,6 +41,8 @@ public:
     struct {
         ::ucontext_t caller {};
         ::ucontext_t self {};
+        void        *mmapPtr = nullptr;
+        size_t       mmapSize = 0;
     } posix;
 #endif // _WIN32
 
@@ -103,7 +105,7 @@ auto FiberContextImpl::destroyImpl() -> void {
 #if defined(_WIN32)
     ::DeleteFiber(win32.handle);
 #else
-    ::free(posix.self.uc_stack.ss_sp);
+    ::munmap(posix.mmapPtr, posix.mmapSize);
 #endif // _WIN32
 
     // Destroy the entry
@@ -227,10 +229,29 @@ auto FiberContext::create4(FiberEntry entry) -> FiberContext * {
     );
 #else
     if (entry.stackSize == 0) {
-        entry.stackSize = 1024 * 32; // Use 32K
+        entry.stackSize = 1024 * 1024; // Use 1MB
     }
+
+    // Allocate a stack
+    size_t pageSize = ::sysconf(_SC_PAGESIZE);
+    size_t mmapSize = entry.stackSize + pageSize; // Add one guard page
+    auto mmapPtr = ::mmap(nullptr, mmapSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
+    if (mmapPtr == MAP_FAILED) {
+        ILIAS_THROW(std::bad_alloc{});
+    }
+    if (::mprotect(mmapPtr, pageSize, PROT_NONE) != 0) {
+        ::munmap(mmapPtr, mmapSize);
+        ILIAS_THROW(std::bad_alloc{});
+    }
+
+    // Calc the stack
+    auto stack = static_cast<char *>(mmapPtr) + pageSize;
+    ctxt->posix.mmapPtr = mmapPtr;
+    ctxt->posix.mmapSize = mmapSize;
+
+    // Create the context
     ::getcontext(&ctxt->posix.self);
-    ctxt->posix.self.uc_stack.ss_sp = ::malloc(entry.stackSize);
+    ctxt->posix.self.uc_stack.ss_sp = stack;
     ctxt->posix.self.uc_stack.ss_size = entry.stackSize;
     ctxt->posix.self.uc_link = &ctxt->posix.caller; // Return to the caller
     ::makecontext(&ctxt->posix.self, ucontextEntry, 0);
@@ -239,6 +260,9 @@ auto FiberContext::create4(FiberEntry entry) -> FiberContext * {
     return ctxt.release();
 }
 
+} // namespace fiber
+
+using namespace fiber;
 auto this_fiber::yield() -> void {
     auto cur = FiberContext::current();
     cur->schedule();
