@@ -11,6 +11,7 @@
 #pragma once
 
 #include <ilias/defines.hpp>
+#include <cstdint> // std::uint16_t
 #include <utility> // std::swap
 #include <array> // std::array
 #include <span> // std::span

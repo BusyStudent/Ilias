@@ -146,7 +146,7 @@ public:
 private:
     sync::WaitQueue   mQueue;
     std::atomic<bool> mIsSet     {false};
-    bool              mAutoClear {false};
+    const bool        mAutoClear {false};
 friend sync::EventAwaiter;
 };
 
