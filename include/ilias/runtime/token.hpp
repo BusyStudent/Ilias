@@ -4,6 +4,7 @@
 #include <ilias/defines.hpp>
 #include <stop_token>
 #include <memory>
+#include <new>
 
 ILIAS_NS_BEGIN
 

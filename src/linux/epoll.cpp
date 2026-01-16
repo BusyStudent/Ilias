@@ -327,8 +327,13 @@ auto EpollContext::processCompletion(runtime::StopToken &token) -> void {
 auto EpollContext::pollCallbacks() -> void {
     std::lock_guard locker {mMutex};
     ILIAS_TRACE("Epoll", "Polling {} callbacks from different thread queue", mPendingCallbacks.size());
-    mCallbacks.insert(mCallbacks.end(), mPendingCallbacks.begin(), mPendingCallbacks.end());
-    mPendingCallbacks.clear();
+    if (mCallbacks.empty()) { // Use swap to make it faster
+        mCallbacks.swap(mPendingCallbacks);
+    }
+    else {
+        mCallbacks.insert(mCallbacks.end(), mPendingCallbacks.begin(), mPendingCallbacks.end());
+        mPendingCallbacks.clear();
+    }
     uint64_t data = 0; // Reset wakeup flag
     if (::read(mEventFd, &data, sizeof(data)) != sizeof(data)) {
         // ? Why read failed?
@@ -412,7 +417,7 @@ auto EpollContext::read(IoDescriptor *fd, MutableBuffer buffer, ::std::optional<
     if (!nfd->pollable) {
         // Not supported operation when aio unavailable
 #if !__has_include(<aio.h>)
-        co_return Err(Error::OperationNotSupported);
+        co_return Err(IoError::OperationNotSupported);
 #endif
 
     }
@@ -460,7 +465,7 @@ auto EpollContext::write(IoDescriptor *fd, Buffer buffer, ::std::optional<size_t
     if (!nfd->pollable) {
         // Not supported operation when aio unavailable
 #if !__has_include(<aio.h>)
-        co_return Err(Error::OperationNotSupported);
+        co_return Err(IoError::OperationNotSupported);
 #endif
 
     }

@@ -103,12 +103,18 @@ target("ilias")
         add_syslinks("ws2_32", {public = true})
     end
 
-    if is_plat("linux") then
+    if is_plat("linux", "android") then
         if is_mode("release") then 
             set_symbols("hidden")
-        end 
+        end
+
+        -- Add anl for no-android  
+        if not is_plat("android") and not os.getenv("TERMUX_VERSION") then
+            add_syslinks("anl") 
+        end
+
         add_files("linux/*.cpp")
-        add_syslinks("pthread", "dl", "anl", "rt", {public = true})
+        add_syslinks("pthread", "dl", "rt", {public = true})
     end
 
     -- Set var if

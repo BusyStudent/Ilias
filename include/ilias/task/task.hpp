@@ -20,6 +20,7 @@
 #include <ilias/log.hpp>
 #include <coroutine>
 #include <chrono> // std::chrono::duration
+#include <new>
 
 ILIAS_NS_BEGIN
 

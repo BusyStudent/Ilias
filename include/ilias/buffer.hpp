@@ -268,6 +268,6 @@ namespace literals {
     inline auto operator"" _bin(unsigned long long val) -> std::byte {
         return static_cast<std::byte>(val);
     }
-}
+} // namespace literals
 
 ILIAS_NS_END

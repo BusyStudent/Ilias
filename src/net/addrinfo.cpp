@@ -52,9 +52,10 @@ auto AddressInfo::fromHostnameBlocking(std::string_view name, std::string_view s
         nullptr
     );
 #else
-    auto name_ = strndupa(name.data(), name.size());
-    auto service_ = strndupa(service.data(), service.size());
-    err = ::getaddrinfo(name_, service_, hints ? &hints.value() : nullptr, &info);
+    auto _name = std::string {name};
+    auto _service = std::string {service};
+    auto _servicePtr = _service.empty() ? nullptr : _service.c_str();
+    err = ::getaddrinfo(_name.c_str(), _servicePtr, hints ? &hints.value() : nullptr, &info);
 #endif
 
     if (err != 0) {
@@ -148,12 +149,12 @@ auto AddressInfo::fromHostname(std::string_view name, std::string_view service, 
     }
 
 #elif defined(__linux) && defined(__GLIBC__) //< GNU Linux with glibc, use getaddrinfo_a
-    auto _name = std::string(name);
-    auto _service = std::string(service);
+    auto _name = std::string {name};
+    auto _service = std::string {service};
 
     ::gaicb request {
         .ar_name = _name.c_str(),
-        .ar_service = _service.c_str(),
+        .ar_service = _service.empty() ? nullptr : _service.c_str(),
         .ar_request = hints ? &hints.value() : nullptr
     };
     struct Awaiter {
