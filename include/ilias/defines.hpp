@@ -116,21 +116,10 @@
     ILIAS_STRINGIFY(ILIAS_VERSION_PATCH)
 
 // Formatter macro
-#define ILIAS_FORMATTER(type)                                      \
-    template <>                                                    \
-    struct ILIAS_FMT_NAMESPACE::formatter<ILIAS_NAMESPACE::type> : \
-        ILIAS_NAMESPACE::detail::DefaultFormatter
-
-#define ILIAS_FORMATTER_T(T, type)                                 \
-    template <T>                                                   \
-    struct ILIAS_FMT_NAMESPACE::formatter<ILIAS_NAMESPACE::type> : \
-        ILIAS_NAMESPACE::detail::DefaultFormatter
-
-#define ILIAS_FORMATTER_T_RAW(T, type)                             \
-    template <T>                                                   \
-    struct ILIAS_FMT_NAMESPACE::formatter<type> :                  \
-        ILIAS_NAMESPACE::detail::DefaultFormatter    
-
+#define ILIAS_FORMATTER(type)                              \
+    template <>                                            \
+    struct ILIAS_FMT_NAMESPACE::formatter<::ilias::type> : \
+        ::ilias::detail::DefaultFormatter
 
 ILIAS_NS_BEGIN
 
@@ -204,7 +193,8 @@ ILIAS_NS_END
 
 // Make formatter for all type with InfoString concept
 #if !defined(ILIAS_NO_FORMAT)
-ILIAS_FORMATTER_T_RAW(ILIAS_NAMESPACE::IntoString T, T) {
+template <ilias::IntoString T>
+struct ilias::fmtlib::formatter<T> : ilias::detail::DefaultFormatter {
     auto format(const auto &value, auto &ctxt) const {
         return format_to(ctxt.out(), "{}", toString(value));
     }

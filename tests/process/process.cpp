@@ -4,7 +4,7 @@
 #include <gtest/gtest.h>
 #include <iostream>
 
-using namespace ILIAS_NAMESPACE;
+using namespace ilias;
 
 ILIAS_TEST(Process, SpawnFailed) {
     auto proc = Process::spawn("nonexistingcommand", {}, Process::RedirectAll);

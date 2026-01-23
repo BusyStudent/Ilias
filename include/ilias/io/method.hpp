@@ -169,7 +169,7 @@ public:
      * @return IoTask<size_t> Total bytes written (equal to buffer.size()), or error if any write fails
      */
     auto writeAll(Buffer buffer) -> IoTask<size_t> requires Writable<T> {
-        return ::ILIAS_NAMESPACE::writeAll(static_cast<T &>(*this), buffer);
+        return ::ilias::writeAll(static_cast<T &>(*this), buffer);
     }
 
     auto operator <=>(const WritableMethod &rhs) const noexcept = default;
@@ -190,7 +190,7 @@ public:
      * @return IoTask<size_t> Total bytes read (equal to buffer.size()), or error if any read fails
      */
     auto readAll(MutableBuffer buffer) -> IoTask<size_t> requires(Readable<T>) {
-        return ::ILIAS_NAMESPACE::readAll(static_cast<T &>(*this), buffer);
+        return ::ilias::readAll(static_cast<T &>(*this), buffer);
     }
 
     /**
@@ -202,7 +202,7 @@ public:
      * @return IoTask<size_t> 
      */
     auto readAtleast(MutableBuffer buffer, size_t minSize) -> IoTask<size_t> requires(Readable<T>) {
-        return ::ILIAS_NAMESPACE::readAtleast(static_cast<T &>(*this), buffer, minSize);
+        return ::ilias::readAtleast(static_cast<T &>(*this), buffer, minSize);
     }
 
     /**
@@ -214,7 +214,7 @@ public:
      */
     template <MemWritable Container>
     auto readToEnd(Container &container) -> IoTask<size_t> requires(Readable<T>) {
-        return ::ILIAS_NAMESPACE::readToEnd(static_cast<T &>(*this), container);
+        return ::ilias::readToEnd(static_cast<T &>(*this), container);
     }
 
     auto operator <=>(const ReadableMethod &rhs) const noexcept = default;

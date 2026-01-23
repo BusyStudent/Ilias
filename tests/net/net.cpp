@@ -6,8 +6,8 @@
 #include <ilias/testing.hpp>
 #include <gtest/gtest.h>
 
-using namespace ILIAS_NAMESPACE;
-using namespace ILIAS_NAMESPACE::literals;
+using namespace ilias;
+using namespace ilias::literals;
 using namespace std::literals;
 
 // For V4 Address

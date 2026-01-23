@@ -702,8 +702,8 @@ ILIAS_NS_END
 
 // Interop with std...
 template <typename T>
-struct std::hash<ILIAS_NAMESPACE::task::TaskHandle<T> > {
-    auto operator()(const ILIAS_NAMESPACE::task::TaskHandle<T> &handle) const -> std::size_t {
-        return std::hash<ILIAS_NAMESPACE::runtime::CoroHandle>()(handle);
+struct std::hash<ilias::task::TaskHandle<T> > {
+    auto operator()(const ilias::task::TaskHandle<T> &handle) const -> std::size_t {
+        return std::hash<ilias::runtime::CoroHandle>()(handle);
     }
 };

@@ -23,16 +23,16 @@
 #include <source_location>
 #include <string>
 
-#define ILIAS_LOG_MAKE_LEVEL(name) ::ILIAS_NAMESPACE::logging::LogLevel::name
-#define ILIAS_LOG_SET_LEVEL(level_) ::ILIAS_NAMESPACE::logging::setLevel(level_)
-#define ILIAS_LOG_ADD_WHITELIST(mod) ::ILIAS_NAMESPACE::logging::addWhitelist(mod)
-#define ILIAS_LOG_ADD_BLACKLIST(mod) ::ILIAS_NAMESPACE::logging::addBlacklist(mod)
-#define ILIAS_LOG(level, mod, ...)                                                                                                          \
-    do {                                                                                                                                    \
-        if (::ILIAS_NAMESPACE::logging::check(level, mod)) {                                                                                \
-            ::ILIAS_NAMESPACE::logging::write(level, mod, std::source_location::current(), ::ILIAS_NAMESPACE::fmtlib::format(__VA_ARGS__)); \
-        }                                                                                                                                   \
-    }                                                                                                                                       \
+#define ILIAS_LOG_MAKE_LEVEL(name) ::ilias::logging::LogLevel::name
+#define ILIAS_LOG_SET_LEVEL(level_) ::ilias::logging::setLevel(level_)
+#define ILIAS_LOG_ADD_WHITELIST(mod) ::ilias::logging::addWhitelist(mod)
+#define ILIAS_LOG_ADD_BLACKLIST(mod) ::ilias::logging::addBlacklist(mod)
+#define ILIAS_LOG(level, mod, ...)                                                                                      \
+    do {                                                                                                                \
+        if (::ilias::logging::check(level, mod)) {                                                                      \
+            ::ilias::logging::write(level, mod, std::source_location::current(), ::ilias::fmtlib::format(__VA_ARGS__)); \
+        }                                                                                                               \
+    }                                                                                                                   \
     while (0)
 
 ILIAS_NS_BEGIN

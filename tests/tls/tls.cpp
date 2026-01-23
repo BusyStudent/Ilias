@@ -6,8 +6,8 @@
 #include <ilias/tls.hpp>
 #include "certs.inl"
 
-using namespace ILIAS_NAMESPACE::literals;
-using namespace ILIAS_NAMESPACE;
+using namespace ilias::literals;
+using namespace ilias;
 using namespace std::literals;
 
 #if defined(ILIAS_TLS)

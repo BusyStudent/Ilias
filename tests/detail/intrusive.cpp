@@ -1,7 +1,7 @@
 #include <ilias/detail/intrusive.hpp>
 #include <gtest/gtest.h>
 
-using namespace ILIAS_NAMESPACE::intrusive;
+using namespace ilias::intrusive;
 
 struct ListElem : public Node<ListElem> {
     ListElem(int val) : value(val) {}

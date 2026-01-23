@@ -7,7 +7,7 @@
 #include <filesystem>
 #include <iostream>
 
-using namespace ILIAS_NAMESPACE;
+using namespace ilias;
 auto splitQuery(std::string_view query) -> std::tuple<std::string_view, std::string_view, std::string_view> {
     auto pos = query.find(' ');
     if (pos == std::string_view::npos) {

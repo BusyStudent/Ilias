@@ -7,7 +7,7 @@
 #include <ranges>
 
 using namespace std::literals;
-using namespace ILIAS_NAMESPACE;
+using namespace ilias;
 namespace views = std::views;
 
 auto neverReturn() -> Task<void> {

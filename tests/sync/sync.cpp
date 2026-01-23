@@ -10,7 +10,7 @@
 #include <thread>
 #include <latch>
 
-using namespace ILIAS_NAMESPACE;
+using namespace ilias;
 using namespace std::literals;
 
 // Mutex

@@ -348,13 +348,13 @@ ILIAS_NS_END
 
 // Interop with std
 template <typename T>
-struct std::pointer_traits<ILIAS_NAMESPACE::intrusive::Rc<T> > {
-    using pointer = ILIAS_NAMESPACE::intrusive::Rc<T>;
+struct std::pointer_traits<ilias::intrusive::Rc<T> > {
+    using pointer = ilias::intrusive::Rc<T>;
     using element_type = T;
     using difference_type = ptrdiff_t;
 
     template<typename U>
-    using rebind = ILIAS_NAMESPACE::intrusive::Rc<U>;
+    using rebind = ilias::intrusive::Rc<U>;
 
     static auto to_address(const pointer &p) noexcept {
         return p.get();

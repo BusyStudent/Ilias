@@ -6,7 +6,7 @@
 #include <ilias/testing.hpp>
 #include <gtest/gtest.h>
 
-using namespace ILIAS_NAMESPACE;
+using namespace ilias;
 using namespace std::literals;
 
 template <typename T>

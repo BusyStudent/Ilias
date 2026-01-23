@@ -38,25 +38,25 @@
  * @param ... The gtest test case macro
  * 
  */
-#define ILIAS_TEST_IMPL(prefix, ...)                                    \
-    static auto _ilias_test_##prefix() -> ILIAS_NAMESPACE::Task<void>;  \
-    __VA_ARGS__ {                                                       \
-        try {                                                           \
-            _ilias_test_##prefix().wait();                              \
-        }                                                               \
-        catch (ILIAS_NAMESPACE::BadResultAccess<std::error_code> &e) {  \
-            auto errc = e.error();                                      \
-            ::fprintf(                                                  \
-                stderr,                                                 \
-                "[ilias::Test(%s)] Err %s: (%s)\n",                     \
-                #prefix,                                                \
-                errc.category().name(),                                 \
-                errc.message().c_str()                                  \
-            );                                                          \
-            FAIL();                                                     \
-        }                                                               \
-    }                                                                   \
-    static auto _ilias_test_##prefix() -> ILIAS_NAMESPACE::Task<void>
+#define ILIAS_TEST_IMPL(prefix, ...)                            \
+    static auto _ilias_test_##prefix() -> ::ilias::Task<void>;  \
+    __VA_ARGS__ {                                               \
+        try {                                                   \
+            _ilias_test_##prefix().wait();                      \
+        }                                                       \
+        catch (::ilias::BadResultAccess<std::error_code> &e) {  \
+            auto errc = e.error();                              \
+            ::fprintf(                                          \
+                stderr,                                         \
+                "[ilias::Test(%s)] Err %s: (%s)\n",             \
+                #prefix,                                        \
+                errc.category().name(),                         \
+                errc.message().c_str()                          \
+            );                                                  \
+            FAIL();                                             \
+        }                                                       \
+    }                                                           \
+    static auto _ilias_test_##prefix() -> ::ilias::Task<void>
 
 /**
  * @brief Create a async test case with gtest

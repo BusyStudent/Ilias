@@ -73,17 +73,17 @@ public:
     // Spawn
     template <typename T>
     auto spawn(Task<T> task, runtime::CaptureSource source = {}) -> StopHandle {
-        return insert(::ILIAS_NAMESPACE::spawn(std::move(task), source));
+        return insert(::ilias::spawn(std::move(task), source));
     }
 
     template <std::invocable Fn>
     auto spawn(Fn fn, runtime::CaptureSource source = {}) -> StopHandle {
-        return insert(::ILIAS_NAMESPACE::spawn(std::move(fn), source));
+        return insert(::ilias::spawn(std::move(fn), source));
     }
 
     template <std::invocable Fn>
     auto spawnBlocking(Fn fn, runtime::CaptureSource source = {}) -> StopHandle {
-        return insert(::ILIAS_NAMESPACE::spawnBlocking(std::move(fn), source));
+        return insert(::ilias::spawnBlocking(std::move(fn), source));
     }
 
     /**

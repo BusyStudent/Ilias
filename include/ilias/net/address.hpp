@@ -717,15 +717,15 @@ ILIAS_NS_END
 
 // Interop with std
 template <>
-struct std::hash<ILIAS_NAMESPACE::IPAddress4> {
-    auto operator()(const ILIAS_NAMESPACE::IPAddress4 &addr) const noexcept -> size_t {
+struct std::hash<ilias::IPAddress4> {
+    auto operator()(const ilias::IPAddress4 &addr) const noexcept -> size_t {
         return std::hash<uint32_t>{}(addr.toUint32());
     }
 };
 
 template <>
-struct std::hash<ILIAS_NAMESPACE::IPAddress6> {
-    auto operator()(const ILIAS_NAMESPACE::IPAddress6 &addr) const noexcept -> size_t {
+struct std::hash<ilias::IPAddress6> {
+    auto operator()(const ilias::IPAddress6 &addr) const noexcept -> size_t {
         auto span = addr.span();
         auto view = std::string_view(reinterpret_cast<const char*>(span.data()), span.size());
         return std::hash<std::string_view>{}(view); // HACKY way to do it :(
@@ -733,8 +733,8 @@ struct std::hash<ILIAS_NAMESPACE::IPAddress6> {
 };
 
 template <>
-struct std::hash<ILIAS_NAMESPACE::IPAddress> {
-    auto operator()(const ILIAS_NAMESPACE::IPAddress &addr) const noexcept -> size_t {
+struct std::hash<ilias::IPAddress> {
+    auto operator()(const ilias::IPAddress &addr) const noexcept -> size_t {
         auto span = addr.span();
         auto view = std::string_view(reinterpret_cast<const char*>(span.data()), span.size());
         return std::hash<std::string_view>{}(view); // HACKY way to do it :(

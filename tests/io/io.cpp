@@ -6,8 +6,8 @@
 // Experimental API
 #include <ilias/io/vec.hpp>
 
-using namespace ILIAS_NAMESPACE;
-using namespace ILIAS_NAMESPACE::literals;
+using namespace ilias;
+using namespace ilias::literals;
 
 class SpanReader {
 public:

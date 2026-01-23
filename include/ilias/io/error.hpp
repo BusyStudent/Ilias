@@ -157,5 +157,5 @@ inline auto make_error_code(T t) noexcept -> std::error_code {
 
 ILIAS_NS_END
 
-template <ILIAS_NAMESPACE::IntoError T> 
+template <ilias::IntoError T> 
 struct std::is_error_code_enum<T> : std::true_type {};

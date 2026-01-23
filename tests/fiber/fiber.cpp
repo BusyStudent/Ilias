@@ -5,7 +5,7 @@
 #include <iostream>
 
 using namespace std::literals;
-using namespace ILIAS_NAMESPACE;
+using namespace ilias;
 
 #if defined(ILIAS_USE_FIBER)
 

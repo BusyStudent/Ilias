@@ -4,8 +4,8 @@
 #include <ilias/signal.hpp>
 #include <ilias/task.hpp>
 
-using namespace ILIAS_NAMESPACE;
-using namespace ILIAS_NAMESPACE::literals;
+using namespace ilias;
+using namespace ilias::literals;
 
 auto loop() -> Task<void> {
     auto out = (co_await Console::fromStdout()).value();

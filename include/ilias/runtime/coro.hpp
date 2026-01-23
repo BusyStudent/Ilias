@@ -460,8 +460,8 @@ ILIAS_NS_END
 
 // Interop with std...
 template <>
-struct std::hash<ILIAS_NAMESPACE::runtime::CoroHandle> {
-    auto operator()(const ILIAS_NAMESPACE::runtime::CoroHandle &h) const noexcept -> std::size_t {
+struct std::hash<ilias::runtime::CoroHandle> {
+    auto operator()(const ilias::runtime::CoroHandle &h) const noexcept -> std::size_t {
         return std::hash<std::coroutine_handle<> >()(h.toStd());
     }
 };
