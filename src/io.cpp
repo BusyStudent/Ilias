@@ -74,8 +74,7 @@ auto enum2str(std::index_sequence<N...>, T i) -> std::string_view {
 
 } // namespace reflect
 
-#pragma region IoError
-// Io
+// MARK: IoError
 auto IoCategory::message(int err) const -> std::string {
     return IoError(err).toString();
 }
@@ -141,8 +140,7 @@ auto IoError::toStd() const -> std::errc {
     }
 }
 
-#pragma region SystemError
-// System
+// MARK: SystemError
 auto SystemCategory::message(int err) const -> std::string {
     return SystemError(err).toString();
 }
@@ -239,7 +237,7 @@ auto SystemError::toIoError() const -> IoError {
     }
 }
 
-#pragma region DuplexStream
+// MARK: DuplexStream
 
 struct ByteChannel {
     StreamBuffer buffer;

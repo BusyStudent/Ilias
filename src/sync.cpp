@@ -8,7 +8,7 @@ ILIAS_NS_BEGIN
 
 using namespace sync;
 
-#pragma region WaitQueue
+// MARK: WaitQueue
 WaitQueue::WaitQueue() noexcept = default;
 WaitQueue::~WaitQueue() {
     if (!mWaiters.empty()) {
@@ -65,7 +65,7 @@ auto WaitQueue::unlock() -> void {
     mMutex.unlock();
 }
 
-#pragma region WaiterBase
+// MARK: WaiterBase
 // Use isLinked & mQueue to handle the race condition
 auto WaiterBase::onWakeupRaw() -> bool {
     if (!mOnWakeup(*this)) {
@@ -87,7 +87,7 @@ auto WaiterBase::resume() -> void {
     }
 }
 
-#pragma region AwaiterBase
+// MARK: AwaiterBase
 auto AwaiterBase::await_suspend(runtime::CoroHandle caller) -> bool {
     mCaller = caller;
     {

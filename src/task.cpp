@@ -11,7 +11,7 @@ ILIAS_NS_BEGIN
 
 using namespace task;
 
-#pragma region TaskSpawn
+// MARK: TaskSpawn
 TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task, CaptureSource source) : TaskContext(task) {
     auto executor = runtime::Executor::currentThread();
     ILIAS_ASSERT_MSG(executor, "The current thread has no executor");
@@ -51,7 +51,7 @@ auto TaskSpawnContextBase::onComplete() -> void {
     }
 }
 
-#pragma region TaskGroup
+// MARK: TaskGroup
 TaskGroupBase::TaskGroupBase() {
     
 }
@@ -205,7 +205,7 @@ auto TaskGroupAwaiterBase::onStopRequested() -> void {
     mGroup.stop();
 }
 
-#pragma region TaskScope
+// MARK: TaskScope
 TaskScope::TaskScope() = default;
 TaskScope::~TaskScope() {
     ILIAS_ASSERT(mRunning.empty());
@@ -307,7 +307,7 @@ auto TaskScope::stop() noexcept -> void {
 }
 
 
-#pragma region ScheduleAwaiter
+// MARK: ScheduleAwaiter
 auto ScheduleAwaiterBase::await_suspend(CoroHandle caller) -> void { // Currently in caller thread
     ILIAS_TRACE("Task", "Schedule a task on executor {}", static_cast<void*>(&mExecutor));
     mCaller = caller;
@@ -362,7 +362,7 @@ auto ScheduleAwaiterBase::invoke() -> void  { // In the caller thread
     }
 }
 
-#pragma region FinallyAwaiter
+// MARK: FinallyAwaiter
 auto FinallyAwaiterBase::await_suspend(CoroHandle caller) -> std::coroutine_handle<> {
     auto mainHandle = mContext->task();
 
@@ -415,7 +415,7 @@ auto FinallyAwaiterBase::onFinallyCompletion() -> void {
     }
 }
 
-#pragma region StopTokenAwaiter
+// MARK: StopTokenAwaiter
 auto StopTokenAwaiter::await_suspend(CoroHandle caller) -> void {
     mCaller = caller;
     mReg.register_<&StopTokenAwaiter::onStopRequested>(mToken, this);
@@ -436,7 +436,7 @@ auto StopTokenAwaiter::onRuntimeStopRequested() -> void {
     }
 }
 
-#pragma region Thread
+// MARK: Thread
 auto ThreadBase::start() -> void {
     if (!mInit) {
         mInit = []() -> Executor * {

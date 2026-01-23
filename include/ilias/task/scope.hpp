@@ -3,6 +3,7 @@
 #include <ilias/detail/intrusive.hpp>
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp>
+#include <ilias/task/spawn.hpp>
 #include <ilias/task/task.hpp>
 #include <optional>
 #include <memory>

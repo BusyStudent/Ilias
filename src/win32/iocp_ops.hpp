@@ -9,7 +9,7 @@ ILIAS_NS_BEGIN
 
 namespace win32 {
 
-#pragma region Net
+// MARK: Net
 /**
  * @brief Awaiter wrapping WSASendTo
  * 
@@ -364,7 +364,7 @@ private:
     LPFN_WSARECVMSG mRecvMsg = nullptr;
 };
 
-#pragma region Fs
+// MARK: Fs
 /**
  * @brief Wrapping the iocp async read operations
  * 
@@ -492,7 +492,7 @@ inline auto WSAGetExtensionFnPtr(SOCKET sockfd, GUID id, void *fnptr) -> Result<
 }
 
 // Do io call in thread pool
-#pragma region SynchronousIo
+// MARK: SynchronousIo
 template <typename Fn>
 inline auto ioCall(const runtime::StopToken &token, Fn fn) -> std::invoke_result_t<Fn> {
     // Get the thread handle, used for CancelSynchronousIo

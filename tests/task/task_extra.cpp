@@ -164,14 +164,6 @@ ILIAS_TEST(Task, Mapping) {
     EXPECT_EQ(result, 30);
 }
 
-ILIAS_TEST(Task, FireAndForget) {
-    auto fn = []() -> FireAndForget {
-        co_await sleep(10ms);
-    };
-    fn();
-    co_await this_coro::yield();
-}
-
 ILIAS_TEST(Task, Scope) {
     // Normal
     co_await TaskScope::enter([](TaskScope &scope) -> Task<void> {

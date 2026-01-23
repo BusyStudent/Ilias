@@ -1,7 +1,7 @@
 #include <ilias/task/generator.hpp>
 #include <ilias/task/when_all.hpp>
 #include <ilias/task/when_any.hpp>
-#include <ilias/task/utils.hpp>
+#include <ilias/task/spawn.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/testing.hpp>
 #include <gtest/gtest.h>
@@ -80,7 +80,7 @@ TEST(Task, SpawnAwait) {
     auto fn = []() -> Task<void> {
         co_await spawn(testTask());
     };
-    fn() | blockingWait(); // Try tags invoke here
+    blockingWait(fn());
 }
 
 TEST(Task, SpawnBlocking) {
@@ -93,6 +93,14 @@ TEST(Task, SpawnBlocking) {
         std::cout << "Hello Exception!" << std::endl;
         throw std::exception();
     }).wait(), std::exception);
+}
+
+ILIAS_TEST(Task, FireAndForget) {
+    auto fn = []() -> FireAndForget {
+        co_await sleep(10ms);
+    };
+    fn();
+    co_await this_coro::yield();
 }
 
 auto range(int start, int end) -> Generator<int> {

@@ -20,7 +20,7 @@ ILIAS_NS_BEGIN
 namespace fiber {
 namespace {
 
-#pragma region Impl
+// MARK: Impl
 // The hidden implment of the fiber
 class FiberContextImpl final : public FiberContext {
 public:
@@ -175,7 +175,7 @@ auto ucontextEntry() -> void {
 } // namespace
 
 // User interface
-#pragma region User
+// MARK: User
 auto FiberContext::current() -> FiberContext * {
 
 #if defined(_WIN32)

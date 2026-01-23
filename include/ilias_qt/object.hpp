@@ -11,6 +11,7 @@
 #pragma once
 
 #include <ilias/runtime/token.hpp>
+#include <ilias/task/spawn.hpp>
 #include <ilias/task/task.hpp>
 #include <functional>
 #include <QObject>

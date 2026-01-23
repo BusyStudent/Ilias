@@ -100,7 +100,7 @@ IocpContext::~IocpContext() {
     }
 }
 
-#pragma region Executor
+// MARK: Executor
 auto IocpContext::post(void (*fn)(void *), void *args) -> void {
     ILIAS_ASSERT(fn);
     ::PostQueuedCompletionStatus(
@@ -209,7 +209,7 @@ auto IocpContext::processCompletionEx(DWORD timeout) -> void {
     }
 }
 
-#pragma region Timer
+// MARK: Timer
 auto IocpContext::initTimer() -> void {
     if (auto status = mNt.NtCreateWaitCompletionPacket(&mTimerPacket, GENERIC_ALL, nullptr); FAILED(status)) {
         ILIAS_WARN("Win32", "NtCreateWaitCompletionPacket failed: {}", SystemError(mNt.RtlNtStatusToDosError(status)));
@@ -289,7 +289,7 @@ auto IocpContext::sleep(uint64_t ms) -> Task<void> {
     co_return co_await mService.sleep(ms);
 }
 
-#pragma region Context
+// MARK: Context
 auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor*> {
     if (fd == nullptr || fd == INVALID_HANDLE_VALUE) {
         ILIAS_ERROR("IOCP", "Invalid file descriptor in addDescriptor, fd = {}, type = {}", fd, type);
@@ -398,7 +398,7 @@ auto IocpContext::cancel(IoDescriptor *fd) -> IoResult<void> {
     return {};
 }
 
-#pragma region Fs
+// MARK: Fs
 auto IocpContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
     if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use threadpool to execute it
@@ -442,7 +442,7 @@ auto IocpContext::write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> o
     co_return co_await IocpWriteAwaiter(nfd->handle, buffer, offset);
 }
 
-#pragma region Net
+// MARK: Net
 auto IocpContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> IoTask<socket_t> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket) {
@@ -494,7 +494,7 @@ auto IocpContext::recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> Io
     co_return co_await IocpRecvmsgAwaiter(nfd->sockfd, msg, flags, nfd->sock.WSARecvMsg);
 }
 
-#pragma region Poll
+// MARK: Poll
 auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Socket || mAfdDevice == INVALID_HANDLE_VALUE) {
@@ -505,7 +505,7 @@ auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     co_return co_await awaiter;
 }
 
-#pragma region NamedPipe
+// MARK: NamedPipe
 auto IocpContext::connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
     if (nfd->type != IoDescriptor::Pipe) {
@@ -514,7 +514,7 @@ auto IocpContext::connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
     co_return co_await IocpConnectPipeAwaiter(nfd->handle);
 }
 
-#pragma region WaitObject
+// MARK: WaitObject
 auto IocpContext::waitObject(HANDLE object) -> IoTask<void> {
     do {
         if (!mNt.hasWaitCompletionPacket()) { // NtCreateWaitCompletionPacket, available in Windows 8
@@ -634,7 +634,7 @@ auto IocpContext::waitObject(HANDLE object) -> IoTask<void> {
 } // namespace win32
 
 
-#pragma region Default IoContext
+// MARK: Default IoContext
 auto IoContext::waitObject(HANDLE object) -> IoTask<void> {
     struct Awaiter {
         auto await_ready() const noexcept -> bool {
