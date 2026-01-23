@@ -184,7 +184,7 @@ using dword_t = int;
 #endif // defined(_WIN32)
 
 
-// SOL_SOCKET
+// MARK: SOL_SOCKET
 /**
  * @brief Set socket option SO_REUSEADDR (true or false)
  * 
@@ -236,7 +236,7 @@ using ReusePort = OptionT<SOL_SOCKET, SO_REUSEPORT, int>;
 #endif // defined(SO_REUSEPORT)
 
 
-// IPPROTO_TCP
+// MARK: IPPROTO_TCP
 /**
  * @brief Set the tcp socket option TCP_NODELAY (true or false)
  * 
@@ -269,9 +269,15 @@ using TcpKeepCnt = OptionT<IPPROTO_TCP, TCP_KEEPCNT, dword_t>;
 using TcpUserTimeout = OptionT<IPPROTO_TCP, TCP_USER_TIMEOUT, int>;
 #endif // defined(TCP_USER_TIMEOUT)
 
+// MARK: IPPROTO_IPV6
+/**
+ * @brief Set the ipv6 socket option IPV6_V6ONLY (true or false)
+ * 
+ */
+using Ipv6Only = OptionT<IPPROTO_IPV6, IPV6_V6ONLY, dword_t>;
 
 
-// Platform specific
+// MARK: Platform specific
 #if defined(_WIN32)
 /**
  * @brief Set the udp socket option SIO_UDP_CONNRESET (true or false)

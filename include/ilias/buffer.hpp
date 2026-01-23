@@ -39,7 +39,7 @@ using MutableBuffer = std::span<std::byte>;
  */
 template <typename T>
 concept IntoSpan = requires(T &t) {
-    std::span(t);
+    std::span{t};
 };
 
 
@@ -80,8 +80,8 @@ concept MemExpendable = requires(T &t) {
  */
 template <typename T>
 concept MemWritable = requires(T &t) {
-    { std::span(t).data() } -> std::convertible_to<void *>;
-    { std::span(t).size_bytes() } -> std::convertible_to<size_t>;
+    { std::span{t}.data() } -> std::convertible_to<void *>;
+    { std::span{t}.size_bytes() } -> std::convertible_to<size_t>;
 };
 
 /**
@@ -91,8 +91,8 @@ concept MemWritable = requires(T &t) {
  */
 template <typename T>
 concept MemReadable = requires(T &t) {
-    { std::span(t).data() } -> std::convertible_to<const void *>;
-    { std::span(t).size_bytes() } -> std::convertible_to<size_t>;
+    { std::span{t}.data() } -> std::convertible_to<const void *>;
+    { std::span{t}.size_bytes() } -> std::convertible_to<size_t>;
 };
 
 /**
@@ -131,7 +131,7 @@ concept MutableBufferSequence = requires(T &t) {
  * @return Buffer 
  */
 inline auto makeBuffer(const void *buf, size_t n) noexcept -> Buffer {
-    return std::span(reinterpret_cast<const std::byte *>(buf), n);
+    return std::span {reinterpret_cast<const std::byte *>(buf), n};
 }
 
 /**
@@ -142,7 +142,7 @@ inline auto makeBuffer(const void *buf, size_t n) noexcept -> Buffer {
  * @return MutableBuffer 
  */
 inline auto makeBuffer(void *buf, size_t n) noexcept -> MutableBuffer {
-    return std::span(reinterpret_cast<std::byte *>(buf), n);
+    return std::span {reinterpret_cast<std::byte *>(buf), n};
 }
 
 /**
@@ -154,7 +154,7 @@ inline auto makeBuffer(void *buf, size_t n) noexcept -> MutableBuffer {
  */
 template <IntoSpan T>
 inline auto makeBuffer(const T &object) {
-    auto span = std::span(object);
+    auto span = std::span {object};
     return makeBuffer(span.data(), span.size_bytes());
 }
 
@@ -167,7 +167,7 @@ inline auto makeBuffer(const T &object) {
  */
 template <IntoSpan T>
 inline auto makeBuffer(T &object) {
-    auto span = std::span(object);
+    auto span = std::span {object};
     return makeBuffer(span.data(), span.size_bytes());
 }
 

@@ -553,7 +553,7 @@ public:
         if (mChan->queue.empty()) {
             return Err(TryRecvError::Empty);
         }
-        auto value = mChan->queue.front();
+        auto value = std::move(mChan->queue.front());
         mChan->queue.pop_front();
         locker.unlock();
 

@@ -306,6 +306,20 @@ public:
     }
 
     /**
+     * @brief Convert ipv6 address to ipv4 (if mapped)
+     * 
+     * @return Result<IPAddress4, std::errc> 
+     */
+    auto toV4() const -> Result<IPAddress4, std::errc> {
+        if (!isV4Mapped()) {
+            return Err(std::errc::invalid_argument);
+        }
+        ::in_addr addr {};
+        ::memcpy(&addr, &s6_addr[12], sizeof(addr));
+        return addr;
+    }
+
+    /**
      * @brief Cast self to a byte span
      * 
      * @return std::span<const std::byte> 
@@ -352,6 +366,16 @@ public:
      */
     auto isMulticast() const -> bool {
         return IN6_IS_ADDR_MULTICAST(this);
+    }
+
+    /**
+     * @brief Check this ipv6 address is v4 mapped
+     * 
+     * @return true 
+     * @return false 
+     */
+    auto isV4Mapped() const -> bool {
+        return IN6_IS_ADDR_V4MAPPED(this);
     }
 
     /**
@@ -403,6 +427,20 @@ public:
      */
     static auto loopback() -> IPAddress6 {
         return ::in6_addr IN6ADDR_LOOPBACK_INIT;
+    }
+
+    /**
+     * @brief Create ipv6 address from mapping ipv4 address
+     * 
+     * @param addr The ipv4 address
+     * @return IPAddress6 
+     */
+    static auto fromV4Mapped(IPAddress4 addr) -> IPAddress6 {
+        ::in6_addr v6 {};
+        v6.s6_addr[10] = 0xff;
+        v6.s6_addr[11] = 0xff;
+        ::memcpy(v6.s6_addr + 12, &addr, sizeof(addr));
+        return v6;
     }
 
     /**

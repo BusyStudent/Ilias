@@ -86,6 +86,13 @@ TEST(Address6, Compare) {
     EXPECT_NE(IPAddress6::loopback(), IPAddress6::none());
 }
 
+TEST(Address6, V4Mapped) {
+    auto addr = IPAddress6::fromString("::ffff:192.168.1.1").value();
+    EXPECT_TRUE(addr.isV4Mapped());
+    EXPECT_TRUE(addr.toV4());
+    EXPECT_EQ(addr.toV4().value(), IPAddress4::fromString("192.168.1.1").value());
+}
+
 // For V4 / 6 Address
 TEST(Address, Parse) {
     EXPECT_EQ(IPAddress("0.0.0.0").family(), AF_INET);

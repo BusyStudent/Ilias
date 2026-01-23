@@ -168,7 +168,7 @@ public:
             [[noreturn]]
             auto await_resume() noexcept { // UNREACHABLE here, we can't resume an done coroutine
 #if defined(__cpp_lib_unreachable)
-                std::unreachable();
+                std::unreachable(); // LCOV_EXCL_LINE
 #endif // defined(__cpp_lib_unreachable)
             }
             CoroPromise &self;
@@ -404,14 +404,27 @@ inline auto executor() noexcept {
 // Try set the context stopped, it only work when the stop was requested
 [[nodiscard]] 
 inline auto stopped() noexcept {
-    struct Awaiter : AwaiterBase {
-        auto await_ready() noexcept { // If stop requested, enter the stopped state
-            return !mCtxt->stopSource().stop_requested();
+    struct Awaiter {       
+        auto setContext(CoroContext &ctxt) noexcept { 
+            mStopped = ctxt.stopSource().stop_requested(); 
+        }
+        auto await_ready() noexcept { // If stop requested, enter the stopped state (never resume)
+            return !mStopped;
         }
         auto await_suspend(CoroHandle h) noexcept {
             h.setStopped();
         }
-        auto await_resume() noexcept {}
+        auto await_resume() const noexcept {
+            // LCOV_EXCL_START
+#if defined(__cpp_lib_unreachable)
+            if (mStopped) {
+                std::unreachable();
+            }
+#endif // defined(__cpp_lib_unreachable)
+            // LCOV_EXCL_STOP
+        }
+
+        bool mStopped = false;
     };
 
     return Awaiter {};
@@ -427,23 +440,6 @@ inline auto yield() noexcept {
     };
 
     return Awaiter {};
-}
-
-// Get the current coroutine context and process it to an callback
-template <typename Fn> requires (std::invocable<Fn, CoroContext &>)
-[[nodiscard]]
-inline auto withContext(Fn fn) noexcept {
-    struct Awaiter : AwaiterBase {
-        Awaiter(Fn fn) : mFn(std::move(fn)) {}
-
-        auto await_resume() -> decltype(auto) {
-            return mFn(*mCtxt);
-        }
-
-        Fn mFn;
-    };
-    
-    return Awaiter { std::move(fn) };
 }
 
 // Get the current virtual callstack (empty on disabled)
