@@ -14,6 +14,10 @@
     #error "No fiber support on this platform"
 #endif // _WIN32
 
+#if !defined(__cpp_exceptions)
+    #error "Fiber need to use exceptions to unwind the stack"
+#endif
+
 ILIAS_NS_BEGIN
 
 namespace fiber {
@@ -94,9 +98,9 @@ auto FiberContextImpl::main() -> void {
 }
 
 auto FiberContextImpl::destroyImpl() -> void {
-    ILIAS_ASSERT_MSG(!running, "Cannot destroy a running fiber");
+    ILIAS_ASSERT(!running, "Cannot destroy a running fiber");
     if (started && !mComplete) { // Started, but suspend
-        ILIAS_ASSERT_MSG(false, "Cannot destroy a suspended fiber");
+        ILIAS_ASSERT(false, "Cannot destroy a suspended fiber");
     }
     // Ok, safe to destroy
 #if defined(_WIN32)
@@ -113,7 +117,7 @@ auto FiberContextImpl::destroyImpl() -> void {
 }
 
 auto FiberContextImpl::resumeImpl() -> void {
-    ILIAS_ASSERT_MSG(!running && !mComplete, "Cannot resume a running or complete fiber");
+    ILIAS_ASSERT(!running && !mComplete, "Cannot resume a running or complete fiber");
 
 #if defined(_WIN32)
     struct ConvertGuard {
@@ -137,7 +141,7 @@ auto FiberContextImpl::resumeImpl() -> void {
 }
 
 auto FiberContextImpl::suspendImpl() -> void {
-    ILIAS_ASSERT_MSG(running && !mComplete, "Cannot suspend a non-running or complete fiber");
+    ILIAS_ASSERT(running && !mComplete, "Cannot suspend a non-running or complete fiber");
     running = false;
 
     // Switch back to the resume point
@@ -158,7 +162,7 @@ auto callContext(void *ctxt) -> void {
     // Switch back to the resume point
 #if defined(_WIN32)
     ::SwitchToFiber(self->win32.caller);
-    ILIAS_ASSERT_MSG(false, "Should not reach here");
+    ILIAS_ASSERT(false, "Should not reach here");
 #endif // _WIN32
 
 }
@@ -187,7 +191,7 @@ auto FiberContext::current() -> FiberContext * {
 
 auto FiberContext::suspend() -> void {
     auto self = static_cast<FiberContextImpl *>(current());
-    ILIAS_ASSERT_MSG(self, "No fiber context");
+    ILIAS_ASSERT(self, "No fiber context");
     self->suspendImpl();
 }
 

@@ -86,7 +86,7 @@ public:
 
     auto deref() -> void {
         auto prev = refcount.fetch_sub(1, std::memory_order_acq_rel);
-        ILIAS_ASSERT_MSG(prev != 0, "Can't deref a channel that is already destroyed");
+        ILIAS_ASSERT(prev != 0, "Can't deref a channel that is already destroyed");
         if (prev == 1) { // Last one
             delete this;
         }
@@ -281,7 +281,7 @@ public:
      */
     auto send(T item) -> void {
         auto ptr = std::exchange(mChan, nullptr);
-        ILIAS_ASSERT_MSG(ptr, "Can't send on a invalid permit");
+        ILIAS_ASSERT(ptr, "Can't send on a invalid permit");
         {
             auto locker = std::lock_guard(ptr->mutex);
             ptr->queue.emplace_back(std::move(item));
@@ -605,7 +605,7 @@ friend auto channel(size_t capacity) -> Pair<U>;
  */
 template <Sendable T>
 inline auto channel(size_t capacity = std::numeric_limits<size_t>::max()) -> Pair<T> {
-    ILIAS_ASSERT_MSG(capacity > 0, "The capacity of the channel must be greater than 0.");
+    ILIAS_ASSERT(capacity > 0, "The capacity of the channel must be greater than 0.");
     auto ptr = new detail::Channel<T>(capacity);
     return {
         .sender = Sender<T> {

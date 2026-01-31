@@ -209,8 +209,8 @@ public:
 
 template <typename T>
 inline auto FiberContext::value() -> T {
-    ILIAS_ASSERT_MSG(mComplete, "Fiber not complete yet");
-    ILIAS_ASSERT_MSG(!mStopped, "Fiber is stopped, no value provided");
+    ILIAS_ASSERT(mComplete, "Fiber not complete yet");
+    ILIAS_ASSERT(!mStopped, "Fiber is stopped, no value provided");
     if (mException) {
         std::rethrow_exception(mException);
     }

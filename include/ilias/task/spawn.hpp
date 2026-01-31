@@ -114,7 +114,7 @@ public:
 
     // Get the value of the task, nullopt if the task is stopped
     auto value() -> Option<T> {
-        ILIAS_ASSERT_MSG(mCompleted, "??? INTERNAL BUG");
+        ILIAS_ASSERT(mCompleted, "??? INTERNAL BUG");
         if (mException) {
             std::rethrow_exception(std::exchange(mException, nullptr));
         }
@@ -233,7 +233,7 @@ public:
 
     // Blocking wait for the task to be done, nullopt on task stopped
     auto wait() -> Option<T> { 
-        ILIAS_ASSERT_MSG(mPtr, "WaitHandle is not valid");
+        ILIAS_ASSERT(mPtr, "WaitHandle is not valid");
         auto ptr = std::exchange(mPtr, nullptr);
         ptr->enter();
         return static_cast<task::TaskSpawnContext<T> &>(*ptr).value();
@@ -246,6 +246,7 @@ public:
 
     // Await for the task to be done, return the Option<T>, nullopt on task stopped
     auto operator co_await() && -> task::TaskSpawnAwaiter<T> {
+        ILIAS_ASSERT(mPtr, "WaitHandle is not valid");
         return { std::exchange(mPtr, nullptr) };
     }
 
@@ -270,6 +271,7 @@ friend auto spawn(Task<U> task, runtime::CaptureSource source) -> WaitHandle<U>;
 // Spawn a task running on the current thread executor
 template <typename T>
 inline auto spawn(Task<T> task, runtime::CaptureSource source = {}) -> WaitHandle<T> {
+    ILIAS_ASSERT(task, "Task is null");
     auto handle = WaitHandle<T> {};
     auto ptr = new task::TaskSpawnContext<T>(task._leak(), source);
     handle.mPtr.reset(ptr);

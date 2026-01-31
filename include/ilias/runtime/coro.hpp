@@ -219,7 +219,7 @@ public:
 
     // Doing sth before the coroutine starts
     auto init() noexcept -> void {
-        ILIAS_ASSERT_MSG(mContext, "Coroutine context must be set before coroutine starts");
+        ILIAS_ASSERT(mContext, "Coroutine context must be set before coroutine starts");
         // TRACING: Push the frame, we are start now
         mContext->pushFrame(mCreation);
     }
@@ -268,7 +268,7 @@ public:
     }
 
     auto resume() const noexcept {
-        ILIAS_ASSERT_MSG(!context().isStopped(), "Cannot resume a stopped coroutine");
+        ILIAS_ASSERT(!context().isStopped(), "Cannot resume a stopped coroutine");
         return mHandle.resume();
     }
 
@@ -297,9 +297,9 @@ public:
     // Tell the context, are we stopped now, it only can called when the stop was requested and coroutine is suspended
     auto setStopped() const noexcept {
         auto &ctxt = context();
-        ILIAS_ASSERT_MSG(ctxt.mStoppedHandler, "Stopped handler must be set, double call on CoroHandle::setStopped() ?");
-        ILIAS_ASSERT_MSG(ctxt.mStopSource.stop_possible(), "Stop source must be possible to stop, invalid state ?");
-        ILIAS_ASSERT_MSG(ctxt.mStopSource.stop_requested(), "Stop source must be requested, invalid state ?");
+        ILIAS_ASSERT(ctxt.mStoppedHandler, "Stopped handler must be set, double call on CoroHandle::setStopped() ?");
+        ILIAS_ASSERT(ctxt.mStopSource.stop_possible(), "Stop source must be possible to stop, invalid state ?");
+        ILIAS_ASSERT(ctxt.mStopSource.stop_requested(), "Stop source must be requested, invalid state ?");
         ctxt.mStopped = true;
         ctxt.mStoppedHandler(ctxt); // Call the stopped handler, we are stopped
         ctxt.mStoppedHandler = nullptr; // Mark it as called
@@ -317,7 +317,7 @@ public:
 
     // Resume in the executor
     auto schedule() const noexcept {
-        ILIAS_ASSERT_MSG(!context().isStopped(), "Cannot schedule a stopped coroutine");
+        ILIAS_ASSERT(!context().isStopped(), "Cannot schedule a stopped coroutine");
         return executor().schedule(mHandle);
     }
 

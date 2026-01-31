@@ -134,7 +134,7 @@ public:
         if (!mLocker.owns_lock()) {
             mLocker.lock();
         }
-        ILIAS_ASSERT_MSG(!mChan->valueGot, "Double call on recv ?, value already got");
+        ILIAS_ASSERT(!mChan->valueGot, "Double call on recv ?, value already got");
         ILIAS_ASSERT(!mChan->receiver);
 
         if (mChan->value) { // Value is set

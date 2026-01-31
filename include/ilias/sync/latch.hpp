@@ -55,8 +55,8 @@ public:
      */
     auto countDown(ptrdiff_t n = 1) noexcept {
         auto count = mCount.fetch_sub(n, std::memory_order_acq_rel);
-        ILIAS_ASSERT_MSG(n >= 0, "Can't count down latch, n is negative");
-        ILIAS_ASSERT_MSG((count - n) >= 0, "Can't count down latch, n is bigger than count");
+        ILIAS_ASSERT(n >= 0, "Can't count down latch, n is negative");
+        ILIAS_ASSERT((count - n) >= 0, "Can't count down latch, n is bigger than count");
         if (count == n) { // Now it's zero, wakeup all
             mQueue.wakeupAll();
         }

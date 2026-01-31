@@ -241,7 +241,7 @@ public:
 
     // Count down refcount
     auto deref() noexcept {
-        ILIAS_ASSERT_MSG(mCount != 0, "Can't deref with refcount == 0, invalid state?");
+        ILIAS_ASSERT(mCount != 0, "Can't deref with refcount == 0, invalid state?");
         if (--mCount == 0) {
             delete static_cast<T*>(this);
         }

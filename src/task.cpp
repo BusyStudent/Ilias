@@ -14,7 +14,7 @@ using namespace task;
 // MARK: TaskSpawn
 TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task, CaptureSource source) : TaskContext(task) {
     auto executor = runtime::Executor::currentThread();
-    ILIAS_ASSERT_MSG(executor, "The current thread has no executor");
+    ILIAS_ASSERT(executor, "The current thread has no executor");
 
     // Bind the task to self
     auto handler = [](CoroContext &_self) -> void{
@@ -156,7 +156,7 @@ auto TaskGroupBase::hasCompletion() const noexcept -> bool {
 }
 
 auto TaskGroupBase::nextCompletion() noexcept -> Rc<TaskSpawnContextBase> {
-    ILIAS_ASSERT_MSG(hasCompletion(), "No completion, invalid call?");
+    ILIAS_ASSERT(hasCompletion(), "No completion, invalid call?");
     auto &front = mCompleted.front();
     auto ptr = Rc<TaskSpawnContextBase>{&front};
     mCompleted.pop_front();
@@ -175,7 +175,7 @@ auto TaskGroupBase::notifyCompletion() -> void {
 
 // Awiater internal part
 auto TaskGroupAwaiterBase::await_suspend(CoroHandle caller) -> void {
-    ILIAS_ASSERT_MSG(mGroup.mAwaiter == nullptr, "User should not call group.next() | shutdown() | waitAll() concurrently");
+    ILIAS_ASSERT(mGroup.mAwaiter == nullptr, "User should not call group.next() | shutdown() | waitAll() concurrently");
     mCaller = caller;
     mGroup.mAwaiter = this;
     mReg.register_<&TaskGroupAwaiterBase::onStopRequested>(caller.stopToken(), this);

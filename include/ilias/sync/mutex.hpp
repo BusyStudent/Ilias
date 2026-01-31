@@ -116,7 +116,7 @@ public:
      */
     auto unlockRaw() -> void {
         auto locked = mLocked.exchange(false, std::memory_order_release);
-        ILIAS_ASSERT_MSG(locked, "Unlock a unlocked mutex");
+        ILIAS_ASSERT(locked, "Unlock a unlocked mutex");
         mQueue.wakeupOne();
     }
 

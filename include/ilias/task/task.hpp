@@ -162,7 +162,7 @@ public:
      * @return T>
      */
     auto await_resume() const -> T {
-        ILIAS_ASSERT_MSG(mTask.done(), "The task is not done, maybe call resume() twice");
+        ILIAS_ASSERT(mTask.done(), "The task is not done, maybe call resume() twice");
         return TaskHandle<T>::cast(mTask).value();
     }
 };
@@ -214,7 +214,7 @@ class TaskBlockingContext final : private TaskContext {
 public:
     TaskBlockingContext(TaskHandle<> task, CaptureSource source) : TaskContext(task, std::nostopstate) {
         auto executor = runtime::Executor::currentThread();
-        ILIAS_ASSERT_MSG(executor, "The current thread has no executor");
+        ILIAS_ASSERT(executor, "The current thread has no executor");
 
         mTask.setCompletionHandler(TaskBlockingContext::onComplete);
         this->setExecutor(*executor);
@@ -227,7 +227,7 @@ public:
         if (!mTask.done()) {
             executor().run(mStopExecutor.get_token());            
         }
-        ILIAS_ASSERT_MSG(mTask.done(), "??? INTERNAL BUG");
+        ILIAS_ASSERT(mTask.done(), "??? INTERNAL BUG");
     }
 
     template <typename T>
@@ -332,6 +332,7 @@ public:
 
     // Set the context of the task, call on await_transform
     auto setContext(runtime::CoroContext &context) noexcept -> void {
+        ILIAS_ASSERT(mHandle, "Task is null");
         auto handle = task::TaskHandle<T>(mHandle);
         handle.setContext(context);
     }
@@ -342,6 +343,7 @@ public:
      * @return T 
      */
     auto wait(runtime::CaptureSource source = {}) -> T {
+        ILIAS_ASSERT(mHandle, "Task is null");
         auto context = task::TaskBlockingContext(_leak(), source);
         context.enter();
         return context.value<T>();
@@ -363,6 +365,7 @@ public:
     }
 
     auto operator co_await() && noexcept -> task::TaskAwaiter<T> {
+        ILIAS_ASSERT(mHandle, "Task is null");
         return task::TaskAwaiter<T>(_leak());
     }
 private:

@@ -20,7 +20,7 @@ public:
     WaiterBase(WaitQueue &queue) : mQueue(queue) {}
     WaiterBase(WaiterBase &&) = default;
     ~WaiterBase() {
-        ILIAS_ASSERT_MSG(!isLinked(), "WaiterBase is destroyed while still in queue, why?, INTERNAL BUG!!");
+        ILIAS_ASSERT(!isLinked(), "WaiterBase is destroyed while still in queue, why?, INTERNAL BUG!!");
     }
 private:
     auto onWakeupRaw() -> bool; // The Lock was held while calling this function

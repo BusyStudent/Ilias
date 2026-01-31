@@ -146,7 +146,7 @@ public:
     using RawTuple = std::tuple<Ts...>;
 
     auto await_resume() -> Tuple {
-        ILIAS_ASSERT_MSG(mGot, "No value produced, but await_resume called?, ??? INTERNAL BUG");
+        ILIAS_ASSERT(mGot, "No value produced, but await_resume called?, ??? INTERNAL BUG");
         return makeResult(std::make_index_sequence<sizeof...(Ts)>{});
     }
 private:
