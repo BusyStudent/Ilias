@@ -8,7 +8,6 @@
 #include <thread> // std::thread
 #include <queue> // std::queue
 #include <mutex> // std::mutex
-#include "singleton.hpp"
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp>
@@ -20,7 +19,7 @@ ILIAS_NS_BEGIN
 using namespace runtime;
 
 // Executor
-static thread_local constinit Singleton<Executor*> currentExecutor {};
+static thread_local constinit Executor *currentExecutor {};
 
 Executor::~Executor() {
     uninstall();
@@ -32,9 +31,7 @@ auto Executor::currentThread() -> Executor * {
 
 auto Executor::install() -> void {
     if (currentExecutor && currentExecutor != this) {
-#if !defined(NDEBUG)
-        ::fprintf(stderr, "A different executor already installed\n");
-#endif // !NDEBUG
+        ILIAS_ERROR("Runtime", "A different executor already installed");
         ILIAS_THROW(std::runtime_error("A different executor already installed"));
     }
     currentExecutor = this;
@@ -164,25 +161,7 @@ auto threadpool::submit(CallableRef &callable) -> void {
         ::atexit(cleanup);
     };
 
-    auto init2 = [&]() {
-#if defined(ILIAS_SHM_SINGLETON) // Using the singleton in the share memory
-        auto &data = singleton::access();
-        if (data.threadpoolInit.test_and_set()) {
-            // already initialized
-            data.threadpool.wait(nullptr); // Wait for the initialization to complete
-            pool = static_cast<ThreadPool *>(data.threadpool.load());
-            return;
-        }
-        // Initialize
-        init();
-        data.threadpool.store(pool);
-        data.threadpool.notify_all();
-#else
-        init();
-#endif
-    };
-
-    std::call_once(once, init2);
+    std::call_once(once, init);
     std::lock_guard locker(pool->mutex);
     if (pool->idle == 0) {
         auto hw = std::thread::hardware_concurrency() * 2;

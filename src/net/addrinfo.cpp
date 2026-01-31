@@ -3,7 +3,6 @@
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/error.hpp>
 #include <latch>
-#include "../singleton.hpp"
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp>
@@ -28,7 +27,7 @@ auto GaiCategory::message(int code) const -> std::string {
 }
 
 auto GaiCategory::instance() noexcept -> const GaiCategory & {
-    static constinit Singleton<GaiCategory> instance;
+    static constinit GaiCategory instance;
     return instance;
 }
 

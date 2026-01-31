@@ -15,10 +15,9 @@ class ILIAS_API DuplexStream final : public StreamMethod<DuplexStream> {
 public:
     struct Impl;
 
-    DuplexStream(const DuplexStream &) = delete;
-    DuplexStream(DuplexStream &&) = default;
+    DuplexStream(DuplexStream &&) noexcept = default;
     DuplexStream() = default;
-    ~DuplexStream() { if(d) close(); }
+    ~DuplexStream() = default;
 
     // Readable
     auto read(MutableBuffer buffer) -> IoTask<size_t>;
@@ -29,15 +28,10 @@ public:
     auto flush() -> IoTask<void>;
 
     // Cleanup
-    auto close() -> void;
+    auto close() -> void { d.reset(); }
 
     auto operator =(const DuplexStream &) -> DuplexStream & = delete;
-    auto operator =(DuplexStream &&other) -> DuplexStream & {
-        close();
-        d = std::move(other.d);
-        mFlip = other.mFlip;
-        return *this;
-    }
+    auto operator =(DuplexStream &&other) -> DuplexStream & = default;
 
     /**
      * @brief Create a pair of connected duplex stream with the given size.
@@ -49,10 +43,14 @@ public:
 
     explicit operator bool() const noexcept { return bool(d); }
 private:
-    DuplexStream(std::shared_ptr<Impl> i, bool flip) : d(std::move(i)), mFlip(flip) {};
-    
-    std::shared_ptr<Impl> d;
-    bool mFlip = false;
+    static auto closeImpl(Impl *d, bool flip) -> void;
+    struct Deleter {
+        bool flip; // Use bool flip, to make aother stream write on read buffer and read on write buffer
+        auto operator ()(Impl *d) const -> void { closeImpl(d, flip); }
+    };
+
+    DuplexStream(Impl *i, bool flip) : d(i, Deleter {flip}) {}
+    std::unique_ptr<Impl, Deleter> d;
 };
 
 ILIAS_NS_END

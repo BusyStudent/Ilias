@@ -261,11 +261,11 @@ constexpr auto networkToHost(const T value) noexcept -> T {
 }
 
 namespace literals {
-    inline auto operator"" _bin(const char *buf, size_t len) -> Buffer {
+    inline auto operator""_bin(const char *buf, size_t len) -> Buffer {
         return {reinterpret_cast<const std::byte *>(buf), len};
     }
 
-    inline auto operator"" _bin(unsigned long long val) -> std::byte {
+    inline auto operator""_bin(unsigned long long val) -> std::byte {
         return static_cast<std::byte>(val);
     }
 } // namespace literals

@@ -4,7 +4,6 @@
 #include <ilias/io/error.hpp>
 #include <array>
 #include <tuple>
-#include "singleton.hpp"
 
 ILIAS_NS_BEGIN
 
@@ -84,7 +83,7 @@ auto IoCategory::name() const noexcept -> const char * {
 }
 
 auto IoCategory::instance() noexcept -> const IoCategory & {
-    static constinit Singleton<IoCategory> instance;
+    static constinit IoCategory instance;
     return instance;
 }
 
@@ -93,7 +92,7 @@ auto IoCategory::equivalent(int value, const std::error_condition &other) const 
         return value == other.value();
     }
     if (other.category() == std::generic_category()) { // Compare with std::errc
-        return IoError(value).toStd() == std::errc(other.value());
+        return IoError(value).toStd() == static_cast<std::errc>(other.value());
     }
     return false;
 }
@@ -167,7 +166,7 @@ auto SystemCategory::equivalent(int value, const std::error_condition &other) co
 }
 
 auto SystemCategory::instance() noexcept -> const SystemCategory & {
-    static constinit Singleton<SystemCategory> instance;
+    static constinit SystemCategory instance;
     return instance;
 }
 
@@ -251,20 +250,21 @@ struct ByteChannel {
 struct DuplexStream::Impl {
     ByteChannel read;
     ByteChannel write;
+    uint8_t     ref = 2; // 2 because we have two streams
 };
 
 auto DuplexStream::make(size_t size) -> std::pair<DuplexStream, DuplexStream> {
     if (size == 0) {
         ILIAS_THROW(std::invalid_argument("Size must be greater than 0"));
     }
-    auto impl = std::make_shared<Impl>();
+    auto impl = new Impl {};
     impl->read.maxSize = size;
     impl->write.maxSize = size;
 
-    return std::pair(
-        DuplexStream(impl, false), // We use bool flip, to make aother stream write on read buffer and read on write buffer
-        DuplexStream(impl, true)
-    );
+    return std::pair {
+        DuplexStream {impl, false}, // We use bool flip, to make aother stream write on read buffer and read on write buffer
+        DuplexStream {impl, true}
+    };
 }
 
 namespace {
@@ -312,7 +312,7 @@ auto DuplexStream::read(MutableBuffer buffer) -> IoTask<size_t> {
         runtime::StopRegistration reg;
     };
 
-    auto &chan = mFlip ? d->write : d->read;
+    auto &chan = d.get_deleter().flip ? d->write : d->read;
 
     // Read data here
     auto span = co_await Awaiter{ .chan = chan };
@@ -349,7 +349,7 @@ auto DuplexStream::write(Buffer buffer) -> IoTask<size_t> {
         runtime::StopRegistration reg;
     };
 
-    auto &chan = mFlip ? d->read : d->write;    
+    auto &chan = d.get_deleter().flip ? d->read : d->write;    
     co_await Awaiter{ .chan = chan };
 
     // Write data here
@@ -367,7 +367,7 @@ auto DuplexStream::write(Buffer buffer) -> IoTask<size_t> {
 }
 
 auto DuplexStream::shutdown() -> IoTask<void> {
-    shutdownImpl(d.get(), mFlip);
+    shutdownImpl(d.get(), d.get_deleter().flip);
     co_return {};
 }
 
@@ -375,11 +375,12 @@ auto DuplexStream::flush() -> IoTask<void> {
     co_return {}; // no-op
 }
 
-auto DuplexStream::close() -> void {
-    if (d) {
-        shutdownImpl(d.get(), mFlip);
+auto DuplexStream::closeImpl(Impl *d, bool flip) -> void {
+    shutdownImpl(d, flip);
+    d->ref--;
+    if (d->ref == 0) {
+        delete d;
     }
-    d.reset();
 }
 
 ILIAS_NS_END
