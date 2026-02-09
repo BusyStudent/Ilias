@@ -349,14 +349,16 @@ public:
         return context.value<T>();
     }
 
+    // Swap with other task
+    auto swap(Task<T> &other) -> void {
+        return std::swap(mHandle, other.mHandle);
+    }
+
     auto operator =(Task<T> &&other) noexcept -> Task & {
         if (&other == this) {
             return *this;
         }
-        if (mHandle) {
-            mHandle.destroy();
-        }
-        mHandle = other._leak();
+        swap(other);
         return *this;
     }
 

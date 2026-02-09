@@ -301,6 +301,11 @@ public:
         return mPtr ? mPtr->use_count() : 0;
     }
 
+    // Swap
+    auto swap(Rc &other) noexcept -> void {
+        return std::swap(mPtr, other.mPtr);
+    }
+
     // Operators...
     auto operator <=>(const Rc &other) const noexcept = default;
 

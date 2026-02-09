@@ -96,9 +96,9 @@ public:
 #endif
     };
 
-    explicit SystemError(error_t err) : mErr(err) { }
-    SystemError(Code err) : mErr(err) { }
-    SystemError() = default;
+    constexpr explicit SystemError(error_t err) : mErr(err) { }
+    constexpr SystemError(Code err) : mErr(err) { }
+    constexpr SystemError() = default;
 
     /**
      * @brief Check the error is ok

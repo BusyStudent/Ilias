@@ -206,6 +206,11 @@ public:
     auto id() const { return mPtr->id(); }
     auto stop() const { return mPtr->stop(); }
 
+    // Swap with other handle
+    auto swap(StopHandle &other) -> void {
+        return mPtr.swap(other.mPtr);
+    }
+
     auto operator =(const StopHandle &) -> StopHandle & = delete;
     auto operator =(StopHandle &&other) -> StopHandle & = default;
 
@@ -242,6 +247,11 @@ public:
     // Get the internal context ptr
     auto _leak() -> task::Rc<task::TaskSpawnContextBase> {
         return std::exchange(mPtr, nullptr);
+    }
+
+    // Swap with other handle
+    auto swap(WaitHandle &other) -> void {
+        return mPtr.swap(other.mPtr);
     }
 
     // Await for the task to be done, return the Option<T>, nullopt on task stopped

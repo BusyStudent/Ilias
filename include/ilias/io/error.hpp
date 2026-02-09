@@ -102,9 +102,9 @@ public:
         Unknown = Other,             //< For compatibility with old code
     };
 
-    explicit IoError(int err) : mErr(static_cast<Code>(err)) { }
-    IoError(Code err) : mErr(err) { }
-    IoError() = default;
+    constexpr explicit IoError(int err) : mErr(static_cast<Code>(err)) { }
+    constexpr IoError(Code err) : mErr(err) { }
+    constexpr IoError() = default;
 
     /**
      * @brief Get the error string for the given error code

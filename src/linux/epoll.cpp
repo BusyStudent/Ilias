@@ -249,7 +249,7 @@ auto EpollContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<I
 
 auto EpollContext::removeDescriptor(IoDescriptor *fd) -> IoResult<void> {
     auto nfd = static_cast<EpollDescriptor *>(fd);
-    cancel(nfd);
+    auto _ = cancel(nfd);
     if (nfd->pollable) {
         if (::epoll_ctl(mEpollFd, EPOLL_CTL_DEL, nfd->fd, nullptr) == -1) {
             ILIAS_ERROR("Epoll", "Failed to remove fd {} from epoll: {}", nfd->fd, SystemError::fromErrno());
