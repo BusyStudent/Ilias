@@ -94,8 +94,12 @@ target("ilias")
     add_includedirs("../include", {public = true})
     add_defines("_ILIAS_SOURCE")
     
+    -- Add source code
     add_files("net/*.cpp")
     add_files("*.cpp")
+
+    -- Add module interface
+    add_files("ilias.cppm", {public = true})
 
     -- Add link and files by platform
     if is_plat("windows") or is_plat("mingw") or is_plat("msys") then 
