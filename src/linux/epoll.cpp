@@ -147,6 +147,11 @@ auto EpollAwaiter::onStopRequested() -> void {
     mCaller.setStopped();
 }
 
+namespace {
+    static constexpr uintptr_t KIND_EVENT_FD = 0;
+    static constexpr uintptr_t KIND_TIMER_FD = 1;
+} // namespace
+
 EpollContext::EpollContext() {
     // Prepare the system resources
     mEpollFd = ::epoll_create1(EPOLL_CLOEXEC);
@@ -167,14 +172,14 @@ EpollContext::EpollContext() {
     // Bind eventfd
     ::epoll_event event;
     event.events = EPOLLIN;
-    event.data.ptr = reinterpret_cast<void*>(KindEventFd); // Special ptr, mark eventfd
+    event.data.ptr = reinterpret_cast<void*>(KIND_EVENT_FD); // Special ptr, mark eventfd
     if (::epoll_ctl(mEpollFd, EPOLL_CTL_ADD, mEventFd, &event) == -1) {
         ILIAS_ERROR("Epoll", "Failed to add eventfd to epoll");
         ILIAS_THROW(std::system_error(SystemError::fromErrno(), "epoll_ctl"));
     }
     // Bind timerfd
     event.events = EPOLLIN;
-    event.data.ptr = reinterpret_cast<void*>(KindTimerFd); // Special ptr, mark timerfd
+    event.data.ptr = reinterpret_cast<void*>(KIND_TIMER_FD); // Special ptr, mark timerfd
     if (::epoll_ctl(mEpollFd, EPOLL_CTL_ADD, mTimerFd, &event) == -1) {
         ILIAS_ERROR("Epoll", "Failed to add timerfd to epoll");
         ILIAS_THROW(std::system_error(SystemError::fromErrno(), "epoll_ctl"));
@@ -276,7 +281,7 @@ auto EpollContext::cancel(IoDescriptor *fd) -> IoResult<void> {
 auto EpollContext::post(void (*fn)(void *), void *args) -> void {
     ILIAS_ASSERT(fn != nullptr);
     ILIAS_TRACE("Epoll", "Post callback {} with args {}", (void *)fn, args);
-    auto callback = std::pair(fn, args);
+    auto callback = std::pair {fn, args};
     if (std::this_thread::get_id() == mThreadId) { // Same thread, just push to the queue
         mCallbacks.emplace_back(callback);
         return;
@@ -353,11 +358,11 @@ auto EpollContext::processEvents(std::span<const epoll_event> eventsArray) -> vo
     for (const auto &item : eventsArray) {
         auto events = item.events;
         auto ptr = item.data.ptr;
-        if (ptr == reinterpret_cast<void*>(KindEventFd)) { // From the event fd, wakeup epoll and poll callbacks
+        if (ptr == reinterpret_cast<void*>(KIND_EVENT_FD)) { // From the event fd, wakeup epoll and poll callbacks
             pollCallbacks();
             continue;
         }
-        if (ptr == reinterpret_cast<void*>(KindTimerFd)) { // From the timer fd, update timers
+        if (ptr == reinterpret_cast<void*>(KIND_TIMER_FD)) { // From the timer fd, update timers
             processTimer();
             continue;
         }

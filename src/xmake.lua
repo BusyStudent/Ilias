@@ -99,7 +99,7 @@ target("ilias")
     add_files("*.cpp")
 
     -- Add module interface
-    add_files("ilias.cppm", {public = true})
+    -- add_files("ilias.cppm", {public = true})
 
     -- Add link and files by platform
     if is_plat("windows") or is_plat("mingw") or is_plat("msys") then 

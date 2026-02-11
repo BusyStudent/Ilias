@@ -83,9 +83,6 @@ private:
 
     using Callback = std::pair<void (*)(void *), void *>;
 
-    static constexpr uintptr_t KindEventFd = 0;
-    static constexpr uintptr_t KindTimerFd = 1;
-
     ///> @brief The epoll file descriptor
     int                    mEpollFd = -1;
     int                    mEventFd = -1; // For wakeup the epoll, there is some new callback in the queue

@@ -10,6 +10,7 @@
 #elif __has_include(<ucontext.h>)
     #include <sys/mman.h> // mmap
     #include <ucontext.h> // getcontext, makecontext
+    #include <unistd.h> // sysconf
 #else
     #error "No fiber support on this platform"
 #endif // _WIN32
@@ -272,7 +273,7 @@ auto this_fiber::yield() -> void {
 
 auto this_fiber::await4(runtime::CoroHandle coro) -> void {
     auto fiber = static_cast<FiberContextImpl *>(FiberContext::current());
-    runtime::CoroContext ctxt;
+    auto ctxt = runtime::CoroContext {};
     auto handler = [](runtime::CoroContext &ctxt) {
         auto self = static_cast<FiberContext*>(ctxt.userdata());
         if (self) {

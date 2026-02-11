@@ -19,6 +19,19 @@
 #include <coroutine>
 #include <chrono> // std::chrono::duration
 
+// HALO attribute for clang
+#if __has_cpp_attribute(clang::coro_await_elidable)
+    #define ILIAS_CORO_AWAIT_ELIDABLE [[clang::coro_await_elidable]]
+#else
+    #define ILIAS_CORO_AWAIT_ELIDABLE
+#endif // __has_cpp_attribute(clang::coro_await_elidable)
+
+#if __has_cpp_attribute(clang::coro_await_elidable_argument)
+    #define ILIAS_CORO_ELIDABLE_ARGUMENT [[clang::coro_await_elidable_argument]]
+#else
+    #define ILIAS_CORO_ELIDABLE_ARGUMENT
+#endif // __has_cpp_attribute(clang::coro_await_elidable_argument)
+
 ILIAS_NS_BEGIN
 
 namespace task {
@@ -294,7 +307,7 @@ struct ToTaskTags {};
  * @tparam T The return type of the task (default: void)
  */
 template <typename T>
-class [[nodiscard]] Task final {
+class [[nodiscard]] ILIAS_CORO_AWAIT_ELIDABLE Task final {
 public:
     using promise_type = task::TaskPromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
