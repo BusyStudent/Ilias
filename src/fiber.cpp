@@ -8,8 +8,8 @@
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp> // CreateFiber
 #elif __has_include(<ucontext.h>)
+    #include "linux/libucontext.hpp" // sys::getcontext, sys::makecontext
     #include <sys/mman.h> // mmap
-    #include <ucontext.h> // getcontext, makecontext
     #include <unistd.h> // sysconf
 #else
     #error "No fiber support on this platform"
@@ -43,10 +43,10 @@ public:
     } win32;
 #else
     struct {
-        ::ucontext_t caller {};
-        ::ucontext_t self {};
-        void        *mmapPtr = nullptr;
-        size_t       mmapSize = 0;
+        sys::ucontext_t caller {};
+        sys::ucontext_t self {};
+        void           *mmapPtr = nullptr;
+        size_t          mmapSize = 0;
     } posix;
 #endif // _WIN32
 
@@ -64,8 +64,7 @@ static constinit thread_local FiberContextImpl *currentContext {};
 
 struct CurrentGuard { // RAII guard for manage the current fiber
     CurrentGuard(FiberContextImpl *c) : cur(c) {
-        prev = currentContext;
-        currentContext = c;
+        prev = std::exchange(currentContext, cur);
     }
     ~CurrentGuard() {
         currentContext = prev;
@@ -135,8 +134,8 @@ auto FiberContextImpl::resumeImpl() -> void {
     win32.caller = ::GetCurrentFiber();
     ::SwitchToFiber(win32.handle);
 #else
-    CurrentGuard guard(this);
-    ::swapcontext(&posix.caller, &posix.self);
+    CurrentGuard guard {this};
+    sys::swapcontext(&posix.caller, &posix.self);
 #endif // _WIN32
 
 }
@@ -150,7 +149,7 @@ auto FiberContextImpl::suspendImpl() -> void {
     auto caller = std::exchange(win32.caller, nullptr);
     ::SwitchToFiber(caller);
 #else
-    ::swapcontext(&posix.self, &posix.caller);
+    sys::swapcontext(&posix.self, &posix.caller);
 #endif // _WIN32
 
     running = true;
@@ -252,11 +251,11 @@ auto FiberContext::create4(FiberEntry entry) -> FiberContext * {
     ctxt->posix.mmapSize = mmapSize;
 
     // Create the context
-    ::getcontext(&ctxt->posix.self);
+    sys::getcontext(&ctxt->posix.self);
     ctxt->posix.self.uc_stack.ss_sp = stack;
     ctxt->posix.self.uc_stack.ss_size = entry.stackSize;
     ctxt->posix.self.uc_link = &ctxt->posix.caller; // Return to the caller
-    ::makecontext(&ctxt->posix.self, ucontextEntry, 0);
+    sys::makecontext(&ctxt->posix.self, ucontextEntry, 0);
 #endif // _WIN32
 
     return ctxt.release();

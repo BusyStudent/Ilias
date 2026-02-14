@@ -5,6 +5,7 @@
 #include <ilias/detail/intrusive.hpp> // List, Node
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp>
+#include <ilias/log.hpp>
 #include <concepts> // std::convertible_to
 #include <atomic> // std::atomic_ref
 
@@ -138,7 +139,7 @@ auto WaitQueue::blockingWait(Fn pred) -> void {
                 return;
             }
             else {
-                auto locker = std::lock_guard(mQueue);
+                auto locker = std::lock_guard {mQueue};
                 if (mFn()) { // Atomic check and suspend
                     return;
                 }
@@ -155,7 +156,19 @@ auto WaitQueue::blockingWait(Fn pred) -> void {
         Fn mFn;
     };
 
-    auto waiter = Waiter(*this, std::move(pred));
+// LCOV_EXCL_START
+#if !defined(NDEBUG)
+    if (runtime::Executor::currentThread() != nullptr) { // Current thread has executor
+        static constinit bool once = false;
+        if (!once) {
+            once = true;
+            ILIAS_WARN("Sync", "Current thread have executor, The blockingWait may cause deadlock");
+        }
+    }
+#endif // NDEBUG
+// LCOV_EXCL_STOP
+
+    auto waiter = Waiter {*this, std::move(pred)};
     waiter.suspend();
 }
 

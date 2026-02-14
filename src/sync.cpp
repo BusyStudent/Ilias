@@ -11,11 +11,14 @@ using namespace sync;
 // MARK: WaitQueue
 WaitQueue::WaitQueue() noexcept = default;
 WaitQueue::~WaitQueue() {
-    if (!mWaiters.empty()) {
-        ILIAS_ERROR("Sync", "WaitQueue destroyed with waiters, did you destroy a mutex or event still locked? / waiting?");
-        ILIAS_TRAP(); // Try raise the debugger
-        std::abort();
+    // LCOV_EXCL_START
+    if (mWaiters.empty()) {
+        return;
     }
+    ILIAS_ERROR("Sync", "WaitQueue destroyed with waiters, did you destroy a mutex or event still locked? / waiting?");
+    ILIAS_TRAP(); // Try raise the debugger
+    std::abort();
+    // LCOV_EXCL_STOP
 }
 
 auto WaitQueue::wakeupOne() -> void {
