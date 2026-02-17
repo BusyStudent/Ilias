@@ -122,13 +122,22 @@ auto FiberContextImpl::resumeImpl() -> void {
 #if defined(_WIN32)
     struct ConvertGuard {
         ConvertGuard() { // The main fiber may use float point, save it
-            auto ret = ::ConvertThreadToFiberEx(nullptr, FIBER_FLAG_FLOAT_SWITCH);
-            ILIAS_ASSERT(ret);
+            if (::IsThreadAFiber()) {
+                return;
+            }
+            if (auto ret = ::ConvertThreadToFiberEx(nullptr, FIBER_FLAG_FLOAT_SWITCH); !ret) {
+                ILIAS_THROW(std::system_error(std::error_code(GetLastError(), std::system_category()), "Faliled to convert thread to fiber"));
+            }
+            converted = true;
         }
         ~ConvertGuard() {
-            auto ok = ::ConvertFiberToThread();
-            ILIAS_ASSERT(ok);
+            if (converted) {
+                auto ok = ::ConvertFiberToThread();
+                ILIAS_ASSERT(ok);
+            }
         }
+
+        bool converted = false;
     };
     static thread_local ConvertGuard guard;
     win32.caller = ::GetCurrentFiber();

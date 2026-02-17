@@ -12,3 +12,8 @@ a.out
 *.dll
 /vsxmake*
 /include/ilias/detail/config.hpp
+
+# VitePress
+docs/node_modules
+docs/.vitepress/dist
+docs/.vitepress/cache
