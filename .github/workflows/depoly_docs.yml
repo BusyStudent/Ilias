@@ -36,4 +36,4 @@ jobs:
           external_repository: ilias-io/ilias-io.github.io
           publish_branch: main
           publish_dir: ./docs/.vitepress/dist
-          keep_files: true
+          force_orphan: true

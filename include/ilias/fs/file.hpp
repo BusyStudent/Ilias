@@ -28,12 +28,6 @@ concept PathLike = requires(T &t) {
     { t.u8string() } -> std::convertible_to<std::u8string>;
 };
 
-enum class SeekFrom : int {
-    Begin   = SEEK_SET,
-    Current = SEEK_CUR,
-    End     = SEEK_END,
-};
-
 /**
  * @brief The File class, used to represent a file stream
  * 
@@ -112,18 +106,18 @@ public:
      * @brief Doing seek operation
      * 
      * @param offset 
-     * @param from 
+     * @param origin 
      * @return IoTask<uint64_t> 
      */
-    auto seek(int64_t offset, SeekFrom from) -> IoTask<uint64_t> {
+    auto seek(int64_t offset, SeekOrigin origin) -> IoTask<uint64_t> {
         if (!mOffset) {
             co_return Err(IoError::OperationNotSupported);
         }
         int64_t now = *mOffset;
-        switch (from) {
-            case SeekFrom::Begin: now = offset; break;
-            case SeekFrom::Current: now += offset; break;
-            case SeekFrom::End: now = (co_await size()).value() + offset; break;
+        switch (origin) {
+            case SeekOrigin::Begin: now = offset; break;
+            case SeekOrigin::Current: now += offset; break;
+            case SeekOrigin::End: now = (co_await size()).value() + offset; break;
         }
         mOffset = std::min<int64_t>(0, now);
         co_return *mOffset;
@@ -148,7 +142,7 @@ public:
      * @return IoTask<uint64_t> 
      */
     auto tell() -> IoTask<uint64_t> {
-        return seek(0, SeekFrom::Current);
+        return seek(0, SeekOrigin::Current);
     }
 
     /**

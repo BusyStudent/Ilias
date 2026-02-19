@@ -15,7 +15,9 @@
 #include <ilias/io/traits.hpp>
 #include <ilias/io/error.hpp>
 #include <ilias/buffer.hpp>
+#include <optional>
 #include <cstddef>
+#include <memory>
 #include <span>
 
 ILIAS_NS_BEGIN
@@ -32,6 +34,11 @@ class MutableEndpointView;
  */
 class IoDescriptor {
 public:
+    struct Deleter;
+
+    // RAII pointer for the descriptor
+    using Ptr = std::unique_ptr<IoDescriptor, Deleter>;
+
     /**
      * @brief The type of the descriptor, used on addDescriptor
      * 
@@ -202,6 +209,18 @@ public:
 };
 
 /**
+ * @brief Deleter of the IoDescriptor, it contains a ctxt, used to remove it
+ * 
+ */
+struct IoDescriptor::Deleter {
+    IoContext *ctxt = nullptr;
+
+    auto operator()(IoDescriptor *desc) const -> void {
+        auto _ = ctxt->removeDescriptor(desc);
+    }
+};
+
+/**
  * @brief A RAII Wrapper for fd_t + IoDescriptor
  * 
  * @param T The fd type, like HANDLE, int, SOCKET, Socket
@@ -209,33 +228,28 @@ public:
 template <IntoFileDescriptor T>
 class IoHandle {
 public:
+    explicit IoHandle(IoDescriptor::Ptr desc, T fd) : mDesc(std::move(desc)), mFd(std::move(fd)) {}
+    IoHandle(IoHandle &&other) = default;
     IoHandle() = default;
-    IoHandle(const IoHandle &) = delete;
-    IoHandle(IoHandle &&other) noexcept : 
-        mDesc(std::exchange(other.mDesc, nullptr)), 
-        mCtxt(std::exchange(other.mCtxt, nullptr)), 
-        mFd(std::exchange(other.mFd, {})) 
-    {
-
-    }
-
-    ~IoHandle() { close(); }
+    ~IoHandle() = default;
 
     /**
-     * @brief Close the IoHandle
+     * @brief Close the IoHandle's descriptor and fd
      * 
      */
     auto close() -> void {
-        if (mDesc) {
-            auto _ = mCtxt->removeDescriptor(mDesc);
-        }
-        mDesc = nullptr;
-        mCtxt = nullptr;
+        mDesc.reset();
         mFd = {};
     }
 
-    auto cancel() const -> IoResult<void> {
-        return mCtxt->cancel(mDesc);
+    /**
+     * @brief Close the IoHandle's descriptor and return the fd
+     * @warning The fd may not useable on iocp backend
+     * @return T 
+     */
+    auto detach() -> T {
+        mDesc.reset();
+        return std::move(mFd);
     }
 
     /**
@@ -253,67 +267,62 @@ public:
      * @return IoContext* 
      */
     auto context() const noexcept -> IoContext * {
-        return mCtxt;
+        return mDesc.get_deleter().ctxt;
     }
 
     // Forward to IoContext
+    auto cancel() const {
+        return context()->cancel(mDesc.get());
+    }
+
     auto write(auto &&...args) const {
-        return mCtxt->write(mDesc, args...);
+        return context()->write(mDesc.get(), args...);
     }
 
     auto read(auto &&...args) const {
-        return mCtxt->read(mDesc, args...);
+        return context()->read(mDesc.get(), args...);
     }
 
     auto poll(auto &&...args) const {
-        return mCtxt->poll(mDesc, args...);
+        return context()->poll(mDesc.get(), args...);
     }
 
     auto connect(auto &&...args) const {
-        return mCtxt->connect(mDesc, args...);
+        return context()->connect(mDesc.get(), args...);
     }
 
     auto accept(auto &&...args) const {
-        return mCtxt->accept(mDesc, args...);
+        return context()->accept(mDesc.get(), args...);
     }
 
     auto sendto(auto &&...args) const {
-        return mCtxt->sendto(mDesc, args...);
+        return context()->sendto(mDesc.get(), args...);
     }
 
     auto recvfrom(auto &&...args) const {
-        return mCtxt->recvfrom(mDesc, args...);
+        return context()->recvfrom(mDesc.get(), args...);
     }
 
     auto sendmsg(auto &&...args) const {
-        return mCtxt->sendmsg(mDesc, args...);
+        return context()->sendmsg(mDesc.get(), args...);
     }
 
     auto recvmsg(auto &&...args) const {
-        return mCtxt->recvmsg(mDesc, args...);
+        return context()->recvmsg(mDesc.get(), args...);
     }
 
 #if defined(_WIN32)
     auto connectNamedPipe() const {
-        return mCtxt->connectNamedPipe(mDesc);
+        return context()->connectNamedPipe(mDesc.get());
     }
 #endif
 
     // Operators
     auto operator <=>(const IoHandle &other) const noexcept = default;
-    auto operator =(IoHandle &&other) noexcept -> IoHandle & {
-        if (this == &other) {
-            return *this;
-        }
-        close();
-        mDesc = std::exchange(other.mDesc, nullptr);
-        mCtxt = std::exchange(other.mCtxt, nullptr);
-        mFd = std::exchange(other.mFd, {});
-        return *this;
-    }
+    auto operator =(IoHandle &&other) noexcept -> IoHandle & = default;
 
     explicit operator bool() const noexcept {
-        return mDesc != nullptr;
+        return bool(mDesc);
     }
     
     /**
@@ -329,11 +338,10 @@ public:
         if (!desc) {
             return Err(desc.error());
         }
-        IoHandle<T> handle;
-        handle.mDesc = *desc;
-        handle.mCtxt = &ctxt;
-        handle.mFd = std::move(fd);
-        return handle;
+        return IoHandle<T> {
+            IoDescriptor::Ptr {*desc, IoDescriptor::Deleter {&ctxt} },
+            std::move(fd)
+        };
     }
 
     static auto make(T fd, IoDescriptor::Type type = IoDescriptor::Unknown) -> IoResult<IoHandle<T> > {
@@ -344,9 +352,14 @@ public:
         return make(*ctxt, std::move(fd), type);
     }
 private:
-    IoDescriptor *mDesc = nullptr;
-    IoContext    *mCtxt = nullptr;
-    T             mFd = {};
+    struct Deleter {
+        IoContext *ctxt = nullptr;
+
+        auto operator()(IoDescriptor *desc) const -> void { auto _ = ctxt->removeDescriptor(desc); }
+    };
+
+    IoDescriptor::Ptr mDesc {};
+    T                 mFd {};
 };
 
 /**

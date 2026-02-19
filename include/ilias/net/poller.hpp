@@ -12,7 +12,8 @@ ILIAS_NS_BEGIN
 class Poller {
 public:
     Poller() = default;
-    Poller(IoHandle<fd_t> h) : mHandle(std::move(h)) { }
+    Poller(Poller &&) = default;
+    explicit Poller(IoHandle<fd_t> h) : mHandle(std::move(h)) { }
 
     /**
      * @brief Close the current poller
@@ -44,6 +45,9 @@ public:
         return mHandle.fd();
     }
 
+    auto operator <=>(const Poller &) const noexcept = default;
+    auto operator =(Poller &&) -> Poller & = default;
+
     /**
      * @brief Create a new poller by borrowing a fd
      * 
@@ -56,7 +60,7 @@ public:
         if (!handle) {
             co_return Err(handle.error());
         }
-        co_return Poller(std::move(*handle));
+        co_return Poller {std::move(*handle)};
     }
 
 #if defined(_WIN32)

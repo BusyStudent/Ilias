@@ -15,9 +15,20 @@
 #include <ilias/buffer.hpp> // Buffer
 #include <concepts>
 #include <cstddef>
+#include <cstdio> // SEEK_CUR
 #include <span>
 
 ILIAS_NS_BEGIN
+
+/**
+ * @brief Enum for seek origin.
+ * 
+ */
+enum class SeekOrigin : int {
+    Begin   = SEEK_SET,
+    Current = SEEK_CUR,
+    End     = SEEK_END,
+};
 
 /**
  * @brief Concept for types that can be read to a a byte span.
@@ -39,6 +50,16 @@ concept Writable = requires(T &t) {
     { t.write(Buffer {}) } -> std::same_as<IoTask<size_t> >;
     { t.shutdown() }       -> std::same_as<IoTask<void> >;
     { t.flush() }          -> std::same_as<IoTask<void> >;
+};
+
+/**
+ * @brief Concept for types that can seek to a position.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept Seekable = requires(T &t) {
+    { t.seek(int64_t {}, SeekOrigin {}) } -> std::same_as<IoTask<uint64_t> >;  
 };
 
 /**
@@ -100,6 +121,14 @@ concept IntoGenerator = requires(T &t) {
  */
 template <typename T>
 concept Stream = Readable<T> && Writable<T>;
+
+/**
+ * @brief Concept for types that can be read and written to a byte span and seek to a position.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept SeekableStream = Stream<T> && Seekable<T>;
 
 // For compatibility with old code
 template <typename T>
