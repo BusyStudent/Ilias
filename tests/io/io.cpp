@@ -118,6 +118,15 @@ ILIAS_TEST(Io, Write) {
     EXPECT_EQ(content, "Hello, world!");
 }
 
+ILIAS_TEST(Io, Copy) {
+    auto reader = SpanReader{"Hello, world!"_bin};
+    auto content = std::string{};
+    auto writer = StringWriter{content};
+
+    EXPECT_EQ(co_await io::copy(writer, reader), 13);
+    EXPECT_EQ(content, "Hello, world!");
+}
+
 ILIAS_TEST(Io, BufRead) {
     {
         auto reader = SpanReader{"Hello, First!\nHello, Next!\n"_bin};

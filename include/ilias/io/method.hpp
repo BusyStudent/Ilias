@@ -19,7 +19,9 @@
 
 ILIAS_NS_BEGIN
 
-// Utility Functions
+// Utility functions for io traits
+namespace io {
+
 /**
  * @brief Write all data to stream
  * 
@@ -135,6 +137,36 @@ inline auto readToEnd(T &stream, Container &container) -> IoTask<size_t> {
 }
 
 /**
+ * @brief Copy all data from src to dst
+ * 
+ * @note This function will read until EOF(0)
+ * @tparam T 
+ * @tparam U 
+ * @param dst The stream to write to
+ * @param src The stream to read from
+ * @return IoTask<size_t> The total number of bytes copied, or error if any read or write fails
+ */
+template <Writable T, Readable U>
+inline auto copy(T &dst, U &src) -> IoTask<size_t> {
+    std::byte buffer[1024 * 8]; // 8KB buffer, change the size if needed
+    size_t written = 0;
+    while (true) {
+        auto readed = co_await src.read(buffer);
+        if (!readed) {
+            co_return Err(readed.error());
+        }
+        if (*readed == 0) { // EOF
+            break;
+        }
+        if (auto res = co_await io::writeAll(dst, std::span{buffer}.subspan(0, *readed)); !res) {
+            co_return Err(res.error());
+        }
+        written += *readed;
+    }
+    co_return written;
+}
+
+/**
  * @brief Get the lowest layer of the layered stream
  * 
  * @tparam T 
@@ -154,6 +186,8 @@ inline auto lowestLayer(T &layer) -> decltype(auto) {
     return walk(walk, layer);
 }
 
+} // namespace io
+
 /**
  * @brief Helper class for Writable types
  * 
@@ -169,7 +203,7 @@ public:
      * @return IoTask<size_t> Total bytes written (equal to buffer.size()), or error if any write fails
      */
     auto writeAll(Buffer buffer) -> IoTask<size_t> requires Writable<T> {
-        return ::ilias::writeAll(static_cast<T &>(*this), buffer);
+        return io::writeAll(static_cast<T &>(*this), buffer);
     }
 
     auto operator <=>(const WritableMethod &rhs) const noexcept = default;
@@ -190,7 +224,7 @@ public:
      * @return IoTask<size_t> Total bytes read (equal to buffer.size()), or error if any read fails
      */
     auto readAll(MutableBuffer buffer) -> IoTask<size_t> requires(Readable<T>) {
-        return ::ilias::readAll(static_cast<T &>(*this), buffer);
+        return io::readAll(static_cast<T &>(*this), buffer);
     }
 
     /**
@@ -202,7 +236,7 @@ public:
      * @return IoTask<size_t> 
      */
     auto readAtleast(MutableBuffer buffer, size_t minSize) -> IoTask<size_t> requires(Readable<T>) {
-        return ::ilias::readAtleast(static_cast<T &>(*this), buffer, minSize);
+        return io::readAtleast(static_cast<T &>(*this), buffer, minSize);
     }
 
     /**
@@ -214,7 +248,19 @@ public:
      */
     template <MemWritable Container>
     auto readToEnd(Container &container) -> IoTask<size_t> requires(Readable<T>) {
-        return ::ilias::readToEnd(static_cast<T &>(*this), container);
+        return io::readToEnd(static_cast<T &>(*this), container);
+    }
+
+    /**
+     * @brief Copy all data from self to dst
+     * 
+     * @tparam U 
+     * @param dst The stream to write to
+     * @return IoTask<size_t> The total number of bytes copied, or error if any read or write fails
+     */
+    template <Writable U>
+    auto copyTo(U &dst) -> IoTask<size_t> requires(Readable<T>) {
+        return io::copy(dst, static_cast<T &>(*this));
     }
 
     auto operator <=>(const ReadableMethod &rhs) const noexcept = default;

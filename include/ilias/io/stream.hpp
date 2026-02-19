@@ -427,7 +427,7 @@ public:
             if (!data) {
                 co_return Err(data.error());
             }
-            auto view = std::string_view(reinterpret_cast<const char *>(data->data()), data->size());
+            auto view = std::string_view {reinterpret_cast<const char *>(data->data()), data->size()};
             auto pos = view.find(delim);
             if (pos != std::string_view::npos) {
                 str.append(view.substr(0, pos + delim.size()));
@@ -492,6 +492,12 @@ public:
 
     auto shutdown() -> IoTask<void> requires Writable<T> {
         return mStream.shutdown();
+    }
+
+    // Expose Seekable if the stream is seekable
+    auto seek(int64_t offset, SeekOrigin origin) -> IoTask<uint64_t> requires Seekable<T> {
+        mBuffer.clear(); // Discard all buffered data
+        return mStream.seek(offset, origin);
     }
 
     // Get the wrapped stream
@@ -592,6 +598,14 @@ public:
         return mStream.read(buffer);   
     }
 
+    // Expose Seekable if the stream is seekable
+    auto seek(int64_t offset, SeekOrigin origin) -> IoTask<uint64_t> requires Seekable<T> {
+        if (auto res = co_await flush(); !res) {
+            co_return Err(res.error());
+        }
+        co_return co_await mStream.seek(offset, origin);
+    }
+
     // Get the wrapped stream
     auto nextLayer() -> T & {
         return mStream;
@@ -680,6 +694,11 @@ public:
 
     auto flush() -> IoTask<void> {
         return mStream.nextLayer().flush();
+    }
+
+    // Seekable
+    auto seek(int64_t offset, SeekOrigin origin) -> IoTask<uint64_t> requires Seekable<T> {
+        return mStream.seek(offset, origin);
     }
 
     // Get

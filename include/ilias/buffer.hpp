@@ -265,6 +265,10 @@ namespace literals {
         return {reinterpret_cast<const std::byte *>(buf), len};
     }
 
+    inline auto operator""_bin(const char8_t *buf, size_t len) -> Buffer {
+        return {reinterpret_cast<const std::byte *>(buf), len};
+    }
+
     inline auto operator""_bin(unsigned long long val) -> std::byte {
         return static_cast<std::byte>(val);
     }
