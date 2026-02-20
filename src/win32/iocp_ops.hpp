@@ -126,12 +126,12 @@ public:
     auto onSubmit() -> bool {
         // The ConnectEx says the sockfd must be already bound to an address
         // so we check, if it's not the case we bind it to a random address
-        ::WSAPROTOCOL_INFO info;
+        ::WSAPROTOCOL_INFOW info;
         ::socklen_t infoLen = sizeof(info);
         ::sockaddr_storage addr;
         ::socklen_t len = sizeof(addr);
         if (::getsockname(sockfd(), reinterpret_cast<::sockaddr*>(&addr), &len) != 0) {
-            if (::getsockopt(sockfd(), SOL_SOCKET, SO_PROTOCOL_INFO, (char*) &info, &infoLen) != 0) {
+            if (::getsockopt(sockfd(), SOL_SOCKET, SO_PROTOCOL_INFOW, reinterpret_cast<char*>(&info), &infoLen) != 0) {
                 return false;
             }
             // Not binded

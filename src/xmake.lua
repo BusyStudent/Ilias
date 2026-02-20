@@ -1,89 +1,4 @@
-set_languages("c++23")
 set_warnings("all")
-
-option("fmt")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Use fmt replace std::format")
-option_end()
-
-option("log")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Enable logging")
-option_end()
-
-option("tls")
-    set_default(true)
-    set_showmenu(true)
-    set_description("Enable tls support")
-option_end()
-
-option("openssl")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Always use openssl instead of native tls")
-option_end()
-
-option("cpp20")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Enable polyfills for std::expected in cpp20")
-option_end()
-
-option("fiber")
-    set_default(true)
-    set_showmenu(true)
-    set_description("Enable stackful coroutine 'fiber' support")
-option_end()
-
-option("spdlog")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Use spdlog for logging")
-option_end()
-
-option("io_uring")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Use io uring as platform context")
-option_end()
-
-option("coro_trace")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Add coroutine stacktrace for debug use")
-option_end()
-
-option("io")
-    set_default(true)
-    set_showmenu(true)
-    set_description("Enable io support")
-option_end()
-
--- Add packages if 
-if has_config("fmt") then
-    add_requires("fmt")
-end
-
-if has_config("cpp20") then
-    add_requires("zeus_expected")
-end
-
-if has_config("io_uring") then
-    add_requires("liburing")
-end
-
-if has_config("tls") then
-    -- Not in windows or force use openssl
-    if not is_plat("windows") or has_config("openssl") then 
-        add_requires("openssl3")
-    end
-end
-
-if has_config("spdlog") and has_config("log") then
-    add_requires("spdlog")
-end
 
 target("ilias")
     set_kind("$(kind)")
@@ -177,8 +92,4 @@ target("ilias")
         set_configvar("ILIAS_DLL", 1)
     end
 
-    -- Default verison 0.3.3
-    set_configvar("ILIAS_VERSION_MAJOR", 0)
-    set_configvar("ILIAS_VERSION_MINOR", 3)
-    set_configvar("ILIAS_VERSION_PATCH", 3)
 target_end()

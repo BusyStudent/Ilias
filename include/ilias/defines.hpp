@@ -207,7 +207,7 @@ inline auto handlerImpl(std::string_view expr, std::source_location where, std::
         std::fprintf(stderr, "  msg: %s\n", msg.data());
     }
 
-#if defined(__cpp_lib_stacktrace) && defined(_MSC_VER) // Because the stacktrace require link additional library on libstdc++, so temporarily enable only on MSVC
+#if defined(__cpp_lib_stacktrace) && defined(_MSC_VER) && !defined(NDEBUG) // Because the stacktrace require link additional library on libstdc++, so temporarily enable only on MSVC
     std::fprintf(stderr, "  stacktrace:\n");
     auto stacktrace = std::stacktrace::current();
     auto idx = 0;

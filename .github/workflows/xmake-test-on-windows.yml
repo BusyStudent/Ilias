@@ -26,7 +26,7 @@ jobs:
       # The version to use. Should be a semver range or 'latest'. Or use branch@{branch_name} to select a branch.
         xmake-version: latest
     - name: Configure
-      run: xmake f -m debug -k ${{ matrix.kind }} -y
+      run: xmake f -m debug -k ${{ matrix.kind }} --dev=y -y
     - name: Build
       run: xmake -y
     - name: Run Test

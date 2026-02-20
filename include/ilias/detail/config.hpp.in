@@ -24,9 +24,9 @@ ${define ILIAS_USE_SPDLOG}
 ${define ILIAS_USE_IO_URING}
 
 // Version from build system
-${define ILIAS_VERSION_MAJOR}
-${define ILIAS_VERSION_MINOR}
-${define ILIAS_VERSION_PATCH}
+#define ILIAS_VERSION_MAJOR ${VERSION_MAJOR}
+#define ILIAS_VERSION_MINOR ${VERSION_MINOR}
+#define ILIAS_VERSION_PATCH ${VERSION_ALTER}
 
 // Git information
 #define ILIAS_GIT_COMMIT      "${GIT_COMMIT}"
