@@ -1,5 +1,5 @@
 #include <ilias/runtime/executor.hpp>
-#include <ilias/fiber/fiber.hpp>
+#include <ilias/fiber.hpp>
 #include <ilias/testing.hpp>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -17,12 +17,12 @@ TEST(Fiber, Simple) {
     ASSERT_EQ(std::move(fiber).wait(), 42);
 
     auto fiber2 = Fiber([s = "HelloWorld"]() {
-        return std::string(s);
+        return std::string {s};
     });
     ASSERT_EQ(std::move(fiber2).wait(), "HelloWorld");
 
     auto fiber3 = Fiber([]() {
-        throw std::exception();
+        throw std::exception {};
     });
     ASSERT_THROW(std::move(fiber3).wait(), std::exception);
 }

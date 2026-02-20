@@ -283,7 +283,7 @@ template <typename T>
 inline auto spawn(Task<T> task, runtime::CaptureSource source = {}) -> WaitHandle<T> {
     ILIAS_ASSERT(task, "Task is null");
     auto handle = WaitHandle<T> {};
-    auto ptr = new task::TaskSpawnContext<T>(task._leak(), source);
+    auto ptr = new task::TaskSpawnContext<T> {task._leak(), source};
     handle.mPtr.reset(ptr);
     return handle;
 }
@@ -306,7 +306,7 @@ inline auto spawn(Fn fn, runtime::CaptureSource source = {}) -> WaitHandle<typen
 template <std::invocable Fn>
 inline auto spawnBlocking(Fn fn, runtime::CaptureSource source = {}) -> WaitHandle<typename std::invoke_result_t<Fn> > {
     return spawn([](auto fn) -> Task<typename std::invoke_result_t<Fn> > {
-        co_return co_await task::TaskBlockingAwaiter<decltype(fn)>(std::move(fn));
+        co_return co_await task::TaskBlockingAwaiter<decltype(fn)> {std::move(fn)};
     }(std::forward<Fn>(fn)), source);
 }
 

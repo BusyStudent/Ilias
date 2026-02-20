@@ -10,14 +10,11 @@
  */
 #pragma once
 
-#include <ilias/defines.hpp>
-#if defined(ILIAS_USE_FIBER)
-
+#include <ilias/runtime/capture.hpp> // runtime::CaptureSource
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp> // runtime::CoroHandle
 #include <ilias/detail/option.hpp> // Option<void>
 #include <ilias/task/task.hpp> // Task<T>
-#include <exception> // std::exception_ptr
 #include <memory> // std::unique_ptr
 #include <tuple> // std::tuple, std::apply
 
@@ -41,88 +38,34 @@ public:
 // The context of the fiber (user part)
 class ILIAS_API FiberContext {
 public:
-    // std coroutine like interface
-    auto destroy() -> void;
-    auto resume() -> void;
-    auto done() const -> bool { return mComplete; }
+    // Resume the fiber, return bool for whether the fiber is done
+    auto resume() -> bool;
 
-    // Our interface
-    // Resume the fiber in the executor
-    auto schedule() -> void;
+    // Blocking wait the fiber to be done
+    auto wait(runtime::CaptureSource where) -> void;
+
+    // Destroy the fiber
+    auto destroy() -> void;
 
     // Get the result of the fiber
     template <typename T>
     auto value() -> T;
 
-    // Check if the fiber is stopped, (no value produced)
-    auto isStopped() const noexcept -> bool { 
-        return mStopped; 
-    }
-
-    // Get the stop token
-    auto stopToken() const noexcept -> runtime::StopToken {
-        return mStopSource.get_token();
-    }
-
-    auto stopSource() noexcept -> runtime::StopSource & {
-        return mStopSource;
-    }
-
-    auto executor() noexcept -> runtime::Executor & {
-        return *mExecutor;
-    }
-
     // Set the executor
-    auto setExecutor(runtime::Executor &executor) -> void {
-        mExecutor = &executor;
-    }
-
-    // Set the completion handler
-    auto setCompletionHandler(void (*handler)(FiberContext *, void *), void *user) -> void {
-        mCompletionHandler = handler;
-        mUser = user;
-    }
-
-    // Suspend the current fiber, if current() == nullptr, abort
-    static auto suspend() -> void;
-
-    // Set Stopped in the current fiber, equal to throw FiberUnwind 
-    [[noreturn]]
-    static auto stopped() -> void;
-
-    // Get the current fiber context
-    static auto current() -> FiberContext *;
+    auto setExecutor(runtime::Executor &executor) -> void;
 
     // Create the fiber by given entry
-    static auto create4(FiberEntry) -> FiberContext *;
+    static auto create4(FiberEntry entry, runtime::CaptureSource source = {}) -> FiberContext *;
 
     // Create the fiber by given callable
     template <typename Fn, typename ...Args>
     static auto create(Fn fn, Args ...args) -> FiberContext *;
-protected: // Don't allow to directly create the context
+protected:
+    // Get the pointer of invoke return, it may throw the exception the fiber throw
+    auto valuePointer() -> void *;
+
     FiberContext() = default;
     ~FiberContext() = default;
-
-    // State
-    runtime::StopSource mStopSource;
-    runtime::Executor *mExecutor = nullptr;
-    bool mComplete = false;
-    bool mStopped = false;
-
-    // Handler invoked when complete
-    void (*mCompletionHandler)(FiberContext *ctxt, void *) = nullptr;
-    void  *mUser = nullptr;
-
-    // Entry
-    struct {
-        void  (*cleanup)(void *) = nullptr;
-        void *(*invoke)(void *) = nullptr;
-        void   *args = nullptr;
-    } mEntry;
-
-    // Result
-    void *mValue = nullptr;
-    std::exception_ptr mException;
 };
 
 // The callable of the fiber, for store the fn, args and the return value
@@ -169,28 +112,14 @@ public:
     FiberAwaiterBase(FiberHandle handle) : mHandle(std::move(handle)) {}
 
     auto await_ready() const -> bool {
-        mHandle->resume();
-        return mHandle->done();
+        return mHandle->resume();
     }
 
-    auto await_suspend(runtime::CoroHandle caller) -> void {
-        mCaller = caller;
-        mHandle->setCompletionHandler(onCompletion, this);
-        mReg.register_<&FiberAwaiterBase::onStopRequested>(caller.stopToken(), this);
-    }
+    ILIAS_API
+    auto await_suspend(runtime::CoroHandle caller) -> void;
 protected:
-    auto onStopRequested() -> void {
-        mHandle->stopSource().request_stop(); // forward the stop request to the fiber
-    }
-
-    static auto onCompletion(FiberContext *ctxt, void *_self) -> void {
-        auto self = static_cast<FiberAwaiterBase *>(_self);
-        if (ctxt->isStopped()) {
-            self->mCaller.setStopped(); // Forward the stop to the caller
-            return;
-        }
-        self->mCaller.schedule();
-    }
+    auto onStopRequested() -> void;
+    static auto onCompletion(FiberContext *ctxt, void *_self) -> void;
 
     FiberHandle mHandle;
     runtime::CoroHandle mCaller;
@@ -209,23 +138,17 @@ public:
 
 template <typename T>
 inline auto FiberContext::value() -> T {
-    ILIAS_ASSERT(mComplete, "Fiber not complete yet");
-    ILIAS_ASSERT(!mStopped, "Fiber is stopped, no value provided");
-    if (mException) {
-        std::rethrow_exception(mException);
-    }
-    auto result = static_cast<Option<T> *>(mValue);
+    auto result = static_cast<Option<T> *>(valuePointer());
     return unwrapOption(std::move(*result));
 }
 
 template <typename Fn, typename ...Args>
 inline auto FiberContext::create(Fn fn, Args ...args) -> FiberContext * {
     using Callable = FiberCallable<Fn, Args...>;
-    auto ptr = new Callable(std::forward<Fn>(fn), std::forward<Args>(args)...);
     return create4({
         .cleanup = Callable::cleanup,
         .invoke = Callable::invoke,
-        .args = ptr,
+        .args = new Callable {std::forward<Fn>(fn), std::forward<Args>(args)...},
     });
 }
 
@@ -234,22 +157,25 @@ inline auto FiberContext::create(Fn fn, Args ...args) -> FiberContext * {
 // Operations on the current fiber
 namespace this_fiber {
 
+// Get the current fiber's stop token
+extern auto ILIAS_API stopToken() -> runtime::StopToken;
+
 // Yield the current fiber, resume the fiber when the next time it is scheduled
 extern auto ILIAS_API yield() -> void;
 
 // INTERNAL!!!, wait the stackless CoroHandle to done or stopped
-extern auto ILIAS_API await4(runtime::CoroHandle) -> void;
+extern auto ILIAS_API await4(runtime::CoroHandle handle, runtime::CaptureSource source = {}) -> void;
 
 template <typename T>
-inline auto await(Task<T> task) -> T {
-    auto handle = task::TaskHandle<T>(task._handle());
-    await4(handle);
+inline auto await(Task<T> task, runtime::CaptureSource source = {}) -> T {
+    auto handle = task::TaskHandle<T>{task._handle()};
+    await4(handle, source);
     return handle.value();
 }
 
 template <Awaitable T>
-inline auto await(T awaitable) -> AwaitableResult<T> {
-    return await(toTask(std::move(awaitable)));
+inline auto await(T awaitable, runtime::CaptureSource source = {}) -> AwaitableResult<T> {
+    return await(toTask(std::move(awaitable)), source);
 }
 
 } // namespace this_fiber
@@ -287,19 +213,20 @@ public:
      * 
      * @return T 
      */
-    auto wait() && -> T {
+    auto wait(runtime::CaptureSource where = {}) -> T {
         auto executor = runtime::Executor::currentThread();
-        auto handle = std::move(mHandle);
+        ILIAS_ASSERT(mHandle, "Can't wait for an invalid fiber");
+        ILIAS_ASSERT(executor, "Can't wait for a fiber without an executor");
+
+        auto handle = std::exchange(mHandle, nullptr);
         handle->setExecutor(*executor);
-        handle->resume();
-        if (!handle->done()) {
-            runtime::StopSource source;
-            handle->setCompletionHandler([](fiber::FiberContext *ctxt, void *user) {
-                static_cast<runtime::StopSource *>(user)->request_stop();
-            }, &source);
-            executor->run(source.get_token());
-        }
+        handle->wait(where);
         return handle->value<T>();
+    }
+
+    // Swap the fiber with another fiber
+    auto swap(Fiber &other) -> void {
+        mHandle.swap(other.mHandle);
     }
 
     // Set the context of the fiber, call on await_transform
@@ -309,10 +236,14 @@ public:
 
     auto operator =(const Fiber &) -> Fiber & = delete;
     auto operator =(Fiber &&) -> Fiber & = default;
+
+    // co_await
     auto operator co_await() && -> fiber::FiberAwaiter<T> {
+        ILIAS_ASSERT(mHandle, "Can't co_wait an invalid fiber");
         return {std::move(mHandle)};
     }
 
+    // Check the fiber is valid
     explicit operator bool() const noexcept {
         return bool(mHandle);
     }
@@ -324,11 +255,9 @@ template <typename Fn, typename ...Args>
 Fiber(Fn, Args ...) -> Fiber<std::invoke_result_t<Fn, Args...> >;
 
 /**
- * @brief The special exception for fiber unwind
+ * @brief The special exception for fiber cancellation
  * 
  */
-class FiberUnwind {};
+class FiberCancellation {};
 
 ILIAS_NS_END
-
-#endif // ILIAS_USE_FIBER

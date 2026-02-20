@@ -245,12 +245,16 @@ public:
         co_return ret;
     }
 
+    // Swap with other generator
+    auto swap(Generator &other) -> void {
+        return std::swap(mHandle, other.mHandle);
+    }
+
     auto operator =(Generator &&other) -> Generator & {
         if (&other == this) {
             return *this;
         }
-        clear();
-        mHandle = std::exchange(other.mHandle, nullptr);
+        swap(other);
         return *this;
     }
 

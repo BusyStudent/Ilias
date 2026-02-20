@@ -346,7 +346,7 @@ public:
     // Set the context of the task, call on await_transform
     auto setContext(runtime::CoroContext &context) noexcept -> void {
         ILIAS_ASSERT(mHandle, "Task is null");
-        auto handle = task::TaskHandle<T>(mHandle);
+        auto handle = task::TaskHandle<T> {mHandle};
         handle.setContext(context);
     }
 
@@ -357,7 +357,7 @@ public:
      */
     auto wait(runtime::CaptureSource source = {}) -> T {
         ILIAS_ASSERT(mHandle, "Task is null");
-        auto context = task::TaskBlockingContext(_leak(), source);
+        auto context = task::TaskBlockingContext {_leak(), source};
         context.enter();
         return context.value<T>();
     }

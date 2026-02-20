@@ -101,6 +101,10 @@ target("ilias")
     -- Add module interface
     -- add_files("ilias.cppm", {public = true})
 
+    -- Ignore specific warning for dllexport
+    add_cxxflags("cl::/wd4251")
+    add_cxxflags("cl::/wd4275")
+
     -- Add link and files by platform
     if is_plat("windows") or is_plat("mingw") or is_plat("msys") then 
         add_files("win32/*.cpp")

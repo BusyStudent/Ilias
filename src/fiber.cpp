@@ -3,7 +3,7 @@
 #if defined(ILIAS_USE_FIBER)
 #include <ilias/runtime/executor.hpp> // Executor
 #include <ilias/runtime/token.hpp> // StopToken
-#include <ilias/fiber/fiber.hpp> // Fiber
+#include <ilias/fiber.hpp> // Fiber
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp> // CreateFiber
@@ -26,17 +26,44 @@ namespace {
 
 // MARK: Impl
 // The hidden implment of the fiber
-class FiberContextImpl final : public FiberContext {
+class FiberContextImpl : public FiberContext {
 public:
     // Guard magic
-    uint32_t magic = 0x114514;
+    uint32_t mMagic = 0x114514;
+
+    // TODO: TRACING
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
+    runtime::CaptureSource mSuspendPoint; // The source location of the fiber suspend
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
+    runtime::CaptureSource mCreation; // The source location of the fiber create
+
+    // State
+    runtime::StopSource mStopSource;
+    runtime::Executor *mExecutor = nullptr;
+    bool mComplete = false;
+    bool mStopped = false;
+
+    // Handler invoked when complete
+    void (*mCompletionHandler)(FiberContext *ctxt, void *) = nullptr;
+    void  *mUser = nullptr;
+
+    // Entry
+    struct {
+        void  (*cleanup)(void *) = nullptr;
+        void *(*invoke)(void *) = nullptr;
+        void   *args = nullptr;
+    } mEntry;
+
+    // Result
+    void *mValue = nullptr;
+    std::exception_ptr mException;
 
     // Internal state
-    bool running = false;
-    bool started = false;
+    bool mRunning = false;
+    bool mStarted = false;
 
-#if defined(_WIN32)
     // Platform data
+#if defined(_WIN32)
     struct win32 {
         ::HANDLE handle = nullptr;
         ::HANDLE caller = nullptr;
@@ -50,13 +77,16 @@ public:
     } posix;
 #endif // _WIN32
 
-    // Method
+    // Internal Method
     auto main() -> void;
+    auto suspend() -> void;
+    auto schedule() -> void;
 
     // Impl of the user interface
-    auto resumeImpl() -> void;
-    auto suspendImpl() -> void;
+    auto resumeImpl() -> bool;
     auto destroyImpl() -> void;
+
+    static auto current() -> FiberContextImpl *;
 };
 
 #if !defined(_WIN32) // Not in windows, we should save it by ourselves
@@ -75,21 +105,21 @@ struct CurrentGuard { // RAII guard for manage the current fiber
 #endif // _WIN32
 
 auto FiberContextImpl::main() -> void {
-    started = true;
-    running = true;
+    mStarted = true;
+    mRunning = true;
 
     // Call the entry
     try {
         mValue = mEntry.invoke(mEntry.args);
     }
-    catch (FiberUnwind &e) {
+    catch (FiberCancellation &) {
         mStopped = true;
     }
     catch (...) { // Another user exception
         mException = std::current_exception();
     }
     mComplete = true;
-    running = false;
+    mRunning = false;
 
     // Notify
     if (mCompletionHandler) {
@@ -98,10 +128,9 @@ auto FiberContextImpl::main() -> void {
 }
 
 auto FiberContextImpl::destroyImpl() -> void {
-    ILIAS_ASSERT(!running, "Cannot destroy a running fiber");
-    if (started && !mComplete) { // Started, but suspend
-        ILIAS_ASSERT(false, "Cannot destroy a suspended fiber");
-    }
+    ILIAS_ASSERT(!mRunning, "Cannot destroy a running fiber");
+    ILIAS_ASSERT(!(mStarted && !mComplete), "Cannot destroy a suspended fiber");
+
     // Ok, safe to destroy
 #if defined(_WIN32)
     ::DeleteFiber(win32.handle);
@@ -116,8 +145,8 @@ auto FiberContextImpl::destroyImpl() -> void {
     delete this;
 }
 
-auto FiberContextImpl::resumeImpl() -> void {
-    ILIAS_ASSERT(!running && !mComplete, "Cannot resume a running or complete fiber");
+auto FiberContextImpl::resumeImpl() -> bool {
+    ILIAS_ASSERT(!mRunning && !mComplete, "Cannot resume a running or complete fiber");
 
 #if defined(_WIN32)
     struct ConvertGuard {
@@ -147,11 +176,12 @@ auto FiberContextImpl::resumeImpl() -> void {
     sys::swapcontext(&posix.caller, &posix.self);
 #endif // _WIN32
 
+    return mComplete;
 }
 
-auto FiberContextImpl::suspendImpl() -> void {
-    ILIAS_ASSERT(running && !mComplete, "Cannot suspend a non-running or complete fiber");
-    running = false;
+auto FiberContextImpl::suspend() -> void {
+    ILIAS_ASSERT(mRunning && !mComplete, "Cannot suspend a non-running or complete fiber");
+    mRunning = false;
 
     // Switch back to the resume point
 #if defined(_WIN32)
@@ -161,7 +191,25 @@ auto FiberContextImpl::suspendImpl() -> void {
     sys::swapcontext(&posix.self, &posix.caller);
 #endif // _WIN32
 
-    running = true;
+    mRunning = true;
+}
+
+auto FiberContextImpl::schedule() -> void {
+    mExecutor->post([](void *ptr) {
+        static_cast<FiberContextImpl *>(ptr)->resumeImpl();
+    }, this);
+}
+
+auto FiberContextImpl::current() -> FiberContextImpl * {
+
+#if defined(_WIN32)
+    auto data = static_cast<FiberContextImpl *>(::GetFiberData());
+    ILIAS_ASSERT(data->mMagic == 0x114514, "Magic number mismatch, memory corrupted ???");
+    return data;
+#else
+    return currentContext;
+#endif // _WIN32
+
 }
 
 auto callContext(void *ctxt) -> void {
@@ -172,6 +220,9 @@ auto callContext(void *ctxt) -> void {
 #if defined(_WIN32)
     ::SwitchToFiber(self->win32.caller);
     ILIAS_ASSERT(false, "Should not reach here");
+#if defined(__cpp_lib_unreachable)
+    std::unreachable();
+#endif // __cpp_lib_unreachable
 #endif // _WIN32
 
 }
@@ -186,45 +237,40 @@ auto ucontextEntry() -> void {
 
 // User interface
 // MARK: User
-auto FiberContext::current() -> FiberContext * {
-
-#if defined(_WIN32)
-    auto data = static_cast<FiberContextImpl *>(::GetFiberData());
-    ILIAS_ASSERT(data->magic == 0x114514);
-    return data;
-#else
-    return currentContext;
-#endif // _WIN32
-
-}
-
-auto FiberContext::suspend() -> void {
-    auto self = static_cast<FiberContextImpl *>(current());
-    ILIAS_ASSERT(self, "No fiber context");
-    self->suspendImpl();
-}
-
 auto FiberContext::destroy() -> void {
     auto self = static_cast<FiberContextImpl *>(this);
     self->destroyImpl();
 }
 
-auto FiberContext::resume() -> void {
+auto FiberContext::resume() -> bool {
     auto self = static_cast<FiberContextImpl *>(this);
-    self->resumeImpl();
+    return self->resumeImpl();
 }
 
-auto FiberContext::schedule() -> void {
+auto FiberContext::wait(runtime::CaptureSource where) -> void {
     auto self = static_cast<FiberContextImpl *>(this);
-    mExecutor->post([](void *ptr) {
-        static_cast<FiberContextImpl *>(ptr)->resumeImpl();
-    }, self);
+    if (!resume()) { // If not complete, enter the event loop
+        auto stopSource = runtime::StopSource {};
+        auto handler = [](auto ctxt, void *source) {
+            static_cast<runtime::StopSource *>(source)->request_stop();
+        };
+        self->mCompletionHandler = handler;
+        self->mUser = &stopSource;
+        self->mExecutor->run(stopSource.get_token());
+    }
+    ILIAS_ASSERT(self->mComplete);
 }
 
-auto FiberContext::create4(FiberEntry entry) -> FiberContext * {
+auto FiberContext::setExecutor(runtime::Executor &e) -> void {
+    auto self = static_cast<FiberContextImpl *>(this);
+    self->mExecutor = &e;
+}
+
+auto FiberContext::create4(FiberEntry entry, runtime::CaptureSource source) -> FiberContext * {
     auto ctxt = std::make_unique<FiberContextImpl>();
 
     ILIAS_ASSERT(entry.invoke);
+    ctxt->mCreation = source;
     ctxt->mEntry.args = entry.args;
     ctxt->mEntry.invoke = entry.invoke;
     ctxt->mEntry.cleanup = entry.cleanup;
@@ -270,32 +316,47 @@ auto FiberContext::create4(FiberEntry entry) -> FiberContext * {
     return ctxt.release();
 }
 
+auto FiberContext::valuePointer() -> void * {
+    auto self = static_cast<FiberContextImpl *>(this);
+    ILIAS_ASSERT(self->mComplete, "Fiber not complete yet");
+    ILIAS_ASSERT(!self->mStopped, "Fiber is stopped, no value provided");
+    if (self->mException) {
+        std::rethrow_exception(self->mException);
+    }
+    return self->mValue;
+}
+
 } // namespace fiber
 
 using namespace fiber;
+
 auto this_fiber::yield() -> void {
-    auto cur = FiberContext::current();
+    auto cur = FiberContextImpl::current();
     cur->schedule();
     cur->suspend();
 }
 
-auto this_fiber::await4(runtime::CoroHandle coro) -> void {
-    auto fiber = static_cast<FiberContextImpl *>(FiberContext::current());
+auto this_fiber::stopToken() -> runtime::StopToken {
+    return FiberContextImpl::current()->mStopSource.get_token();
+}
+
+auto this_fiber::await4(runtime::CoroHandle coro, runtime::CaptureSource source) -> void {
+    auto fiber = FiberContextImpl::current();
     auto ctxt = runtime::CoroContext {};
     auto handler = [](runtime::CoroContext &ctxt) {
-        auto self = static_cast<FiberContext*>(ctxt.userdata());
+        auto self = static_cast<FiberContextImpl *>(ctxt.userdata());
         if (self) {
             self->schedule();
         }
     };
 
     // Forward the stop 
-    auto cb = runtime::StopCallback(fiber->stopToken(), [&]() {
+    auto cb = runtime::StopCallback(fiber->mStopSource.get_token(), [&]() {
         ctxt.stop();
     });
 
     // Begin execute
-    ctxt.setExecutor(fiber->executor());
+    ctxt.setExecutor(*fiber->mExecutor);
     ctxt.setStoppedHandler(handler);
     coro.setCompletionHandler(handler);
     coro.setContext(ctxt);
@@ -307,8 +368,30 @@ auto this_fiber::await4(runtime::CoroHandle coro) -> void {
     ILIAS_ASSERT(coro.done() || ctxt.isStopped());
     // Ok check
     if (ctxt.isStopped()) {
-        throw FiberUnwind();
+        throw FiberCancellation {};
     }
+}
+
+// MARK: FiberAwaiter
+auto FiberAwaiterBase::await_suspend(runtime::CoroHandle caller) -> void {
+    auto handle = static_cast<FiberContextImpl *>(mHandle.get());
+    handle->mCompletionHandler = onCompletion;
+    handle->mUser = this;
+    mCaller = caller;
+    mReg.register_<&FiberAwaiterBase::onStopRequested>(caller.stopToken(), this);
+}
+
+auto FiberAwaiterBase::onStopRequested() -> void {
+    static_cast<FiberContextImpl*>(mHandle.get())->mStopSource.request_stop(); // forward the stop request to the fiber
+}
+
+auto FiberAwaiterBase::onCompletion(FiberContext *ctxt, void *_self) -> void {
+    auto self = static_cast<FiberAwaiterBase *>(_self);
+    if (static_cast<FiberContextImpl*>(ctxt)->mStopped) {
+        self->mCaller.setStopped(); // Forward the stop to the caller
+        return;
+    }
+    self->mCaller.schedule();
 }
 
 ILIAS_NS_END
