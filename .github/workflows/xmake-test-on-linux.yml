@@ -2,7 +2,7 @@ name: CI for linux by xmake
 
 on:
   push:
-    branches: [ "*" ]
+    branches: [ "main", "master" ]
     paths-ignore:
       - '**/*.md'
       - 'docs/*'
@@ -12,35 +12,49 @@ on:
 
 jobs:
   build:
-    name: Build ${{ matrix.backend }} (${{ matrix.kind }})
+    name: Build ${{ matrix.toolchain }} | ${{ matrix.mode }} | ${{ matrix.backend }} | ${{ matrix.kind }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        toolchain: [gcc, clang]
+        mode: [release, coverage]
         backend: [epoll, io_uring]
         kind: [shared, static]
-        include:
-          - backend: epoll
-            config_args: ""
-          - backend: io_uring
-            config_args: "--io_uring=y"
+
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
+
     - name: setup xmake
       uses: xmake-io/github-action-setup-xmake@v1
       with:
         xmake-version: latest
+
     - name: Update apt
-      run: sudo apt update -y
-    - name: Install dependencies
-      run: sudo apt install -y lcov
+      if: matrix.mode == 'coverage'
+      run: |
+        sudo apt update -y
+        sudo apt install -y lcov
+
     - name: Configure
-      run: xmake f -m coverage --dev=y --fmt=y -k ${{ matrix.kind }} ${{ matrix.config_args }} -y
+      run: |
+        CONFIG_ARGS=""
+        if [ "${{ matrix.backend }}" == "io_uring" ]; then
+          CONFIG_ARGS="--io_uring=y"
+        fi
+        
+        echo "Configuring with: -m ${{ matrix.mode }} -k ${{ matrix.kind }} --toolchain=${{ matrix.toolchain }} $CONFIG_ARGS"
+        
+        xmake f -m ${{ matrix.mode }} -k ${{ matrix.kind }} --toolchain=${{ matrix.toolchain }} $CONFIG_ARGS --dev=y -y
+
     - name: Build
       run: xmake -y
-    - name: Run Test and collect coverage
+
+    - name: Run Test
       run: xmake test -v
+
     - name: Upload coverage to Codecov
+      if: matrix.mode == 'coverage'
       uses: codecov/codecov-action@v4
       with:
         verbose: true

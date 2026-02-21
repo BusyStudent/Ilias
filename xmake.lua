@@ -17,6 +17,8 @@ option("io_uring",   {default = false,     description = "Use io uring as platfo
 option("coro_trace", {default = false,     description = "Add coroutine stacktrace for debug use"})
 option("tls",        {default = true,      description = "Enable tls support"})
 option("fiber",      {default = true,      description = "Enable stackful coroutine 'fiber' support"})
+
+-- No-op Options (leave for compatibility)
 option("io",         {default = true,      description = "Enable io support"})
 
 -- Add packages if 

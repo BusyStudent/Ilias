@@ -72,7 +72,7 @@ target("ilias")
     end
 
     if has_config("fiber") then
-        add_packages("fiber", {public = true})
+        add_files("fiber/*.cpp")
         set_configvar("ILIAS_USE_FIBER", 1)
     end
 
@@ -91,5 +91,4 @@ target("ilias")
     elseif is_kind("shared") then
         set_configvar("ILIAS_DLL", 1)
     end
-
 target_end()

@@ -1,6 +1,3 @@
-#include <ilias/defines.hpp>
-
-#if defined(ILIAS_USE_FIBER)
 #include <ilias/runtime/executor.hpp> // Executor
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/fiber.hpp> // Fiber
@@ -8,7 +5,7 @@
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp> // CreateFiber
 #elif __has_include(<ucontext.h>)
-    #include "linux/libucontext.hpp" // sys::getcontext, sys::makecontext
+    #include "libucontext.hpp" // sys::getcontext, sys::makecontext
     #include <sys/mman.h> // mmap
     #include <unistd.h> // sysconf
 #else
@@ -395,5 +392,3 @@ auto FiberAwaiterBase::onCompletion(FiberContext *ctxt, void *_self) -> void {
 }
 
 ILIAS_NS_END
-
-#endif // ILIAS_USE_FIBER

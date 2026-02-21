@@ -12,22 +12,28 @@ on:
 
 jobs:
   build:
-    name: Build (${{ matrix.kind }})
+    name: Build ${{ matrix.toolchain }} | ${{ matrix.mode }} | ${{ matrix.kind }}
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         kind: [shared, static]
+        mode: [debug, release]
+        toolchain: [msvc, clang-cl]
+
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
+    
     - name: setup xmake
       uses: xmake-io/github-action-setup-xmake@v1
       with:
-      # The version to use. Should be a semver range or 'latest'. Or use branch@{branch_name} to select a branch.
         xmake-version: latest
+        
     - name: Configure
-      run: xmake f -m debug -k ${{ matrix.kind }} --dev=y -y
+      run: xmake f -m ${{ matrix.mode }} -k ${{ matrix.kind }} --toolchain=${{ matrix.toolchain }} --dev=y -y
+      
     - name: Build
       run: xmake -y
+      
     - name: Run Test
       run: xmake test -v
