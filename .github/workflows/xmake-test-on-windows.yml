@@ -12,7 +12,7 @@ on:
 
 jobs:
   build:
-    name: Build ${{ matrix.toolchain }} | ${{ matrix.mode }} | ${{ matrix.kind }}
+    name: Build ${{ matrix.toolchain }} ${{ matrix.mode }} ${{ matrix.kind }}
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -24,13 +24,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: setup xmake
+    - name: Setup MSVC environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    - name: Setup xmake
       uses: xmake-io/github-action-setup-xmake@v1
       with:
         xmake-version: latest
         
     - name: Configure
-      run: xmake f -m ${{ matrix.mode }} -k ${{ matrix.kind }} --toolchain=${{ matrix.toolchain }} --dev=y -y
+      run: xmake f -c -m ${{ matrix.mode }} -k ${{ matrix.kind }} --toolchain=${{ matrix.toolchain }} --dev=y -y
       
     - name: Build
       run: xmake -y

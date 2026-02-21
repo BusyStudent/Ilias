@@ -12,12 +12,12 @@ on:
 
 jobs:
   build:
-    name: Build ${{ matrix.toolchain }} | ${{ matrix.mode }} | ${{ matrix.backend }} | ${{ matrix.kind }}
+    name: Build ${{ matrix.toolchain }} ${{ matrix.mode }} ${{ matrix.backend }} ${{ matrix.kind }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [gcc, clang]
+        toolchain: [gcc, clang-18]
         mode: [release, coverage]
         backend: [epoll, io_uring]
         kind: [shared, static]
