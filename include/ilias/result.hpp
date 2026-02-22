@@ -10,8 +10,8 @@
     #define ILIAS_EXPECTED_NAMESPACE ::std
 #endif // ILIAS_EXPECTED_NAMESPACE
 
-// clang 17 actually supports C++20 CTAD but doesn't define __cpp_deduction_guides correctly
-#if (!defined(__clang__) && __cpp_deduction_guides < 201907L) || (defined(__clang__) && __clang_major__ < 17)
+// clang 19 actually supports C++20 CTAD but doesn't define __cpp_deduction_guides correctly
+#if (!defined(__clang__) && __cpp_deduction_guides < 201907L) || (defined(__clang__) && __clang_major__ < 19)
 #error "This library need C++20 CTAD for aggregates and aliases"
 #endif // __cpp_deduction_guides
 

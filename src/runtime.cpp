@@ -8,6 +8,7 @@
 #include <thread> // std::thread
 #include <queue> // std::queue
 #include <mutex> // std::mutex
+#include <new>
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp>
@@ -19,7 +20,9 @@ ILIAS_NS_BEGIN
 using namespace runtime;
 
 // Executor
-static thread_local constinit Executor *currentExecutor {};
+namespace {
+    static thread_local constinit Executor *currentExecutor {};
+}
 
 Executor::~Executor() {
     uninstall();
@@ -45,8 +48,12 @@ auto Executor::uninstall() -> void {
 
 // EventLoop
 struct EventLoop::Impl {
-    std::queue<std::pair<void (*)(void *), void *> > queue;
+    using Callback = std::pair<void (*)(void *), void *>;
+
+    std::queue<Callback> localQueue;
+    std::queue<Callback> sharedQueue; // The queue shared between threads, protected by mutex
     std::condition_variable cond;
+    std::thread::id id = std::this_thread::get_id(); // The id of the thread running the event loop
     std::mutex mutex;
     TimerService service;
 };
@@ -55,8 +62,14 @@ EventLoop::EventLoop() : d(std::make_unique<Impl>()) {}
 EventLoop::~EventLoop() = default;
 
 auto EventLoop::post(void (*fn)(void *), void *args) -> void {
-    std::lock_guard locker(d->mutex);
-    d->queue.emplace(fn, args);
+    if (std::this_thread::get_id() == d->id) {
+        d->localQueue.emplace(fn, args);
+        return;
+    }
+    {
+        std::lock_guard locker {d->mutex};
+        d->sharedQueue.emplace(fn, args);
+    }
     d->cond.notify_one();
 }
 
@@ -65,25 +78,29 @@ auto EventLoop::run(StopToken token) -> void {
         d->cond.notify_one();
     });
     auto pred = [&]() {
-        return !d->queue.empty() || token.stop_requested();
+        return !d->localQueue.empty() || !d->sharedQueue.empty() || token.stop_requested();
     };
     while (true) {
-        std::unique_lock locker(d->mutex);
-        auto timepoint = d->service.nextTimepoint();
-        if (timepoint) {
+        // First process local queue
+        while (!d->localQueue.empty()) {
+            auto fn = d->localQueue.front();
+            d->localQueue.pop();
+            fn.first(fn.second);
+        }
+
+        // Begin waiting for callbacks
+        std::unique_lock locker {d->mutex};
+        if (auto timepoint = d->service.nextTimepoint(); timepoint) {
             d->cond.wait_until(locker, *timepoint, pred);
         }
         else {
             d->cond.wait(locker, pred);
         }
-        if (d->queue.empty() && token.stop_requested()) { // Only quit after process all avaliable callbacks
+
+        ILIAS_ASSERT(d->localQueue.empty(), "Local queue should be empty after processing");
+        d->localQueue.swap(d->sharedQueue); // Collect all callbacks from shared queue
+        if (d->localQueue.empty() && token.stop_requested()) { // Only quit after process all avaliable callbacks
             return;
-        }
-        if (!d->queue.empty()) {
-            auto fn = d->queue.front();
-            d->queue.pop();
-            locker.unlock();
-            fn.first(fn.second);
         }
         if (locker.owns_lock()) {
             locker.unlock();
@@ -175,13 +192,58 @@ auto threadpool::submit(CallableRef &callable) -> void {
 #endif
 }
 
-// Memory Pool
+// Memory Pool, default enabled
+#if 1
+namespace {
+    static thread_local std::pmr::unsynchronized_pool_resource mempool {
+        std::pmr::pool_options {
+            .max_blocks_per_chunk = 1024,
+            .largest_required_pool_block = 65536,
+        }
+    };
+
+    // For assertion on debug builds
+    struct alignas(__STDCPP_DEFAULT_NEW_ALIGNMENT__) PoolHeader {
+        std::thread::id id = std::this_thread::get_id();
+    };
+
+    static inline constexpr bool ENABLE_POOL_CHECK =
+#if defined(NDEBUG) && !defined(ILIAS_CORO_TRACE)
+        false;
+#else
+        true;
+#endif
+
+}
+
 auto runtime::allocate(size_t size) -> void * {
-    return ::malloc(size);
+    if constexpr (ENABLE_POOL_CHECK) {
+        auto ptr = mempool.allocate(size + sizeof(PoolHeader), alignof(PoolHeader));
+        new (ptr) PoolHeader {};
+        return static_cast<std::byte *>(ptr) + sizeof(PoolHeader);
+    }
+    else {
+        return mempool.allocate(size, alignof(PoolHeader));
+    }
 }
 
 auto runtime::deallocate(void *ptr, size_t size) noexcept -> void {
-    return ::free(ptr);
+    if constexpr (ENABLE_POOL_CHECK) {
+        auto header = reinterpret_cast<PoolHeader *>(static_cast<std::byte *>(ptr) - sizeof(PoolHeader));
+        if (header->id != std::this_thread::get_id()) [[unlikely]] {
+            ILIAS_ERROR("Runtime", "Cross-thread deallocation detected !!!");
+            std::abort();
+        }
+        header->~PoolHeader();
+        mempool.deallocate(header, size + sizeof(PoolHeader), alignof(PoolHeader));
+    }
+    else {
+        return mempool.deallocate(ptr, size, alignof(PoolHeader));
+    }
 }
+#else // Use system allocator
+auto runtime::allocate(size_t size) -> void * { return std::malloc(size); }
+auto runtime::deallocate(void *ptr, size_t) noexcept -> void { return std::free(ptr); }
+#endif // ILIAS_USE_MEMORY_POOL
 
 ILIAS_NS_END

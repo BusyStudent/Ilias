@@ -49,7 +49,7 @@
     #define ILIAS_ASSERT(x, ...) do { } while (0)
 #else
     #define ILIAS_ASSERT(x, ...) do {            \
-        if (!(x)) {                              \
+        if (!(x)) [[unlikely]] {                 \
             ::ilias::assertion::handler(         \
                 ILIAS_STRINGIFY(x),              \
                 std::source_location::current(), \

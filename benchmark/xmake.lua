@@ -5,16 +5,28 @@ option("benchmark")
 option_end()
 
 if has_config("benchmark") then
+    add_requires("nanobench")
     add_requires("asio")
+
     target("asio_server")
+        set_default(false)
         set_kind("binary")
         add_files("asio_server.cpp")
         add_packages("asio")
     target_end()
 
     target("ilias_server")
+        set_default(false)
         set_kind("binary")
         add_files("ilias_server.cpp")
+        add_deps("ilias")
+    target_end()
+
+    target("ilias_benchmark")
+        set_default(false)
+        set_kind("binary")
+        add_files("ilias_benchmark.cpp")
+        add_packages("nanobench")
         add_deps("ilias")
     target_end()
 end
