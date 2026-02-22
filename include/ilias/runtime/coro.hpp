@@ -169,6 +169,8 @@ public:
             auto await_resume() noexcept { // UNREACHABLE here, we can't resume an done coroutine
 #if defined(__cpp_lib_unreachable)
                 std::unreachable(); // LCOV_EXCL_LINE
+#else
+                std::abort();
 #endif // defined(__cpp_lib_unreachable)
             }
             CoroPromise &self;
