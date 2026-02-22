@@ -28,10 +28,10 @@ auto testTask() -> Task<void> {
         co_await throwInput(42);
         ILIAS_TRAP(); // Should never reach this line
     }
-    catch (int val) {
+    catch (int &val) {
         EXPECT_EQ(val, 42);
     }
-    
+
     co_await sleep(10ms);
     co_await sleep(20ms);
     co_return;
