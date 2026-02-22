@@ -228,7 +228,7 @@ struct IoDescriptor::Deleter {
 template <IntoFileDescriptor T>
 class IoHandle {
 public:
-    explicit IoHandle(IoDescriptor::Ptr desc, T fd) : mDesc(std::move(desc)), mFd(std::move(fd)) {}
+    explicit IoHandle(T fd, IoDescriptor::Ptr desc) : mFd(std::move(fd)), mDesc(std::move(desc)) {}
     IoHandle(IoHandle &&other) = default;
     IoHandle() = default;
     ~IoHandle() = default;
@@ -339,8 +339,8 @@ public:
             return Err(desc.error());
         }
         return IoHandle<T> {
-            IoDescriptor::Ptr {*desc, IoDescriptor::Deleter {&ctxt} },
-            std::move(fd)
+            std::move(fd),
+            IoDescriptor::Ptr {*desc, IoDescriptor::Deleter {&ctxt} }
         };
     }
 
@@ -358,8 +358,8 @@ private:
         auto operator()(IoDescriptor *desc) const -> void { auto _ = ctxt->removeDescriptor(desc); }
     };
 
-    IoDescriptor::Ptr mDesc {};
     T                 mFd {};
+    IoDescriptor::Ptr mDesc {};
 };
 
 /**

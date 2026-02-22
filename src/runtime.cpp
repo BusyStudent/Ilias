@@ -192,8 +192,10 @@ auto threadpool::submit(CallableRef &callable) -> void {
 #endif
 }
 
-// Memory Pool, default enabled
-#if 1
+// Thread local memory Pool, default disable
+// FIXME: currently scheduleOn cancellation impl conflict with thread local memory pool
+//        It may cause task free mismatch when cancelled, so disable it for now
+#if 0
 namespace {
     static thread_local std::pmr::unsynchronized_pool_resource mempool {
         std::pmr::pool_options {
@@ -232,6 +234,7 @@ auto runtime::deallocate(void *ptr, size_t size) noexcept -> void {
         auto header = reinterpret_cast<PoolHeader *>(static_cast<std::byte *>(ptr) - sizeof(PoolHeader));
         if (header->id != std::this_thread::get_id()) [[unlikely]] {
             ILIAS_ERROR("Runtime", "Cross-thread deallocation detected !!!");
+            ILIAS_TRAP();
             std::abort();
         }
         header->~PoolHeader();
