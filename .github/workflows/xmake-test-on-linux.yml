@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [gcc, clang-18]
+        toolchain: [gcc, clang]
         mode: [release, coverage]
         backend: [epoll, io_uring]
         kind: [shared, static]
@@ -35,6 +35,20 @@ jobs:
       run: |
         sudo apt update -y
         sudo apt install -y lcov
+
+    - name: Install io_uring
+      if: matrix.backend == 'io_uring'
+      run: |
+        sudo apt install -y liburing-dev
+
+    - name: Install clang
+      if: matrix.toolchain == 'clang'
+      run: |
+        wget https://apt.llvm.org/llvm.sh -o ~/Downloads/llvm.sh
+        chmod +x ~/Downloads/llvm.sh
+        sudo ~/Downloads/llvm.sh 21
+        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-21 100
+        sudo update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-21   100
 
     - name: Configure
       run: |
