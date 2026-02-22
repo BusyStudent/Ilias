@@ -66,9 +66,8 @@ target("ilias")
         set_configvar("ILIAS_USE_SPDLOG", 1)
     end
 
-    if has_config("cpp20") then
+    if not has_config("has_std_expected") then
         add_packages("zeus_expected", {public = true})
-        set_configvar("ILIAS_CPP20", 1)
     end
 
     if has_config("fiber") then

@@ -15,7 +15,6 @@
 
 // Config from build system
 #cmakedefine ILIAS_CORO_TRACE
-#cmakedefine ILIAS_CPP20
 #cmakedefine ILIAS_TLS
 #cmakedefine ILIAS_DLL
 #cmakedefine ILIAS_STATIC

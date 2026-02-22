@@ -12,7 +12,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # The basic configuration
 option(ILIAS_CORO_TRACE     "Enable Coroutine Trace" OFF)
-option(ILIAS_CPP20          "Enable C++20 features/polyfill" OFF)
 option(ILIAS_TLS            "Enable TLS support" ON)
 option(ILIAS_USE_LOG        "Enable Logging" OFF)
 option(ILIAS_USE_FMT        "Use fmt lib" OFF)
