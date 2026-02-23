@@ -81,7 +81,7 @@
 
 // Compiler check
 #if   defined(_MSC_VER)
-    #define ILIAS_NO_UNIQUE_ADDRESS no_unique_address, msvc::no_unique_address
+    #define ILIAS_NO_UNIQUE_ADDRESS msvc::no_unique_address
     #define ILIAS_ATTRIBUTE(x)  __declspec(x)
     #define ILIAS_UNREACHABLE() __assume(0)
     #define ILIAS_ASSUME(...)   __assume(__VA_ARGS__)
@@ -161,7 +161,7 @@ concept IntoString = requires (const T &t) {
     { toString(t) } -> std::convertible_to<std::string_view>;
 };
 
-// Formatting namespace
+// MARK: Formatting
 #if defined(ILIAS_FMT_NAMESPACE)
 namespace fmtlib = ILIAS_FMT_NAMESPACE;
 
@@ -194,7 +194,7 @@ struct DefaultFormatter {
 #endif // ILIAS_FMT_NAMESPACE
 
 // LCOV_EXCL_START
-// Namespace handling the assertion
+// MARK: Assertion
 namespace assertion {
 
 [[noreturn]]
@@ -249,7 +249,7 @@ inline auto handler(std::string_view cond, std::source_location where, Args &&..
 } // namespace assertion
 // LCOV_EXCL_STOP
 
-// Utils
+// MARK: Utils
 template <typename T> requires 
     requires(const T &t) { t.toString(); } // Make sure the t has the toString() method
 inline auto toString(const T &t) {

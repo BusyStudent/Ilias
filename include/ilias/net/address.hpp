@@ -26,9 +26,9 @@ ILIAS_NS_BEGIN
  */
 class IPAddress4 : public ::in_addr {
 public:
-    IPAddress4() = default;
-    IPAddress4(::in_addr addr4) : ::in_addr(addr4) { }
-    IPAddress4(const IPAddress4 &other) = default;
+    constexpr IPAddress4() = default;
+    constexpr IPAddress4(::in_addr addr4) : ::in_addr {addr4} { }
+    constexpr IPAddress4(const IPAddress4 &other) = default;
 
     /**
      * @brief Convert the address to string
@@ -282,9 +282,9 @@ public:
  */
 class IPAddress6 : public ::in6_addr {
 public:
-    IPAddress6() = default;
-    IPAddress6(::in6_addr addr6) : ::in6_addr(addr6) { }
-    IPAddress6(const IPAddress6 &other) = default;
+    constexpr IPAddress6() = default;
+    constexpr IPAddress6(::in6_addr addr6) : ::in6_addr {addr6} { }
+    constexpr IPAddress6(const IPAddress6 &other) = default;
 
     /**
      * @brief Convert ipv6 address to human readable string
@@ -727,7 +727,7 @@ template <>
 struct std::hash<ilias::IPAddress6> {
     auto operator()(const ilias::IPAddress6 &addr) const noexcept -> size_t {
         auto span = addr.span();
-        auto view = std::string_view(reinterpret_cast<const char*>(span.data()), span.size());
+        auto view = std::string_view {reinterpret_cast<const char*>(span.data()), span.size()};
         return std::hash<std::string_view>{}(view); // HACKY way to do it :(
     }
 };
@@ -736,7 +736,7 @@ template <>
 struct std::hash<ilias::IPAddress> {
     auto operator()(const ilias::IPAddress &addr) const noexcept -> size_t {
         auto span = addr.span();
-        auto view = std::string_view(reinterpret_cast<const char*>(span.data()), span.size());
+        auto view = std::string_view {reinterpret_cast<const char*>(span.data()), span.size()};
         return std::hash<std::string_view>{}(view); // HACKY way to do it :(
     }
 };

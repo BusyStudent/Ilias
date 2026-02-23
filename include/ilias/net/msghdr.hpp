@@ -35,7 +35,7 @@ using msghdr_t = ILIAS_MSGHDR_T;
  */
 class MsgHdr : public msghdr_t {
 public:
-    constexpr MsgHdr(const msghdr_t &v) : msghdr_t(v) { }
+    constexpr MsgHdr(const msghdr_t &v) : msghdr_t{v} { }
     constexpr MsgHdr(const MsgHdr &) = default;
     constexpr MsgHdr() : msghdr_t{} { }
 

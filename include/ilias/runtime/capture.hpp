@@ -205,9 +205,6 @@ private:
     std::source_location mLoc;
 };
 
-// Get the location from the capture source
-inline auto toLocation(const CaptureSource &src) noexcept { return src.toLocation(); }
-
 #else
 
 /**
@@ -215,15 +212,6 @@ inline auto toLocation(const CaptureSource &src) noexcept { return src.toLocatio
  * 
  */
 using CaptureSource = std::monostate;
-
-/**
- * @brief The virtual stack frame vector for coroutines, currently disabled
- * 
- */
-using StackFrameVec = std::monostate;
-
-// Get the location from the capture source, no-op
-consteval auto toLocation(const CaptureSource &) noexcept { return std::source_location {}; }
 
 #endif // ILIAS_CORO_TRACE
 

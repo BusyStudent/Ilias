@@ -737,3 +737,20 @@ private:
 };
 
 ILIAS_NS_END
+
+// Interop with std
+template <>
+struct std::hash<ilias::UnixEndpoint> {
+    auto operator()(const ilias::UnixEndpoint &endpoint) const noexcept -> size_t {
+        auto view = std::string_view { endpoint.sun_path, sizeof(endpoint.sun_path) };
+        return std::hash<std::string_view>{}(view);
+    }
+};
+
+template <>
+struct std::hash<ilias::IPEndpoint> {
+    auto operator()(const ilias::IPEndpoint &endpoint) const noexcept -> size_t {
+        auto view = std::string_view { static_cast<const char *>(endpoint.data()), endpoint.length() };
+        return std::hash<std::string_view>{}(view);
+    }
+};
