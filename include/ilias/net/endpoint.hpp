@@ -15,6 +15,7 @@
 #include <ilias/net/system.hpp>
 #include <ilias/result.hpp>
 #include <charconv>
+#include <concepts>
 #include <cstring>
 #include <compare>
 
@@ -46,14 +47,14 @@ concept MutableEndpoint = requires(T t) {
  */
 class UnixEndpoint : public ::sockaddr_un {
 public:
-    UnixEndpoint() = default;
+    constexpr UnixEndpoint() = default;
 
     /**
      * @brief Construct a new Unix Endpoint object by raw ::sockaddr_un
      * 
      * @param addr The network-format unix endpoint address
      */
-    UnixEndpoint(::sockaddr_un addr) : ::sockaddr_un(addr) { }
+    constexpr UnixEndpoint(::sockaddr_un addr) : ::sockaddr_un {addr} { }
 
     /**
      * @brief Construct a new Unix Endpoint object based on path
@@ -192,42 +193,30 @@ public:
  */
 class IPEndpoint {
 public:
-    IPEndpoint() = default;
+    constexpr IPEndpoint() = default;
+    constexpr IPEndpoint(const IPEndpoint &) = default;
 
     /**
      * @brief Construct a new IPEndpoint object
      * 
      * @param addr The network-format ipv4 endpoint
      */
-    IPEndpoint(::sockaddr_in addr) { ::memcpy(&mAddr4, &addr, sizeof(addr)); }
+    constexpr IPEndpoint(::sockaddr_in addr) : mAddr4{addr} {}
 
     /**
      * @brief Construct a new IPEndpoint object
      * 
      * @param addr The network-format ipv6 endpoint
      */
-    IPEndpoint(::sockaddr_in6 addr) { ::memcpy(&mAddr6, &addr, sizeof(addr)); }
+    constexpr IPEndpoint(::sockaddr_in6 addr) : mAddr6{addr} {}
 
     /**
      * @brief Construct a new IPEndpoint object by string
      * 
      * @param str The endpoint in string format (address4:port) or ([address6]:port)
      */
-    IPEndpoint(std::string_view str) : IPEndpoint(fromString(str).value_or(IPEndpoint { })) { }
-
-    /**
-     * @brief Construct a new IPEndpoint object by string
-     * 
-     * @param str The endpoint in string format (address4:port) or ([address6]:port)
-     */
-    IPEndpoint(const std::string &str) : IPEndpoint(std::string_view(str)) { }
-
-    /**
-     * @brief Construct a new IPEndpoint object by string
-     * 
-     * @param str The endpoint in string format (address4:port) or ([address6]:port)
-     */
-    IPEndpoint(const char *str) : IPEndpoint(std::string_view(str)) { }
+    template <typename T> requires (std::convertible_to<T, std::string_view>)
+    IPEndpoint(const T &str) : IPEndpoint{fromString(str).value_or(IPEndpoint {})} {}
 
     /**
      * @brief Construct a new IPEndpoint object by address and port
@@ -242,7 +231,7 @@ public:
                 ::memset(&sockaddr, 0, sizeof(sockaddr));
                 sockaddr.sin_family = AF_INET;
                 sockaddr.sin_port = hostToNetwork(port); 
-                sockaddr.sin_addr = addr.cast<::in_addr>();
+                sockaddr.sin_addr = addr.cast<IPAddress4>();
                 break;
             }
             case AF_INET6: {
@@ -250,18 +239,13 @@ public:
                 ::memset(&sockaddr, 0, sizeof(sockaddr));
                 sockaddr.sin6_family = AF_INET6;
                 sockaddr.sin6_port = hostToNetwork(port); 
-                sockaddr.sin6_addr = addr.cast<::in6_addr>();
+                sockaddr.sin6_addr = addr.cast<IPAddress6>();
                 break;
             }
             default: mData.sa_family = addr.family(); break;
         }
     }
 
-    /**
-     * @brief Construct a new IPEndpoint object by copy
-     * 
-     */
-    IPEndpoint(const IPEndpoint &) = default;
 
     /**
      * @brief Convert endpoint to string
@@ -485,7 +469,7 @@ public:
         if (!addr) {
             return Err(addr.error());
         }
-        return IPEndpoint(*addr, port);
+        return IPEndpoint {*addr, port};
     }
 
     /**
@@ -750,7 +734,7 @@ struct std::hash<ilias::UnixEndpoint> {
 template <>
 struct std::hash<ilias::IPEndpoint> {
     auto operator()(const ilias::IPEndpoint &endpoint) const noexcept -> size_t {
-        auto view = std::string_view { static_cast<const char *>(endpoint.data()), endpoint.length() };
+        auto view = std::string_view { static_cast<const char *>(endpoint.data()), static_cast<size_t>(endpoint.length()) };
         return std::hash<std::string_view>{}(view);
     }
 };

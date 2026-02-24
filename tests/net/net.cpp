@@ -5,6 +5,7 @@
 #include <ilias/io.hpp>
 #include <ilias/testing.hpp>
 #include <gtest/gtest.h>
+#include <unordered_set>
 
 using namespace ilias;
 using namespace ilias::literals;
@@ -65,6 +66,15 @@ TEST(Address4, Compare) {
     EXPECT_NE(IPAddress4::none(), IPAddress4::loopback());
 }
 
+TEST(Address4, Hash) {
+    std::unordered_set<IPAddress4> addrs;
+    addrs.insert(IPAddress4::loopback());
+    addrs.insert(IPAddress4::fromString("192.168.0.1").value());
+
+    EXPECT_FALSE(addrs.contains(IPAddress4::none()));
+    EXPECT_TRUE(addrs.contains(IPAddress4::loopback()));
+}
+
 // For V6 Address
 TEST(Address6, Parse) {
     EXPECT_EQ(IPAddress6::fromString("::1").value(), IPAddress6::loopback());
@@ -91,6 +101,17 @@ TEST(Address6, V4Mapped) {
     EXPECT_TRUE(addr.isV4Mapped());
     EXPECT_TRUE(addr.toV4());
     EXPECT_EQ(addr.toV4().value(), IPAddress4::fromString("192.168.1.1").value());
+}
+
+TEST(Address6, Hash) {
+    std::unordered_set<IPAddress6> addrs {};
+    auto addr = IPAddress6::fromString("::ffff:192.168.1.1").value();
+    addrs.insert(IPAddress6::any());
+    addrs.insert(addr);
+
+    EXPECT_TRUE(addrs.contains(IPAddress6::any()));
+    EXPECT_TRUE(addrs.contains(addr));
+    EXPECT_FALSE(addrs.contains(IPAddress6::loopback()));
 }
 
 // For V4 / 6 Address
@@ -121,6 +142,20 @@ TEST(Address, Compare) {
     EXPECT_NE(IPAddress(IPAddress6::loopback()), IPAddress(IPAddress6::any()));
     EXPECT_NE(IPAddress(IPAddress4::loopback()), IPAddress(IPAddress6::none()));
     EXPECT_NE(IPAddress(IPAddress4::loopback()), IPAddress());
+}
+
+TEST(Address, Hash) {
+    std::unordered_set<IPAddress> addrs;
+    
+    addrs.insert("0.0.0.0");
+    addrs.insert("127.0.0.1");
+    EXPECT_TRUE(addrs.contains(IPAddress4::loopback()));
+    EXPECT_FALSE(addrs.contains(IPAddress6::any()));
+    EXPECT_FALSE(addrs.contains(IPAddress {}));
+
+    addrs.insert(IPAddress6::loopback());
+    EXPECT_FALSE(addrs.contains(IPAddress6::any()));
+    EXPECT_TRUE(addrs.contains(IPAddress6::loopback()));
 }
 
 TEST(Endpoint, Parse4) {
@@ -235,7 +270,7 @@ TEST(Endpoint, Compare) {
     EXPECT_EQ(IPEndpoint("127.0.0.1:8080"), "127.0.0.1:8080");
     EXPECT_EQ(IPEndpoint("[::1]:8080"), "[::1]:8080");
     EXPECT_NE(IPEndpoint("[::1]:8080"), "127.0.0.1:8080");
-    EXPECT_EQ(IPEndpoint(), IPEndpoint());
+    EXPECT_EQ(IPEndpoint{}, IPEndpoint{});
 }
 
 TEST(Endpoint, Invalid) {
@@ -257,6 +292,15 @@ TEST(Endpoint, ToString) {
 #if !defined(ILIAS_NO_FORMAT)
     EXPECT_EQ(fmtlib::format("{}", endpoint2), "[::]:8080");
 #endif
+}
+
+TEST(Endpoint, Hash) {
+    std::unordered_set<IPEndpoint> ipsets {};
+    ipsets.insert({IPAddress4::loopback(), 80});
+    ipsets.insert({IPAddress6::loopback(), 80});
+    EXPECT_TRUE(ipsets.contains("127.0.0.1:80"));
+    EXPECT_TRUE(ipsets.contains("[::1]:80"));
+    EXPECT_FALSE(ipsets.contains(IPEndpoint {}));
 }
 
 ILIAS_TEST(Net, GetAddrInfo) {
@@ -320,7 +364,7 @@ ILIAS_TEST(Net, Udp) {
     {
         auto handle = spawn(client.poll(PollEvent::In));
         co_await sleep(10ms); // Make sure the poll actually submitted
-        client.cancel();
+        auto _ = client.cancel();
         EXPECT_EQ(co_await std::move(handle), Err(std::errc::operation_canceled));
     }
 

@@ -11,10 +11,12 @@
 
 #pragma once
 
+#include <ilias/detail/overloads.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/result.hpp>
 #include <charconv>
 #include <compare>
+#include <variant>
 #include <array>
 #include <span>
 
@@ -27,7 +29,7 @@ ILIAS_NS_BEGIN
 class IPAddress4 : public ::in_addr {
 public:
     constexpr IPAddress4() = default;
-    constexpr IPAddress4(::in_addr addr4) : ::in_addr {addr4} { }
+    constexpr IPAddress4(::in_addr addr4) : ::in_addr {addr4} {}
     constexpr IPAddress4(const IPAddress4 &other) = default;
 
     /**
@@ -61,10 +63,10 @@ public:
     /**
      * @brief Convert the address to uint8_t array in network order
      * 
-     * @return std::array<uint8_t, 4> 
+     * @return std::array<uint8_t, sizeof(::in_addr)> 
      */
-    auto toUint8Array() const -> std::array<uint8_t, 4> {
-        return std::bit_cast<std::array<uint8_t, 4> >(*this);
+    auto toUint8Array() const -> std::array<uint8_t, sizeof(::in_addr)> {
+        return std::bit_cast<std::array<uint8_t, sizeof(::in_addr)> >(*this);
     }
 
     /**
@@ -244,14 +246,14 @@ public:
 
 #if 0
         ::in_addr addr;
-        ::std::array<char, INET_ADDRSTRLEN> buf {0};
+        ::std::array<char, INET_ADDRSTRLEN> buf {};
         ::memcpy(buf.data(), value.data(), value.size());
         if (auto res = ::inet_pton(AF_INET, buf.data(), &addr); res == 1) {
             return addr;
         }
         return Err(std::errc::invalid_argument);
 #else   // Parse on our own, for std::string_view, avoid copy
-        ::std::array<uint8_t, sizeof(::in_addr)> array;
+        ::std::array<uint8_t, sizeof(::in_addr)> array {};
         auto end = value.data() + value.size();
         auto ptr = value.data();
         // Parse xxx.xxx.xxx.xxx
@@ -283,7 +285,7 @@ public:
 class IPAddress6 : public ::in6_addr {
 public:
     constexpr IPAddress6() = default;
-    constexpr IPAddress6(::in6_addr addr6) : ::in6_addr {addr6} { }
+    constexpr IPAddress6(::in6_addr addr6) : ::in6_addr {addr6} {}
     constexpr IPAddress6(const IPAddress6 &other) = default;
 
     /**
@@ -477,7 +479,7 @@ public:
 
 #if 1
         ::in6_addr addr;
-        ::std::array<char, INET6_ADDRSTRLEN> buf {0};
+        ::std::array<char, INET6_ADDRSTRLEN> buf {};
         ::memcpy(buf.data(), value.data(), value.size());
         if (auto res = ::inet_pton(AF_INET6, buf.data(), &addr); res == 1) {
             return addr;
@@ -494,31 +496,18 @@ public:
  */
 class IPAddress {
 public:
-    IPAddress() = default;
-    IPAddress(::in_addr addr) : mFamily(AF_INET) { mAddr.v4 = addr; }
-    IPAddress(::in6_addr addr) : mFamily(AF_INET6) { mAddr.v6 = addr; }
-    IPAddress(const IPAddress &other) = default;
+    constexpr IPAddress() = default;
+    constexpr IPAddress(::in_addr addr) : mData {addr} {}
+    constexpr IPAddress(::in6_addr addr) : mData {addr} {}
+    constexpr IPAddress(const IPAddress &other) = default;
 
     /**
      * @brief Construct a new IPAddress object
      * 
      * @param str The IPV4 or IPV6 address string, if failed, the family will be AF_UNSPEC
      */
-    IPAddress(std::string_view str) : IPAddress(fromString(str).value_or(IPAddress{ })) { }
-
-    /**
-     * @brief Construct a new IPAddress object by string
-     * 
-     * @param str The IPV4 or IPV6 address string, if failed, the family will be AF_UNSPEC
-     */
-    IPAddress(const std::string &str) : IPAddress(fromString(str).value_or(IPAddress{ })) { }
-
-    /**
-     * @brief Construct a new IPAddress object by string
-     * 
-     * @param str The IPV4 or IPV6 address string, if failed, the family will be AF_UNSPEC
-     */
-    IPAddress(const char *str) : IPAddress(fromString(str).value_or(IPAddress{ })) { }
+    template <typename T> requires (std::convertible_to<T, std::string_view>)
+    IPAddress(const T &str) : IPAddress{fromString(str).value_or(IPAddress {})} {}
 
     /**
      * @brief Convert the address to string
@@ -526,11 +515,12 @@ public:
      * @return std::string 
      */
     auto toString() const -> std::string {
-        char buffer[INET6_ADDRSTRLEN] {0};
-        if (mFamily == AF_UNSPEC) {
-            return std::string();
-        }
-        return ::inet_ntop(mFamily, &mAddr, buffer, sizeof(buffer));
+        constexpr auto visitor = Overloads {
+            [](std::monostate) { return std::string {}; },
+            [](const IPAddress4 &addr) { return addr.toString(); },
+            [](const IPAddress6 &addr) { return addr.toString(); },
+        };
+        return std::visit(visitor, mData);
     }
 
     /**
@@ -539,11 +529,12 @@ public:
      * @return std::span<const std::byte> 
      */
     auto span() const -> std::span<const std::byte> {
-        switch (mFamily) {
-            case AF_INET: return std::as_bytes(std::span(&mAddr.v4, 1));
-            case AF_INET6: return std::as_bytes(std::span(&mAddr.v6, 1));
-            default: return {};
-        }
+        constexpr auto visitor = Overloads {
+            [](std::monostate) { return std::span<const std::byte> {}; },
+            [](const IPAddress4 &addr) { return addr.span(); },
+            [](const IPAddress6 &addr) { return addr.span(); },
+        };
+        return std::visit(visitor, mData);
     }
 
     /**
@@ -552,7 +543,12 @@ public:
      * @return int 
      */
     auto family() const -> int {
-        return mFamily;
+        constexpr auto visitor = Overloads {
+            [](std::monostate) { return AF_UNSPEC; },
+            [](const IPAddress4 &addr) { return AF_INET; },
+            [](const IPAddress6 &addr) { return AF_INET6; },
+        };
+        return std::visit(visitor, mData);
     }
 
     /**
@@ -561,33 +557,21 @@ public:
      * @return size_t 
      */
     auto length() const -> size_t {
-        switch (mFamily) {
+        switch (family()) {
             case AF_INET: return sizeof(::in_addr);
             case AF_INET6: return sizeof(::in6_addr);
             default: return 0;
         }
     }
 
+    /**
+     * @brief Check if the address is valid
+     * 
+     * @return true 
+     * @return false 
+     */
     auto isValid() const -> bool {
-        return mFamily != AF_UNSPEC;
-    }
-
-    /**
-     * @brief Get the wrapped address data pointer
-     * 
-     * @return const void* 
-     */
-    auto data() const -> const void * {
-        return &mAddr;
-    }
-
-    /**
-     * @brief Get the wrapped address data pointer
-     * 
-     * @return void* 
-     */
-    auto data() -> void * {
-        return &mAddr;
+        return !std::holds_alternative<std::monostate>(mData);
     }
 
     /**
@@ -598,7 +582,7 @@ public:
      */
     template <typename T>
     auto cast() const -> const T & {
-        return reinterpret_cast<const T &>(mAddr);
+        return std::get<T>(mData);
     }
 
     /**
@@ -609,44 +593,14 @@ public:
      */
     template <typename T>
     auto cast() -> T & {
-        return reinterpret_cast<T &>(mAddr);
-    }
-    
-    /**
-     * @brief Compare this address with other
-     * 
-     */
-    auto operator ==(const IPAddress &other) const -> bool {
-        if (mFamily != other.mFamily) {
-            return false;
-        }
-        if (mFamily != AF_UNSPEC) {
-            return ::memcmp(&mAddr, &other.mAddr, length()) == 0;
-        }
-        return true; // Both are invalid
+        return std::get<T>(mData);
     }
 
     /**
      * @brief Compare this address with other
      * 
      */
-    auto operator !=(const IPAddress &other) const -> bool {
-        return !(*this == other);
-    }
-
-    /**
-     * @brief Compare this address with other
-     * 
-     */
-    auto operator <=>(const IPAddress &other) const -> std::strong_ordering {
-        if (mFamily != other.mFamily) {
-            return mFamily <=> other.mFamily;
-        }
-        if (mFamily == AF_UNSPEC) { // All invalid
-            return std::strong_ordering::equal;
-        }
-        return ::memcmp(&mAddr, &other.mAddr, length()) <=> 0;
-    }
+    auto operator <=>(const IPAddress &other) const noexcept = default;
 
     /**
      * @brief Try parse the IP address from string
@@ -659,36 +613,20 @@ public:
             return Err(std::errc::invalid_argument);
         }
 
-#if 0
-        int family = AF_INET; //< Default try to parse IPV4 address
-        if (str.find(':') != std::string_view::npos) {
-            family = AF_INET6;
-        }
-        IPAddress ret;
-        ::std::array<char, INET6_ADDRSTRLEN> buf {0};
-        ::memcpy(buf.data(), str.data(), str.size());
-        if (auto res = ::inet_pton(family, buf.data(), &ret.mAddr); res == 1) {
-            ret.mFamily = family;
-            return ret;
-        }
-        return Err(std::errc::invalid_argument);
-#else
         if (str.find(':') != std::string_view::npos) {
             auto res = IPAddress6::fromString(str);
             if (!res) {
                 return Err(res.error());
             }
-            return res.value();
+            return *res;
         }
         else {
             auto res = IPAddress4::fromString(str);
             if (!res) {
                 return Err(res.error());
             }
-            return res.value();
+            return *res;
         }
-#endif
-
     }
 
     /**
@@ -705,12 +643,22 @@ public:
             default: return Err(std::errc::invalid_argument);
         }
     }
+
+    /**
+     * @brief Check if the address is valid
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept {
+        return isValid();
+    }
 private:
-    union {
-        ::in_addr  v4;
-        ::in6_addr v6;
-    } mAddr;
-    int mFamily = AF_UNSPEC;
+    std::variant<
+        std::monostate,
+        IPAddress4,
+        IPAddress6
+    > mData;
 };
 
 ILIAS_NS_END
