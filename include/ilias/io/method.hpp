@@ -73,37 +73,6 @@ inline auto readAll(T &stream, MutableBuffer buffer) -> IoTask<size_t> {
 }
 
 /**
- * @brief Read at least minSize bytes from stream
- * 
- * @tparam T 
- * @param stream The stream to read from
- * @param buffer The buffer to read into
- * @param minSize The minimum number of bytes to read
- * @return IoTask<size_t> Total bytes read (>= minSize), or error if any read fails
- */
-template <Readable T>
-inline auto readAtleast(T &stream, MutableBuffer buffer, size_t minSize) -> IoTask<size_t> {
-    size_t readed = 0;
-    if (buffer.size() < minSize) { // We can't read enough data to the buffer
-        co_return Err(IoError::InvalidArgument);
-    }
-    while (readed < minSize) {
-        auto n = co_await stream.read(buffer.subspan(readed));
-        if (!n && readed == 0) {
-            co_return Err(n.error());
-        }
-        if (!n) {
-            break;
-        }
-        if (*n == 0) {
-            break;
-        }
-        readed += *n;
-    }
-    co_return readed;
-}
-
-/**
  * @brief Read all data from stream and append to container
  * 
  * @tparam T 
@@ -135,6 +104,70 @@ inline auto readToEnd(T &stream, Container &container) -> IoTask<size_t> {
         }
     }
 }
+
+/**
+ * @brief Read a line from stream and append to string
+ * 
+ * @param stream The stream to read from
+ * @param str The string to append data to
+ * @param delim The delimiter to look for (default: "\n")
+ * @return IoTask<size_t> Number of bytes read (including delimiter on not EOF), 
+ *         or error if read fails
+ */
+template <BufReadable T>
+inline auto readline(T &stream, std::string &str, std::string_view delim = "\n") -> IoTask<size_t> {
+    size_t readed = 0;
+    while (true) {
+        auto buf = co_await stream.fill(FillPolicy::None);
+        if (!buf) {
+            co_return Err(buf.error());
+        }
+        if (buf->empty() && readed != 0) { // EOF, but we have readed some data
+            co_return readed;
+        }
+        if (buf->empty()) { // EOF
+            co_return Err(IoError::UnexpectedEOF);
+        }
+        auto view = std::string_view {reinterpret_cast<const char *>(buf->data()), buf->size()};
+        auto pos = view.find(delim);
+        if (pos == std::string_view::npos) {
+            str.append(view);
+            stream.consume(view.size()); 
+            readed += view.size();
+            continue;
+        }
+        else {
+            auto sub = view.substr(0, pos + delim.size());
+            str.append(sub);
+            stream.consume(sub.size());
+            readed += sub.size();
+            break;
+        }
+    }
+    co_return readed;
+}
+
+/**
+ * @brief Get a line from stream
+ * 
+ * @tparam T 
+ * @param stream The stream to read from
+ * @param delim The delimiter to look for (default: "\n")
+ * @return IoTask<std::string> The line read (Not including delimiter), or error if read fails
+ */
+template <BufReadable T>
+inline auto getline(T &stream, std::string_view delim = "\n") -> IoTask<std::string> {
+    std::string str {};
+    auto res = co_await io::readline(stream, str, delim);
+    if (!res) {
+        co_return Err(res.error());
+    }
+    if (str.ends_with(delim)) {
+        str.resize(str.size() - delim.size());
+    }
+    co_return str;
+}
+
 
 /**
  * @brief Copy all data from src to dst
@@ -218,7 +251,8 @@ template <typename T>
 class ReadableMethod {
 public:
     /**
-     * @brief Read All Data from Stream, equal to readAll(stream, buffer)
+     * @brief Read All Data from Stream
+     * @note equal to io::readAll(stream, buffer)
      * 
      * @param buffer The buffer to read into
      * @return IoTask<size_t> Total bytes read (equal to buffer.size()), or error if any read fails
@@ -228,19 +262,8 @@ public:
     }
 
     /**
-     * @brief Read at least minSize bytes from stream, equal to readAtleast(stream, buffer, minSize)
-     * 
-     * @tparam T 
-     * @param buffer The buffer to read into
-     * @param minSize The minimum number of bytes to read
-     * @return IoTask<size_t> 
-     */
-    auto readAtleast(MutableBuffer buffer, size_t minSize) -> IoTask<size_t> requires(Readable<T>) {
-        return io::readAtleast(static_cast<T &>(*this), buffer, minSize);
-    }
-
-    /**
-     * @brief Read all data from stream to container, append to container, equal to readToEnd(stream, container)
+     * @brief Read all data from stream to container, append to container
+     * @note equal to io::readToEnd(stream, container)
      * 
      * @tparam Container 
      * @param container The container to append data to
@@ -253,6 +276,7 @@ public:
 
     /**
      * @brief Copy all data from self to dst
+     * @note equal to io::copy(dst, self)
      * 
      * @tparam U 
      * @param dst The stream to write to
@@ -261,6 +285,31 @@ public:
     template <Writable U>
     auto copyTo(U &dst) -> IoTask<size_t> requires(Readable<T>) {
         return io::copy(dst, static_cast<T &>(*this));
+    }
+
+    /**
+     * @brief Read a line from stream
+     * @note equal to io::readline(stream, str, delim)
+     * 
+     * @param str The string to read into
+     * @param delim The delimiter to use, default to "\n"
+     * 
+     * @return IoTask<size_t> The number of bytes read, or error if any read fails
+     */
+    auto readline(std::string &str, std::string_view delim = "\n") -> IoTask<size_t> requires(BufReadable<T>) {
+        return io::readline(static_cast<T &>(*this), str, delim);
+    }
+
+    /**
+     * @brief Get a line from stream
+     * @note equal to io::getline(stream, delim)
+     * 
+     * @param delim The delimiter to use, default to "\n"
+     * 
+     * @return IoTask<std::string> The line read (Not including the delimiter), or error if any read fails
+     */
+    auto getline(std::string_view delim = "\n") -> IoTask<std::string> requires(BufReadable<T>) {
+        return io::getline(static_cast<T &>(*this), delim);
     }
 
     auto operator <=>(const ReadableMethod &rhs) const noexcept = default;

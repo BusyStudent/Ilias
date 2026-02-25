@@ -25,6 +25,7 @@
 
 ILIAS_NS_BEGIN
 
+// MARK: StreamBuffer
 /**
  * @brief Concept for Stream Buffer Like, StreamBuffer or FixedStreamBuffer
  * 
@@ -357,11 +358,7 @@ private:
     size_t mTail = 0;
 };
 
-enum class FillPolicy {
-    None, // Only fill the buffer when it's empty
-    More, // Always fill the buffer with more data
-};
-
+// MARK: BufferIo
 /**
  * @brief The default buffer capacity when you create a BufReader / BufWriter / BufStream, currently 4K
  * 
@@ -405,56 +402,7 @@ public:
         co_return size;
     }
 
-    /**
-     * @brief Read a line from stream and append to string
-     * 
-     * @param str The string to append data to
-     * @param delim The delimiter to look for (default: "\n")
-     * @return IoTask<size_t> Number of bytes read (including delimiter), 
-     *         or error if read fails
-     */
-    auto readline(std::string &str, std::string_view delim = "\n") -> IoTask<size_t> {
-        auto policy = FillPolicy::None;
-        while (true) {
-            auto data = co_await fill(policy);
-            if (data == Err(IoError::UnexpectedEOF) && mBuffer.size() != 0) {
-                // EOF, the buffer data has some, return the whole buffer
-                auto span = mBuffer.data();
-                str.append(reinterpret_cast<const char *>(span.data()), span.size());
-                mBuffer.consume(span.size());
-                co_return span.size();
-            }
-            if (!data) {
-                co_return Err(data.error());
-            }
-            auto view = std::string_view {reinterpret_cast<const char *>(data->data()), data->size()};
-            auto pos = view.find(delim);
-            if (pos != std::string_view::npos) {
-                str.append(view.substr(0, pos + delim.size()));
-                mBuffer.consume(pos + delim.size());
-                co_return pos + delim.size(); // Return the size of the line
-            }
-            policy = FillPolicy::More; // We need more data
-        }
-    }
-
-    /**
-     * @brief Get a line from stream
-     * 
-     * @param delim The delimiter to search for (default: "\n")
-     * @return IoTask<std::string> The line without delimiter, or error if read fails
-     */
-    auto getline(std::string_view delim = "\n") -> IoTask<std::string> {
-        std::string line;
-        if (auto res = co_await readline(line, delim); !res) {
-            co_return Err(res.error());
-        }
-        if (line.ends_with(delim)) {
-            line.resize(line.size() - delim.size());
-        }
-        co_return line;
-    }
-
+    // BufReadable
     /**
      * @brief Fill the internal buffer
      * 
@@ -479,6 +427,11 @@ public:
             mBuffer.commit(*res);
         }
         co_return mBuffer.data();
+    }
+
+    // Consume the data of the buffer
+    auto consume(size_t size) -> void {
+        return mBuffer.consume(size);
     }
 
     // Expose Writable if the stream is writable
@@ -508,11 +461,6 @@ public:
     // Get the internal buffer's data
     auto buffer() -> MutableBuffer {
         return mBuffer.data();   
-    }
-
-    // Consume the data of the buffer
-    auto consume(size_t size) -> void {
-        return mBuffer.consume(size);
     }
 
     // Detach the stream
@@ -673,14 +621,22 @@ public:
         return mStream.read(buffer);
     }
 
-    /// @copydoc BufReader::readline
-    auto readline(std::string &str, std::string_view delim = "\n") -> IoTask<size_t> {
-        return mStream.readline(str, delim);
+    // BufReadable
+    /// @copydoc BufReader::fill
+    [[nodiscard]]
+    auto fill(FillPolicy p = FillPolicy::None) -> IoTask<Buffer> {
+        return mStream.fill(p);
     }
 
-    /// @copydoc BufReader::getline
-    auto getline(std::string_view delim = "\n") -> IoTask<std::string> {
-        return mStream.getline(delim);
+    /// @copydoc BufReader::buffer
+    [[nodiscard]]
+    auto buffer() -> MutableBuffer {
+        return mStream.buffer();
+    }
+
+    /// @copydoc BufReader::consume
+    auto consume(size_t size) -> void {
+        return mStream.consume(size);
     }
 
     // Writable
@@ -704,24 +660,6 @@ public:
     // Get
     auto nextLayer() -> T & {
         return mStream.nextLayer().nextLayer();
-    }
-
-    // Reader
-    /// @copydoc BufReader::fill
-    [[nodiscard]]
-    auto fill(FillPolicy p = FillPolicy::None) -> IoTask<Buffer> {
-        return mStream.fill(p);
-    }
-
-    /// @copydoc BufReader::buffer
-    [[nodiscard]]
-    auto buffer() -> MutableBuffer {
-        return mStream.buffer();
-    }
-
-    /// @copydoc BufReader::consume
-    auto consume(size_t size) -> void {
-        return mStream.consume(size);
     }
 
     // Writer

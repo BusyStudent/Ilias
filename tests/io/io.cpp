@@ -46,6 +46,7 @@ private:
 
 // Static assertions
 static_assert(Readable<BufReader<SpanReader> >);
+static_assert(BufReadable<BufReader<SpanReader> >);
 static_assert(!Writable<BufReader<SpanReader> >);
 
 TEST(Io, Error) {

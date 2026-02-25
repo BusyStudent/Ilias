@@ -31,6 +31,15 @@ enum class SeekOrigin : int {
 };
 
 /**
+ * @brief Enum for BufReadable::fill
+ * 
+ */
+enum class FillPolicy : int {
+    None, // Only fill the buffer when it's empty
+    More, // Always fill the buffer with more data
+};
+
+/**
  * @brief Concept for types that can be read to a a byte span.
  * 
  * @tparam T 
@@ -60,6 +69,17 @@ concept Writable = requires(T &t) {
 template <typename T>
 concept Seekable = requires(T &t) {
     { t.seek(int64_t {}, SeekOrigin {}) } -> std::same_as<IoTask<uint64_t> >;  
+};
+
+/**
+ * @brief Concept for types that has a buffer to do read operations.
+ * 
+ * @tparam T 
+ */
+template <typename T>
+concept BufReadable = Readable<T> && requires(T &t) {
+    { t.fill(FillPolicy {}) } -> std::same_as<IoTask<Buffer> >;
+    { t.consume(size_t {}) } -> std::same_as<void>;
 };
 
 /**

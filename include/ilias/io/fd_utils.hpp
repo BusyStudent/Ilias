@@ -71,11 +71,11 @@ inline auto pipe() -> IoResult<PipePair> {
     if (!win32::pipe(&read, &write)) {
         return Err(SystemError::fromErrno());
     }
-    return PipePair{write, read};
+    return PipePair {write, read};
 #else
     int fds[2];
     if (::pipe(fds) == 0) {
-        return PipePair{fds[1], fds[0]};
+        return PipePair {fds[1], fds[0]};
     }
 
     return Err(SystemError::fromErrno());

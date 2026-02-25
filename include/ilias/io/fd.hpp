@@ -1,9 +1,10 @@
 #pragma once
 
 #include <ilias/io/system_error.hpp>
-#include <ilias/io/error.hpp>
-#include <ilias/io/context.hpp>
 #include <ilias/io/fd_utils.hpp>
+#include <ilias/io/context.hpp>
+#include <ilias/io/method.hpp>
+#include <ilias/io/error.hpp>
 
 ILIAS_NS_BEGIN
 
@@ -48,6 +49,9 @@ public:
      * @return fd_t 
      */
     auto get() const noexcept -> fd_t { return mFd; }
+
+    // Swap
+    auto swap(FileDescriptor &other) noexcept -> void { std::swap(mFd, other.mFd); }
 
     auto operator <=>(const FileDescriptor &other) const noexcept = default;
     auto operator =(FileDescriptor &&other) noexcept -> FileDescriptor & {
