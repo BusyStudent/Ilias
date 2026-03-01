@@ -235,6 +235,7 @@ public:
      * @param buffer The buffer containing data to write
      * @return IoTask<size_t> Total bytes written (equal to buffer.size()), or error if any write fails
      */
+    template <char = 0>
     auto writeAll(Buffer buffer) -> IoTask<size_t> requires Writable<T> {
         return io::writeAll(static_cast<T &>(*this), buffer);
     }
@@ -257,6 +258,7 @@ public:
      * @param buffer The buffer to read into
      * @return IoTask<size_t> Total bytes read (equal to buffer.size()), or error if any read fails
      */
+    template <char = 0>
     auto readAll(MutableBuffer buffer) -> IoTask<size_t> requires(Readable<T>) {
         return io::readAll(static_cast<T &>(*this), buffer);
     }
@@ -296,6 +298,7 @@ public:
      * 
      * @return IoTask<size_t> The number of bytes read, or error if any read fails
      */
+    template <char = 0>
     auto readline(std::string &str, std::string_view delim = "\n") -> IoTask<size_t> requires(BufReadable<T>) {
         return io::readline(static_cast<T &>(*this), str, delim);
     }
@@ -308,6 +311,7 @@ public:
      * 
      * @return IoTask<std::string> The line read (Not including the delimiter), or error if any read fails
      */
+    template <char = 0>
     auto getline(std::string_view delim = "\n") -> IoTask<std::string> requires(BufReadable<T>) {
         return io::getline(static_cast<T &>(*this), delim);
     }
