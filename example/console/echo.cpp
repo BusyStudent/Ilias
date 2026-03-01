@@ -1,16 +1,14 @@
-#include <ilias/fs/console.hpp>
-#include <ilias/io/stream.hpp>
 #include <ilias/platform.hpp>
 #include <ilias/signal.hpp>
 #include <ilias/task.hpp>
+#include <ilias/io.hpp>
 
 using namespace ilias;
 using namespace ilias::literals;
 
 auto loop() -> Task<void> {
-    auto out = (co_await Console::fromStdout()).value();
-    auto in = (co_await Console::fromStdin()).value();
-    auto reader = BufReader(std::move(in));
+    auto reader = BufReader { Stdin {} };
+    auto out = Stdout {};
     while (true) {
         auto line = co_await reader.getline();
         if (!line) {
