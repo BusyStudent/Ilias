@@ -82,7 +82,13 @@ public:
      * 
      * @return fd_t 
      */
-    auto nativeHandle() const -> fd_t;
+    auto nativeHandle() const -> fd_t {
+#if defined(_WIN32)
+        return mHandle.get();
+#else // linux
+        return mHandle.fd().get();
+#endif // _WIN32
+    }
 
     // Operators
     auto operator <=>(const Process &) const noexcept = default; 

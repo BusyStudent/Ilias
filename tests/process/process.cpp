@@ -9,7 +9,7 @@ using namespace ilias;
 
 ILIAS_TEST(Process, SpawnFailed) {
     auto proc = Process::Builder {"non-existing-command"}.spawn();
-    EXPECT_FALSE(proc.has_value());
+    EXPECT_FALSE(proc);
     co_return;
 }
 
@@ -24,8 +24,21 @@ ILIAS_TEST(Process, Spawn) {
         .output();
 #endif
 
-    EXPECT_TRUE(output.has_value());
+    EXPECT_TRUE(output);
     std::cout << output->cout << std::endl;
+}
+
+ILIAS_TEST(Process, Kill) {
+
+#if defined(_WIN32)
+    auto proc = Process::Builder {"powershell"}.spawn();
+#else
+    auto proc = Process::Builder {"bash"}.spawn();
+#endif
+
+    EXPECT_TRUE(proc);
+    EXPECT_TRUE(proc->kill());
+    EXPECT_TRUE(co_await proc->wait());
 }
 
 int main(int argc, char** argv) {

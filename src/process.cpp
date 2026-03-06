@@ -11,7 +11,6 @@
     #include <sys/wait.h> // waitpid
     #include <unistd.h> // pipe, vfork, execve
     #include <csignal> // SIGCHLD
-    #include <spawn.h>
 #endif // _WIN32
 
 ILIAS_NS_BEGIN
@@ -159,38 +158,71 @@ auto Process::Builder::spawn() -> IoResult<Process> {
     args.push_back(nullptr);
 
     // Prepare envs
-    args.reserve(mEnvs.size() + 1);
+    envs.reserve(mEnvs.size() + 1);
     for (auto &env : mEnvs) {
         envs.push_back(env.data());
     }
     envs.push_back(nullptr);
 
+    // Prepare state
     struct State {
-        State() {
-            ::posix_spawn_file_actions_init(&action);
-        }
         ~State() {
-            ::posix_spawn_file_actions_destroy(&action);
+            if (errpipes[0] != -1) {
+                ::close(errpipes[0]);
+            }
+            if (errpipes[1] != -1) {
+                ::close(errpipes[1]);
+            }
+            if (pid != -1) {
+                ::kill(pid, SIGKILL);
+                ::waitpid(pid, nullptr, 0);
+            }
         }
 
-        ::posix_spawn_file_actions_t action;
+        int     errpipes[2] {-1, -1};
+        ::pid_t pid = -1;
     } state;
-
-    // For redirecting...
-    if (mStdin) {
-        ::posix_spawn_file_actions_adddup2(&state.action, mStdin->get(), STDIN_FILENO);
-    }
-    if (mStdout) {
-        ::posix_spawn_file_actions_adddup2(&state.action, mStdout->get(), STDOUT_FILENO);
-    }
-    if (mStderr) {
-        ::posix_spawn_file_actions_adddup2(&state.action, mStderr->get(), STDERR_FILENO);
+    if (::pipe2(state.errpipes, O_CLOEXEC) == -1) {
+        return Err(SystemError::fromErrno());
     }
 
     // Begin the spawn
     // Maybe we can try to use pidfd_spawn() in the future ?
-    ::pid_t pid = 0;
-    if (auto err = ::posix_spawnp(&pid, mExec.c_str(), &state.action, nullptr, args.data(), mEnvs.empty() ? nullptr : envs.data()); err != 0) {
+    ::pid_t pid = ::fork();
+    if (pid == -1) {
+        return Err(SystemError::fromErrno());
+    }
+    if (pid == 0) { // Child, close the read end
+        ::close(std::exchange(state.errpipes[0], -1));
+        
+        do {
+            // Redirect if needed
+            if (mStdin && ::dup2(mStdin->get(), STDIN_FILENO) == -1) {
+                break;
+            }
+            if (mStdout && ::dup2(mStdout->get(), STDOUT_FILENO) == -1) {
+                break;
+            }
+            if (mStderr && ::dup2(mStderr->get(), STDERR_FILENO) == -1) {
+                break;
+            }
+            ::execvp(mExec.c_str(), args.data());
+        }
+        while (0);
+
+        // Error happened
+        ::error_t err = errno;
+        ::write(state.errpipes[1], &err, sizeof(err));
+        ::_Exit(127);
+    }
+
+    // Parent, close the write end
+    state.pid = pid;
+    ::close(std::exchange(state.errpipes[1], -1));
+    ::error_t err = 0;
+    ::ssize_t nbytes = 0;
+    while ((nbytes = ::read(state.errpipes[0], &err, sizeof(err))) == -1 && errno == EINTR) {}
+    if (nbytes == sizeof(err)) { // Got error from the child
         return Err(SystemError(err));
     }
 
@@ -198,17 +230,6 @@ auto Process::Builder::spawn() -> IoResult<Process> {
     mStdin.reset();
     mStdout.reset();
     mStderr.reset();
-
-    // Parent
-    struct Guard {
-        ~Guard() {
-            if (pid != -1) {
-                ::kill(pid, SIGKILL);
-                ::waitpid(pid, nullptr, 0);
-            }
-        }
-        ::pid_t pid;
-    } guard {pid};
 
     // Open pidfd
     Process proc {};
@@ -223,7 +244,7 @@ auto Process::Builder::spawn() -> IoResult<Process> {
         proc.mHandle = std::move(*handle);
         proc.mPid = static_cast<uint32_t>(pid);
     }
-    guard.pid = -1; // All done, clear the guard
+    state.pid = -1; // All done, clear the guard
     return proc;
 #endif // _WIN32
 
