@@ -32,7 +32,7 @@ concept PathLike = requires(T &t) {
  * @brief The File class, used to represent a file stream
  * 
  */
-class File final : public StreamMethod<File> {
+class File final : public StreamExt<File> {
 public:
     File() = default;
     File(IoHandle<FileDescriptor> f, std::optional<uint64_t> offset = std::nullopt) : mHandle(std::move(f)), mOffset(offset) {}

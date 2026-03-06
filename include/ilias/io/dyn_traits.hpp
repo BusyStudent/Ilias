@@ -42,8 +42,8 @@ inline auto deleteProxy(void *object) -> void {
 }
 
 template <Stream T>
-inline auto streamVtbl() -> const StreamVtbl * {
-    static constinit StreamVtbl vtbl = {
+constexpr auto streamVtbl() -> const StreamVtbl * {
+    static constexpr StreamVtbl vtbl = {
         .read     = readProxy<T>,
         .write    = writeProxy<T>,
         .shutdown = shutdownProxy<T>,
@@ -58,21 +58,21 @@ inline auto streamVtbl() -> const StreamVtbl * {
  * @brief The view of the Stream concept, it does not own the object
  * 
  */
-class StreamView : public StreamMethod<StreamView> {
+class StreamView : public StreamExt<StreamView> {
 public:
-    StreamView() = default;
+    constexpr StreamView() = default;
 
     /**
      * @brief Construct a new empty Stream View object
      * 
      */
-    StreamView(std::nullptr_t) { }
+    constexpr StreamView(std::nullptr_t) {}
 
     /**
      * @brief Construct a new Stream View object
      * 
      */
-    StreamView(const StreamView &) = default;
+    constexpr StreamView(const StreamView &) = default;
 
     /**
      * @brief Construct a new Stream View object
@@ -81,7 +81,7 @@ public:
      * @param t The reference of the Stream concept object
      */
     template <Stream T> requires (!std::is_same_v<T, StreamView>) // Avoid recursion
-    StreamView(T &t) : mVtbl(dyn_traits::streamVtbl<T>()), mObject(&t) { }
+    constexpr StreamView(T &t) : mVtbl(dyn_traits::streamVtbl<T>()), mObject(&t) { }
 
     /**
      * @brief Read data from the stream
@@ -149,13 +149,13 @@ friend class DynStream;
  */
 class DynStream final : public StreamView {
 public:
-    DynStream() = default;
+    constexpr DynStream() = default;
 
     /**
      * @brief Construct a new empty Stream object
      * 
      */
-    DynStream(std::nullptr_t) { }
+    constexpr DynStream(std::nullptr_t) {}
 
     /**
      * @brief Construct a new DynStream object by Stream concept 
@@ -166,7 +166,7 @@ public:
     template <Stream T> requires (!std::is_same_v<T, StreamView>)
     DynStream(T &&t) {
         mVtbl = dyn_traits::streamVtbl<T>();
-        mObject = new T(std::move(t));
+        mObject = new T {std::move(t)};
         mDelete = dyn_traits::deleteProxy<T>;
     }
 
@@ -245,7 +245,7 @@ private:
 
 
 // For compatible with old code
-using IStreamClient = DynStream;
-using DynStreamClient = DynStream;
+using IStreamClient [[deprecated("Use DynStream instead")]] = DynStream;
+using DynStreamClient [[deprecated("Use DynStream instead")]] = DynStream;
 
 ILIAS_NS_END

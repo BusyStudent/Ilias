@@ -61,6 +61,7 @@ public:
     }
 
     explicit operator fd_t() const noexcept { return mFd; }
+    explicit operator bool() const noexcept { return mFd != fd_t(-1); }
 private:
     fd_t mFd = fd_t(-1);
 };

@@ -41,7 +41,7 @@ enum class StdioKind {
  * @tparam Kind 
  */
 template <StdioKind Kind>
-class StdioWrapper final : public StreamMethod<StdioWrapper<Kind> > {
+class StdioWrapper final : public StreamExt<StdioWrapper<Kind> > {
 public:
     StdioWrapper(StdioWrapper &&) = default;
     StdioWrapper() {

@@ -11,10 +11,30 @@
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/io/error.hpp>
+#include <ilias/io/fd.hpp>
 #include <ilias/fs/pipe.hpp>
+#include <initializer_list>
 #include <string>
+#include <ranges>
+#include <vector>
 
 ILIAS_NS_BEGIN
+
+namespace detail {
+
+#if defined(_WIN32)
+struct HandleDeleter {
+    void operator()(void *handle) const {
+        ::CloseHandle(handle);
+    }
+};
+
+using ProcessHandle = std::unique_ptr<void, HandleDeleter>;
+#else // linux
+using ProcessHandle = IoHandle<FileDescriptor>; // pidfd
+#endif // _WIN32
+
+} // namespace detail
 
 /**
  * @brief The process class
@@ -22,37 +42,11 @@ ILIAS_NS_BEGIN
  */
 class ILIAS_API Process {
 public:
-    enum Flags : uint32_t {
-        None           = 0 << 0,
-        RedirectStdin  = 1 << 0,
-        RedirectStdout = 1 << 1,
-        RedirectStderr = 1 << 2,
-        RedirectAll = RedirectStdin | RedirectStdout | RedirectStderr,
-    };
-    enum Behavior : uint32_t {
-        Detach, // Detach the process when the process is destroyed
-        Kill,   // Kill the process when the process is destroyed
-    };
+    class Builder;
+    class Output;
 
-    Process() = default;
-    Process(const Process &) = delete;
     Process(Process &&other) = default;
-    ~Process() {
-        if (!bool(mHandle)) {
-            return;
-        }
-        if (mBehavior == Kill) {
-            auto _ = kill();
-        }
-        else {
-            detach();
-        }
-    }
-
-    // We can't use stdin, stdout, stderr as member variable name, they are macros :(
-    auto in() -> Pipe &;
-    auto out() -> Pipe &;
-    auto err() -> Pipe &;
+    Process() = default;
 
     /**
      * @brief Detch the process, just like thread detach, we will lose the control of the process
@@ -61,14 +55,7 @@ public:
     auto detach() -> void;
 
     /**
-     * @brief Set the Behavior when destroy the process
-     * 
-     * @param behavior 
-     */
-    auto setBehavior(Behavior behavior) -> void;
-
-    /**
-     * @brief Send a signal to the process
+     * @brief Kill the process
      * 
      * @return IoResult<void> 
      */
@@ -77,9 +64,18 @@ public:
     /**
      * @brief Wait for the process to be done, if canceled, we will kill the process
      * 
-     * @return int32_t The exit code of the process
+     * @return int32_t The exit status of the process
      */
     auto wait() const -> IoTask<int32_t>;
+
+    /**
+     * @brief Get the pid of the process
+     * 
+     * @return uint32_t 
+     */
+    auto pid() const -> uint32_t {
+        return mPid;
+    }
 
     /**
      * @brief Get the native handle for the process (Process HANDLE on Windows, pidfd on Linux)
@@ -88,16 +84,9 @@ public:
      */
     auto nativeHandle() const -> fd_t;
 
-    /**
-     * @brief Spawn a process with the specified command line arguments
-     * 
-     * @param exec The executable path
-     * @param args The arguments passed to the executable
-     * @param flags The flags for the process, see Flags
-     * @return IoResult<Process>
-     * 
-     */
-    static auto spawn(std::string_view exec, std::vector<std::string_view> args = {}, uint32_t flags = None) -> IoResult<Process>;
+    // Operators
+    auto operator <=>(const Process &) const noexcept = default; 
+    auto operator =(Process &&) -> Process & = default;
 
     /**
      * @brief Check the process is not empty
@@ -106,52 +95,169 @@ public:
      * @return false 
      */
     explicit operator bool() const noexcept {
-        return bool(mHandle);
+        return mPid != 0; // The linux platform may fall back to use pid directly, so check it
     }
 private:
-
-#if defined(_WIN32)
-    struct Deleter {
-        void operator()(void *handle) const {
-            ::CloseHandle(handle);
-        }
-    };
-    std::unique_ptr<void, Deleter> mHandle;
-#else
-    IoHandle<FileDescriptor> mHandle;
-#endif // _WIN32
-
-    // For redirect
-    Pipe mStdin;
-    Pipe mStdout;
-    Pipe mStderr;
-    Behavior mBehavior = Kill;
+    detail::ProcessHandle mHandle;
+    uint32_t              mPid = 0;
 };
 
-inline auto Process::in() -> Pipe & {
-    return mStdin;
-}
+/**
+ * @brief The Output content of the process
+ * 
+ */
+class Process::Output {
+public:
+    int32_t exitStatus = 0;
+    std::string cout;
+    std::string cerr;
+};
 
-inline auto Process::out() -> Pipe & {
-    return mStdout;
-}
+/**
+ * @brief The Builder::Builder class, used to create a process
+ * 
+ */
+class Process::Builder {
+public:
+    explicit Builder(std::string_view exec) : mExec(exec) {}
+    Builder(Builder &&) = default;
+    ~Builder() = default;
 
-inline auto Process::err() -> Pipe & {
-    return mStderr;
-}
+    /**
+     * @brief Set the arguments passed to the process
+     * 
+     * @tparam R 
+     * @param arguments The arguments (like std::vector<std::string> etc.)
+     * @return Builder & 
+     */
+    template <std::ranges::input_range R>
+    auto args(R &&arguments) -> Builder & {
+        mArgs.insert(mArgs.end(), std::ranges::begin(arguments), std::ranges::end(arguments));
+        return *this;
+    }
 
-inline auto Process::setBehavior(Behavior behavior) -> void {
-    mBehavior = behavior;
-}
+    /**
+     * @brief Set the arguments passed to the process, allow args({"arg1", "arg2", "arg3})
+     * 
+     * @param args 
+     * @return Builder & 
+     */
+    auto args(std::initializer_list<std::string_view> args) -> Builder & {
+        mArgs.insert(mArgs.end(), args.begin(), args.end());
+        return *this;
+    }
 
-inline auto Process::nativeHandle() const -> fd_t {
-    
+    /**
+     * @brief Redirect the stdin of the process
+     * 
+     * @param fd The fd must be readable
+     * @return Builder & 
+     */
+    auto cin(FileDescriptor fd) -> Builder & {
+        mStdin.emplace(std::move(fd));
+        return *this;
+    }
+
+    /**
+     * @brief Redirect the stdin to the pipe reader part
+     * 
+     * @param reader 
+     * @return Builder & 
+     */
+    auto cin(PipeReader reader) -> Builder & {
+        mStdin.emplace(reader.detach());
+        return *this;
+    }
+
+    /**
+     * @brief Redirect the stdout of the process
+     * 
+     * @param fd The fd must be writable
+     * @return Builder & 
+     */
+    auto cout(FileDescriptor fd) -> Builder & {
+        mStdout.emplace(std::move(fd));
+        return *this;
+    }
+
+    /**
+     * @brief Redirect the stdout to the pipe writer part
+     * 
+     * @param writer 
+     * @return Builder & 
+     */
+    auto cout(PipeWriter writer) -> Builder & {
+        mStdout.emplace(writer.detach());
+        return *this;
+    }
+
+    /**
+     * @brief Redirect the stderr of the process
+     * 
+     * @param fd The fd must be writable
+     * @return Builder & 
+     */
+    auto cerr(FileDescriptor fd) -> Builder & {
+        mStderr.emplace(std::move(fd));
+        return *this;
+    }
+
+    /**
+     * @brief Redirect the stderr to the pipe writer part
+     * 
+     * @param writer 
+     * @return Builder & 
+     */
+    auto cerr(PipeWriter writer) -> Builder & {
+        mStderr.emplace(writer.detach());
+        return *this;
+    }
+
+    // Win32 specific
 #if defined(_WIN32)
-    return mHandle.get();
-#else
-    return fd_t(mHandle.fd());
+    auto creationFlags(::DWORD flags) -> Builder & {
+        mCreationFlags = flags;
+        return *this;
+    }
 #endif // _WIN32
 
+
+    /**
+     * @brief Spawn the process
+     * 
+     * @return IoResult<Process> 
+     */
+    ILIAS_API
+    auto spawn() -> IoResult<Process>;
+
+    /**
+     * @brief Spawn the process and wait until it's done, get the output
+     * 
+     * @return IoTask<Output> 
+     */
+    ILIAS_API
+    auto output() -> IoTask<Output>;
+
+    // Operators
+    auto operator <=>(const Builder &) const noexcept = default;
+    auto operator =(Builder &&) -> Builder & = default;
+private:
+    std::string              mExec; // The executable path
+    std::vector<std::string> mArgs; // The arguments
+    std::vector<std::string> mEnvs; // The environment variables
+    std::optional<FileDescriptor> mStdin;
+    std::optional<FileDescriptor> mStdout;
+    std::optional<FileDescriptor> mStderr;
+
+#if defined(_WIN32)
+    ::DWORD mCreationFlags = 0;
+#endif // _WIN32
+
+};
+
+inline auto Process::detach() -> void {
+    mHandle = {};
+    mPid = 0;
 }
 
 ILIAS_NS_END

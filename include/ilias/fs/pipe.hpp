@@ -19,43 +19,20 @@
 ILIAS_NS_BEGIN
 
 /**
- * @brief The pipe class
+ * @brief The reader part of the pipe
  * 
  */
-class Pipe final : public StreamMethod<Pipe> {
+class PipeReader final : public ReadableExt<PipeReader> {
 public:
-    Pipe() = default;
-    Pipe(IoHandle<FileDescriptor> h) : mHandle(std::move(h)) {}
+    PipeReader() = default;
+    PipeReader(PipeReader &&) = default;
+    PipeReader(IoHandle<FileDescriptor> h) : mHandle(std::move(h)) {}
 
     auto close() { return mHandle.close(); }
     auto cancel() { return mHandle.cancel(); }
+    auto detach() { return mHandle.detach(); }
 
-    /**
-     * @brief Get the file descriptor
-     * 
-     * @return fd_t 
-     */
-    auto fd() const noexcept -> fd_t {
-        return fd_t(mHandle.fd());
-    }
-
-    // Stream
-    /**
-     * @brief Write data to pipe
-     * 
-     * @param buffer 
-     * @return IoTask<size_t> 
-     */
-    auto write(Buffer buffer) -> IoTask<size_t> {
-        return mHandle.write(buffer, std::nullopt);
-    }
-
-    /**
-     * @brief Read data from pipe
-     * 
-     * @param buffer 
-     * @return IoTask<size_t> 
-     */
+    // Readable
     auto read(MutableBuffer buffer) -> IoTask<size_t> {
 
 #if defined(_WIN32) // Windows named pipe spec
@@ -67,86 +44,92 @@ public:
 #else
         return mHandle.read(buffer, std::nullopt);
 #endif // defined(_WIN32)
+
     }
 
-    /**
-     * @brief Shutdown the pipe, no-op
-     * 
-     * @return IoTask<void> 
-     */
+    // Operator
+    auto operator <=>(const PipeReader &) const = default;
+    auto operator =(PipeReader &&) -> PipeReader & = default;
+
+    // Check if the pipe is valid
+    explicit operator bool() const {
+        return bool(mHandle);
+    }
+private:
+    IoHandle<FileDescriptor> mHandle;
+};
+
+/**
+ * @brief The writer part of the pipe
+ * 
+ */
+class PipeWriter final : public WritableExt<PipeWriter> {
+public:
+    PipeWriter() = default;
+    PipeWriter(PipeWriter &&) = default;
+    PipeWriter(IoHandle<FileDescriptor> h) : mHandle(std::move(h)) {}
+
+    auto close() { return mHandle.close(); }
+    auto cancel() { return mHandle.cancel(); }
+    auto detach() { return mHandle.detach(); }
+
+    // Writable
+    auto write(Buffer buffer) -> IoTask<size_t> {
+        return mHandle.write(buffer, std::nullopt);
+    }
+
     auto shutdown() -> IoTask<void> {
         co_return {};
     }
-    
-    /**
-     * @brief Flush the pipe, no-op
-     * 
-     * @return IoTask<void> 
-     */
+
     auto flush() -> IoTask<void> {
         co_return {};
     }
 
-#if defined(_WIN32) // Windows named pipe spec
-    /**
-     * @brief Wait for the named pipe to be connected (wrapping ConnectNamedPipe)
-     * 
-     * @return IoTask<void> 
-     */
-    auto connect() -> IoTask<void> {
-        return mHandle.connectNamedPipe();
-    }
+    // Operator
+    auto operator <=>(const PipeWriter &) const = default;
+    auto operator =(PipeWriter &&) -> PipeWriter & = default;
 
-    /**
-     * 
-     * @brief Disconnect the named pipe (wrapping DisconnectNamedPipe)
-     * 
-     * @return IoTask<void> 
-     */
-    auto disconnect() -> IoTask<void> {
-        if (::DisconnectNamedPipe(fd())) {
-            co_return {};
-        }
-        co_return Err(SystemError::fromErrno());
-    }
-#endif // defined(_WIN32)
-
-
-    /**
-     * @brief Check if the pipe is valid
-     * 
-     * @return true 
-     * @return false 
-     */
+    // Check if the pipe is valid
     explicit operator bool() const {
         return bool(mHandle);
     }
-
-    /**
-     * @brief Create the pipe and return the pair of pipes
-     * 
-     * @return IoTask<std::pair<Pipe, Pipe> > 
-     */
-    static auto pair() -> IoTask<std::pair<Pipe, Pipe> > {
-        auto pair = fd_utils::pipe();
-        if (!pair) {
-            co_return Err(pair.error());
-        }
-        FileDescriptor read(pair->read);
-        FileDescriptor write(pair->write);
-
-        auto read2 = IoHandle<FileDescriptor>::make(std::move(read), IoDescriptor::Pipe);
-        if (!read2) {
-            co_return Err(read2.error());
-        }
-        auto write2 = IoHandle<FileDescriptor>::make(std::move(write), IoDescriptor::Pipe);
-        if (!write2) {
-            co_return Err(write2.error());
-        }
-        co_return std::make_pair(Pipe(std::move(*read2)), Pipe(std::move(*write2)));
-    }
 private:
     IoHandle<FileDescriptor> mHandle;
+};
+
+/**
+ * @brief The pair of pipe reader and writer
+ * 
+ */
+class PipePair {
+public:
+    PipeWriter writer;
+    PipeReader reader;
+
+    /**
+     * @brief Create a pipe pair (writer -> reader)
+     * 
+     * @return IoResult<PipePair> 
+     */
+    static auto make() -> IoResult<PipePair> {
+        auto pair = fd_utils::pipe();
+        if (!pair) {
+            return Err(pair.error());
+        }
+        auto writer = IoHandle<FileDescriptor>::make(FileDescriptor {pair->writer}, IoDescriptor::Pipe);
+        auto reader = IoHandle<FileDescriptor>::make(FileDescriptor {pair->reader}, IoDescriptor::Pipe);
+        if (!writer) {
+            return Err(writer.error());
+        }
+        if (!reader) {
+            return Err(reader.error());
+        }
+        return PipePair {
+            .writer = PipeWriter {std::move(*writer)},
+            .reader = PipeReader {std::move(*reader)}
+        };
+    }
 };
 
 ILIAS_NS_END

@@ -1,27 +1,24 @@
 #include <ilias/platform.hpp>
 #include <ilias/process.hpp>
 #include <ilias/testing.hpp>
+#include <ilias/fs/pipe.hpp>
 #include <gtest/gtest.h>
 #include <iostream>
 
 using namespace ilias;
 
 ILIAS_TEST(Process, SpawnFailed) {
-    auto proc = Process::spawn("nonexistingcommand", {}, Process::RedirectAll);
+    auto proc = Process::Builder {"non-existing-command"}.spawn();
     EXPECT_FALSE(proc.has_value());
     co_return;
 }
 
 ILIAS_TEST(Process, Spawn) {
-#if defined(_WIN32)
-    auto proc = Process::spawn("powershell", {"-Command", "ls"}, Process::RedirectAll).value();
-#else
-    auto proc = Process::spawn("ls", {"-l"}, Process::RedirectAll).value();
-#endif
-    EXPECT_TRUE(co_await proc.wait());
-    std::string content;
-    EXPECT_TRUE(co_await proc.out().readToEnd(content));
-    std::cout << content << std::endl;
+    auto output = co_await Process::Builder {"powershell"}
+        .args({"-Command", "ls"})
+        .output();
+    EXPECT_TRUE(output.has_value());
+    std::cout << output->cout << std::endl;
 }
 
 int main(int argc, char** argv) {

@@ -11,7 +11,7 @@ ILIAS_NS_BEGIN
  * @brief A Duplex stream is a stream that can be read from and written to at the same time. like a pipe. but in memory.
  * 
  */
-class ILIAS_API DuplexStream final : public StreamMethod<DuplexStream> {
+class ILIAS_API DuplexStream final : public StreamExt<DuplexStream> {
 public:
     struct Impl;
 

@@ -55,8 +55,8 @@ inline auto close(fd_t fd) -> IoResult<void> {
  * 
  */
 struct PipePair {
-    fd_t write;
-    fd_t read;
+    fd_t writer;
+    fd_t reader;
 };
 
 /**
@@ -67,11 +67,11 @@ struct PipePair {
 inline auto pipe() -> IoResult<PipePair> {
 
 #if defined(_WIN32)
-    HANDLE read, write;
-    if (!win32::pipe(&read, &write)) {
+    HANDLE reader, writer;
+    if (!win32::pipe(&reader, &writer)) {
         return Err(SystemError::fromErrno());
     }
-    return PipePair {write, read};
+    return PipePair {writer, reader};
 #else
     int fds[2];
     if (::pipe(fds) == 0) {

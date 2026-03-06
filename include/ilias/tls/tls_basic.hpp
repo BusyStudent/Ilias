@@ -199,7 +199,7 @@ friend class TlsStream;
  * @tparam T 
  */
 template <Stream T>
-class TlsStream final : public StreamMethod<TlsStream<T> > {    
+class TlsStream final : public StreamExt<TlsStream<T> > {    
 public:
     TlsStream() = default;
     TlsStream(TlsStream &&other) = default;

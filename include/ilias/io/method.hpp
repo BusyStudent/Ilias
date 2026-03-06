@@ -222,12 +222,12 @@ inline auto lowestLayer(T &layer) -> decltype(auto) {
 } // namespace io
 
 /**
- * @brief Helper class for Writable types
+ * @brief Extension for Writable types
  * 
  * @tparam T 
  */
 template <typename T>
-class WritableMethod {
+class WritableExt {
 public:
     /**
      * @brief Write All Data to Stream, equal to writeAll(stream, buffer)
@@ -240,16 +240,16 @@ public:
         return io::writeAll(static_cast<T &>(*this), buffer);
     }
 
-    auto operator <=>(const WritableMethod &rhs) const noexcept = default;
+    auto operator <=>(const WritableExt &rhs) const noexcept = default;
 };
 
 /**
- * @brief Helper class for Readable types
+ * @brief Extension for Readable types
  * 
  * @tparam T 
  */
 template <typename T>
-class ReadableMethod {
+class ReadableExt {
 public:
     /**
      * @brief Read All Data from Stream
@@ -316,18 +316,26 @@ public:
         return io::getline(static_cast<T &>(*this), delim);
     }
 
-    auto operator <=>(const ReadableMethod &rhs) const noexcept = default;
+    auto operator <=>(const ReadableExt &rhs) const noexcept = default;
 };
             
 /**
- * @brief Helper for both Readable and Writable
+ * @brief Extension for both Readable and Writable
  * 
  * @tparam T 
  */
 template <typename T>
-class StreamMethod : public WritableMethod<T>, public ReadableMethod<T> {
+class StreamExt : public WritableExt<T>, public ReadableExt<T> {
 public:
-    auto operator <=>(const StreamMethod &rhs) const noexcept -> std::strong_ordering = default;
+    auto operator <=>(const StreamExt &rhs) const noexcept -> std::strong_ordering = default;
 };
+
+// Compatible with old code
+template <typename T>
+using ReadableMethod [[deprecated("Use ReadableExt instead")]] = ReadableExt<T>;
+template <typename T>
+using WritableMethod [[deprecated("Use WritableExt instead")]] = WritableExt<T>;
+template <typename T>
+using StreamMethod [[deprecated("Use StreamExt instead")]] = StreamExt<T>;
 
 ILIAS_NS_END

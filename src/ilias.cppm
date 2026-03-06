@@ -53,9 +53,9 @@ export namespace ilias {
     using ilias::Readable;
     using ilias::Writable;
     using ilias::Stream;
-    using ilias::ReadableMethod;
-    using ilias::WritableMethod;
-    using ilias::StreamMethod;
+    using ilias::ReadableExt;
+    using ilias::WritableExt;
+    using ilias::StreamExt;
 
     // Net module
     using ilias::IPEndpoint;

@@ -371,7 +371,7 @@ inline constexpr size_t DEFAULT_BUFFER_CAPACITY = 4096;
  * @tparam T 
  */
 template <Readable T>
-class BufReader final : public StreamMethod<BufReader<T> > {
+class BufReader final : public StreamExt<BufReader<T> > {
 public:
     /**
      * @brief Construct a new Buf Reader with capacity 
@@ -486,7 +486,7 @@ private:
  * @tparam T 
  */
 template <Writable T>
-class BufWriter final : public StreamMethod<BufWriter<T> > {
+class BufWriter final : public StreamExt<BufWriter<T> > {
 public:
     /**
      * @brief Construct a new Buf Writer with capacity
@@ -593,7 +593,7 @@ private:
  * @tparam T 
  */
 template <Stream T>
-class BufStream final : public StreamMethod<BufStream<T> > {
+class BufStream final : public StreamExt<BufStream<T> > {
 public:
     /**
      * @brief Construct a new Buf Stream with capacity

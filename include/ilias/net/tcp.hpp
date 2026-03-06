@@ -22,7 +22,7 @@ ILIAS_NS_BEGIN
  * @brief The tcp stream class.
  * 
  */
-class TcpStream final : public StreamMethod<TcpStream> {
+class TcpStream final : public StreamExt<TcpStream> {
 public:
     TcpStream() = default;
     TcpStream(IoHandle<Socket> h) : mHandle(std::move(h)) {}

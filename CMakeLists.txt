@@ -35,6 +35,7 @@ set(SRCS
     src/io.cpp
     src/log.cpp
     src/runtime.cpp
+    src/process.cpp
     src/sync.cpp
     src/task.cpp
     src/net/addrinfo.cpp
@@ -46,7 +47,6 @@ if(WIN32)
     list(APPEND SRCS 
         src/win32/io_context.cpp
         src/win32/ntdll.cpp
-        src/win32/process.cpp
         src/win32/signal.cpp
         src/win32/win32.cpp
     )
@@ -60,7 +60,6 @@ if(WIN32)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SRCS 
         src/linux/epoll.cpp
-        src/linux/process.cpp
         src/linux/signal.cpp
     )
     list(APPEND LIBS pthread dl anl rt)
