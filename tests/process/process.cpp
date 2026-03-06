@@ -14,9 +14,16 @@ ILIAS_TEST(Process, SpawnFailed) {
 }
 
 ILIAS_TEST(Process, Spawn) {
+
+#if defined(_WIN32)
     auto output = co_await Process::Builder {"powershell"}
         .args({"-Command", "ls"})
         .output();
+#else
+    auto output = co_await Process::Builder {"ls"}
+        .output();
+#endif
+
     EXPECT_TRUE(output.has_value());
     std::cout << output->cout << std::endl;
 }

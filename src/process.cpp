@@ -145,18 +145,26 @@ auto Process::Builder::spawn() -> IoResult<Process> {
     proc.mHandle.reset(pi.hProcess);
     proc.mPid = pi.dwProcessId;
     return proc;
-#else // Using posix spawn
+#else // Posix platform, use posix_spawn
     // Allocate argv array with space for program name + args + nullptr
-    auto vec = std::vector<char *> {};
-    vec.reserve(mArgs.size() + 2);
+    auto args = std::vector<char *> {};
+    auto envs = std::vector<char *> {};
 
-    vec.push_back(mExec.data());
+    // Prepare args
+    args.reserve(mArgs.size() + 2);
+    args.push_back(mExec.data());
     for (auto &arg : mArgs) {
-        vec.push_back(arg.data());
+        args.push_back(arg.data());
     }
-    vec.push_back(nullptr);
+    args.push_back(nullptr);
 
-    // Prepare the env, pipes...
+    // Prepare envs
+    args.reserve(mEnvs.size() + 1);
+    for (auto &env : mEnvs) {
+        envs.push_back(env.data());
+    }
+    envs.push_back(nullptr);
+
     struct State {
         State() {
             ::posix_spawn_file_actions_init(&action);
@@ -180,10 +188,16 @@ auto Process::Builder::spawn() -> IoResult<Process> {
     }
 
     // Begin the spawn
+    // Maybe we can try to use pidfd_spawn() in the future ?
     ::pid_t pid = 0;
-    if (auto err = ::posix_spawnp(&pid, program.c_str(), &state.action, nullptr, vec.data(), nullptr); err != 0) {
+    if (auto err = ::posix_spawnp(&pid, mExec.c_str(), &state.action, nullptr, args.data(), mEnvs.empty() ? nullptr : envs.data()); err != 0) {
         return Err(SystemError(err));
     }
+
+    // Close it, move the ownership to child
+    mStdin.reset();
+    mStdout.reset();
+    mStderr.reset();
 
     // Parent
     struct Guard {
@@ -197,12 +211,12 @@ auto Process::Builder::spawn() -> IoResult<Process> {
     } guard {pid};
 
     // Open pidfd
-    Process proc;
-    if (auto pidfd = FileDescriptor {::syscall(SYS_pidfd_open, pid, 0)}; pidfd.get() == -1) {
+    Process proc {};
+    if (auto pidfd = static_cast<int>(::syscall(SYS_pidfd_open, pid, 0)); pidfd == -1) {
         return Err(SystemError::fromErrno());
     }
     else {
-        auto handle = IoHandle<FileDescriptor>::make(std::move(pidfd), IoDescriptor::Pollable);
+        auto handle = IoHandle<FileDescriptor>::make(FileDescriptor {pidfd}, IoDescriptor::Pollable);
         if (!handle) {
             return Err(handle.error());
         }
@@ -250,15 +264,16 @@ auto Process::Builder::output() -> IoTask<Output> {
 
 // MARK: Process
 auto Process::kill() const -> IoResult<void> {
-    if (!mHandle) {
-        return Err(IoError::InvalidArgument);
-    }
+
 #if defined(_WIN32)
     if (!::TerminateProcess(mHandle.get(), 0)) {
         return Err(SystemError::fromErrno());
     }
 #else // Pidfd
-    if (::kill(mPid, SIGKILL) != 0) {
+    if (mPid == 0) {
+        return Err(IoError::InvalidArgument);
+    }
+    if (::syscall(SYS_pidfd_send_signal, mHandle.fd().get(), SIGKILL, nullptr, 0) == -1) {
         return Err(SystemError::fromErrno());
     }
 #endif
@@ -289,7 +304,7 @@ auto Process::wait() const -> IoTask<int32_t> {
         }
     }
     ::siginfo_t info {};
-    if (::waitid(P_PIDFD, fd_t(mHandle.fd()), &info, WEXITED) == -1) {
+    if (::waitid(P_PIDFD, mHandle.fd().get(), &info, WEXITED) == -1) {
         co_return Err(SystemError::fromErrno());
     }
     co_return info.si_status;
