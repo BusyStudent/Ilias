@@ -299,9 +299,13 @@ auto EpollContext::post(void (*fn)(void *), void *args) -> void {
 }
 
 auto EpollContext::run(runtime::StopToken token) -> void {
-    while (!token.stop_requested()) {
+    auto running = true;
+    auto cb = runtime::StopCallback(token, [&, this]() {
+        schedule([&]() { running = false; });
+    });
+    while (running) {
         mService.updateTimers();
-        processCompletion(token);
+        processCompletion(running);
     }
 }
 
@@ -309,7 +313,7 @@ auto EpollContext::sleep(uint64_t ms) -> Task<void> {
     co_return co_await mService.sleep(ms);
 }
 
-auto EpollContext::processCompletion(runtime::StopToken &token) -> void {
+auto EpollContext::processCompletion(bool &running) -> void {
     while (!mCallbacks.empty()) { // Process all callbacks in the current thread queue
         auto cb = mCallbacks.front();
         mCallbacks.pop_front();
@@ -317,7 +321,7 @@ auto EpollContext::processCompletion(runtime::StopToken &token) -> void {
         mService.updateTimers(); // Update timers after each callback, TODO: Make an better way
     }
     // No callbacks available and non exit requested, process epoll events
-    if (token.stop_requested()) {
+    if (!running) {
         return;
     }
     // Time to wait

@@ -76,7 +76,7 @@ public:
     ///> @brief Sleep for a specified amount of time
     auto sleep(uint64_t ms) -> Task<void> override;
 private:
-    auto processCompletion(std::stop_token &token) -> void;
+    auto processCompletion(bool &running) -> void;
     auto processEvents(std::span<const epoll_event> events) -> void;
     auto processTimer() -> void;
     auto pollCallbacks() -> void;

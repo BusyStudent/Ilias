@@ -43,7 +43,9 @@ inline auto makeThreadedContextImpl() -> std::shared_ptr<T> {
     latch.wait(); // Wait init done
 
     return std::shared_ptr<T> {context, [state = std::move(state)](T *ptr) mutable {
-        state.source.request_stop();
+        ptr->schedule([&]() { // Do the stop request in the thread, more safer :)
+            state.source.request_stop();
+        });
         state.thread.join();
         // No-need to delete the context, it is owned by the thread
     }};
