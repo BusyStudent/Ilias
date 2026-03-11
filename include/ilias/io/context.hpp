@@ -188,15 +188,6 @@ public:
     }
 
 #if defined(_WIN32)
-    // Win32 Specific Io Operations
-    /**
-     * @brief Wrapping Win32 ConnectNamedPipe, The named pipe server wait for a client to connect
-     * 
-     * @param fd The fd must be a named pipe
-     * @return IoTask<void> 
-     */
-    virtual auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void>;
-
     /**
      * @brief Wrapping Win32 WaitForSingleObject, wait for a object to be signaled
      * 
@@ -310,12 +301,6 @@ public:
     auto recvmsg(auto &&...args) const {
         return context()->recvmsg(mDesc.get(), args...);
     }
-
-#if defined(_WIN32)
-    auto connectNamedPipe() const {
-        return context()->connectNamedPipe(mDesc.get());
-    }
-#endif
 
     // Operators
     auto operator <=>(const IoHandle &other) const noexcept = default;

@@ -505,15 +505,6 @@ auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     co_return co_await awaiter;
 }
 
-// MARK: NamedPipe
-auto IocpContext::connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
-    auto nfd = static_cast<IocpDescriptor*>(fd);
-    if (nfd->type != IoDescriptor::Pipe) {
-        co_return Err(IoError::OperationNotSupported);
-    }
-    co_return co_await IocpConnectPipeAwaiter(nfd->handle);
-}
-
 // MARK: WaitObject
 auto IocpContext::waitObject(HANDLE object) -> IoTask<void> {
     do {
@@ -700,10 +691,6 @@ auto IoContext::waitObject(HANDLE object) -> IoTask<void> {
         .object = object
     };
     co_return co_await awaiter;
-}
-
-auto IoContext::connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
-    co_return Err(IoError::OperationNotSupported);
 }
 
 ILIAS_NS_END

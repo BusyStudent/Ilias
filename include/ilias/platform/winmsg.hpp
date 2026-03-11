@@ -18,7 +18,7 @@ namespace win32 {
  * @brief The IoContext run on the message loop of the current thread. it delegate the io to another thread's io context.
  * 
  */
-class WinMsgContext final : public DelegateContext<IocpContext> {
+class WinMsgContext final : public ProxyContext {
 public:
     WinMsgContext();
     WinMsgContext(const WinMsgContext &) = delete;

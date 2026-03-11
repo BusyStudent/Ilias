@@ -5,23 +5,63 @@
 #include <ilias/io/context.hpp>
 #include <ilias/task/utils.hpp>
 #include <ilias/task/task.hpp>
+#include <ilias/platform.hpp> // PlatformContext
 #include <thread>
 #include <latch>
 
 ILIAS_NS_BEGIN
 
-/**
- * @brief Helper class to delegate an IoContext to a separate thread
- * 
- * @tparam T The IoContext to delegate
- */
-template <typename T>
-class DelegateContext : public IoContext {
-public:
-    DelegateContext();
-    ~DelegateContext();
+namespace detail {
 
-    // < For IoContext
+// The background thread entry
+template <typename T>
+inline auto threadedContextLoop(runtime::StopToken token, T **out, std::latch *initDone) -> void {
+    T context {};
+    context.install();
+
+    // Init complete
+    *out = &context;
+    initDone->count_down();
+    out = nullptr;
+    initDone = nullptr;
+
+    // Wait for stop token request
+    context.run(token);
+}
+
+template <typename T>
+inline auto makeThreadedContextImpl() -> std::shared_ptr<T> {
+    struct State {
+        runtime::StopSource source;
+        std::thread         thread;
+    };
+
+    State      state {};
+    std::latch latch {1};
+    T          *context = nullptr;
+    state.thread = std::thread {&threadedContextLoop<T>, state.source.get_token(), &context, &latch};
+    latch.wait(); // Wait init done
+
+    return std::shared_ptr<T> {context, [state = std::move(state)](T *ptr) mutable {
+        state.source.request_stop();
+        state.thread.join();
+        // No-need to delete the context, it is owned by the thread
+    }};
+}
+
+} // namespace detail
+
+/**
+ * @brief Helper class to proxy all io operations to another context
+ * 
+ */
+class ProxyContext : public IoContext {
+public:
+    explicit ProxyContext(std::shared_ptr<IoContext> context);
+    ProxyContext();
+    ~ProxyContext();
+
+    // IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> IoResult<void> override;
     auto cancel(IoDescriptor *fd) -> IoResult<void> override;
@@ -41,34 +81,23 @@ public:
     auto recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> override;
 
     auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
-
-#if defined(_WIN32)
-    auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void> override;
-#endif // defined(_WIN32)
-
 private:
-    auto mainloop() -> void;
-
-    T *mContext = nullptr; //< The context to delegate to
-    runtime::StopSource mSource;
-    std::thread mThread; //< The worker thread
+    std::shared_ptr<IoContext> mContext; //< The context to delegate to
 };
 
-template <typename T>
-inline DelegateContext<T>::DelegateContext() : mThread(&DelegateContext::mainloop, this) {
-    std::atomic_ref(mContext).wait(nullptr); // Wait for the context to be ready
+inline ProxyContext::ProxyContext(std::shared_ptr<IoContext> context) : mContext(std::move(context)) {
+
 }
 
-template <typename T>
-inline DelegateContext<T>::~DelegateContext() {
-    mContext->post([](void *source) {
-        static_cast<runtime::StopSource*>(source)->request_stop();
-    }, &mSource);
-    mThread.join();
+inline ProxyContext::ProxyContext() : mContext(detail::makeThreadedContextImpl<PlatformContext>()) {
+    
 }
 
-template <typename T>
-inline auto DelegateContext<T>::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor*> {
+inline ProxyContext::~ProxyContext() {
+    mContext.reset();
+}
+
+inline auto ProxyContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor*> {
     std::latch latch {1};
     IoResult<IoDescriptor*> ret {nullptr};
 
@@ -84,8 +113,7 @@ inline auto DelegateContext<T>::addDescriptor(fd_t fd, IoDescriptor::Type type) 
     return ret;
 }
 
-template <typename T>
-inline auto DelegateContext<T>::removeDescriptor(IoDescriptor* fd) -> IoResult<void> {
+inline auto ProxyContext::removeDescriptor(IoDescriptor* fd) -> IoResult<void> {
     std::latch latch {1};
     IoResult<void> ret;
 
@@ -101,8 +129,7 @@ inline auto DelegateContext<T>::removeDescriptor(IoDescriptor* fd) -> IoResult<v
     return ret;
 }
 
-template <typename T>
-inline auto DelegateContext<T>::cancel(IoDescriptor *fd) -> IoResult<void> {
+inline auto ProxyContext::cancel(IoDescriptor *fd) -> IoResult<void> {
     std::latch latch {1};
     IoResult<void> ret;
 
@@ -118,74 +145,54 @@ inline auto DelegateContext<T>::cancel(IoDescriptor *fd) -> IoResult<void> {
     return ret;
 }
 
-template <typename T>
-inline auto DelegateContext<T>::mainloop() -> void {
-    T ctxt;
-    {
-        std::atomic_ref ref {mContext};
-        ref.store(&ctxt);
-        ref.notify_one();
-    }
-    mContext->run(mSource.get_token());
-    mContext = nullptr;
-}
-
-template <typename T>
-inline auto DelegateContext<T>::sleep(uint64_t ms) -> Task<void> {
+inline auto ProxyContext::sleep(uint64_t ms) -> Task<void> {
     co_return co_await scheduleOn(mContext->sleep(ms), *mContext);
 }
 
-template <typename T>
-inline auto DelegateContext<T>::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
+inline auto ProxyContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     co_return co_await scheduleOn(mContext->read(fd, buffer, offset), *mContext);
 }
 
-template <typename T>
-inline auto DelegateContext<T>::write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
+inline auto ProxyContext::write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     co_return co_await scheduleOn(mContext->write(fd, buffer, offset), *mContext);
 }
 
-template <typename T>
-inline auto DelegateContext<T>::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> IoTask<socket_t> {
+inline auto ProxyContext::accept(IoDescriptor *fd, MutableEndpointView endpoint) -> IoTask<socket_t> {
     co_return co_await scheduleOn(mContext->accept(fd, endpoint), *mContext);
 }
 
-template <typename T>
-inline auto DelegateContext<T>::connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> {
+inline auto ProxyContext::connect(IoDescriptor *fd, EndpointView endpoint) -> IoTask<void> {
     co_return co_await scheduleOn(mContext->connect(fd, endpoint), *mContext);
 }
 
-template <typename T>
-inline auto DelegateContext<T>::sendto(IoDescriptor *fd, Buffer buffer, int flags, EndpointView endpoint) -> IoTask<size_t> {
+inline auto ProxyContext::sendto(IoDescriptor *fd, Buffer buffer, int flags, EndpointView endpoint) -> IoTask<size_t> {
     co_return co_await scheduleOn(mContext->sendto(fd, buffer, flags, endpoint), *mContext);
 }
 
-template <typename T>
-inline auto DelegateContext<T>::recvfrom(IoDescriptor *fd, MutableBuffer buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> {
+inline auto ProxyContext::recvfrom(IoDescriptor *fd, MutableBuffer buffer, int flags, MutableEndpointView endpoint) -> IoTask<size_t> {
     co_return co_await scheduleOn(mContext->recvfrom(fd, buffer, flags, endpoint), *mContext);
 }
 
-template <typename T>
-inline auto DelegateContext<T>::sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
+inline auto ProxyContext::sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) -> IoTask<size_t> {
     co_return co_await scheduleOn(mContext->sendmsg(fd, msg, flags), *mContext);
 }
 
-template <typename T>
-inline auto DelegateContext<T>::recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> {
+inline auto ProxyContext::recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> {
     co_return co_await scheduleOn(mContext->recvmsg(fd, msg, flags), *mContext);
 }
 
-template <typename T>
-inline auto DelegateContext<T>::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
+inline auto ProxyContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     co_return co_await scheduleOn(mContext->poll(fd, events), *mContext);
 }
 
-#if defined(_WIN32)
-template <typename T>
-inline auto DelegateContext<T>::connectNamedPipe(IoDescriptor *fd) -> IoTask<void> {
-    co_return co_await scheduleOn(mContext->connectNamedPipe(fd), *mContext);
+/**
+ * @brief Create an IoContext that run on another context
+ * 
+ * @tparam T 
+ */
+template <typename T> requires(std::is_base_of_v<IoContext, T>)
+inline auto makeThreadedContext() -> std::shared_ptr<T> {
+    return detail::makeThreadedContextImpl<T>();
 }
-#endif // defined(_WIN32)
-
 
 ILIAS_NS_END

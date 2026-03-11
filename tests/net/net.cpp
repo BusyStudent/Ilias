@@ -441,7 +441,7 @@ ILIAS_TEST(Net, Http) {
     }
 }
 
-class IoEventLoop : public DelegateContext<PlatformContext> {
+class IoEventLoop : public ProxyContext {
 public:
     auto post(void (*fn)(void*), void* arg) -> void override {
         mLoop.post(fn, arg);

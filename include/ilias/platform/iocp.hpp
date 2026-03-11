@@ -57,7 +57,6 @@ public:
     auto recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> IoTask<size_t> override;
 
     auto poll(IoDescriptor *fd, uint32_t event) -> IoTask<uint32_t> override;
-    auto connectNamedPipe(IoDescriptor *fd) -> IoTask<void> override;
     auto waitObject(HANDLE handle) -> IoTask<void> override;
 private:
     auto submitTimerWait(HANDLE handle, HANDLE packet, PBOOLEAN alreadySignaled) -> DWORD;
