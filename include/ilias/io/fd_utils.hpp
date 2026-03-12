@@ -16,7 +16,6 @@
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp> // win32 specific types && win32::pipe
-    #include <atomic>
 #else
     #include <sys/stat.h>
     #include <unistd.h>
@@ -127,96 +126,6 @@ inline auto dup(fd_t fd) -> IoResult<fd_t> {
     int newFd = ::dup(fd);
     if (newFd != -1) {
         return newFd;
-    }
-#endif // defined(_WIN32)
-
-    return Err(SystemError::fromErrno());
-}
-
-/**
- * @brief Open a file.
- * 
- * @param path the utf-8 encoded path to the file.
- * @param mode the mode to open the file. (c style mode string like fopen "r", "w", "a" etc.)
- * @return IoResult<fd_t> 
- */
-inline auto open(const char *path, std::string_view mode) -> IoResult<fd_t> {
-
-#if defined(_WIN32)
-    ::DWORD access = 0;
-    ::DWORD shareMode = 0;
-    ::DWORD creationDisposition = 0;
-    ::DWORD flagsAndAttributes = FILE_FLAG_OVERLAPPED;
-    bool append = false;
-
-    if (mode.find('r') != std::string_view::npos) {
-        creationDisposition = OPEN_EXISTING;
-        access |= GENERIC_READ;
-    }
-
-    if (mode.find('w') != std::string_view::npos) {
-        creationDisposition = CREATE_ALWAYS;
-        access |= GENERIC_WRITE;
-    }
-
-    if (mode.find('a') != std::string_view::npos) {
-        creationDisposition = OPEN_ALWAYS;
-        access |= GENERIC_WRITE;
-        append = true;
-    }
-
-    if (mode.find('+') != std::string_view::npos) {
-        access |= GENERIC_READ | GENERIC_WRITE;
-    }
-
-    HANDLE fd = ::CreateFileW(
-        win32::toWide(path).c_str(),
-        access,
-        shareMode,
-        nullptr,
-        creationDisposition,
-        flagsAndAttributes,
-        nullptr
-    );
-    if (fd != INVALID_HANDLE_VALUE) {
-        if (append) {
-            ::SetFilePointer(fd, 0, nullptr, FILE_END);
-        }
-        return fd;
-    }
-#else
-    // Mapping by man fopen
-    // r  | O_RDONLY
-    // w  | O_WRONLY | O_CREAT | O_TRUNC 
-    // a  | O_WRONLY | O_CREAT | O_APPEND
-    // r+ | O_RDWR                       
-    // w+ | O_RDWR | O_CREAT | O_TRUNC   
-    // a+ | O_RDWR | O_CREAT | O_APPEND  
-    int flags = 0;
-
-    if (mode.find('r') != std::string_view::npos) {
-        flags |= O_RDONLY;
-    }
-    if (mode.find('w') != std::string_view::npos) {
-        flags |= O_WRONLY | O_CREAT | O_TRUNC; 
-    }
-    if (mode.find('a') != std::string_view::npos) {
-        flags |= O_WRONLY | O_CREAT | O_APPEND;
-    }
-    if (mode.find('+') != std::string_view::npos) {
-        flags |= O_RDWR;
-    }
-
-    int fd = -1;
-
-    if (flags & O_CREAT) {
-        fd = ::open(path, flags, mode_t(S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
-    }
-    else {
-        fd = ::open(path, flags);
-    }
-    if (fd >= 0) {
-        return fd;
     }
 #endif // defined(_WIN32)
 

@@ -15,17 +15,138 @@
 #include <ilias/io/context.hpp>
 #include <ilias/io/method.hpp>
 #include <ilias/io/fd.hpp>
+#include <ilias/fs/path.hpp>
+#include <filesystem>
+#include <concepts>
+
+#if defined(_WIN32) 
+    #include <ilias/detail/win32defs.hpp>
+#endif // _WIN32
 
 ILIAS_NS_BEGIN
 
+class File;
+
 /**
- * @brief Concept for std::filesystem::path or another compatible path type
+ * @brief The option used to open a file
  * 
- * @tparam T 
  */
-template <typename T>
-concept PathLike = requires(T &t) {
-    { t.u8string() } -> std::convertible_to<std::u8string>;
+class OpenOptions {
+public:
+    /**
+     * @brief Create an new OpenOptions object, default to nothing
+     * 
+     */
+    constexpr OpenOptions() = default;
+    constexpr OpenOptions(const OpenOptions &) = default;
+    constexpr OpenOptions(OpenOptions &&) = default;
+
+    /**
+     * @brief Set the read access option
+     * 
+     * @param on (default on true)
+     * @return OpenOptions & 
+     */
+    constexpr auto read(bool on = true) -> OpenOptions & {
+        mRead = on;
+        return *this;
+    }
+
+    /**
+     * @brief Set the write option
+     * 
+     * @param on (default on true)
+     * @return OpenOptions & 
+     */
+    constexpr auto write(bool on = true) -> OpenOptions & {
+        mWrite = on;
+        return *this;
+    }
+
+    /**
+     * @brief Set the append option, it will disable seek and always append to the file
+     * 
+     * @param on 
+     * @return OpenOptions & 
+     */
+    constexpr auto append(bool on = true) -> OpenOptions & {
+        mAppend = on;
+        return *this;
+    }
+
+    /**
+     * @brief Truncate the file if it exists
+     * 
+     * @param on 
+     * @return OpenOptions& 
+     */
+    constexpr auto truncate(bool on = true) -> OpenOptions & {
+        mTruncate = on;
+        return *this;
+    }
+
+    /**
+     * @brief Create the file if it doesn't exist
+     * @note This option require the write option to be set
+     * 
+     * @param on (default on true)
+     * @return OpenOptions& 
+     */
+    constexpr auto create(bool on = true) -> OpenOptions & {
+        mCreate = on;
+        return *this;
+    }
+
+    /**
+     * @brief Create the file if it doesn't exist, fail if it does
+     * @note This option require the write option to be set
+     * 
+     * @param on 
+     * @return OpenOptions& 
+     */
+    constexpr auto createNew(bool on = true) -> OpenOptions & {
+        mCreateNew = on;
+        return *this;
+    }
+
+    /**
+     * @brief Open the file by the given options
+     * 
+     * @note The char will be treated as utf-8 encoded
+     * @param path The path of the file
+     * @return IoTask<File> 
+     */
+    template <fs::IntoPath T>
+    auto open(const T &path) const -> IoTask<File>;
+
+    // Operators
+    auto operator <=>(const OpenOptions &) const = default;
+    auto operator =(const OpenOptions &) -> OpenOptions & = default;
+    auto operator =(OpenOptions &&) -> OpenOptions & = default;
+
+    // Some predefined options
+    // "r"
+    static const OpenOptions ReadOnly;
+    // "w"
+    static const OpenOptions WriteOnly;
+    // "r+"
+    static const OpenOptions ReadWrite;
+private:
+    static auto doOpen(OpenOptions self, fs::Path path) -> IoTask<File>;
+
+    // Read Mode, default to read-only
+    bool mRead  = false;
+    bool mWrite = false;
+    bool mAppend = false;  // Append to the file if it exists
+    bool mTruncate = false; // Truncate the file if it exists
+    bool mCreate = false;  // Create the file if it doesn't exist
+    bool mCreateNew = false; // Create the file if it doesn't exist, fail if it does
+
+#if defined(_WIN32)
+    ::DWORD mShareMode = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+#else
+    ::mode_t mMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH; // The mode used to create the file
+#endif // defined(_WIN32)
 };
 
 /**
@@ -35,6 +156,7 @@ concept PathLike = requires(T &t) {
 class File final : public StreamExt<File> {
 public:
     File() = default;
+    File(File &&) = default;
     File(IoHandle<FileDescriptor> f, std::optional<uint64_t> offset = std::nullopt) : mHandle(std::move(f)), mOffset(offset) {}
 
     auto close() { return mHandle.close(); }
@@ -43,31 +165,38 @@ public:
     // Readable
     /**
      * @brief Start read data from the file
+     * @warning Don't use this function cocurrently, it will cause data race condition, use pread instead
      * 
      * @param buffer 
      * @return IoTask<size_t> 
      */
     auto read(MutableBuffer buffer) -> IoTask<size_t> {
-        auto ret = co_await mHandle.read(buffer, mOffset);
-        if (ret && mOffset) {
-            *mOffset += ret.value();
+        auto res = co_await mHandle.read(buffer, mOffset);
+#if defined(_WIN32)
+        if (res == Err(SystemError(ERROR_HANDLE_EOF))) { // EOF
+            res = 0;
         }
-        co_return ret;
+#endif // _WIN32
+        if (res && mOffset) {
+            *mOffset += *res;
+        }
+        co_return res;
     }
 
     // Writable
     /**
      * @brief Write data to the file
+     * @warning Don't use this function cocurrently, it will cause data race condition, use pwrite instead
      * 
      * @param buffer 
      * @return IoTask<size_t> 
      */
     auto write(Buffer buffer) -> IoTask<size_t> {
-        auto ret = co_await mHandle.write(buffer, mOffset);
-        if (ret && mOffset) {
-            *mOffset += ret.value();
+        auto res = co_await mHandle.write(buffer, mOffset);
+        if (res && mOffset) {
+            *mOffset += *res;
         }
-        co_return ret;
+        co_return res;
     }
 
     // no-op
@@ -75,9 +204,24 @@ public:
         co_return {};
     }
     
-    // no-op
+    /**
+     * @brief Flush the file stream
+     * 
+     * @return IoTask<void> 
+     */
     auto flush() -> IoTask<void> {
-        co_return {};
+        co_return co_await ilias::blocking([&]() -> IoResult<void> {
+#if defined(_WIN32)
+            if (::FlushFileBuffers(fd())) {
+                return {};
+            }
+#else
+            if (::fdatasync(fd()) != 0) {
+                return {};
+            }
+#endif // defined(_WIN32)
+            return Err(SystemError::fromErrno());
+        });
     }
 
     /**
@@ -88,7 +232,16 @@ public:
      * @return IoTask<size_t> 
      */
     auto pread(MutableBuffer buffer, uint64_t offset) -> IoTask<size_t> {
-        return mHandle.read(buffer, offset);
+        if (!mOffset) {
+            co_return Err(IoError::OperationNotSupported);
+        }
+        auto res = co_await mHandle.read(buffer, offset);
+#if defined(_WIN32)
+        if (res == Err(SystemError(ERROR_HANDLE_EOF))) { // EOF
+            res = 0;
+        }
+#endif // _WIN32
+        co_return res;
     }
 
     /**
@@ -99,9 +252,13 @@ public:
      * @return IoTask<size_t> 
      */
     auto pwrite(Buffer buffer, uint64_t offset) -> IoTask<size_t> {
-        return mHandle.write(buffer, offset);
+        if (!mOffset) {
+            co_return Err(IoError::OperationNotSupported);
+        }
+        co_return co_await mHandle.write(buffer, offset);
     }
 
+    // Seekable
     /**
      * @brief Doing seek operation
      * 
@@ -117,9 +274,15 @@ public:
         switch (origin) {
             case SeekOrigin::Begin: now = offset; break;
             case SeekOrigin::Current: now += offset; break;
-            case SeekOrigin::End: now = (co_await size()).value() + offset; break;
+            case SeekOrigin::End: {
+                auto s = co_await size();
+                if (!s) {
+                    co_return Err(s.error());
+                }
+                now = *s + offset;
+            }
         }
-        mOffset = std::min<int64_t>(0, now);
+        mOffset = std::max<int64_t>(0, now);
         co_return *mOffset;
     }
 
@@ -154,7 +317,9 @@ public:
         if (!mOffset) {
             co_return Err(IoError::OperationNotSupported);
         }
-        co_return fd_utils::size(fd());
+        co_return co_await ilias::blocking([&]() {
+            return fd_utils::size(fd());
+        });
     }
 
     /**
@@ -163,77 +328,12 @@ public:
      * @return fd_t 
      */
     auto fd() const -> fd_t {
-        return fd_t(mHandle.fd());
+        return mHandle.fd().get();
     }
 
-    /**
-     * @brief Open the file by path and mode
-     * 
-     * @param path The utf-8 encoded path
-     * @param mode The mode, see fopen for more details (like "r", "w", "a", "r+", "w+", "a+" etc.)
-     * @return IoTask<File> 
-     */
-    static auto open(const char *path, std::string_view mode) -> IoTask<File> {
-        auto fd = co_await blocking([&]() {
-            return fd_utils::open(path, mode);
-        });
-        if (!fd) {
-            co_return Err(fd.error());
-        }
-        auto desc = FileDescriptor(*fd);
-        auto handle = IoHandle<FileDescriptor>::make(std::move(desc), IoDescriptor::File);
-        if (!handle) {
-            co_return Err(handle.error());
-        }
-
-        std::optional<uint64_t> off;
-        // Check if the file is a regular file (support offset)
-        // Copy the lowlevel offset from the fd, and let us manage it
-#if defined(_WIN32)
-        if (::GetFileType(*fd) == FILE_TYPE_DISK) {
-            ::LARGE_INTEGER offset { .QuadPart = 0 };
-            ::LARGE_INTEGER cur;
-            if (::SetFilePointerEx(*fd, offset, &cur, FILE_CURRENT)) {
-                off = cur.QuadPart;
-            }
-        }
-#else
-        struct stat st;
-        if (::fstat(*fd, &st) == 0 && S_ISREG(st.st_mode)) {
-            auto offset = ::lseek(*fd, 0, SEEK_CUR);
-            if (offset != -1) {
-                off = offset;
-            }
-        }
-#endif // defined(_WIN32)
-
-        co_return File(std::move(*handle), off);
-    }
-
-    static auto open(const char8_t *path, std::string_view mode) -> IoTask<File> {
-        return open(reinterpret_cast<const char *>(path), mode);
-    }
-
-    static auto open(const std::string &path, std::string_view mode) -> IoTask<File> {
-        return open(path.c_str(), mode);
-    }
-
-    static auto open(const std::u8string &path, std::string_view mode) -> IoTask<File> {
-        return open(path.c_str(), mode);
-    }
-
-    static auto open(std::string_view path, std::string_view mode) -> IoTask<File> {
-        co_return co_await open(std::string(path), mode);
-    }
-
-    static auto open(std::u8string_view path, std::string_view mode) -> IoTask<File> {
-        co_return co_await open(std::u8string(path), mode);
-    }
-
-    template <PathLike T>
-    static auto open(const T &path, std::string_view mode) -> IoTask<File> {
-        return open(path.u8string(), mode);
-    }
+    // Operator
+    auto operator <=>(const File &) const = default;
+    auto operator =(File &&) -> File & = default;
 
     /**
      * @brief Check if the file stream is valid
@@ -244,9 +344,202 @@ public:
     explicit operator bool() const noexcept {
         return bool(mHandle);
     }
+
+    /**
+     * @brief Open a file
+     * 
+     * @tparam T 
+     * @param path The path of the file
+     * @param options The open options (default to read-only)
+     * @return IoTask<File> 
+     */
+    template <fs::IntoPath T>
+    static auto open(const T &path, OpenOptions options = OpenOptions::ReadOnly) -> IoTask<File> {
+        return options.open(path);
+    }
 private:
     IoHandle<FileDescriptor> mHandle;
     std::optional<uint64_t>  mOffset; //< The offset of the file stream, nullopt for unsupport seek
 };
+
+// OpenOptions
+template <fs::IntoPath T>
+inline auto OpenOptions::open(const T &path) const -> IoTask<File> {
+    return doOpen(*this, fs::toPath(path));
+}
+
+inline auto OpenOptions::doOpen(OpenOptions self, fs::Path path) -> IoTask<File> {
+    // Validate
+    if (!self.mRead && !self.mWrite && !self.mAppend) {
+        co_return Err(IoError::InvalidArgument);
+    }
+
+    // Truncate need write permission
+    if (self.mTruncate && !self.mWrite) {
+        co_return Err(IoError::InvalidArgument);
+    }
+
+    // Append is conflict with truncate
+    if (self.mAppend && self.mTruncate) {
+        co_return Err(IoError::InvalidArgument);
+    }
+
+    // Create need write permission
+    if ((self.mCreate || self.mCreateNew) && !self.mWrite && !self.mAppend) {
+        co_return Err(IoError::InvalidArgument);
+    }
+#if defined(_WIN32)
+    //  create | truncate | createNew  |  disposition
+    // --------|----------|------------|------------------
+    //    -    |    -     |     -      | OPEN_EXISTING
+    //    ✓    |    -     |     -      | OPEN_ALWAYS
+    //    -    |    ✓     |     -      | TRUNCATE_EXISTING
+    //    ✓    |    ✓     |     -      | CREATE_ALWAYS
+    //    *    |    *     |     ✓      | CREATE_NEW
+    ::DWORD access = 0;
+    ::DWORD creationDisposition = 0;
+    ::DWORD flagsAndAttributes = FILE_FLAG_OVERLAPPED;
+    ::DWORD lastError = ERROR_SUCCESS;
+
+    // Access
+    if (self.mRead) {
+        access |= GENERIC_READ;
+    }
+    if (self.mWrite) {
+        access |= GENERIC_WRITE;
+    }
+    if (self.mAppend) {
+        access &= ~(DWORD)GENERIC_WRITE;
+        access |= FILE_APPEND_DATA;
+    }
+
+    // creationDisposition
+    if (self.mCreateNew) {
+        creationDisposition = CREATE_NEW;
+    }
+    else if (self.mCreate && self.mTruncate) {
+        creationDisposition = CREATE_ALWAYS;
+    }
+    else if (self.mCreate) {
+        creationDisposition = OPEN_ALWAYS;
+    }
+    else if (self.mTruncate) {
+        creationDisposition = TRUNCATE_EXISTING;
+    }
+    else {
+        creationDisposition = OPEN_EXISTING;
+    }
+
+    auto fd = co_await ilias::blocking([&]() { // The CreateFileW may block
+        auto fd = ::CreateFileW(
+            path.wstring().c_str(),
+            access,
+            self.mShareMode,
+            nullptr,
+            creationDisposition,
+            flagsAndAttributes,
+            nullptr
+        );
+        if (fd == INVALID_HANDLE_VALUE) {
+            lastError = ::GetLastError();
+        }
+        return fd;
+    });
+    if (lastError != ERROR_SUCCESS) {
+        co_return Err(SystemError(lastError));
+    }
+#else
+    // Mapping by man fopen
+    // r  | O_RDONLY
+    // w  | O_WRONLY | O_CREAT | O_TRUNC 
+    // a  | O_WRONLY | O_CREAT | O_APPEND
+    // r+ | O_RDWR                       
+    // w+ | O_RDWR | O_CREAT | O_TRUNC   
+    // a+ | O_RDWR | O_CREAT | O_APPEND  
+    int flags = O_CLOEXEC;
+    int errc = 0;
+    bool write = self.mWrite || self.mAppend;
+
+    if (self.mRead && write) {
+        flags |= O_RDWR;
+    }
+    else if (self.mRead) {
+        flags |= O_RDONLY;
+    }
+    else if (write) {
+        flags |= O_WRONLY; 
+    }
+
+    if (self.mAppend) {
+        flags |= O_APPEND;
+    }
+    if (self.mTruncate) {
+        flags |= O_TRUNC;
+    }
+    if (self.mCreate) {
+        flags |= O_CREAT;
+    }
+    if (self.mCreateNew) {
+        flags |= O_CREAT | O_EXCL;
+    }
+
+    auto fd = co_await ilias::blocking([&]() {
+        auto u8 = path.u8string();
+        auto s = reinterpret_cast<const char *>(u8.c_str());
+        auto fd = 0;
+        if (flags & O_CREAT) {
+            fd = ::open(s, flags, self.mMode);
+        }
+        else {
+            fd = ::open(s, flags);
+        }
+        if (fd < 0) {
+            errc = errno;
+        }
+        return fd;
+    });
+    if (fd < 0) {
+        co_return Err(SystemError(errc));
+    }
+#endif // defined(_WIN32)
+
+    // Wrap the file descriptor
+    auto handle = IoHandle<FileDescriptor>::make(FileDescriptor {fd}, IoDescriptor::File);
+    if (!handle) {
+        co_return Err(handle.error());
+    }
+
+
+    std::optional<uint64_t> off;
+    // Check if the file is a regular file (support offset)
+    // Copy the lowlevel offset from the fd, and let us manage it
+    if (self.mAppend) { // Append mode, the offset is not available
+        co_return File {std::move(*handle), std::nullopt};
+    }
+#if defined(_WIN32)
+    if (::GetFileType(fd) == FILE_TYPE_DISK) {
+        ::LARGE_INTEGER offset { .QuadPart = 0 };
+        ::LARGE_INTEGER cur;
+        if (::SetFilePointerEx(fd, offset, &cur, FILE_CURRENT)) {
+            off = cur.QuadPart;
+        }
+    }
+#else
+    struct stat st;
+    if (::fstat(fd, &st) == 0 && S_ISREG(st.st_mode)) {
+        auto offset = ::lseek(fd, 0, SEEK_CUR);
+        if (offset != -1) {
+            off = offset;
+        }
+    }
+#endif // defined(_WIN32)
+
+    co_return File {std::move(*handle), off};
+}
+
+// Predefined open options
+constexpr OpenOptions OpenOptions::ReadOnly = OpenOptions {}.read(true);
+constexpr OpenOptions OpenOptions::WriteOnly = OpenOptions {}.write(true).create(true).truncate(true);
+constexpr OpenOptions OpenOptions::ReadWrite = OpenOptions {}.read(true).write(true).create(true);
 
 ILIAS_NS_END

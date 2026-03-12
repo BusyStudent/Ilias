@@ -120,7 +120,7 @@ auto handleFilesytem(BufStream<TcpStream> &client, std::string_view pathString) 
     }
     else {
         // Read file
-        auto file = co_await File::open(path.u8string(), "rb");
+        auto file = co_await File::open(path);
         if (!file) {
             co_return co_await sendReply(client, 500, "<html>Internal Server Error</html>");
         }
