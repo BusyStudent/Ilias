@@ -14,14 +14,60 @@
 #include <ilias/io/traits.hpp>
 #include <ilias/io/error.hpp>
 #include <ilias/buffer.hpp>
+#include <concepts>
 #include <cstddef>
 #include <span>
+#include <bit>
+
+// For .writeU8 writeU16BE etc....
+#define ILIAS_DEFINE_EXT_WRITE(name, type)                                     \
+    template <char = 0>                                                        \
+    auto write##name(type value) -> IoTask<void> requires Writable<T> {        \
+        return io::write##name(static_cast<T &>(*this), value);                \
+    }
+
+#define ILIAS_DEFINE_EXT_READ(name, type)                                      \
+    template <char = 0>                                                        \
+    auto read##name() -> IoTask<type> requires Readable<T> {                   \
+        return io::read##name(static_cast<T &>(*this));                        \
+    }
+
+#define ILIAS_DEFINE_EXT_READ_INT_PAIR(bits)                                   \
+    ILIAS_DEFINE_EXT_READ(U##bits##Be, uint##bits##_t)                         \
+    ILIAS_DEFINE_EXT_READ(U##bits##Le, uint##bits##_t)                         \
+    ILIAS_DEFINE_EXT_READ(I##bits##Be, int##bits##_t)                          \
+    ILIAS_DEFINE_EXT_READ(I##bits##Le, int##bits##_t)
+
+#define ILIAS_DEFINE_EXT_WRITE_INT_PAIR(bits)                                  \
+    ILIAS_DEFINE_EXT_WRITE(U##bits##Be, uint##bits##_t)                        \
+    ILIAS_DEFINE_EXT_WRITE(U##bits##Le, uint##bits##_t)                        \
+    ILIAS_DEFINE_EXT_WRITE(I##bits##Be, int##bits##_t)                         \
+    ILIAS_DEFINE_EXT_WRITE(I##bits##Le, int##bits##_t)                         \
+
+// For io::writeU8 io::readU8 etc....
+#define ILIAS_DEFINE_IO_INT_FUNC(name, type, endian_)                          \
+    template <Writable T>                                                      \
+    inline auto write##name(T &stream, type value) -> IoTask<void> {           \
+        return io::writeInt<std::endian::endian_>(stream, value);              \
+    }                                                                          \
+    template <Readable T>                                                      \
+    inline auto read##name(T &stream) -> IoTask<type> {                        \
+        return io::readInt<std::endian::endian_, type>(stream);                \
+    }                                                                          \
+
+#define ILIAS_DEFINE_IO_INT_PAIR(bits)                                         \
+    ILIAS_DEFINE_IO_INT_FUNC(U##bits##Be, uint##bits##_t, big)                 \
+    ILIAS_DEFINE_IO_INT_FUNC(U##bits##Le, uint##bits##_t, little)              \
+    ILIAS_DEFINE_IO_INT_FUNC(I##bits##Be, int##bits##_t,  big)                 \
+    ILIAS_DEFINE_IO_INT_FUNC(I##bits##Le, int##bits##_t,  little)
+
 
 ILIAS_NS_BEGIN
 
 // Utility functions for io traits
 namespace io {
 
+// MARK: Writable
 /**
  * @brief Write all data to stream
  * 
@@ -48,6 +94,28 @@ inline auto writeAll(T &stream, Buffer buffer) -> IoTask<size_t> {
 }
 
 /**
+ * @brief Write a single integer to stream
+ * 
+ * @tparam E The target endian
+ * @tparam T The stream to write to
+ * @tparam Int The integer type
+ * @param stream 
+ * @param value 
+ * @return IoTask<void> 
+ */
+template <std::endian E, Writable T, std::integral Int>
+inline auto writeInt(T &stream, Int value) -> IoTask<void> {
+    if constexpr (std::endian::native != E) {
+        value = byteswap(value);
+    }
+    if (auto res = co_await io::writeAll(stream, makeBuffer(&value, sizeof(value))); !res) {
+        co_return Err(res.error());
+    }
+    co_return {};
+}
+
+// MARK: Readable
+/**
  * @brief Read all data from stream
  * 
  * @tparam T 
@@ -70,6 +138,27 @@ inline auto readAll(T &stream, MutableBuffer buffer) -> IoTask<size_t> {
         buffer = buffer.subspan(*n);
     }
     co_return read;
+}
+
+/**
+ * @brief Read a single integer from stream
+ * 
+ * @tparam E The source endian
+ * @tparam Int The integer type
+ * @tparam T 
+ * @param stream 
+ * @return IoTask<Int> The integer read, or error if any read fails
+ */
+template <std::endian E, std::integral Int, Readable T>
+inline auto readInt(T &stream) -> IoTask<Int> {
+    Int value {};
+    if (auto res = co_await io::readAll(stream, makeBuffer(&value, sizeof(value))); !res) {
+        co_return Err(res.error());
+    }
+    if constexpr (std::endian::native != E) {
+        value = byteswap(value);
+    }
+    co_return value;
 }
 
 /**
@@ -105,6 +194,7 @@ inline auto readToEnd(T &stream, Container &container) -> IoTask<size_t> {
     }
 }
 
+// MARK: BufReadable
 /**
  * @brief Read a line from stream and append to string
  * 
@@ -219,6 +309,13 @@ inline auto lowestLayer(T &layer) -> decltype(auto) {
     return walk(walk, layer);
 }
 
+// Read / Wrtie Integer
+ILIAS_DEFINE_IO_INT_FUNC(U8, uint8_t, big);
+ILIAS_DEFINE_IO_INT_FUNC(I8, int8_t,  big);
+ILIAS_DEFINE_IO_INT_PAIR(16);
+ILIAS_DEFINE_IO_INT_PAIR(32);
+ILIAS_DEFINE_IO_INT_PAIR(64);
+
 } // namespace io
 
 /**
@@ -229,6 +326,7 @@ inline auto lowestLayer(T &layer) -> decltype(auto) {
 template <typename T>
 class WritableExt {
 public:
+    // MARK: Writable
     /**
      * @brief Write All Data to Stream, equal to writeAll(stream, buffer)
      * 
@@ -239,6 +337,24 @@ public:
     auto writeAll(Buffer buffer) -> IoTask<size_t> requires Writable<T> {
         return io::writeAll(static_cast<T &>(*this), buffer);
     }
+
+    /**
+     * @brief Write all string data to stream, equal to writeAll(stream, makeBuffer(string_view{str}))
+     * 
+     * @param str The string
+     * @return IoTask<size_t> Total bytes written (equal to str.size() * sizeof(Char)), or error if any write fails
+     */
+    template <char = 0> 
+    auto writeString(std::string_view str) -> IoTask<size_t> requires Writable<T> {
+        return io::writeAll(static_cast<T &>(*this), makeBuffer(str));
+    }
+
+    // Write integer family
+    ILIAS_DEFINE_EXT_WRITE(U8, uint8_t);
+    ILIAS_DEFINE_EXT_WRITE(I8, int8_t);
+    ILIAS_DEFINE_EXT_WRITE_INT_PAIR(16);
+    ILIAS_DEFINE_EXT_WRITE_INT_PAIR(32);
+    ILIAS_DEFINE_EXT_WRITE_INT_PAIR(64);
 
     auto operator <=>(const WritableExt &rhs) const noexcept = default;
 };
@@ -251,6 +367,7 @@ public:
 template <typename T>
 class ReadableExt {
 public:
+    // MARK: Readable
     /**
      * @brief Read All Data from Stream
      * @note equal to io::readAll(stream, buffer)
@@ -289,6 +406,14 @@ public:
         return io::copy(dst, static_cast<T &>(*this));
     }
 
+    // Read integer family
+    ILIAS_DEFINE_EXT_READ(U8, uint8_t);
+    ILIAS_DEFINE_EXT_READ(I8, int8_t);
+    ILIAS_DEFINE_EXT_READ_INT_PAIR(16);
+    ILIAS_DEFINE_EXT_READ_INT_PAIR(32);
+    ILIAS_DEFINE_EXT_READ_INT_PAIR(64);
+
+    // MARK: BufReadable
     /**
      * @brief Read a line from stream
      * @note equal to io::readline(stream, str, delim)

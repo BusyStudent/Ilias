@@ -4,7 +4,9 @@
 #include <VersionHelpers.h>
 #include <winternl.h>
 
-#define NT_IMPORT(fn) decltype(::fn) *fn = reinterpret_cast<decltype(::fn)*>(::GetProcAddress(mNt, #fn))
+#define NT_IMPORT(fn)                \
+    using fn##_t = decltype(::fn) *; \
+    const fn##_t fn = reinterpret_cast<fn##_t>(::GetProcAddress(mNt, #fn))
 
 extern "C" {
     extern NTSTATUS NTAPI NtAssociateWaitCompletionPacket (

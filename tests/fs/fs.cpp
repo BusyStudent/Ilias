@@ -38,6 +38,7 @@ ILIAS_TEST(Fs, ReadWrite) {
         auto file = (co_await File::open("./test_file", opts)).value();
         auto ok = co_await file.writeAll("Hello again!"_bin);
         EXPECT_TRUE(ok);
+        EXPECT_TRUE(co_await file.flush());
     }
 
     {
@@ -46,6 +47,7 @@ ILIAS_TEST(Fs, ReadWrite) {
         auto ok = co_await file.readToEnd(content);
         EXPECT_TRUE(ok);
         EXPECT_EQ(content, "Hello world!Hello again!");
+        EXPECT_EQ(co_await file.size(), 24);
     }
 }
 

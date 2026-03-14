@@ -178,13 +178,35 @@ ILIAS_TEST(Io, BufWrite) {
 
 ILIAS_TEST(Io, Duplex) {
     auto [a, b] = DuplexStream::make(10);
-    auto sender = [](auto &stream) -> Task<void> {
+    auto sender = [](DuplexStream &stream) -> Task<void> {
+        // Test string
         EXPECT_EQ(co_await stream.writeAll("Hello, world!"_bin), 13);
+        EXPECT_EQ(co_await stream.writeString("Hello, world!"), 13);
+
+        // Test int
+        EXPECT_TRUE(co_await stream.writeU8(255));
+        EXPECT_TRUE(co_await stream.writeU16Be(2233));
+        EXPECT_TRUE(co_await stream.writeU16Le(2233));
+        EXPECT_TRUE(co_await stream.writeU32Be(1234567890));
+        EXPECT_TRUE(co_await stream.writeU32Le(1234567890));
+        EXPECT_TRUE(co_await stream.writeU64Be(1234567890123456789));
+        EXPECT_TRUE(co_await stream.writeU64Le(1234567890123456789));
     };
-    auto receiver = [](auto &stream) -> Task<void> {
+    auto receiver = [](DuplexStream &stream) -> Task<void> {
         char buffer[13];
         EXPECT_EQ(co_await stream.readAll(makeBuffer(buffer)), 13);
         EXPECT_EQ(std::string_view(buffer, 13), "Hello, world!");
+        EXPECT_EQ(co_await stream.readAll(makeBuffer(buffer)), 13);
+        EXPECT_EQ(std::string_view(buffer, 13), "Hello, world!");
+
+        // Test int
+        EXPECT_EQ(co_await stream.readU8(), 255);
+        EXPECT_EQ(co_await stream.readU16Be(), 2233);
+        EXPECT_EQ(co_await stream.readU16Le(), 2233);
+        EXPECT_EQ(co_await stream.readU32Be(), 1234567890);
+        EXPECT_EQ(co_await stream.readU32Le(), 1234567890);
+        EXPECT_EQ(co_await stream.readU64Be(), 1234567890123456789);
+        EXPECT_EQ(co_await stream.readU64Le(), 1234567890123456789);
     };
 
     co_await whenAll(sender(a), receiver(b));
