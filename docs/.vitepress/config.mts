@@ -1,14 +1,12 @@
 import { defineConfig } from 'vitepress'
 
-// https://vitepress.dev/reference/site-config
 export default defineConfig({
-  title: "ilias",
-  description: "Modern Lightweight C++ Async Runtime",
-  locales:{
-    "root": {
-      label: "English",
-      lang: "en-US",
-
+  title: 'ilias',
+  description: 'Modern Lightweight C++ Async Runtime',
+  locales: {
+    root: {
+      label: 'English',
+      lang: 'en-US',
       themeConfig: {
         sidebar: [
           {
@@ -16,53 +14,48 @@ export default defineConfig({
             text: 'Docs',
             items: [
               { text: 'API Reference', link: '/dev/api' },
-            ]
+            ],
           },
           {
             collapsed: false,
             text: 'Guides',
             items: [
               { text: 'Quick Start', link: '/guides/quick-start' },
-              { text: 'What is ilias', link: '/guides/what-is-ilias' }
-            ]
-          }
+              { text: 'What is ilias', link: '/guides/what-is-ilias' },
+            ],
+          },
         ],
-      }
+      },
     },
-    "zh": {
-      label: "简体中文",
-      lang: "zh",
-      link: "/zh/",
-
+    zh: {
+      label: '简体中文',
+      lang: 'zh-CN',
+      link: '/zh/',
       themeConfig: {
         sidebar: [
           {
             collapsed: false,
-            text: 'Docs',
+            text: '开发参考',
             items: [
-              { text: 'API Reference', link: 'zh/dev/api' },
-            ]
+              { text: 'API 概览', link: '/zh/dev/api' },
+              { text: 'Agent 参考手册', link: '/zh/dev/agent-reference' },
+            ],
           },
           {
             collapsed: false,
-            text: 'Guides',
+            text: '使用指南',
             items: [
-              { text: 'Quick Start', link: 'zh/guides/quick-start' },
-              { text: 'What is ilias', link: 'zh/guides/what-is-ilias' }
-            ]
-          }
+              { text: '快速开始', link: '/zh/guides/quick-start' },
+              { text: '什么是 ilias', link: '/zh/guides/what-is-ilias' },
+              { text: '使用 Ilias 构建异步软件', link: '/zh/guides/build-async-software' },
+            ],
+          },
         ],
-      }
-    }
+      },
+    },
   },
   themeConfig: {
-    // https://vitepress.dev/reference/default-theme-config
-    nav: [
-      { text: 'Home', link: '/' }
-    ],
-
-    socialLinks: [
-      { icon: 'github', link: 'https://github.com/BusyStudent/Ilias' }
-    ],
-  }
+    nav: [{ text: 'Home', link: '/' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/BusyStudent/Ilias' }],
+  },
 })

@@ -21,6 +21,7 @@ ${define ILIAS_USE_FMT}
 ${define ILIAS_USE_FIBER}
 ${define ILIAS_USE_SPDLOG}
 ${define ILIAS_USE_IO_URING}
+${define ILIAS_USE_ZEUS_EXPECTED}
 
 // Version from build system
 #define ILIAS_VERSION_MAJOR ${VERSION_MAJOR}

@@ -23,6 +23,7 @@
 #cmakedefine ILIAS_USE_FIBER
 #cmakedefine ILIAS_USE_SPDLOG
 #cmakedefine ILIAS_USE_IO_URING
+#cmakedefine ILIAS_USE_ZEUS_EXPECTED
 
 // Version from build system
 #define ILIAS_VERSION_MAJOR @ILIAS_VERSION_MAJOR@

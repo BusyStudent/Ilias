@@ -2,7 +2,7 @@
 
 #include <ilias/defines.hpp>
 
-#if __cpp_lib_expected < 202202L
+#if defined(ILIAS_USE_ZEUS_EXPECTED)
     #include <zeus/expected.hpp>
     #define ILIAS_EXPECTED_NAMESPACE ::zeus
 #else

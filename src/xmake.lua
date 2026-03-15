@@ -68,6 +68,7 @@ target("ilias")
 
     if not has_config("has_std_expected") then
         add_packages("zeus_expected", {public = true})
+        set_configvar("ILIAS_USE_ZEUS_EXPECTED", 1)
     end
 
     if has_config("fiber") then
