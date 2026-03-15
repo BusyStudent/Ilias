@@ -216,7 +216,7 @@ public:
                 return {};
             }
 #else
-            if (::fdatasync(fd()) != 0) {
+            if (::fdatasync(fd()) == 0) {
                 return {};
             }
 #endif // defined(_WIN32)

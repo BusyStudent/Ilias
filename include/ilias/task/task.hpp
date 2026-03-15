@@ -33,6 +33,21 @@
     #define ILIAS_CORO_ELIDABLE_ARGUMENT
 #endif // __has_cpp_attribute(clang::coro_await_elidable_argument)
 
+// Clang supports statement expressions with coroutine keywords;
+// GCC ICEs on it (all versions as of trunk). Everyone else uses co_yield fallback.
+#if defined(__clang__)
+    #define ILIAS_CO_TRY_IMPL(...) ({                          \
+        auto _res = (__VA_ARGS__);                             \
+        if (!_res) {                                           \
+            co_return ::ilias::Err(std::move(_res).error());   \
+        }                                                      \
+                                                               \
+        std::move(_res).value();                               \
+    })
+#else
+    #define ILIAS_CO_TRY_IMPL(...) co_yield(__VA_ARGS__)
+#endif
+
 /**
  * @brief Unwrap an expected/optional value inside a coroutine, short-circuiting on error.
  * 
@@ -43,7 +58,7 @@
  * @param ... An expression that evaluates to an expected-like type (e.g. `Result<T, E>`, `Option<T>`).
  *            May include `co_await` subexpressions.
  * 
- * @note This macro expands to a `co_yield` expression and is only valid inside a coroutine
+ * @note This macro expands to a `co_yield` expression or `co_return` and is only valid inside a coroutine
  *       whose promise type provides a compatible `yield_value()` overload.
  * 
  * @code
@@ -54,7 +69,7 @@
  *   }
  * @endcode
  */
-#define ILIAS_CO_TRY(...) co_yield(__VA_ARGS__)
+#define ILIAS_CO_TRY(...) ILIAS_CO_TRY_IMPL(__VA_ARGS__)
 
 ILIAS_NS_BEGIN
 
@@ -109,13 +124,13 @@ public:
     auto yield_value(Result<U, UE> result) noexcept(std::is_nothrow_move_constructible_v<Result<T, E> >) {
         if (!result) [[unlikely]] { // Error, early return
             mValue.emplace(Err(std::move(result.error())));
-            return TaskTryAwaiter<T> {};
+            return TaskTryAwaiter<U> {};
         }
         else { // Success
             auto option = makeOption([&]() {
                 return std::move(result).value();
             });
-            return TaskTryAwaiter<T> {std::move(option)};
+            return TaskTryAwaiter<U> {std::move(option)};
         }
     }
 
@@ -358,14 +373,14 @@ private:
 
 // Awaiter for try expression, co_yield (expression) -> xxx?
 template <typename T>
-class TaskTryAwaiter {
+class TaskTryAwaiter final {
 public:
     TaskTryAwaiter(Option<T> value = {}) : mValue(std::move(value)) {}
     TaskTryAwaiter(TaskTryAwaiter &&) = default;
 
     auto await_ready() const noexcept { return mValue.has_value(); }
     auto await_suspend(CoroHandle caller) {
-        return caller.promise().final(); // Mark the caller as final
+        return caller.promise().final(); // Mark the caller as final and switch to the next frame
     }
     auto await_resume() noexcept -> T {
 #if defined(__cpp_lib_unreachable)
