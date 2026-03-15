@@ -164,7 +164,7 @@ public:
     auto final_suspend() noexcept {
         struct Awaiter {
             auto await_ready() noexcept { return false; }
-            auto await_suspend(std::coroutine_handle<> handle) noexcept { return self.done(); }
+            auto await_suspend(std::coroutine_handle<> handle) noexcept { return self.final(); }
             [[noreturn]]
             auto await_resume() noexcept { // UNREACHABLE here, we can't resume an done coroutine
 #if defined(__cpp_lib_unreachable)
@@ -227,7 +227,9 @@ public:
     }
 
     // Doing sth after the coroutine done
-    auto done() noexcept -> std::coroutine_handle<> {
+    auto final() noexcept -> std::coroutine_handle<> {
+        ILIAS_ASSERT(!mDone, "Coroutine already done, internal BUG!!!");
+        mDone = true;
         if (mCompletionHandler) {
             mCompletionHandler(*mContext);
         }
@@ -248,6 +250,7 @@ private:
     CoroContext       *mContext = nullptr;
     std::exception_ptr mException = nullptr;
     void             (*mCompletionHandler)(CoroContext &) = nullptr; // Called when coroutine is completed, stopped is not completed
+    bool               mDone = false; // Logical done, used for ILIAS_CO_TRY
 protected: // protected ...
     [[ILIAS_NO_UNIQUE_ADDRESS]] // The CaptureSource will be std::monostate if disabled, so add it
     CaptureSource           mCreation = {}; // The source of the coroutine creation
@@ -266,7 +269,7 @@ public:
 
     // std coroutine interface
     auto done() const noexcept {
-        return mHandle.done();
+        return mHandle.done() || mPromise->mDone;
     }
 
     auto resume() const noexcept {
@@ -278,7 +281,7 @@ public:
         return mHandle.destroy();
     }
 
-    template <typename T>
+    template <typename T = CoroPromise>
     auto promise() const noexcept -> T & {
         return static_cast<T &>(*mPromise);
     }

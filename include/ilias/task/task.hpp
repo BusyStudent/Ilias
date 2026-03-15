@@ -15,6 +15,7 @@
 #include <ilias/runtime/await.hpp> // Awaitable
 #include <ilias/runtime/coro.hpp> // CoroPromise
 #include <ilias/detail/option.hpp> // Option
+#include <ilias/result.hpp> // Result
 #include <ilias/log.hpp>
 #include <coroutine>
 #include <chrono> // std::chrono::duration
@@ -32,6 +33,29 @@
     #define ILIAS_CORO_ELIDABLE_ARGUMENT
 #endif // __has_cpp_attribute(clang::coro_await_elidable_argument)
 
+/**
+ * @brief Unwrap an expected/optional value inside a coroutine, short-circuiting on error.
+ * 
+ * Analogous to Rust's `?` operator. If the expression yields a value, it is unwrapped
+ * and returned as the result of the macro invocation. If the expression yields an error,
+ * the enclosing coroutine immediately completes with that error propagated to the caller.
+ * 
+ * @param ... An expression that evaluates to an expected-like type (e.g. `Result<T, E>`, `Option<T>`).
+ *            May include `co_await` subexpressions.
+ * 
+ * @note This macro expands to a `co_yield` expression and is only valid inside a coroutine
+ *       whose promise type provides a compatible `yield_value()` overload.
+ * 
+ * @code
+ *   auto example() -> IoTask<int> {
+ *       auto val  = ILIAS_CO_TRY(co_await fetchData());
+ *       auto parsed = ILIAS_CO_TRY(parse(val));
+ *       co_return parsed + 1;
+ *   }
+ * @endcode
+ */
+#define ILIAS_CO_TRY(...) co_yield(__VA_ARGS__)
+
 ILIAS_NS_BEGIN
 
 namespace task {
@@ -44,10 +68,16 @@ using runtime::CoroPromise;
 using runtime::CoroContext;
 using runtime::CaptureSource;
 
+// Forward declaration
+class Null {};
+template <typename T>
+class TaskTryAwaiter;
+
 // The return value part of the task promise
 template <typename T>
 class TaskPromiseBase : public CoroPromise {
 public:
+    // co_return
     auto return_value(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         mValue.emplace(std::move(value));
     }
@@ -63,6 +93,38 @@ public:
     }
 private:
     std::optional<T> mValue;
+};
+
+// Return value part for Task<Result<T, E> >, provide await?
+template <typename T, typename E>
+class TaskPromiseBase<Result<T, E> > : public CoroPromise {
+public:
+    // co_return
+    auto return_value(Result<T, E> value) noexcept(std::is_nothrow_move_constructible_v<Result<T, E> >) {
+        mValue.emplace(std::move(value));
+    }
+
+    // co_yield (expression) -> xxx?
+    template <typename U, typename UE> requires (std::convertible_to<UE, E>)
+    auto yield_value(Result<U, UE> result) noexcept(std::is_nothrow_move_constructible_v<Result<T, E> >) {
+        if (!result) [[unlikely]] { // Error, early return
+            mValue.emplace(Err(std::move(result.error())));
+            return TaskTryAwaiter<T> {};
+        }
+        else { // Success
+            auto option = makeOption([&]() {
+                return std::move(result).value();
+            });
+            return TaskTryAwaiter<T> {std::move(option)};
+        }
+    }
+
+    auto value() {
+        rethrowIfNeeded();
+        return std::move(*mValue);
+    }
+private:
+    std::optional<Result<T, E> > mValue;
 };
 
 template <>
@@ -88,11 +150,9 @@ public:
     }
 };
 
-
 // The task handle
-class Null {};
 template <typename T = Null>
-class TaskHandle; // Forward declaration
+class TaskHandle; 
 
 // The type erased task handle
 template <>
@@ -294,6 +354,29 @@ private:
     Option<T> mValue;
     CoroHandle mHandle;
     Fn mFn; // The function to call
+};
+
+// Awaiter for try expression, co_yield (expression) -> xxx?
+template <typename T>
+class TaskTryAwaiter {
+public:
+    TaskTryAwaiter(Option<T> value = {}) : mValue(std::move(value)) {}
+    TaskTryAwaiter(TaskTryAwaiter &&) = default;
+
+    auto await_ready() const noexcept { return mValue.has_value(); }
+    auto await_suspend(CoroHandle caller) {
+        return caller.promise().final(); // Mark the caller as final
+    }
+    auto await_resume() noexcept -> T {
+#if defined(__cpp_lib_unreachable)
+        if (!mValue) {
+            std::unreachable(); // LCOV_EXCL_LINE
+        }
+#endif
+        return unwrapOption(std::move(mValue));
+    }
+private:
+    Option<T> mValue;
 };
 
 // Tags here

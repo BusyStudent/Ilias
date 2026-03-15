@@ -4,6 +4,7 @@
 #include <ilias/task/spawn.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/testing.hpp>
+#include <ilias/result.hpp>
 #include <gtest/gtest.h>
 
 using namespace ilias;
@@ -20,8 +21,28 @@ auto throwInput(T val) -> Task<void> {
     co_return;
 }
 
+auto testOk() -> Task<Result<int, double> > {
+    auto ok = []() -> Task<Result<int, int> > {
+        co_await sleep(1ms); // Add more complexity
+        co_return 42;
+    };
+    auto val = ILIAS_CO_TRY(co_await ok());
+    co_return val;
+}
+
+auto testErr() -> Task<Result<void, int> > {
+    auto err = []() -> Task<Result<void, int> > {
+        co_await sleep(1ms);
+        co_return Err(114514);
+    };
+    ILIAS_CO_TRY(co_await err());
+    co_return {};
+}
+
 auto testTask() -> Task<void> {
     EXPECT_EQ(co_await returnInput(42), 42);
+    EXPECT_EQ(co_await testOk(), 42);
+    EXPECT_EQ(co_await testErr(), Err(114514));
 
     // Test exception handling
     try {
@@ -36,7 +57,6 @@ auto testTask() -> Task<void> {
     co_await sleep(20ms);
     co_return;
 }
-
 
 TEST(Task, DefaultConstructor) {
     testTask().wait();
