@@ -357,6 +357,7 @@ struct TlsContextImpl {
             };
             auto status = mTable->AcquireCredentialsHandleW(nullptr, unispNname, bound, nullptr, &schCredentials, nullptr, nullptr, handle, nullptr); 
             if (status == SEC_E_OK) {
+                ILIAS_TRACE("Schannel", "AcquireCredentialsHandleW use Windows 10 API");
                 return *handle;
             }
             if (nCerts != 0) {
@@ -381,6 +382,7 @@ struct TlsContextImpl {
             ILIAS_ERROR("Schannel", "Failed to AcquireCredentialsHandleW : {}", status);
             return Err(SystemError(status));
         }
+        ILIAS_TRACE("Schannel", "AcquireCredentialsHandleW use legacy API");
         return *handle;
     }
 
@@ -451,7 +453,8 @@ public:
     bool mIsHandshakeDone = false;
     bool mIsShutdown = false;
     bool mIsExpired = false;
-    bool mIsClient = false;
+    bool mIsClient = false;  // is TlsRole::Client ?
+    bool mIsTls13 = false; // is TLS 1.3 ?
     bool mVerifyPeer = false;
 
     // Tls Configure
@@ -529,16 +532,6 @@ public:
             );
             ctxt = &mTls;
 
-            // Check buffer here
-            if (inbuffers[1].BufferType == SECBUFFER_EXTRA) {
-                ILIAS_TRACE("Schannel", "Client SECBUFFER_EXTRA for {}", inbuffers[1].cbBuffer);
-                mReadBuffer.consume(mReadBuffer.size() - inbuffers[1].cbBuffer);
-            }
-            else {
-                // All processed
-                mReadBuffer.consume(mReadBuffer.size());
-            }
-
             // Check if we need to send the output buffer to remote
             if (outbuffers[0].cbBuffer > 0 && outbuffers[0].pvBuffer) {
                 auto freeBuffer = [this](uint8_t *mem) {
@@ -559,11 +552,25 @@ public:
                 // Done
             }
 
-            if (status == SEC_E_OK) {
-                break;
-            }
-            else if (status == SEC_I_CONTINUE_NEEDED) {
-                continue;
+            
+            // Check status here
+            if (status == SEC_E_OK || status == SEC_I_CONTINUE_NEEDED) {
+                // Handle processed buffer
+                if (inbuffers[1].BufferType == SECBUFFER_EXTRA) {
+                    ILIAS_TRACE("Schannel", "Client SECBUFFER_EXTRA for {}", inbuffers[1].cbBuffer);
+                    mReadBuffer.consume(mReadBuffer.size() - inbuffers[1].cbBuffer);
+                }
+                else {
+                    // All processed
+                    mReadBuffer.consume(mReadBuffer.size());
+                }
+
+                if (status == SEC_E_OK) {
+                    break;
+                }
+                else if (status == SEC_I_CONTINUE_NEEDED) {
+                    continue;
+                }
             }
             else if (status != SEC_E_INCOMPLETE_MESSAGE) {
                 ILIAS_WARN("Schannel", "Failed to handshake {}", status);
@@ -600,10 +607,8 @@ public:
         }
         mIsHandshakeDone = true;
         mIsClient = true;
-#if defined(ILIAS_USE_LOG)
         ILIAS_DEBUG("Schannel", "Client handshake done, streamSize {{ .header = {}, trailer = {}, maxMessage = {} }}", mStreamSizes.cbHeader, mStreamSizes.cbTrailer, mStreamSizes.cbMaximumMessage);
         checkProtocol();
-#endif // defined(ILIAS_USE_LOG)
         co_return {};
     }
 
@@ -732,10 +737,8 @@ public:
 
         mIsHandshakeDone = true;
         mIsClient = false;
-#if defined(ILIAS_USE_LOG)
         ILIAS_DEBUG("Schannel", "Server Handshake done streamSize {{ .header = {}, trailer = {}, maxMessage = {} }}", mStreamSizes.cbHeader, mStreamSizes.cbTrailer, mStreamSizes.cbMaximumMessage);
         checkProtocol();
-#endif // defined(ILIAS_USE_LOG)
         co_return {};
     }
 
@@ -768,16 +771,20 @@ public:
         return {};
     }
 
+    // Check current protocol version
     auto checkProtocol() -> void {
         ::SecPkgContext_ConnectionInfo connectionInfo = {};
         auto status = mTable->QueryContextAttributesW(&mTls, SECPKG_ATTR_CONNECTION_INFO, &connectionInfo);
         
         if (status == SEC_E_OK) {
             const char *protoStr = "Unknown";
-            if (connectionInfo.dwProtocol & SP_PROT_TLS1_2_SERVER) protoStr = "TLS 1.2";
-            else if (connectionInfo.dwProtocol & SP_PROT_TLS1_2_CLIENT) protoStr = "TLS 1.2";
-            else if (connectionInfo.dwProtocol & SP_PROT_TLS1_3_SERVER) protoStr = "TLS 1.3";
-            else if (connectionInfo.dwProtocol & SP_PROT_TLS1_3_CLIENT) protoStr = "TLS 1.3";
+            if (connectionInfo.dwProtocol & SP_PROT_TLS1_2_SERVER || connectionInfo.dwProtocol & SP_PROT_TLS1_2_CLIENT) {
+                protoStr = "TLS 1.2";
+            }
+            else if (connectionInfo.dwProtocol & SP_PROT_TLS1_3_SERVER || connectionInfo.dwProtocol & SP_PROT_TLS1_3_CLIENT) {
+                protoStr = "TLS 1.3";
+                mIsTls13 = true;
+            }
             
             ILIAS_TRACE("Schannel", "Negotiated Protocol: {}, Cipher: {:#x}, Hash: {:#x}, KeyEx: {:#x}", 
                 protoStr, 
@@ -801,7 +808,7 @@ public:
         }
         SECURITY_STATUS status;
         while (true) {
-            if (!mDecryptedBuffer.empty()) { // Oh, we can
+            if (!mDecryptedBuffer.empty()) { // Oh, already have some decrypted data left
                 auto n = std::min(buffer.size(), mDecryptedBuffer.size());
                 ::memcpy(buffer.data(), mDecryptedBuffer.data(), n);
 
@@ -836,6 +843,18 @@ public:
 
                     mDecryptedBuffer = { static_cast<std::byte*>(buffers[1].pvBuffer), buffers[1].cbBuffer };
                     mDecryptedCosume = mReadBuffer.size() - (buffers[3].BufferType == SECBUFFER_EXTRA ? buffers[3].cbBuffer : 0);
+                    if (mDecryptedBuffer.empty()) { // This message is empty
+                        ILIAS_TRACE("Schannel", "Empty message received, handle edge case");
+                        mReadBuffer.consume(mDecryptedCosume);
+                        mDecryptedBuffer = {};
+                        mDecryptedCosume = 0;
+                    }
+                    // Check if peer closed
+                    if (status == SEC_I_CONTEXT_EXPIRED) {
+                        // Peer closed
+                        ILIAS_TRACE("Schannel", "Peer closed connection in tls layer");
+                        mIsExpired = true;
+                    }
                     continue;
                 }
                 else if (status == SEC_I_CONTEXT_EXPIRED) {
@@ -843,6 +862,58 @@ public:
                     ILIAS_TRACE("Schannel", "Peer closed connection in tls layer");
                     mIsExpired = true;
                     co_return 0;
+                }
+                else if (status == SEC_I_RENEGOTIATE) {
+                    // TODO: Fully Handle SEC_I_RENEGOTIATE
+                    // https://stackoverflow.com/questions/77204959/how-to-handle-a-sec-i-renegotiate-from-schannel-received-during-tls-1-3-negotiat
+                    // Renegotiate
+                    // StackOverflow says the extra buffer is the token
+                    ILIAS_TRACE("Schannel", "Peer requested renegotiation");
+                    if (buffers[3].BufferType != SECBUFFER_EXTRA || !mIsTls13) { // We currently only support Tls1.3 renegotiation
+                        ILIAS_WARN("Schannel", "Renegotiation failed, no extra buffer or not Tls1.3, we only support SEC_I_RENEGOTIATE in Tls1.3");
+                        co_return Err(SystemError(status));
+                    }
+                    if (mIsClient) { // Client
+                        ::DWORD flags = ISC_REQ_USE_SUPPLIED_CREDS | ISC_REQ_ALLOCATE_MEMORY | 
+                            ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
+                        ::SecBuffer outbuffers[1] {};
+                        outbuffers[0].BufferType = SECBUFFER_TOKEN;
+
+                        ::SecBuffer inbuffers[1] {};
+                        inbuffers[0].BufferType = SECBUFFER_TOKEN;
+                        inbuffers[0].pvBuffer = buffers[3].pvBuffer;
+                        inbuffers[0].cbBuffer = buffers[3].cbBuffer;
+
+                        ::SecBufferDesc indesc { SECBUFFER_VERSION, ARRAYSIZE(inbuffers), inbuffers };
+                        ::SecBufferDesc outdesc { SECBUFFER_VERSION, ARRAYSIZE(outbuffers), outbuffers };
+                        auto host = mHostname.empty() ? nullptr : mHostname.data();
+                        status = mTable->InitializeSecurityContextW(
+                            &mCredHandle,
+                            &mTls,
+                            host,
+                            flags,
+                            0,
+                            0,
+                            &indesc,
+                            0,
+                            &mTls,
+                            &outdesc,
+                            &flags,
+                            nullptr
+                        );
+                        if (status != SEC_E_OK) {
+                            ILIAS_WARN("Schannel", "Failed to renegotiate {}", status);
+                            co_return Err(SystemError(status));
+                        }
+                    }
+                    else {
+                        // TODO: Server...
+                        ILIAS_WARN("Schannel", "Renegotiation failed, server not supported");
+                        co_return Err(SystemError(status));
+                    }
+                    mReadBuffer.consume(mReadBuffer.size() - buffers[3].cbBuffer); // Consume the message (DecryptMessage)
+                    mReadBuffer.consume(buffers[3].cbBuffer); // Consume the token (InitializeSecurityContextW)
+                    continue;
                 }
                 else if (status != SEC_E_INCOMPLETE_MESSAGE) {
                     ILIAS_WARN("Schannel", "Failed to decrypt {}", status);
@@ -868,7 +939,7 @@ public:
         if (!mIsHandshakeDone) {
             co_return Err(IoError::Tls);
         }
-        auto sended = size_t(0);
+        auto sended = size_t {0};
         while (buffer.size() > 0) {
             auto many = std::min<size_t>(buffer.size(), mStreamSizes.cbMaximumMessage);
             auto tmpbuf = mWriteBuffer.prepare(mStreamSizes.cbHeader + many + mStreamSizes.cbTrailer);
@@ -914,7 +985,8 @@ public:
     auto flushImpl(StreamView stream) -> IoTask<void> {
         return stream.flush();
     }
-
+    
+    // MARK: Shutdown
     auto shutdownImpl(StreamView stream) -> IoTask<void> {
         if (!mIsHandshakeDone) {
             co_return Err(IoError::Tls);

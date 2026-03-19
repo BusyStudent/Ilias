@@ -106,7 +106,7 @@ public:
      * @param size The size of data to commit (can't exceed the capacity of the output window)
      */
     auto commit(size_t size) -> void {
-        ILIAS_ASSERT(size <= (mBuffer.size() - mTail), "Commit size exceed the capacity");
+        ILIAS_ASSERT(size <= (mBuffer.size() - mTail), "Commit size {} exceed the capacity {}", size, mBuffer.size() - mTail);
         size = std::min(size, mBuffer.size() - mTail); //< In release version, the assert may be removed, so we add it
         mTail += size;
     }
@@ -155,7 +155,7 @@ public:
      * @param size The size of data to consume (can't exceed the capacity of the input window)
      */
     auto consume(size_t size) -> void {
-        ILIAS_ASSERT(size <= (mTail - mPos), "Consume size exceed the capacity");
+        ILIAS_ASSERT(size <= (mTail - mPos), "Consume size {} exceed the capacity {}", size, mTail - mPos);
         size = std::min(size, mTail - mPos);
         mPos += size;
     }
@@ -276,7 +276,7 @@ public:
      * @param size The size of data to commit (can't exceed the capacity of the output window)
      */
     auto commit(size_t size) -> void {
-        ILIAS_ASSERT(size <= (mBuffer.size() - mTail), "Commit size exceed the capacity");
+        ILIAS_ASSERT(size <= (mBuffer.size() - mTail), "Commit size {} exceed the capacity {}", size, mBuffer.size() - mTail);
         size = std::min(size, mBuffer.size() - mTail); //< In release version, the assert may be removed, so we add it
         mTail += size;
     }
@@ -325,7 +325,7 @@ public:
      * @param size The size of data to consume (can't exceed the capacity of the input window)
      */
     auto consume(size_t size) -> void {
-        ILIAS_ASSERT(size <= (mTail - mPos), "Consume size exceed the capacity");
+        ILIAS_ASSERT(size <= (mTail - mPos), "Consume size {} exceed the capacity {}", size, mTail - mPos);
         size = std::min(size, mTail - mPos);
         mPos += size;
     }

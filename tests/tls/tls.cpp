@@ -104,6 +104,7 @@ auto doHttps(TlsContext &tlsCtxt, std::string_view hostname) -> Task<void> {
 ILIAS_TEST(Tls, Https) {
     auto ctxt = TlsContext {};
     co_await doHttps(ctxt, "www.baidu.com");
+    co_await doHttps(ctxt, "websocket.org"); // This website support tls1.3
 }
 
 ILIAS_TEST(Tls, NoVerify) {
