@@ -301,7 +301,7 @@ using BaseHandle = WSAOptionT<SIO_BASE_HANDLE, ::DWORD, OptionAccess::Read>;
  * @brief Get the protocol information of the socket
  * 
  */
-using ProtocolInfo = OptionT<SOL_SOCKET, SO_PROTOCOL_INFO, ::WSAPROTOCOL_INFO, OptionAccess::Read>;
+using ProtocolInfo = OptionT<SOL_SOCKET, SO_PROTOCOL_INFOW, ::WSAPROTOCOL_INFOW, OptionAccess::Read>;
 #endif // defined(WIN32)
 
 

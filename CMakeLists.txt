@@ -31,13 +31,13 @@ include(FindDependencies)
 
 # Add source code
 set(SRCS
-    src/fiber.cpp
     src/io.cpp
     src/log.cpp
     src/runtime.cpp
     src/process.cpp
     src/sync.cpp
     src/task.cpp
+    src/fiber/fiber.cpp
     src/net/addrinfo.cpp
 )
 

@@ -283,11 +283,13 @@ public:
 
     template <typename T = CoroPromise>
     auto promise() const noexcept -> T & {
+        ILIAS_ASSERT(mPromise, "Can't get promise from null handle");
         return static_cast<T &>(*mPromise);
     }
 
     // Our runtime interface
     auto context() const noexcept -> CoroContext & {
+        ILIAS_ASSERT(mPromise, "Can't get context from null handle");
         return *(mPromise->mContext); // Context must be set before coroutine starts
     }
 

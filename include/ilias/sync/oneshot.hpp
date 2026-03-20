@@ -55,15 +55,15 @@ public:
         mutex.unlock();
     }
 
-    runtime::CoroHandle   receiver; // The caller that is suspended on the recv operation
-    std::optional<T>      value;
-    sync::FutexMutex      mutex;
+    runtime::CoroHandle receiver; // The caller that is suspended on the recv operation
+    std::optional<T>    value;
+    sync::FutexMutex    mutex;
 
     // States, TODO: Compress the state to a single byte?
-    std::atomic<bool>     finally       {false}; // For blocking recv, set true when sender close or value is set
-    bool                  valueGot      {false}; // Did the receiver get the value ?(alreay got)
-    bool                  senderClose   {false};
-    bool                  receiverClose {false};
+    std::atomic<bool>   finally       {false}; // For blocking recv, set true when sender close or value is set
+    bool                valueGot      {false}; // Did the receiver get the value ?(alreay got)
+    bool                senderClose   {false};
+    bool                receiverClose {false};
 };
 
 class ChanSenderDeleter {
@@ -72,7 +72,7 @@ public:
     auto operator()(Channel<T> *chan) -> void {
         bool delete_ = false;
         {
-            auto locker = std::lock_guard(*chan);
+            auto locker = std::lock_guard {*chan};
             chan->senderClose = true;
             chan->notify(); // Notify the receiver we are closed
             delete_ = chan->receiverClose; // Reciever already closed, no-one own the data block, delete!
@@ -90,7 +90,7 @@ public:
     auto operator()(Channel<T> *chan) -> void {
         bool delete_ = false;
         {
-            auto locker = std::lock_guard(*chan);
+            auto locker = std::lock_guard {*chan};
             chan->receiverClose = true;
             delete_ = chan->senderClose; // Sender already closed, no-one own the data block, delete!
         }
@@ -211,7 +211,7 @@ public:
         if (!mChan) {
             return true;
         }
-        auto locker = std::lock_guard(*mChan);
+        auto locker = std::lock_guard {*mChan};
         return mChan->senderClose;
     }
 
@@ -220,7 +220,7 @@ public:
         if (!mChan) {
             return true;
         }
-        auto locker = std::lock_guard(*mChan);
+        auto locker = std::lock_guard {*mChan};
         return !mChan->value.has_value();
     }
 
@@ -231,7 +231,7 @@ public:
      */
     [[nodiscard]]
     auto recv() {
-        return detail::RecvAwaiter<T>(std::move(mChan));
+        return detail::RecvAwaiter<T> {std::move(mChan)};
     }
 
     /**
@@ -241,12 +241,12 @@ public:
      */
     [[nodiscard]]
     auto tryRecv() -> Result<T, TryRecvError> {
-        if (isClosed()) {
-            return Err(TryRecvError::Closed);
-        }
-        auto locker = std::unique_lock(*mChan);
+        auto locker = std::unique_lock {*mChan};
 
         // Check value
+        if (!mChan->value && mChan->senderClose) {
+            return Err(TryRecvError::Closed);
+        }
         if (!mChan->value) {
             return Err(TryRecvError::Empty);
         }
@@ -262,7 +262,7 @@ public:
     }
 
     /**
-     * @brief Block until the value is received or the channel is closed
+     * @brief Block until the value is received or the channel is closed, it will `CONSUME` the receiver
      * @note It will ```BLOCK``` the thread, so it is not recommended to use it in the async context, use it in sync code
      * 
      * @return std::optional<T> nullopt on closed
@@ -270,14 +270,15 @@ public:
     [[nodiscard]]
     auto blockingRecv() -> std::optional<T> {
         mChan->finally.wait(false); // Wait the result
-        auto locker = std::lock_guard(*mChan);
+        auto chan = std::exchange(mChan, nullptr); // Consume the receiver
+        auto locker = std::lock_guard {*chan};
 
-        if (mChan->value) {
-            mChan->valueGot = true;
-            return std::move(*mChan->value);
+        if (chan->value) {
+            chan->valueGot = true;
+            return std::move(*chan->value);
         }
         // Channel is closed
-        ILIAS_ASSERT(mChan->senderClose);
+        ILIAS_ASSERT(chan->senderClose);
         return std::nullopt;
     }
 
@@ -289,7 +290,7 @@ public:
      * @return std::optional<T>, nullopt on closed 
      */
     auto operator co_await() && -> detail::RecvAwaiter<T> {
-        return detail::RecvAwaiter<T>(std::move(mChan));
+        return detail::RecvAwaiter<T> {std::move(mChan)};
     }
 
     /**
@@ -302,7 +303,7 @@ public:
         return bool(mChan);
     }
 private:
-    explicit Receiver(detail::Channel<T> *ptr) : mChan(ptr) { }
+    explicit Receiver(detail::Channel<T> *ptr) : mChan(ptr) {}
 
     detail::ChanReceiver<T> mChan;
 template <Sendable U>
@@ -319,7 +320,7 @@ template <Sendable T>
 class Sender {
 public:
     Sender() = default;
-    Sender(std::nullptr_t) { }
+    Sender(std::nullptr_t) {}
     Sender(Sender &&other) = default;
     ~Sender() = default;
 
@@ -333,7 +334,7 @@ public:
         if (!mChan) {
             return true;
         }
-        auto locker = std::lock_guard(*mChan);
+        auto locker = std::lock_guard {*mChan};
         return mChan->senderClose;
     }
 
@@ -349,7 +350,7 @@ public:
             return Err(std::move(value));
         }
 
-        auto locker = std::lock_guard(*mChan);
+        auto locker = std::lock_guard {*mChan};
         if (mChan->value) { // already send
             return Err(std::move(value));
         }
@@ -361,9 +362,20 @@ public:
         return {};
     }
 
-    auto operator =(const Sender &) = delete;
-    auto operator =(Sender &&other) -> Sender & = default;
+    // Operator
     auto operator <=>(const Sender &) const = default;
+    auto operator =(Sender &&other) -> Sender & = default;
+    auto operator =(const Sender &) = delete;
+
+    /**
+     * @brief Check if the sender is valid
+     * 
+     * @return true 
+     * @return false 
+     */
+    explicit operator bool() const noexcept {
+        return bool(mChan);
+    }
 private:
     explicit Sender(detail::Channel<T> *ptr) : mChan(ptr) {}
 
@@ -380,10 +392,10 @@ friend auto channel() -> Pair<U>;
  */
 template <Sendable T>
 inline auto channel() -> Pair<T> {
-    auto ptr = new detail::Channel<T>();
+    auto ptr = new detail::Channel<T> {};
     return {
-        .sender = Sender<T>(ptr),
-        .receiver = Receiver<T>(ptr)
+        .sender = Sender<T> {ptr},
+        .receiver = Receiver<T> {ptr}
     };
 }
 

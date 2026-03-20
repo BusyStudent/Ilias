@@ -296,6 +296,17 @@ ILIAS_TEST(Sync, Oneshot) {
     }
 
     {
+        // try recv with data (sender closed)
+        auto [sender, receiver] = oneshot::channel<int>();
+        EXPECT_TRUE(sender.send(42));
+        sender.close();
+
+        co_await blocking([&]() mutable {
+            EXPECT_EQ(receiver.tryRecv(), 42);
+        });
+    }
+
+    {
         // close after blcoking recv
         auto [sender, receiver] = oneshot::channel<int>();
         auto handle = spawnBlocking([&]() mutable {
@@ -393,6 +404,15 @@ ILIAS_TEST(Sync, Mpsc) {
         // closed
         sender.close();
         EXPECT_EQ(receiver.tryRecv(), Err(mpsc::TryRecvError::Closed));
+    }
+
+    {
+        // try recv with data (sender closed)
+        auto [sender, receiver] = mpsc::channel<int>(1);
+        EXPECT_TRUE(co_await sender.send(42));
+        sender.close();
+
+        EXPECT_EQ(receiver.tryRecv(), 42);
     }
 
     {

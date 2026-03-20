@@ -46,7 +46,7 @@ public:
 
     // For sender
     auto trySendInternal(Result<void, T> &item) -> bool {
-        auto locker = std::lock_guard(mutex);
+        auto locker = std::lock_guard {mutex};
         if (receiverClosed) { // We can't send any more data.
             return true;
         }
@@ -59,7 +59,7 @@ public:
     }
 
     auto tryReserveInternal() -> bool {
-        auto locker = std::lock_guard(mutex);
+        auto locker = std::lock_guard {mutex};
         if (receiverClosed) { // We can't send any more data.
             return true;
         }
@@ -72,11 +72,11 @@ public:
 
     // For receiver
     auto tryRecvInternal(std::optional<T> &value) -> bool {
-        auto locker = std::lock_guard(mutex);
+        auto locker = std::lock_guard {mutex};
         if (!queue.empty()) {
             value.emplace(std::move(queue.front()));
             queue.pop_front();
-            return true; // Have data,
+            return true; // Have data
         }
         if (senderClosed) {
             return true; // No sender, so we can't receive any more.
@@ -112,7 +112,7 @@ public:
     auto operator ()(Channel<T> *chan) {
         bool notify = false;
         {
-            auto locker = std::lock_guard(chan->mutex);
+            auto locker = std::lock_guard {chan->mutex};
             chan->senderClosed = true; // All sender is closed.
             notify = !chan->receiverClosed; // If the receiver is closed, not need to notify.
         }
@@ -129,7 +129,7 @@ public:
     auto operator ()(Channel<T> *chan) {
         bool notify = false;
         {
-            auto locker = std::lock_guard(chan->mutex);
+            auto locker = std::lock_guard {chan->mutex};
             chan->receiverClosed = true; // All receiver is closed.
             notify = !chan->senderClosed; // If the sender is all closed, not need to notify.
         }
@@ -147,7 +147,7 @@ public:
     auto operator ()(Channel<T> *chan) { // Give the reserved item slot back to the channel.
         bool notify = false;
         {
-            auto locker = std::lock_guard(chan->mutex);
+            auto locker = std::lock_guard {chan->mutex};
             chan->reserved -= 1; // Release the reserved item
             notify = chan->queue.size() + chan->reserved < chan->capacity; // If we have space, we should wakeup the an sender.
         }
@@ -346,7 +346,7 @@ public:
         if (!mChan) {
             return true;
         }
-        auto locker = std::lock_guard(mChan->mutex);
+        auto locker = std::lock_guard {mChan->mutex};
         return mChan->receiverClosed;
     }
 
@@ -368,7 +368,7 @@ public:
      */
     [[nodiscard]]
     auto send(T item) const noexcept {
-        return detail::SendAwaiter<T>(mChan.get(), std::move(item));
+        return detail::SendAwaiter<T> {mChan.get(), std::move(item)};
     }
 
     /**
@@ -379,7 +379,7 @@ public:
      */
     [[nodiscard]]
     auto trySend(T item) const -> Result<void, TrySendErrorResult<T> > {
-        auto locker = std::unique_lock(mChan->mutex);
+        auto locker = std::unique_lock {mChan->mutex};
 
         // Do check
         if (mChan->receiverClosed) {
@@ -405,7 +405,7 @@ public:
      */
     [[nodiscard]]
     auto blockingSend(T item) const -> Result<void, T> {
-        auto result = Result<void, T>(Err(std::move(item))); // First put it to error as unsended.
+        auto result = Result<void, T> {Err(std::move(item))}; // First put it to error as unsended.
         mChan->senders.blockingWait([&]() { return mChan->trySendInternal(result); });
         if (result) { // Success to send, wakeup the receiver.
             mChan->receiver.wakeupOne();
@@ -420,7 +420,7 @@ public:
      */
     [[nodiscard]]
     auto reserve() const noexcept {
-        return detail::ReserveAwaiter<T>(mChan.get());
+        return detail::ReserveAwaiter<T> {mChan.get()};
     }
 
     /**
@@ -430,7 +430,7 @@ public:
      */
     [[nodiscard]]
     auto tryReserve() const -> Result<Permit<T>, TrySendError> {
-        auto locker = std::unique_lock(mChan->mutex);
+        auto locker = std::unique_lock {mChan->mutex};
 
         // Do check
         if (mChan->receiverClosed) {
@@ -441,7 +441,7 @@ public:
         }
 
         mChan->reserved++;
-        return Permit<T>(mChan.get());
+        return Permit<T> {mChan.get()};
     }
 
     /**
@@ -489,7 +489,7 @@ public:
 
     // Try upgrade the weak to strong
     auto lock() -> Sender<T> {
-        return Sender<T>(mChan.lock());
+        return Sender<T> {mChan.lock()};
     }
 private:
     detail::ChanWeakSender<T> mChan;
@@ -524,7 +524,7 @@ public:
         if (!mChan) {
             return true;
         }
-        auto locker = std::lock_guard(mChan->mutex);
+        auto locker = std::lock_guard {mChan->mutex};
         return mChan->senderClosed;
     }
 
@@ -536,7 +536,7 @@ public:
      */
     [[nodiscard]]
     auto recv() noexcept {
-        return detail::ReceiveAwaiter<T>(mChan.get());
+        return detail::ReceiveAwaiter<T> {mChan.get()};
     }
 
     /**
@@ -546,8 +546,8 @@ public:
      */
     [[nodiscard]]
     auto tryRecv() noexcept(std::is_nothrow_move_constructible_v<T>) -> Result<T, TryRecvError> {
-        auto locker = std::unique_lock(mChan->mutex);
-        if (mChan->senderClosed) {
+        auto locker = std::unique_lock {mChan->mutex};
+        if (mChan->queue.empty() && mChan->senderClosed) {
             return Err(TryRecvError::Closed);
         }
         if (mChan->queue.empty()) {
@@ -573,7 +573,7 @@ public:
      */
     [[nodiscard]]
     auto blockingRecv() noexcept(std::is_nothrow_move_constructible_v<T>) -> std::optional<T> {
-        auto value = std::optional<T>();
+        auto value = std::optional<T> {};
         mChan->receiver.blockingWait([&]() { return mChan->tryRecvInternal(value); });
         if (value) { // Success to recv, wakeup the sender.
             mChan->senders.wakeupOne();
@@ -606,7 +606,7 @@ friend auto channel(size_t capacity) -> Pair<U>;
 template <Sendable T>
 inline auto channel(size_t capacity = std::numeric_limits<size_t>::max()) -> Pair<T> {
     ILIAS_ASSERT(capacity > 0, "The capacity of the channel must be greater than 0.");
-    auto ptr = new detail::Channel<T>(capacity);
+    auto ptr = new detail::Channel<T> {capacity};
     return {
         .sender = Sender<T> {
             detail::ChanSender<T> {

@@ -58,7 +58,7 @@ public:
     constexpr IoVec(Buffer buffer) : IoVec{buffer.data(), buffer.size()} {}
     constexpr IoVec(const void *buf, size_t len) : Base{} {
         iov_base = const_cast<void *>(buf);
-        iov_len = len;
+        iov_len = static_cast<decltype(iov_len)>(len);
 
 #if defined(_WIN32) && !defined(NDEBUG)
         // In windows, len just uint32_t, we need to check it
