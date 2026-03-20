@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/runtime/exception.hpp> // ExceptionPtr
 #include <ilias/runtime/executor.hpp> // Executor
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/runtime/await.hpp> // Awaitable
@@ -82,6 +83,7 @@ using runtime::CoroHandle;
 using runtime::CoroPromise;
 using runtime::CoroContext;
 using runtime::CaptureSource;
+using runtime::ExceptionPtr;
 
 // Forward declaration
 class Null {};
@@ -103,7 +105,7 @@ public:
     }
 
     auto value() {
-        rethrowIfNeeded();
+        rethrowIfAny();
         return std::move(*mValue);
     }
 private:
@@ -135,7 +137,7 @@ public:
     }
 
     auto value() {
-        rethrowIfNeeded();
+        rethrowIfAny();
         return std::move(*mValue);
     }
 private:
@@ -146,7 +148,7 @@ template <>
 class TaskPromiseBase<void> : public CoroPromise {
 public:
     auto return_void() noexcept {}
-    auto value() { rethrowIfNeeded(); }
+    auto value() { rethrowIfAny(); }
 };
 
 template <typename T>
@@ -191,10 +193,6 @@ public:
 
     auto value() const -> T {
         return promise<promise_type>().value();
-    }
-
-    auto takeException() const -> std::exception_ptr {
-        return promise<promise_type>().takeException();
     }
 
     /**
@@ -345,9 +343,7 @@ public:
         runtime::threadpool::submit(*this);
     }
     auto await_resume() -> T {
-        if (mException) {
-            std::rethrow_exception(mException);
-        }
+        mException.rethrowIfAny();
         if constexpr (std::is_same_v<T, void>) {
             return;
         }
@@ -360,12 +356,13 @@ public:
             mValue = makeOption([&]() { return mFn(); });
         }
         ILIAS_CATCH (...) {
-            mException = std::current_exception();
+            mException = ExceptionPtr::currentException();
         }
         mHandle.schedule();
     }
 private:
-    std::exception_ptr mException;
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
+    ExceptionPtr mException;
     Option<T> mValue;
     CoroHandle mHandle;
     Fn mFn; // The function to call

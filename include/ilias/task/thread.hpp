@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/runtime/exception.hpp>
 #include <ilias/runtime/executor.hpp>
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp>
@@ -29,6 +30,7 @@ using runtime::StopToken;
 using runtime::StopSource;
 using runtime::CoroHandle;
 using runtime::Executor;
+using runtime::ExceptionPtr;
 
 // The common code part of Thread
 class ThreadBase {
@@ -95,7 +97,7 @@ protected:
     Executor *          (*mInit)() = nullptr; // Create the executor (nullptr on builtin, the PlatformContext)
     Task<void>          (*mInvoke)(ThreadBase &self) = nullptr; // Call the task
     void                (*mDestroy)(ThreadBase *self) = nullptr; // Destroy the thread state
-    std::exception_ptr    mException; // The exception that the invoke throwed
+    ExceptionPtr          mException; // The exception that the invoke throwed
 private:
     StopSource            mSource;
     CoroHandle            mHandle; // For the coroutine who await this thread
@@ -109,9 +111,7 @@ template <typename T>
 class ThreadImpl : public ThreadBase {
 public:
     auto value() -> Option<T> {
-        if (mException) {
-            std::rethrow_exception(std::exchange(mException, {}));
-        }
+        mException.rethrowIfAny();
         return std::move(mValue);
     }
 protected:

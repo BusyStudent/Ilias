@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ilias/runtime/exception.hpp>
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp>
 #include <ilias/task/when_any.hpp>
@@ -176,9 +177,7 @@ public:
     }
 
     auto await_resume() -> T {
-        if (mException) {
-            std::rethrow_exception(mException);
-        }
+        mException.rethrowIfAny();
         return unwrapOption(std::move(mValue));
     }
 private:
@@ -217,7 +216,7 @@ private:
         return self.makeCleanup(self.mCleanup);
     }
 
-    std::exception_ptr mException;
+    ExceptionPtr mException;
     Cleanup   mCleanup;
     Option<T> mValue;
 };

@@ -11,6 +11,7 @@
 #pragma once
 
 #include <ilias/runtime/functional.hpp> // SmallFunction
+#include <ilias/runtime/exception.hpp> // ExceptionPtr
 #include <ilias/runtime/coro.hpp> // CoroPromise
 #include <ilias/detail/intrusive.hpp> // List, Rc
 #include <ilias/detail/option.hpp> // Option
@@ -31,6 +32,7 @@ using intrusive::Rc;
 // Runtime
 using runtime::StopRegistration;
 using runtime::SmallFunction;
+using runtime::ExceptionPtr;
 using runtime::CoroPromise;
 
 // Environment for the spawn task common part
@@ -95,7 +97,7 @@ protected:
     auto onComplete() -> void;
 
     SmallFunction<void (TaskSpawnContextBase &)> mCompletionHandler; // The completion handler, call when the task is completed or stopped
-    std::exception_ptr mException; // The exception of the task
+    ExceptionPtr mException; // The exception of the task
     std::string mName; // The name of the spawn task
     bool mCompleted = false;
 
@@ -115,9 +117,7 @@ public:
     // Get the value of the task, nullopt if the task is stopped
     auto value() -> Option<T> {
         ILIAS_ASSERT(mCompleted, "??? INTERNAL BUG");
-        if (mException) {
-            std::rethrow_exception(std::exchange(mException, nullptr));
-        }
+        mException.rethrowIfAny();
         return std::move(mValue);
     }
 protected:

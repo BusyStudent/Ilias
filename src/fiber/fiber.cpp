@@ -1,3 +1,4 @@
+#include <ilias/runtime/exception.hpp> // ExceptionPtr
 #include <ilias/runtime/executor.hpp> // Executor
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/fiber.hpp> // Fiber
@@ -53,7 +54,7 @@ public:
 
     // Result
     void *mValue = nullptr;
-    std::exception_ptr mException;
+    runtime::ExceptionPtr mException;
 
     // Internal state
     bool mRunning = false;
@@ -113,7 +114,7 @@ auto FiberContextImpl::main() -> void {
         mStopped = true;
     }
     catch (...) { // Another user exception
-        mException = std::current_exception();
+        mException = runtime::ExceptionPtr::currentException();;
     }
     mComplete = true;
     mRunning = false;
@@ -317,9 +318,7 @@ auto FiberContext::valuePointer() -> void * {
     auto self = static_cast<FiberContextImpl *>(this);
     ILIAS_ASSERT(self->mComplete, "Fiber not complete yet");
     ILIAS_ASSERT(!self->mStopped, "Fiber is stopped, no value provided");
-    if (self->mException) {
-        std::rethrow_exception(self->mException);
-    }
+    self->mException.rethrowIfAny();
     return self->mValue;
 }
 

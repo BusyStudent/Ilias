@@ -122,7 +122,7 @@ public:
     }
 
     auto await_resume() const -> void { 
-        mGen.template promise<CoroPromise>().rethrowIfNeeded();
+        mGen.takeException().rethrowIfAny();
     }
 protected:
     GeneratorHandle<T> mGen; // The handle of the generator, doesn't take the ownership
@@ -223,6 +223,7 @@ public:
 
     [[nodiscard("Don't forget to use co_await ")]]
     auto begin() -> task::GeneratorBeginAwaiter<T> {
+        ILIAS_ASSERT(mHandle, "Generator is null");
         return {mHandle};
     }
 

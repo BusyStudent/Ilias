@@ -1,11 +1,11 @@
 // INTERNAL !!!
 #pragma once
+#include <ilias/runtime/exception.hpp> // ExceptionPtr
 #include <ilias/runtime/executor.hpp> // Executor
 #include <ilias/runtime/capture.hpp> // CaptureSource, StackFrame
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/runtime/await.hpp> // Awaitable
 #include <coroutine> // std::coroutine_handle<>
-#include <exception> // std::current_exception
 #include <concepts> // std::invocable
 #include <utility> // std::exchange
 
@@ -179,7 +179,7 @@ public:
     }
 
     auto unhandled_exception() noexcept { 
-        mException = std::current_exception();
+        mException = ExceptionPtr::currentException();
     }
 
     template <RawAwaitable T>
@@ -213,10 +213,8 @@ public:
         return std::exchange(mException, nullptr);
     }
 
-    auto rethrowIfNeeded() {
-        if (mException) {
-            std::rethrow_exception(takeException());
-        }
+    auto rethrowIfAny() {
+        return takeException().rethrowIfAny();
     }
 
     // Doing sth before the coroutine starts
@@ -248,7 +246,8 @@ public:
     }
 private:
     CoroContext       *mContext = nullptr;
-    std::exception_ptr mException = nullptr;
+    [[ILIAS_NO_UNIQUE_ADDRESS]] // The ExceptionPtr will be empty class if disabled
+    ExceptionPtr       mException = nullptr;
     void             (*mCompletionHandler)(CoroContext &) = nullptr; // Called when coroutine is completed, stopped is not completed
     bool               mDone = false; // Logical done, used for ILIAS_CO_TRY
 protected: // protected ...
@@ -330,6 +329,10 @@ public:
 
     auto stopToken() const noexcept {
         return context().mStopSource.get_token();
+    }
+
+    auto takeException() const noexcept {
+        return mPromise->takeException();
     }
 
     auto isStopRequested() const noexcept {

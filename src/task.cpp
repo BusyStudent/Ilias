@@ -449,7 +449,7 @@ auto ThreadBase::start() -> void {
         executor->install();
 
         // Start
-        try {
+        ILIAS_TRY {
             auto taskHandle = spawn(mInvoke(*this));
             auto stopHandle = StopHandle {taskHandle};
             auto cb = runtime::StopCallback(mSource.get_token(), [&]() {
@@ -462,8 +462,8 @@ auto ThreadBase::start() -> void {
             // Wait done
             taskHandle.wait();
         }
-        catch (...) {
-            mException = std::current_exception();
+        ILIAS_CATCH (...) {
+            mException = ExceptionPtr::currentException();
         }
 
         // Ok try wakeup the awaiter
