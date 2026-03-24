@@ -130,13 +130,13 @@ auto range(int start, int end) -> Generator<int> {
 }
 
 ILIAS_TEST(Task, Generator) {
-    ilias_for_await(int i, range(0, 10)) {
+    ILIAS_FOR_AWAIT(int i, range(0, 10)) {
         EXPECT_TRUE(i >= 0 && i < 10);
     }
 
     {
         auto gen = range(0, 10);
-        ilias_for_await(int i, gen) {
+        ILIAS_FOR_AWAIT(int i, gen) {
             EXPECT_TRUE(i >= 0 && i < 10);
         }
     }
@@ -144,7 +144,7 @@ ILIAS_TEST(Task, Generator) {
     {
         auto gen = Generator<int> {};
         gen = range(0, 10);
-        ilias_for_await(int i, gen) {
+        ILIAS_FOR_AWAIT(int i, gen) {
             EXPECT_TRUE(i >= 0 && i < 10);
         }
     }
@@ -247,6 +247,28 @@ ILIAS_TEST(Task, Stacktrace) {
     std::cout << "Stacktrace for whenAny" << std::endl;
     std::ignore = co_await whenAny(fn());
 }
+
+TEST(Task, Tracing) {
+    class Subscriber : public runtime::TracingSubscriber {
+    public:
+        auto onSpawn(const runtime::CoroContext &ctxt) -> void override {
+            std::cout << "Spawned " << std::addressof(ctxt) << std::endl;
+        }
+
+        auto onComplete(const runtime::CoroContext &ctxt) -> void override {
+            std::cout << "Completed " << std::addressof(ctxt) << std::endl;
+        }
+    };
+
+    Subscriber sub {};
+    sub.install();
+
+    // Test blocking wait
+    testTask().wait();
+
+    // Test spawn
+    ilias::spawn(testTask()).wait();
+};
 
 auto main(int argc, char** argv) -> int {
     ::testing::InitGoogleTest(&argc, argv);

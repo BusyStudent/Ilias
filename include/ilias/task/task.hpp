@@ -12,6 +12,7 @@
 
 #include <ilias/runtime/exception.hpp> // ExceptionPtr
 #include <ilias/runtime/executor.hpp> // Executor
+#include <ilias/runtime/tracing.hpp> // TracingSubscriber
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/runtime/await.hpp> // Awaitable
 #include <ilias/runtime/coro.hpp> // CoroPromise
@@ -105,7 +106,7 @@ public:
     }
 
     auto value() {
-        rethrowIfAny();
+        this->rethrowIfAny();
         return std::move(*mValue);
     }
 private:
@@ -137,7 +138,7 @@ public:
     }
 
     auto value() {
-        rethrowIfAny();
+        this->rethrowIfAny();
         return std::move(*mValue);
     }
 private:
@@ -148,7 +149,7 @@ template <>
 class TaskPromiseBase<void> : public CoroPromise {
 public:
     auto return_void() noexcept {}
-    auto value() { rethrowIfAny(); }
+    auto value() { this->rethrowIfAny(); }
 };
 
 template <typename T>
@@ -309,6 +310,7 @@ public:
     TaskBlockingContext(const TaskBlockingContext &) = delete;
 
     auto enter() -> void {
+        runtime::tracing::spawn(*this); // TRACING: blocking wait is also spawn
         mTask.resume();
         if (!mTask.done()) {
             executor().run(mStopExecutor.get_token());            
@@ -322,6 +324,7 @@ public:
     }
 private:
     static auto onComplete(CoroContext &_self) -> void { // Break the event loop
+        runtime::tracing::complete(_self); // TRACING: completion
         static_cast<TaskBlockingContext &>(_self).mStopExecutor.request_stop();
     }
     
@@ -363,8 +366,8 @@ public:
 private:
     [[ILIAS_NO_UNIQUE_ADDRESS]]
     ExceptionPtr mException;
-    Option<T> mValue;
     CoroHandle mHandle;
+    Option<T> mValue;
     Fn mFn; // The function to call
 };
 

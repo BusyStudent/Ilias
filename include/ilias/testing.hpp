@@ -38,24 +38,24 @@
  * @param ... The gtest test case macro
  * 
  */
-#define ILIAS_TEST_IMPL(prefix, ...)                            \
-    static auto _ilias_test_##prefix() -> ::ilias::Task<void>;  \
-    __VA_ARGS__ {                                               \
-        try {                                                   \
-            _ilias_test_##prefix().wait();                      \
-        }                                                       \
-        catch (::ilias::BadResultAccess<std::error_code> &e) {  \
-            auto errc = e.error();                              \
-            ::fprintf(                                          \
-                stderr,                                         \
-                "[ilias::Test(%s)] Err %s: (%s)\n",             \
-                #prefix,                                        \
-                errc.category().name(),                         \
-                errc.message().c_str()                          \
-            );                                                  \
-            FAIL();                                             \
-        }                                                       \
-    }                                                           \
+#define ILIAS_TEST_IMPL(prefix, ...)                                  \
+    static auto _ilias_test_##prefix() -> ::ilias::Task<void>;        \
+    __VA_ARGS__ {                                                     \
+        ILIAS_TRY {                                                   \
+            _ilias_test_##prefix().wait();                            \
+        }                                                             \
+        ILIAS_CATCH (::ilias::BadResultAccess<std::error_code> &e) {  \
+            auto errc = e.error();                                    \
+            ::fprintf(                                                \
+                stderr,                                               \
+                "[ilias::Test(%s)] Err %s: (%s)\n",                   \
+                #prefix,                                              \
+                errc.category().name(),                               \
+                errc.message().c_str()                                \
+            );                                                        \
+            FAIL();                                                   \
+        }                                                             \
+    }                                                                 \
     static auto _ilias_test_##prefix() -> ::ilias::Task<void>
 
 /**

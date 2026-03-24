@@ -18,9 +18,28 @@
 #include <optional> // std::optional
 #include <vector> // std::vector
 
+// Because for(xxx; xxx; co_await(++it)) compile failed in gcc, so we have to use it instead
+#define ILIAS_FOR_AWAIT_FALLBACK(var, generator)                                       \
+    if (auto &&_gen_ = (generator); false) {}                                          \
+    else if (bool _first_ = true; false) {}                                            \
+    else                                                                               \
+        for (auto _it_ = co_await _gen_.begin(); ; _first_ = false)                    \
+            if (!_first_ ? (co_await (++_it_), 0) : 0; _it_ == _gen_.end()) {          \
+                break;                                                                 \
+            }                                                                          \
+            else                                                                       \
+                if (var = *_it_; false) {}                                             \
+                else 
+
+// Common version
+#define ILIAS_FOR_AWAIT_GENERIC(var, generator)                                           \
+    if (auto &&_gen_ = (generator); false) {}                                             \
+    else                                                                                  \
+        for (auto _it_ = co_await _gen_.begin(); _it_ != _gen_.end(); co_await (++_it_))  \
+            if (var = *_it_; false) {}
+
 /**
  * @brief The range for for the Generator<T>
- * @note Because for(xxx; xxx; co_await(++it)) compile failed in gcc, so we have to use it instead
  * 
  * @code {.cpp}
  * ilias_for_await(const auto &val, generator()) {
@@ -35,17 +54,10 @@
  * @param var The variable to hold each value from the generator.
  * @param generator The generator object to iterate over.
  */
-#define ilias_for_await(var, generator)                                                 \
-    if (auto &&_gen_ = (generator); false) { }                                          \
-    else if (bool _first_ = true; false) { }                                            \
-    else                                                                                \
-        for (auto _it_ = co_await _gen_.begin(); ; _first_ = false)                     \
-            if (!_first_ ? (co_await (++_it_), 0) : 0; _it_ == _gen_.end()) {           \
-                break;                                                                  \
-            }                                                                           \
-            else                                                                        \
-                if (var = *_it_; false) { }                                             \
-                else 
+#define ILIAS_FOR_AWAIT(var, generator) ILIAS_FOR_AWAIT_FALLBACK(var, generator)
+
+/// @copydoc ILIAS_FOR_AWAIT
+#define ilias_for_await(var, generator) ILIAS_FOR_AWAIT(var, generator)
 
 ILIAS_NS_BEGIN
 
@@ -93,7 +105,7 @@ public:
     using handle_type = std::coroutine_handle<GeneratorPromise<T> >;
     using promise_type = GeneratorPromise<T>;
 
-    GeneratorHandle(handle_type handle) : CoroHandle(handle) { }
+    GeneratorHandle(handle_type handle) : CoroHandle(handle) {}
     GeneratorHandle() = default;
 
     auto value() const noexcept -> std::optional<T> & {
@@ -109,7 +121,7 @@ public:
 template <typename T>
 class [[nodiscard]] GeneratorAwaiter {
 public:
-    GeneratorAwaiter(GeneratorHandle<T> gen) : mGen(gen) { }
+    GeneratorAwaiter(GeneratorHandle<T> gen) : mGen(gen) {}
 
     auto await_ready() const noexcept -> bool {
         mGen.value() = std::nullopt; // Clear the previous value
@@ -148,10 +160,12 @@ public:
     }
 
     // Check end?
+    [[nodiscard]]
     auto operator ==(std::default_sentinel_t) const noexcept -> bool {
         return mGen.done();
     }
 
+    [[nodiscard]]
     auto operator !=(std::default_sentinel_t) const noexcept -> bool {
         return !mGen.done();
     }
@@ -161,6 +175,7 @@ public:
      * 
      * @return GeneratorAwaiter<T> 
      */
+    [[nodiscard]]
     auto operator ++() -> GeneratorAwaiter<T> {
         return mGen;
     }
@@ -180,6 +195,7 @@ public:
     using Base = GeneratorAwaiter<T>;
     using Base::Base;
     
+    [[nodiscard]]
     auto await_resume() -> GeneratorIterator<T> {
         Base::await_resume();
         return {this->mGen};
@@ -227,6 +243,7 @@ public:
         return {mHandle};
     }
 
+    [[nodiscard]]
     auto end() -> std::default_sentinel_t {
         return std::default_sentinel;
     }
@@ -240,7 +257,7 @@ public:
     template <typename Container = std::vector<T> >
     auto collect() -> Task<Container> {
         Container ret;
-        ilias_for_await(T &var, *this) {
+        ILIAS_FOR_AWAIT(T &var, *this) {
             ret.emplace_back(std::move(var));
         }
         co_return ret;
@@ -268,7 +285,7 @@ public:
         return bool(mHandle);
     }
 private:
-    Generator(handle_type handle) : mHandle(handle) { }
+    Generator(handle_type handle) : mHandle(handle) {}
 
     handle_type mHandle;
 friend class task::GeneratorPromise<T>;

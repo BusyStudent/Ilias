@@ -2,6 +2,7 @@
 #pragma once
 #include <ilias/runtime/exception.hpp> // ExceptionPtr
 #include <ilias/runtime/executor.hpp> // Executor
+#include <ilias/runtime/tracing.hpp> // TracingSubscriber
 #include <ilias/runtime/capture.hpp> // CaptureSource, StackFrame
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/runtime/await.hpp> // Awaitable
@@ -74,6 +75,12 @@ public:
     // TRACING: Set the parent of the ctxt
     auto setParent(CoroContext &parent) noexcept {
 #if defined(ILIAS_CORO_TRACE)
+        if (!parent.mParent) { // The parent is the root
+            mRoot = &parent;
+        }
+        else {
+            mRoot = parent.mRoot; // Has parent, used the cache
+        }
         mParent = &parent;
 #else
         static_cast<void>(parent);
@@ -105,7 +112,7 @@ public:
 #if defined(ILIAS_CORO_TRACE)
         return mFrames.empty() ? nullptr : &mFrames.back();
 #else
-        return nullptr;
+        return static_cast<StackFrame *>(nullptr);
 #endif // defined(ILIAS_CORO_TRACE)
     }
 
@@ -135,9 +142,11 @@ private:
     Executor     *mExecutor = nullptr;
     void        (*mStoppedHandler)(CoroContext &) = nullptr; // Called when coroutine is stopped
     void         *mUser = nullptr;                           // The user data, useful in the callback
-    bool          mStopped = false;
+    bool          mStopped = false;                          // The coroutine is actually stopped
 #if defined(ILIAS_CORO_TRACE)
     CoroContext  *mParent = nullptr;                         // Use for stacktrace to dump the whole stack
+    CoroContext  *mRoot = nullptr;                           // The root context of the coroutine (spawn or blocking wait), used for tracing
+    std::string   mName;                                     // The name of the coroutine, used for tracing
     std::vector<StackFrame> mFrames;                         // The frames of the coroutine,
 #endif // defined(ILIAS_CORO_TRACE)
 friend class CoroHandle;
@@ -248,7 +257,7 @@ private:
     CoroContext       *mContext = nullptr;
     [[ILIAS_NO_UNIQUE_ADDRESS]] // The ExceptionPtr will be empty class if disabled
     ExceptionPtr       mException = nullptr;
-    void             (*mCompletionHandler)(CoroContext &) = nullptr; // Called when coroutine is completed, stopped is not completed
+    void             (*mCompletionHandler)(CoroContext &) = nullptr; // Called when coroutine is completed, stopped is not completed for promise
     bool               mDone = false; // Logical done, used for ILIAS_CO_TRY
 protected: // protected ...
     [[ILIAS_NO_UNIQUE_ADDRESS]] // The CaptureSource will be std::monostate if disabled, so add it

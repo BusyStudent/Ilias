@@ -23,14 +23,14 @@ auto returnAfterSleep(int x) -> Task<int> {
 
 ILIAS_TEST(Task, TaskGroup) {
     {
-        auto group = TaskGroup<void>();
+        auto group = TaskGroup<void> {};
         group.spawn(neverReturn());
         co_await this_coro::yield(); // Make sure the neverReturn task is running
         co_await group.shutdown();
     }
 
     {
-        auto group = TaskGroup<void>();
+        auto group = TaskGroup<void> {};
         group.spawn(neverReturn());
         co_await this_coro::yield(); // As shown above
         group.stop();
@@ -38,7 +38,7 @@ ILIAS_TEST(Task, TaskGroup) {
     }
 
     {
-        auto group = TaskGroup<int>();
+        auto group = TaskGroup<int> {};
         for (auto i : views::iota(0, 10)) {
             group.spawn(returnAfterSleep(i));
         }
@@ -47,12 +47,12 @@ ILIAS_TEST(Task, TaskGroup) {
     }
 
     {
-        auto group = TaskGroup<void>();
+        auto group = TaskGroup<void> {};
         group.spawn(sleep(10ms));
     }
 
     {
-        auto group = TaskGroup<void>();
+        auto group = TaskGroup<void> {};
         group.spawn(sleep(10h));
         co_await this_coro::yield();
         group.stop();
@@ -60,7 +60,7 @@ ILIAS_TEST(Task, TaskGroup) {
 
     {
         // Test already stopped group
-        auto group = TaskGroup<void>();
+        auto group = TaskGroup<void> {};
         group.stop();
         for (auto i : views::iota(1, 100)) {
             group.spawn(sleep(1s * i));
@@ -73,7 +73,7 @@ ILIAS_TEST(Task, TaskGroup) {
 
     { // Test Stop
         auto fn = []() -> Task<void> {
-            auto group = TaskGroup<void>();
+            auto group = TaskGroup<void> {};
             for (auto i : views::iota(1, 100)) {
                 group.spawn(sleep(1s * i));
                 co_await this_coro::yield();
@@ -88,7 +88,7 @@ ILIAS_TEST(Task, TaskGroup) {
     }
 
     { // Test already completed handle
-        auto group = TaskGroup<void>();
+        auto group = TaskGroup<void> {};
         auto handle = spawn([]() -> Task<void> {
             co_return;
         });

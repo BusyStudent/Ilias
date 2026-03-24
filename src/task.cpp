@@ -24,7 +24,10 @@ TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task, CaptureSource sour
     mTask.setCompletionHandler(handler);
     this->setStoppedHandler(handler);
     this->setExecutor(*executor);
-    this->pushFrame("spawn", source); // TRACING: trace the spawn point
+
+    // TRACING: trace the spawn point
+    this->pushFrame("spawn", source);
+    runtime::tracing::spawn(*this);
 
     this->ref(); // Ref it, we will deref it when it completed
     mTask.schedule(); // Schedule the task in the executor
@@ -37,10 +40,13 @@ auto TaskSpawnContextBase::onComplete() -> void {
     this->mManager(*this, Ops::SetValue);
     this->setTask(nullptr); // Drop the task, to make sure when the task is completed, the argument is released
 
-    if (mCompletionHandler) { // Notify we are stopped
+    if (mCompletionHandler) { // Notify we are completed
         mCompletionHandler(*this);
         mCompletionHandler = nullptr;
     }
+    // TRACING: trace the completion point
+    runtime::tracing::complete(*this);
+
     if (use_count() == 1) { // We are the last one, only can be deref in the event loop
         executor().schedule([this]() { 
             this->deref();

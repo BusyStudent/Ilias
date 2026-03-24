@@ -98,7 +98,6 @@ protected:
 
     SmallFunction<void (TaskSpawnContextBase &)> mCompletionHandler; // The completion handler, call when the task is completed or stopped
     ExceptionPtr mException; // The exception of the task
-    std::string mName; // The name of the spawn task
     bool mCompleted = false;
 
     // Virtual method

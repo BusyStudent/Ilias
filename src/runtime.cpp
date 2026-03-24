@@ -1,4 +1,5 @@
 #include <ilias/runtime/executor.hpp>
+#include <ilias/runtime/tracing.hpp>
 #include <ilias/runtime/timer.hpp>
 #include <ilias/runtime/coro.hpp>
 #include <ilias/task/task.hpp>
@@ -21,7 +22,7 @@ using namespace runtime;
 
 // Executor
 namespace {
-    static thread_local constinit Executor *currentExecutor {};
+    static thread_local constinit Executor *gCurrentExecutor {};
 }
 
 Executor::~Executor() {
@@ -29,20 +30,20 @@ Executor::~Executor() {
 }
 
 auto Executor::currentThread() -> Executor * {
-    return currentExecutor;
+    return gCurrentExecutor;
 }
 
 auto Executor::install() -> void {
-    if (currentExecutor && currentExecutor != this) {
+    if (gCurrentExecutor && gCurrentExecutor != this) {
         ILIAS_ERROR("Runtime", "A different executor already installed");
         ILIAS_THROW(std::runtime_error("A different executor already installed"));
     }
-    currentExecutor = this;
+    gCurrentExecutor = this;
 }
 
 auto Executor::uninstall() -> void {
-    if (currentExecutor == this) {
-        currentExecutor = nullptr;
+    if (gCurrentExecutor == this) {
+        gCurrentExecutor = nullptr;
     }
 }
 
@@ -248,5 +249,27 @@ auto runtime::deallocate(void *ptr, size_t size) noexcept -> void {
 auto runtime::allocate(size_t size) -> void * { return std::malloc(size); }
 auto runtime::deallocate(void *ptr, size_t) noexcept -> void { return std::free(ptr); }
 #endif // ILIAS_USE_MEMORY_POOL
+
+// TRACING
+#if defined(ILIAS_CORO_TRACE)
+namespace {
+    static thread_local constinit TracingSubscriber *gSubscriber {};
+}
+
+TracingSubscriber::~TracingSubscriber() {
+    if (gSubscriber == this) {
+        gSubscriber = nullptr;
+    }
+}
+
+auto TracingSubscriber::install() -> bool {
+    gSubscriber = this;
+    return true;
+}
+
+auto TracingSubscriber::currentThread() -> TracingSubscriber * {
+    return gSubscriber;
+}
+#endif // ILIAS_CORO_TRACE
 
 ILIAS_NS_END

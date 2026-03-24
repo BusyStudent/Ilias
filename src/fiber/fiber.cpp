@@ -88,14 +88,14 @@ public:
 };
 
 #if !defined(_WIN32) // Not in windows, we should save it by ourselves
-static constinit thread_local FiberContextImpl *currentContext {};
+static constinit thread_local FiberContextImpl *gCurrentContext {};
 
 struct CurrentGuard { // RAII guard for manage the current fiber
     CurrentGuard(FiberContextImpl *c) : cur(c) {
-        prev = std::exchange(currentContext, cur);
+        prev = std::exchange(gCurrentContext, cur);
     }
     ~CurrentGuard() {
-        currentContext = prev;
+        gCurrentContext = prev;
     }
     FiberContextImpl *cur = nullptr;
     FiberContextImpl *prev = nullptr;
@@ -205,7 +205,7 @@ auto FiberContextImpl::current() -> FiberContextImpl * {
     ILIAS_ASSERT(data->mMagic == 0x114514, "Magic number mismatch, memory corrupted ???");
     return data;
 #else
-    return currentContext;
+    return gCurrentContext;
 #endif // _WIN32
 
 }
@@ -227,7 +227,7 @@ auto callContext(void *ctxt) -> void {
 
 #if !defined(_WIN32)
 auto ucontextEntry() -> void {
-    callContext(currentContext); // We use uc_link to return to the caller
+    callContext(gCurrentContext); // We use uc_link to return to the caller
 }
 #endif // _WIN32
 
