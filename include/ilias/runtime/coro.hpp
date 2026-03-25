@@ -10,6 +10,10 @@
 #include <concepts> // std::invocable
 #include <utility> // std::exchange
 
+#if defined(_MSC_VER) || defined(__clang__) || defined(__GNUC__)
+    #define ILIAS_USE_CORO_ABI
+#endif // _MSVC_ || __clang__ || __GNUC__
+
 ILIAS_NS_BEGIN
 
 // Runtime internal coroutine classes
@@ -270,14 +274,19 @@ friend class CoroHandle;
 class CoroHandle {
 public:
     template <typename T> requires (std::is_base_of_v<CoroPromise, T>)
-    CoroHandle(std::coroutine_handle<T> handle) noexcept : mHandle(handle), mPromise(&handle.promise()) {}
-    CoroHandle(const CoroHandle &) noexcept = default;
-    CoroHandle(std::nullptr_t) noexcept {};
+    CoroHandle(std::coroutine_handle<T> handle) noexcept : mHandle(handle) {
+#if defined(ILIAS_USE_CORO_ABI)
+        ILIAS_ASSERT(&promise() == &handle.promise(), "Coroutine frame abi mismatch");
+#else
+        mPromise = &handle.promise(); 
+#endif // defined(ILIAS_USE_CORO_ABI)
+    }
+    CoroHandle(std::nullptr_t) noexcept {}
     CoroHandle() noexcept = default;
 
     // std coroutine interface
     auto done() const noexcept {
-        return mHandle.done() || mPromise->mDone;
+        return mHandle.done() || promise().mDone;
     }
 
     auto resume() const noexcept {
@@ -289,16 +298,23 @@ public:
         return mHandle.destroy();
     }
 
+    // Get the promise of the coroutine
     template <typename T = CoroPromise>
     auto promise() const noexcept -> T & {
-        ILIAS_ASSERT(mPromise, "Can't get promise from null handle");
+        ILIAS_ASSERT(mHandle, "Can't get promise from null handle");
+#if defined(ILIAS_USE_CORO_ABI)
+        auto frame = reinterpret_cast<FrameABI *>(mHandle.address());
+        auto promise = reinterpret_cast<T *>(frame->promise);
+        return *promise;
+#else
         return static_cast<T &>(*mPromise);
+#endif // defined(ILIAS_USE_CORO_ABI)
     }
 
     // Our runtime interface
     auto context() const noexcept -> CoroContext & {
-        ILIAS_ASSERT(mPromise, "Can't get context from null handle");
-        return *(mPromise->mContext); // Context must be set before coroutine starts
+        ILIAS_ASSERT(mHandle, "Can't get context from null handle");
+        return *(promise().mContext); // Context must be set before coroutine starts
     }
 
     auto executor() const noexcept -> Executor & {
@@ -306,7 +322,7 @@ public:
     }
 
     auto setContext(CoroContext &ctxt) const noexcept {
-        mPromise->mContext = &ctxt;
+        promise().mContext = &ctxt;
     }
 
     // Tell the context, are we stopped now, it only can called when the stop was requested and coroutine is suspended
@@ -322,12 +338,12 @@ public:
 
     // Set the completion handler, it will be called when coroutine is completed, stopped is not completed
     auto setCompletionHandler(void (*handler)(CoroContext &)) const noexcept {
-        mPromise->mCompletionHandler = handler;
+        promise().mCompletionHandler = handler;
     }
 
     // Set the previous awaiting coroutine, when the coroutine is completed, it will resume the previous awaiting coroutine
     auto setPrevAwaiting(CoroHandle h) const noexcept {
-        mPromise->mPrevAwaiting = h.mHandle;
+        promise().mPrevAwaiting = h.mHandle;
     }
 
     // Resume in the executor
@@ -341,7 +357,7 @@ public:
     }
 
     auto takeException() const noexcept {
-        return mPromise->takeException();
+        return promise().takeException();
     }
 
     auto isStopRequested() const noexcept {
@@ -361,8 +377,18 @@ public:
         return bool(mHandle);
     }
 private:
-    std::coroutine_handle<> mHandle;
-    CoroPromise            *mPromise = nullptr;
+    std::coroutine_handle<> mHandle; // The std coroutine handle
+#if !defined(ILIAS_USE_CORO_ABI)
+    CoroPromise            *mPromise = nullptr; // The promise of the coroutine
+#else
+    // See https://devblogs.microsoft.com/oldnewthing/20220103-00/?p=106109
+    // HACK: Use this to optimize the coroutine handle
+    struct FrameABI {
+        void (*resume)(FrameABI *);
+        void (*destroy)(FrameABI *);
+        std::byte promise[];
+    };
+#endif // defined(ILIAS_USE_CORO_ABI)
 };
 
 } // namespace runtime

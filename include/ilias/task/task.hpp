@@ -479,7 +479,7 @@ public:
 
     auto operator co_await() && noexcept -> task::TaskAwaiter<T> {
         ILIAS_ASSERT(mHandle, "Task is null");
-        return task::TaskAwaiter<T>(_leak());
+        return task::TaskAwaiter<T> {_leak()};
     }
 private:
     Task(handle_type handle) noexcept : mHandle(handle) {}
@@ -492,7 +492,7 @@ friend class task::TaskPromise<T>;
 template <std::invocable Fn>
 [[nodiscard]]
 inline auto blocking(Fn fn) {
-    return task::TaskBlockingAwaiter<decltype(fn)>(std::move(fn));
+    return task::TaskBlockingAwaiter<decltype(fn)> {std::move(fn)};
 }
 
 // Sleep for a duration
@@ -536,6 +536,6 @@ ILIAS_NS_END
 template <typename T>
 struct std::hash<ilias::task::TaskHandle<T> > {
     auto operator()(const ilias::task::TaskHandle<T> &handle) const -> std::size_t {
-        return std::hash<ilias::runtime::CoroHandle>()(handle);
+        return std::hash<ilias::runtime::CoroHandle>{}(handle);
     }
 };
