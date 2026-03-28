@@ -310,7 +310,7 @@ public:
     TaskBlockingContext(const TaskBlockingContext &) = delete;
 
     auto enter() -> void {
-        runtime::tracing::spawn(*this); // TRACING: blocking wait is also spawn
+        runtime::tracing::taskSpawn(*this); // TRACING: blocking wait is also spawn
         mTask.resume();
         if (!mTask.done()) {
             executor().run(mStopExecutor.get_token());            
@@ -324,7 +324,7 @@ public:
     }
 private:
     static auto onComplete(CoroContext &_self) -> void { // Break the event loop
-        runtime::tracing::complete(_self); // TRACING: completion
+        runtime::tracing::taskComplete(_self); // TRACING: completion
         static_cast<TaskBlockingContext &>(_self).mStopExecutor.request_stop();
     }
     
@@ -383,11 +383,9 @@ public:
         return caller.promise().final(); // Mark the caller as final and switch to the next frame
     }
     auto await_resume() noexcept -> T {
-#if defined(__cpp_lib_unreachable)
         if (!mValue) {
-            std::unreachable(); // LCOV_EXCL_LINE
+            ILIAS_UNREACHABLE(); // LCOV_EXCL_LINE
         }
-#endif
         return unwrapOption(std::move(mValue));
     }
 private:
@@ -499,7 +497,7 @@ inline auto blocking(Fn fn) {
 [[nodiscard]]
 inline auto sleep(std::chrono::milliseconds duration) -> Task<void> {
     auto count = duration.count();
-    auto ucount = uint64_t(count < 0 ? 0 : count);
+    auto ucount = static_cast<uint64_t>(count < 0 ? 0 : count);
     return runtime::Executor::currentThread()->sleep(ucount);
 }
 

@@ -11,6 +11,7 @@
 #pragma once
 
 #include <ilias/runtime/executor.hpp>
+#include <ilias/runtime/tracing.hpp>
 #include <ilias/runtime/await.hpp>
 #include <ilias/runtime/coro.hpp>
 #include <ilias/task/task.hpp>
@@ -82,6 +83,9 @@ public:
             ctxt.setExecutor(mContext.executor());
             ctxt.setStoppedHandler(&onTaskCompleted);
             ctxt.task().setCompletionHandler(&onTaskCompleted);
+
+            // TRACING: a subtask is started
+            runtime::tracing::childBegin(ctxt);
             ctxt.task().resume();
         }
         return mGot && mLeft == 0; // All completed and one of them is got
@@ -106,6 +110,8 @@ protected:
         auto &ctxt = static_cast<WhenAnyTaskContext &>(_ctxt);
         auto &self = *ctxt.mAwaiter;
 
+        // TRACING: a subtask is completed
+        runtime::tracing::childEnd(ctxt);
         if (!ctxt.isStopped()) { // Only not stopped task can be got (value produced)
             if (self.mGot == nullptr) {
                 self.mGot = &ctxt; // The first completed task

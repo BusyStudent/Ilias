@@ -193,6 +193,34 @@ auto threadpool::submit(CallableRef &callable) -> void {
 #endif
 }
 
+
+// TRACING
+#if defined(ILIAS_CORO_TRACE)
+namespace {
+    static thread_local constinit TracingSubscriber *gSubscriber {};
+    static thread_local constinit size_t gPrevAlloctionSize {};
+}
+
+TracingSubscriber::~TracingSubscriber() {
+    if (gSubscriber == this) {
+        gSubscriber = nullptr;
+    }
+}
+
+auto TracingSubscriber::install() noexcept -> bool {
+    gSubscriber = this;
+    return true;
+}
+
+auto TracingSubscriber::currentThread() noexcept -> TracingSubscriber * {
+    return gSubscriber;
+}
+
+auto runtime::allocationSize() noexcept -> size_t {
+    return gPrevAlloctionSize;
+}
+#endif // ILIAS_CORO_TRACE
+
 // Thread local memory Pool, default disable
 // FIXME: currently scheduleOn cancellation impl conflict with thread local memory pool
 //        It may cause task free mismatch when cancelled, so disable it for now
@@ -246,30 +274,13 @@ auto runtime::deallocate(void *ptr, size_t size) noexcept -> void {
     }
 }
 #else // Use system allocator
-auto runtime::allocate(size_t size) -> void * { return std::malloc(size); }
-auto runtime::deallocate(void *ptr, size_t) noexcept -> void { return std::free(ptr); }
+auto runtime::allocate(size_t size) -> void * { 
+    return std::malloc(size); 
+}
+
+auto runtime::deallocate(void *ptr, size_t) noexcept -> void { 
+    return std::free(ptr);
+}
 #endif // ILIAS_USE_MEMORY_POOL
-
-// TRACING
-#if defined(ILIAS_CORO_TRACE)
-namespace {
-    static thread_local constinit TracingSubscriber *gSubscriber {};
-}
-
-TracingSubscriber::~TracingSubscriber() {
-    if (gSubscriber == this) {
-        gSubscriber = nullptr;
-    }
-}
-
-auto TracingSubscriber::install() -> bool {
-    gSubscriber = this;
-    return true;
-}
-
-auto TracingSubscriber::currentThread() -> TracingSubscriber * {
-    return gSubscriber;
-}
-#endif // ILIAS_CORO_TRACE
 
 ILIAS_NS_END

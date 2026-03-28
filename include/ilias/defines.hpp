@@ -89,13 +89,13 @@
 #elif defined(__GNUC__)
     #define ILIAS_ATTRIBUTE(x)  __attribute__((x))
     #define ILIAS_UNREACHABLE() __builtin_unreachable()
-    #define ILIAS_ASSUME(...)   if (!(__VA_ARGS__)) __builtin_unreachable()
+    #define ILIAS_ASSUME(...)   ((__VA_ARGS__) ? (void)0 : __builtin_unreachable())
     #define ILIAS_TRAP()        __builtin_trap()
 #else
-    #define ILIAS_ATTRIBUTE(x) // no-op
-    #define ILIAS_UNREACHABLE() // no-op
-    #define ILIAS_ASSUME(...) // no-op
-    #define ILIAS_TRAP() // no-op
+    #define ILIAS_ATTRIBUTE(x)  // no-op
+    #define ILIAS_UNREACHABLE() ::abort()
+    #define ILIAS_ASSUME(...)   // no-op
+    #define ILIAS_TRAP()        ::abort()
 #endif
 
 #if  !defined(ILIAS_NO_UNIQUE_ADDRESS)

@@ -218,9 +218,7 @@ auto callContext(void *ctxt) -> void {
 #if defined(_WIN32)
     ::SwitchToFiber(self->win32.caller);
     ILIAS_ASSERT(false, "Should not reach here");
-#if defined(__cpp_lib_unreachable)
-    std::unreachable();
-#endif // __cpp_lib_unreachable
+    ILIAS_UNREACHABLE();
 #endif // _WIN32
 
 }

@@ -6,6 +6,7 @@
 #include <ilias/testing.hpp>
 #include <ilias/result.hpp>
 #include <gtest/gtest.h>
+#include "subscriber.hpp"
 
 using namespace ilias;
 using namespace std::literals;
@@ -43,6 +44,12 @@ auto testTask() -> Task<void> {
     EXPECT_EQ(co_await returnInput(42), 42);
     EXPECT_EQ(co_await testOk(), 42);
     EXPECT_EQ(co_await testErr(), Err(114514));
+
+    // Test the debug set name
+#if defined(ILIAS_CORO_TRACE)
+    co_await this_coro::setName("testTask");
+    EXPECT_EQ(co_await this_coro::name(), "testTask");
+#endif // ILIAS_CORO_TRACE
 
     // Test exception handling
     try {
@@ -248,31 +255,11 @@ ILIAS_TEST(Task, Stacktrace) {
     std::ignore = co_await whenAny(fn());
 }
 
-TEST(Task, Tracing) {
-    class Subscriber : public runtime::TracingSubscriber {
-    public:
-        auto onSpawn(const runtime::CoroContext &ctxt) -> void override {
-            std::cout << "Spawned " << std::addressof(ctxt) << std::endl;
-        }
-
-        auto onComplete(const runtime::CoroContext &ctxt) -> void override {
-            std::cout << "Completed " << std::addressof(ctxt) << std::endl;
-        }
-    };
-
-    Subscriber sub {};
-    sub.install();
-
-    // Test blocking wait
-    testTask().wait();
-
-    // Test spawn
-    ilias::spawn(testTask()).wait();
-};
-
 auto main(int argc, char** argv) -> int {
     ::testing::InitGoogleTest(&argc, argv);
     EventLoop loop;
+    Subscriber sub;
     loop.install();
+    sub.install();
     return RUN_ALL_TESTS();
 }

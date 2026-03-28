@@ -9,6 +9,8 @@ ILIAS_NS_BEGIN
 namespace runtime {
 
 // Forward declaration
+template <typename T>
+class TracingAwaiter;
 class CoroContext;
 
 /**
@@ -20,20 +22,52 @@ class ILIAS_API TracingSubscriber {
 public:
     virtual ~TracingSubscriber();
 
+    // Task
     /**
-     * @brief an new coroutine is spawned
+     * @brief an new task is spawned
      * @note This is called at ```ilias::spawn``` or ```Task<T>::wait```
      * 
      * @param ctxt 
      */
-    virtual auto onSpawn(const CoroContext &ctxt) -> void = 0;
+    virtual auto onTaskSpawn(const CoroContext &ctxt) noexcept -> void {}
 
     /**
-     * @brief an spawned coroutine is completed
+     * @brief an spawned task is completed
      * 
      * @param ctxt 
      */
-    virtual auto onComplete(const CoroContext &ctxt) -> void = 0;
+    virtual auto onTaskComplete(const CoroContext &ctxt) noexcept -> void {}
+
+    // Executor
+    /**
+     * @brief The task is resumed
+     * 
+     * @param ctxt 
+     */
+    virtual auto onResume(const CoroContext &ctxt) noexcept -> void {}
+
+    /**
+     * @brief The task is suspended
+     * 
+     * @param ctxt 
+     */
+    virtual auto onSuspend(const CoroContext &ctxt) noexcept -> void {}
+
+    // SubTask
+    /**
+     * @brief The new sub task is spawned
+     * @note This is called in declators, like ```whenAny``` or ```whenAll```
+     * 
+     * @param child 
+     */
+    virtual auto onChildBegin(const CoroContext &child) noexcept -> void {}
+
+    /**
+     * @brief The sub task is completed
+     * 
+     * @param child 
+     */
+    virtual auto onChildEnd(const CoroContext &child) noexcept -> void {}
 
     /**
      * @brief Install the subscriber to current thread
@@ -41,20 +75,20 @@ public:
      * @return true 
      * @return false The trace feature is not enabled
      */
-    auto install() -> bool;
+    auto install() noexcept -> bool;
 
     /**
      * @brief Get the current thread instance of TracingSubscriber
      * 
      * @return TracingSubscriber * (nullptr for none) 
      */
-    static auto currentThread() -> TracingSubscriber *;
+    static auto currentThread() noexcept -> TracingSubscriber *;
 };
 
 #if !defined(ILIAS_CORO_TRACE)
 inline TracingSubscriber::~TracingSubscriber() {}
-inline auto TracingSubscriber::install() -> bool { ILIAS_WARN("Runtime", "Tracing feature is not enabled"); return false; }
-inline auto TracingSubscriber::currentThread() -> TracingSubscriber * { ILIAS_WARN("Runtime", "Tracing feature is not enabled"); return nullptr; }
+inline auto TracingSubscriber::install() noexcept -> bool { ILIAS_WARN("Runtime", "Tracing feature is not enabled"); return false; }
+inline auto TracingSubscriber::currentThread() noexcept -> TracingSubscriber * { ILIAS_WARN("Runtime", "Tracing feature is not enabled"); return nullptr; }
 #endif // !defined(ILIAS_CORO_TRACE)
 
 } // namespace runtime
@@ -62,21 +96,67 @@ inline auto TracingSubscriber::currentThread() -> TracingSubscriber * { ILIAS_WA
 // Call the current thread subscriber
 namespace runtime::tracing {
 
-inline auto spawn([[maybe_unused]] const CoroContext &ctxt) -> void {
+/// @copydoc TracingSubscriber::onTaskSpawn
+inline auto taskSpawn([[maybe_unused]] const CoroContext &ctxt) noexcept -> void {
 
 #if defined(ILIAS_CORO_TRACE)
     if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
-        sub->onSpawn(ctxt);
+        sub->onTaskSpawn(ctxt);
     }
 #endif // defined(ILIAS_CORO_TRACE)
 
 }
 
-inline auto complete([[maybe_unused]] const CoroContext &ctxt) -> void {
+/// @copydoc TracingSubscriber::onTaskComplete
+inline auto taskComplete([[maybe_unused]] const CoroContext &ctxt) noexcept -> void {
 
 #if defined(ILIAS_CORO_TRACE)
     if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
-        sub->onComplete(ctxt);
+        sub->onTaskComplete(ctxt);
+    }
+#endif // defined(ILIAS_CORO_TRACE)
+
+}
+
+/// @copydoc TracingSubscriber::onResume
+inline auto resume([[maybe_unused]] const CoroContext &ctxt) noexcept -> void {
+
+#if defined(ILIAS_CORO_TRACE)
+    if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
+        sub->onResume(ctxt);
+    }
+#endif // defined(ILIAS_CORO_TRACE)
+
+}
+
+/// @copydoc TracingSubscriber::onSuspend
+inline auto suspend([[maybe_unused]] const CoroContext &ctxt) noexcept -> void {
+    
+#if defined(ILIAS_CORO_TRACE)
+    if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
+        sub->onSuspend(ctxt);
+    }
+#endif // defined(ILIAS_CORO_TRACE)
+
+}
+
+/// @copydoc TracingSubscriber::onChildBegin
+inline auto childBegin([[maybe_unused]] const CoroContext &child) noexcept -> void {
+    
+#if defined(ILIAS_CORO_TRACE)
+    if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
+        sub->onChildBegin(child);
+    }
+#endif // defined(ILIAS_CORO_TRACE)
+
+}
+
+/// @copydoc TracingSubscriber::onChildEnd
+inline auto childEnd([[maybe_unused]] const CoroContext &child) noexcept -> void {
+
+#if defined(ILIAS_CORO_TRACE)
+    if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
+        sub->onChildEnd(child);
     }
 #endif // defined(ILIAS_CORO_TRACE)
 

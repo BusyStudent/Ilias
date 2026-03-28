@@ -27,7 +27,7 @@ TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task, CaptureSource sour
 
     // TRACING: trace the spawn point
     this->pushFrame("spawn", source);
-    runtime::tracing::spawn(*this);
+    runtime::tracing::taskSpawn(*this);
 
     this->ref(); // Ref it, we will deref it when it completed
     mTask.schedule(); // Schedule the task in the executor
@@ -45,7 +45,7 @@ auto TaskSpawnContextBase::onComplete() -> void {
         mCompletionHandler = nullptr;
     }
     // TRACING: trace the completion point
-    runtime::tracing::complete(*this);
+    runtime::tracing::taskComplete(*this);
 
     if (use_count() == 1) { // We are the last one, only can be deref in the event loop
         executor().schedule([this]() { 

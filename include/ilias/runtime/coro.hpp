@@ -22,6 +22,7 @@ namespace runtime {
 // Memory pool for coroutines
 extern auto ILIAS_API allocate(size_t n) -> void *;
 extern auto ILIAS_API deallocate(void *ptr, size_t n) noexcept -> void;
+extern auto ILIAS_API allocationSize() noexcept -> size_t; // Get previous allocation size (useable when trace)
 
 // Helper class to switch between coroutines
 class SwitchCoroutine {
@@ -42,12 +43,12 @@ public:
     CoroContext(std::nostopstate_t) : mStopSource(std::nostopstate) {}
 
     // Request to stop the coroutine
-    auto stop() noexcept {
+    auto stop() noexcept -> bool {
         return mStopSource.request_stop();
     }
 
     // Check if the coroutine is stopped
-    auto isStopped() const noexcept {
+    auto isStopped() const noexcept -> bool {
         return mStopped;
     }
 
@@ -88,7 +89,16 @@ public:
         mParent = &parent;
 #else
         static_cast<void>(parent);
-#endif
+#endif // defined(ILIAS_CORO_TRACE)
+    }
+
+    // TRACING: Set the name of the ctxt
+    auto setName(std::string_view name) noexcept {
+#if defined(ILIAS_CORO_TRACE)
+        mName.assign(name);
+#else
+        static_cast<void>(name);
+#endif // defined(ILIAS_CORO_TRACE)
     }
 
     // TRACING: Push the frame to the stack, return the index of the frame
@@ -133,6 +143,24 @@ public:
 #endif // defined(ILIAS_CORO_TRACE)
     }
 
+    // TRACING: Get the parent of the ctxt
+    auto parent() const noexcept {
+#if defined(ILIAS_CORO_TRACE)
+        return mParent;
+#else
+        return static_cast<CoroContext *>(nullptr);
+#endif
+    }
+
+    // TRACING: Get the debug name of the ctxt
+    auto name() const noexcept {
+#if defined(ILIAS_CORO_TRACE)
+        return std::string_view {mName};
+#else
+        return std::string_view {};
+#endif // defined(ILIAS_CORO_TRACE)
+    }
+
     // Memory pool for coroutines (maybe.)
     auto operator new(size_t n) -> void * {
         return allocate(n);
@@ -151,17 +179,19 @@ private:
     CoroContext  *mParent = nullptr;                         // Use for stacktrace to dump the whole stack
     CoroContext  *mRoot = nullptr;                           // The root context of the coroutine (spawn or blocking wait), used for tracing
     std::string   mName;                                     // The name of the coroutine, used for tracing
+    size_t        mStackSize = 0;                            // The size of the stack, used for tracing
     std::vector<StackFrame> mFrames;                         // The frames of the coroutine,
 #endif // defined(ILIAS_CORO_TRACE)
+template <typename T>
+friend class TracingAwaitable;
 friend class CoroHandle;
 };
 
 // The common part of all stackless coroutines
 class CoroPromise {
 public:
-    CoroPromise() = default;
     CoroPromise(const CoroPromise &) = delete;
-    ~CoroPromise() noexcept = default;
+    CoroPromise() = default;
 
     // std coroutine interface
     auto initial_suspend() noexcept {
@@ -177,14 +207,10 @@ public:
     auto final_suspend() noexcept {
         struct Awaiter {
             auto await_ready() noexcept { return false; }
-            auto await_suspend(std::coroutine_handle<> handle) noexcept { return self.final(); }
+            auto await_suspend([[maybe_unused]] std::coroutine_handle<> handle) noexcept { return self.final(); }
             [[noreturn]]
             auto await_resume() noexcept { // UNREACHABLE here, we can't resume an done coroutine
-#if defined(__cpp_lib_unreachable)
-                std::unreachable(); // LCOV_EXCL_LINE
-#else
-                std::abort();
-#endif // defined(__cpp_lib_unreachable)
+                ILIAS_UNREACHABLE(); // LCOV_EXCL_LINE
             }
             CoroPromise &self;
         };
@@ -233,6 +259,7 @@ public:
     // Doing sth before the coroutine starts
     auto init() noexcept -> void {
         ILIAS_ASSERT(mContext, "Coroutine context must be set before coroutine starts");
+        ILIAS_ASSERT(!mDone, "Coroutine already done, memory corruption ???");
         // TRACING: Push the frame, we are start now
         mContext->pushFrame(mCreation);
     }
@@ -461,11 +488,9 @@ inline auto stopped() noexcept {
         }
         auto await_resume() const noexcept {
             // LCOV_EXCL_START
-#if defined(__cpp_lib_unreachable)
             if (mStopped) {
-                std::unreachable();
+                ILIAS_UNREACHABLE();
             }
-#endif // defined(__cpp_lib_unreachable)
             // LCOV_EXCL_STOP
         }
 
@@ -497,6 +522,33 @@ inline auto stacktrace() noexcept {
     };
 
     return Awaiter {};
+}
+
+// Get the current name from the coroutine context
+[[nodiscard]]
+inline auto name() noexcept {
+    struct Awaiter : AwaiterBase {
+        auto await_resume() noexcept {
+            return mCtxt->name();
+        }
+    };
+
+    return Awaiter {};
+}
+
+// Set the name to the current coroutine context
+inline auto setName(std::string_view name) noexcept {
+    struct Awaiter : AwaiterBase {
+        auto await_resume() noexcept {
+            mCtxt->setName(name);
+        }
+
+        std::string_view name;
+    };
+
+    Awaiter awaiter {};
+    awaiter.name = name;
+    return awaiter;
 }
 
 } // namespace this_coro
