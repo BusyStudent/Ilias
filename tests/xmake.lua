@@ -19,7 +19,7 @@ if has_config("dev") then
             set_default(false)
 
             add_files(file)
-            add_tests(name, {run_timeout = 10000})
+            add_tests(name, {run_timeout = 10000, packages = "gtest"})
             add_packages("gtest")
             add_deps("ilias")
             add_includedirs("./")

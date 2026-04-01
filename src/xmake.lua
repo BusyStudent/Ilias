@@ -1,5 +1,6 @@
 set_warnings("all")
 
+-- Main 
 target("ilias")
     set_kind("$(kind)")
     set_configdir("../include/ilias/detail/")
@@ -81,7 +82,10 @@ target("ilias")
         set_configvar("ILIAS_USE_IO_URING", 1)
     end
 
+    -- Tracing
     if has_config("coro_trace") then
+        add_files("console/*.cpp")
+        add_files("console/res/*", {rule = "utils.bin2obj"})
         set_configvar("ILIAS_CORO_TRACE", 1)
     end
 

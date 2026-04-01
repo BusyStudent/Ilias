@@ -129,6 +129,14 @@ public:
         return static_cast<StackFrame *>(nullptr);
 #endif // defined(ILIAS_CORO_TRACE)
     }
+    
+    auto topFrame() const noexcept {
+#if defined(ILIAS_CORO_TRACE)
+        return mFrames.empty() ? nullptr : &mFrames.back();
+#else
+        return static_cast<const StackFrame *>(nullptr);
+#endif
+    }
 
     // TRACING: Get the stacktrace of the ctxt
     auto stacktrace() const noexcept {

@@ -1,5 +1,6 @@
 #include <ilias/fs/file.hpp>
 #include <ilias/platform.hpp>
+#include <ilias/console.hpp>
 #include <ilias/signal.hpp>
 #include <ilias/task.hpp>
 #include <ilias/net.hpp>
@@ -196,6 +197,9 @@ auto handleConnection(BufStream<TcpStream> stream) -> Task<void> {
 }
 
 void ilias_main() {
+    TracingWebUi webui;
+    webui.install();
+
     auto main = TaskScope::enter([](TaskScope &scope) -> Task<void> {
         auto client = (co_await TcpListener::bind("127.0.0.1:25565")).value();
         std::cerr << "Listening on " << client.localEndpoint().value().toString() << std::endl;
@@ -204,7 +208,7 @@ void ilias_main() {
             scope.spawn(handleConnection(std::move(conn)));
         }
     });
-    auto [done, stop] = co_await(std::move(main) || signal::ctrlC());
+    auto [done, stop] = co_await whenAny(std::move(main), signal::ctrlC());
     if (stop) {
         std::cout << "Received Ctrl+C, shutting down..." << std::endl;
     }

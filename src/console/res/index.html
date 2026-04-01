@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Console</title>
+    <style>
+        :root {
+            --bg: #1e1e1e;
+            --text: #d4d4d4;
+            --border: #444;
+            --hover: #2a2d2e;
+            --header-bg: #252526;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Consolas', 'Courier New', monospace;
+            margin: 0;
+            padding: 0;
+            font-size: 14px;
+        }
+        .toolbar {
+            position: sticky;
+            top: 0;
+            background: var(--header-bg);
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+        }
+        button {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            cursor: pointer;
+            font-family: inherit;
+            border-radius: 3px;
+        }
+        button:hover { background: #005f9e; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+        th, td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            position: sticky;
+            top: 45px; /* offset for toolbar */
+            background: var(--header-bg);
+            cursor: pointer;
+            user-select: none;
+            z-index: 9;
+        }
+        th:hover { background: var(--hover); }
+        tr:hover td { background: var(--hover); }
+        
+        /* State Color */
+        .state-Running { color: #4CAF50; font-weight: bold; }
+        .state-Idle { color: #9E9E9E; }
+        .state-Yielded { color: #FFC107; }
+        .state-Completed { color: #2196F3; }
+        
+        /* ProgressBar color */
+        .bar-container { width: 100px; background: #333; height: 6px; border-radius: 3px; display: inline-block; vertical-align: middle; margin-left: 8px; }
+        .bar-fill { height: 100%; background: #4CAF50; border-radius: 3px; }
+
+        /* Location */
+        .cell-location {
+            max-width: 200px; /* Hidden if too long */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #9cdcfe;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <div>
+            <strong>⚡ Async Task Console</strong>
+            <span id="stats" style="margin-left: 20px; color: #888;">Tasks: 0 | Running: 0</span>
+        </div>
+        <div>
+            <button id="pauseBtn" onclick="togglePause()">Pause</button>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th onclick="setSort('id')">ID <span id="sort-id"></span></th>
+                <th onclick="setSort('name')">Task Name <span id="sort-name"></span></th>
+                <th onclick="setSort('location')">Location <span id="sort-location"></span></th>
+                <th onclick="setSort('state')">State <span id="sort-state"></span></th>
+                <th onclick="setSort('total_time')">Total Time <span id="sort-total_time"></span></th>
+                <th onclick="setSort('busy_time')">Busy Time <span id="sort-busy_time"></span></th>
+                <th onclick="setSort('polls')">Polls <span id="sort-polls"></span></th>
+            </tr>
+        </thead>
+        <tbody id="task-body">
+            <!-- Data will be injected here -->
+        </tbody>
+    </table>
+
+    <script>
+        // State
+        let tasks = [];
+        let isPaused = false;
+        let sortKey = 'id';
+        let sortAsc = true;
+        let updateInterval = null;
+
+        async function fetchTasks() {
+            if (isPaused) return;
+
+            try {
+                // [
+                //     {
+                //         "id": 0,
+                //         "name": "Task 1",
+                //         "state": "Running or Idle or Yielded or Completed",
+                //         "total_time": 1234,
+                //         "busy_time": 1000,
+                //         "polls": 5,
+                //         "location": "main.cpp:114514"
+                //     },
+                // ]
+                const response = await fetch('/api/tasks');
+                const data = await response.json();
+
+                tasks = data;
+                render();
+            } catch (error) {
+                console.error("Failed to fetch tasks:", error);
+            }
+        }
+
+        // Render
+        function formatTime(ms) {
+            if (ms < 1) return ms.toFixed(2) + 'ms';
+            if (ms < 1000) return ms.toFixed(0) + 'ms';
+            return (ms / 1000).toFixed(2) + 's';
+        }
+
+        function render() {
+            const sortedTasks = [...tasks].sort((a, b) => {
+                let valA = a[sortKey];
+                let valB = b[sortKey];
+                if (typeof valA === 'string') {
+                    return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                }
+                return sortAsc ? valA - valB : valB - valA;
+            });
+
+            const tbody = document.getElementById('task-body');
+            tbody.innerHTML = '';
+
+            let runningCount = 0;
+
+            sortedTasks.forEach(t => {
+                if (t.state === 'Running') runningCount++;
+                
+                const busyRatio = Math.min((t.busy_time / t.total_time) * 100, 100) || 0;
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${t.id}</td>
+                    <td>${t.name}</td>
+                    <td class="cell-location" title="${t.location || ''}">${t.location || '-'}</td>
+                    <td class="state-${t.state}">${t.state}</td>
+                    <td>${formatTime(t.total_time)}</td>
+                    <td>
+                        ${formatTime(t.busy_time)}
+                        <div class="bar-container"><div class="bar-fill" style="width: ${busyRatio}%"></div></div>
+                    </td>
+                    <td>${t.polls}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Update state
+            document.getElementById('stats').innerText = `Tasks: ${tasks.length} | Running: ${runningCount}`;
+            
+            // Sort indicators
+            document.querySelectorAll('th span').forEach(el => el.innerText = '');
+            document.getElementById(`sort-${sortKey}`).innerText = sortAsc ? ' ▲' : ' ▼';
+        }
+
+        function setSort(key) {
+            if (sortKey === key) {
+                sortAsc = !sortAsc;
+            } else {
+                sortKey = key;
+                sortAsc = true;
+            }
+            render();
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            const btn = document.getElementById('pauseBtn');
+            btn.innerText = isPaused ? 'Resume' : 'Pause';
+            btn.style.background = isPaused ? '#e51400' : '#007acc';
+            if (!isPaused) fetchTasks();
+        }
+
+        // Start it
+        fetchTasks();
+        updateInterval = setInterval(fetchTasks, 1000);
+    </script>
+</body>
+</html>
