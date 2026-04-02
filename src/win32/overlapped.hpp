@@ -19,9 +19,7 @@ namespace win32 {
  */
 class IocpOverlapped : public ::OVERLAPPED {
 public:
-    IocpOverlapped() {
-        ::memset(static_cast<::OVERLAPPED*>(this), 0, sizeof(::OVERLAPPED));
-    }
+    IocpOverlapped() : ::OVERLAPPED{} {}
 
     /**
      * @brief Set the Overlapped Offset object

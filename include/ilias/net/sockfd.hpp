@@ -546,8 +546,8 @@ public:
             if (ILIAS_CLOSE_SOCKET(mFd) != 0) {
                 ILIAS_WARN("SocketView", "Failed to close socket {}", mFd);
             }
-            mFd = newSocket;
         }
+        mFd = newSocket;
     }
 
     /**

@@ -9,8 +9,8 @@ ILIAS_NS_BEGIN
 namespace runtime {
 
 // Forward declaration
-template <typename T>
-class TracingAwaiter;
+template <typename T, bool Forward>
+class TracingAwaitable;
 class CoroContext;
 
 /**

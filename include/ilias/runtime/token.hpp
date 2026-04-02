@@ -47,7 +47,7 @@ public:
         mHasValue = true;
     }
 private:
-    alignas(T) std::byte mData[sizeof(T)];
+    alignas(T) std::byte mData[sizeof(T)]; // TODO: Nice optimization:
     bool mHasValue = false;
 };
 

@@ -182,11 +182,6 @@ public:
     {
 
     }
-    ~IocpAcceptAwaiter() {
-        if (mAcceptedSock != INVALID_SOCKET) {
-            ::closesocket(mAcceptedSock);
-        }
-    }
 
     auto onSubmit() -> bool {
         // Frist create a new socket for the accepted connection
@@ -195,7 +190,7 @@ public:
         if (::getsockname(sockfd(), reinterpret_cast<::sockaddr*>(&addr), &len) != 0) {
             return false;
         }
-        mAcceptedSock = ::socket(addr.ss_family, SOCK_STREAM, 0);
+        mAcceptedSock.reset(::socket(addr.ss_family, SOCK_STREAM, 0));
         if (mAcceptedSock == INVALID_SOCKET) {
             return false;
         }
@@ -204,7 +199,7 @@ public:
 
         return mAcceptEx(
             sockfd(),
-            mAcceptedSock,
+            mAcceptedSock.get(),
             mAddressBuf,
             0,
             sizeof(::sockaddr_storage) + 16,
@@ -215,7 +210,7 @@ public:
     }
 
     auto onComplete(DWORD error, DWORD bytesTransferred) -> IoResult<socket_t> {
-        ILIAS_TRACE("IOCP", "Accept on sockfd {} completed, acceptedSock {} Error {}", sockfd(), mAcceptedSock, error);
+        ILIAS_TRACE("IOCP", "Accept on sockfd {} completed, acceptedSock {} Error {}", sockfd(), mAcceptedSock.get(), error);
         if (error != ERROR_SUCCESS) {
             return Err(SystemError(error));
         }
@@ -233,8 +228,8 @@ public:
 
         // Update the accepted connection context
         auto listener = sockfd();
-        if (::setsockopt(mAcceptedSock, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*) &listener, sizeof(listener)) != 0) {
-            ILIAS_WARN("IOCP", "Failed to update accept context for sockfd {}, Error {}", mAcceptedSock, ::GetLastError());
+        if (::setsockopt(mAcceptedSock.get(), SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*) &listener, sizeof(listener)) != 0) {
+            ILIAS_WARN("IOCP", "Failed to update accept context for sockfd {}, Error {}", mAcceptedSock.get(), ::GetLastError());
         }
 
         if (mEndpoint) {
@@ -243,13 +238,11 @@ public:
             }
             ::memcpy(mEndpoint.data(), remoteAddr, remoteAddrLen);
         }
-        auto sock = mAcceptedSock;
-        mAcceptedSock = INVALID_SOCKET;
-        return sock;
+        return mAcceptedSock.release();
     }
 private:
     MutableEndpointView mEndpoint = nullptr;
-    SOCKET mAcceptedSock = INVALID_SOCKET;
+    Socket mAcceptedSock;
     std::byte mAddressBuf[(sizeof(::sockaddr_storage) + 16) * 2];
 
     LPFN_ACCEPTEX mAcceptEx = nullptr;

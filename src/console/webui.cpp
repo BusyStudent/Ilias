@@ -52,6 +52,7 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
         TaskState state = TaskState::Spawned;
         Clock::time_point createdAt {};
         Clock::time_point lastSeenAt {};
+        Clock::time_point lastResumeAt {};
         std::chrono::nanoseconds totalBusy {};
         size_t resumes = 0;
         size_t suspends = 0;
@@ -261,6 +262,24 @@ auto TracingWebUi::Impl::observeImpl(EventKind kind, const runtime::CoroContext 
             mTasks.erase(&ctxt);
             break;
         }
+        case EventKind::Resume: {
+            auto it = mTasks.find(&ctxt);
+            if (it == mTasks.end()) {
+                break;
+            }
+            auto &[_, task] = *it;
+            task.lastResumeAt = Clock::now();
+            task.resumes++;
+            break;
+        }
+        case EventKind::Suspend: {
+            auto it = mTasks.find(&ctxt);
+            if (it == mTasks.end()) {
+                break;
+            }
+            auto &[_, task] = *it;
+            task.totalBusy += Clock::now() - task.lastResumeAt;
+        }
         default: break;
     }
 }
@@ -283,6 +302,7 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
         auto totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(
             Clock::now() - task.createdAt
         );
+        auto totalBusy = std::chrono::duration_cast<std::chrono::milliseconds>(task.totalBusy);
         fmtlib::format_to(
             std::back_inserter(json),
             R"({{
@@ -296,10 +316,10 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
             }},)",
             task.id,
             ctxt->name(),
-            "Running",
+            "Idle",
             totalTime.count(),
-            0,
-            0,
+            totalBusy.count(),
+            task.resumes,
             task.location
         );
     }
