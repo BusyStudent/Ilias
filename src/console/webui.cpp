@@ -8,10 +8,13 @@
 #include <ilias/io.hpp>
 
 #include <memory_resource>
+#include <unordered_map>
 #include <algorithm>
+#include <charconv>
 #include <ranges>
 #include <vector>
-#include <map>
+
+#if !defined(ILIAS_NO_TRACING_WEBUI)
 
 // Resource by build system
 extern "C" {
@@ -34,6 +37,7 @@ ILIAS_NS_BEGIN
 // Implementation
 // ═════════════════════════════════════════════════════════════════════
 struct TracingWebUi::Impl : public runtime::TracingSubscriber {
+    Impl();
     ~Impl();
 
     using Clock = std::chrono::steady_clock;
@@ -60,15 +64,7 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
         size_t childrenCompleted = 0;
         bool stopRequested = false;
         bool stopped = false;
-        std::string location; // The source location (file:line) of where the task was spawned
-    };
-
-    struct EventRecord {
-        Clock::time_point at{};
-        uintptr_t taskId = 0;
-        uintptr_t parentId = 0;
-        bool hasParent = false;
-        std::string kind, state, name, location;
+        std::pmr::string location; // The source location (file:line) of where the task was spawned
     };
 
     // ── TracingSubscriber ───────────────────────────────────────────
@@ -83,6 +79,8 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
     auto observe(EventKind kind, const runtime::CoroContext &ctxt) noexcept -> void;
     auto observeImpl(EventKind kind, const runtime::CoroContext &ctxt) -> void;
     auto snapshotJson() -> std::pmr::string;
+    auto snapshotStacktrace(uintptr_t taskId) -> std::pmr::string;
+    auto allocId() -> uintptr_t;
 
     // ── HTTP server ─────────────────────────────────────────────────
     auto handleConnection(BufStream<TcpStream> stream) -> Task<void>;
@@ -95,9 +93,15 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
     WaitHandle<void>  mServeHandle;
     uintptr_t         mTaskId = 0;
     std::pmr::unsynchronized_pool_resource mPool;
-    std::pmr::map<const runtime::CoroContext *, TaskRecord> mTasks {&mPool};
-    std::pmr::map<const runtime::CoroContext *, TaskRecord> mChildTasks {&mPool};
+    std::pmr::unordered_map<const runtime::CoroContext *, TaskRecord> mTasks {&mPool};
+    std::pmr::unordered_map<const runtime::CoroContext *, TaskRecord> mChildTasks {&mPool};
+    std::pmr::unordered_map<uintptr_t, const runtime::CoroContext *>  mTaskIdMap  {&mPool}; // Mapping id to raw context, used for stacktrace
 };
+
+TracingWebUi::Impl::Impl() {
+    mTasks.reserve(1024);
+    mTaskIdMap.reserve(1024);
+}
 
 TracingWebUi::Impl::~Impl() {
     if (mServeHandle) {
@@ -190,6 +194,15 @@ auto TracingWebUi::Impl::handleRequest(BufStream<TcpStream> &stream, std::string
         auto json = snapshotJson();
         co_return co_await sendReply(stream, 200, "application/json; charset=utf-8", json);
     }
+    if (path.starts_with("/api/stacktrace/")) { // /api/stacktrace/<id>
+        path.remove_prefix(16);
+        uintptr_t id = 0;
+        if (std::from_chars(path.data(), path.data() + path.size(), id).ec != std::errc {}) {
+            co_return co_await sendReply(stream, 400, "text/plain; charset=utf-8", "bad request");
+        }
+        auto json = snapshotStacktrace(id);
+        co_return co_await sendReply(stream, 200, "application/json; charset=utf-8", json);
+    }
     if (path == "/favicon.ico") {
         co_return co_await sendReply(stream, 204, "text/plain; charset=utf-8", "");
     }
@@ -242,10 +255,16 @@ auto TracingWebUi::Impl::observe(EventKind kind, const runtime::CoroContext &ctx
 }
 
 auto TracingWebUi::Impl::observeImpl(EventKind kind, const runtime::CoroContext &ctxt) -> void {
+    auto findTask = [&](const runtime::CoroContext &ctxt) -> TaskRecord * {
+        if (auto it = mTasks.find(&ctxt); it != mTasks.end()) {
+            return &it->second;
+        }
+        return nullptr;
+    };
     switch (kind) {
         case EventKind::TaskSpawn: { // New task spawn
-            auto id = ++mTaskId;
-            auto location = std::string {};
+            auto id = allocId();
+            auto location = std::pmr::string {&mPool};
             if (auto frame = ctxt.topFrame(); frame) {
                 location = fmtlib::format("{}:{}", frame->filename(), frame->line());
                 std::ranges::replace(location, '\\', '/');
@@ -256,32 +275,38 @@ auto TracingWebUi::Impl::observeImpl(EventKind kind, const runtime::CoroContext 
                 .createdAt = Clock::now(),
                 .location = std::move(location)
             });
+            mTaskIdMap.emplace(id, &ctxt);
             break;
         }
         case EventKind::TaskComplete: { // Task complete
+            if (auto task = findTask(ctxt); task) {
+                mTaskIdMap.erase(task->id);
+            }
             mTasks.erase(&ctxt);
             break;
         }
         case EventKind::Resume: {
-            auto it = mTasks.find(&ctxt);
-            if (it == mTasks.end()) {
+            auto task = findTask(ctxt);
+            if (!task) {
                 break;
             }
-            auto &[_, task] = *it;
-            task.lastResumeAt = Clock::now();
-            task.resumes++;
+            task->lastResumeAt = Clock::now();
+            task->resumes++;
             break;
         }
         case EventKind::Suspend: {
-            auto it = mTasks.find(&ctxt);
-            if (it == mTasks.end()) {
+            auto task = findTask(ctxt);
+            if (!task) {
                 break;
             }
-            auto &[_, task] = *it;
-            task.totalBusy += Clock::now() - task.lastResumeAt;
+            task->totalBusy += Clock::now() - task->lastResumeAt;
         }
         default: break;
     }
+}
+
+auto TracingWebUi::Impl::allocId() -> uintptr_t {
+    return ++mTaskId;
 }
 
 auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
@@ -292,7 +317,7 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
     //         "state": "Running or Idle or Yielded or Completed",
     //         "total_time": 1234,
     //         "busy_time": 1000,
-    //         "polls": 5,
+    //         "resumes": 5,
     //         "location": "main.cpp:114514"
     //     },
     // ]
@@ -311,7 +336,7 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
                 "state": "{}",
                 "total_time": {},
                 "busy_time": {},
-                "polls": {},
+                "resumes": {},
                 "location": "{}"
             }},)",
             task.id,
@@ -330,6 +355,49 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
     return json;
 }
 
+auto TracingWebUi::Impl::snapshotStacktrace(uintptr_t id) -> std::pmr::string {
+    // [
+    //     {
+    //         "function": "main"
+    //         "file": "main.cpp"
+    //         "line": 123
+    //     },
+    // ]
+    std::pmr::string json {&mPool};
+    json += "[";
+
+    auto iter = mTaskIdMap.find(id);
+    if (iter == mTaskIdMap.end()) {
+        json.assign("[]");
+        return json;
+    }
+    auto ctxt = iter->second;
+    auto stacktrace = ctxt->stacktrace();
+    for (auto &frame : stacktrace) {
+        auto function = frame.function();
+        auto message = frame.message();
+        fmtlib::format_to(
+            std::back_inserter(json),
+            R"({{
+                "function": "{}",
+                "file": "{}",
+                "line": {},
+                "message": {}
+            }},)",
+            function,
+            frame.filename(),
+            frame.line(),
+            message.empty() ? "null" : fmtlib::format("\"{}\"", message)
+        );
+    }
+    if (stacktrace.size() != 0) {
+        json.pop_back(); // Remove trailing comma
+    }
+    json += "]";
+    std::ranges::replace(json, '\\', '/'); // The filename may contain backslashes
+    return json;
+}
+
 // MARK: TracingWebUi
 TracingWebUi::TracingWebUi(std::string_view bind) : d(std::make_unique<Impl>()) {
     d->mBind.assign(bind);
@@ -344,3 +412,5 @@ auto TracingWebUi::install() -> bool {
 }
 
 ILIAS_NS_END
+
+#endif // ILIAS_TRACING_WEBUI
