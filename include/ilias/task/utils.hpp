@@ -18,6 +18,7 @@ public:
     UnstoppableAwaiter(UnstoppableAwaiter &&) = default;
 
     auto await_ready() -> bool {
+        runtime::tracing::childBegin(mCtxt);
         mHandle.setContext(mCtxt); // Use the unstoppable context
         return mAwaiter.await_ready();
     }
@@ -27,6 +28,7 @@ public:
     }
 
     auto await_resume() -> T {
+        runtime::tracing::childEnd(mCtxt);
         return mAwaiter.await_resume();
     }
 

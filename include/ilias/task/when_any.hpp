@@ -169,13 +169,13 @@ private:
 
     template <size_t ...Is>
     auto makeResult(std::index_sequence<Is...>) -> Tuple {
-        return std::tuple{makeResult<Is>()...};
+        return std::tuple {makeResult<Is>()...};
     }
 };
 
 template <typename ...Ts>
 inline auto operator co_await(WhenAnyTuple<Ts...> &&tuple) noexcept {
-    return WhenAnyAwaiter<Ts...>(tuple.mTasks, *tuple.mContext);
+    return WhenAnyAwaiter<Ts...> {tuple.mTasks, *tuple.mContext};
 }
 
 } // namespace task
@@ -187,11 +187,11 @@ inline auto operator co_await(WhenAnyTuple<Ts...> &&tuple) noexcept {
  * @param args 
  * @return The awaitable for when Any the given awaitable
  */
-template <Awaitable ...Ts>
+template <Awaitable ...Ts> requires(sizeof...(Ts) > 0)
 [[nodiscard]]
 inline auto whenAny(Ts && ...args) noexcept {
     return task::WhenAnyTuple<AwaitableResult<Ts>... > { // Construct the task for the given awaitable
-        {  task::WhenAnyTaskContext(toTask(std::forward<Ts>(args))._leak())... },
+        {  task::WhenAnyTaskContext{toTask(std::forward<Ts>(args))._leak()}... },
         nullptr // The context will be set in await_transform
     };
 }

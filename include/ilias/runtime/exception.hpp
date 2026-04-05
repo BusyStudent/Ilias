@@ -35,7 +35,7 @@ public:
     }
 
     // Operator
-    auto operator <=>(const ExceptionPtr &other) const = default;
+    auto operator ==(const ExceptionPtr &other) const -> bool = default;
     auto operator =(ExceptionPtr &&other) -> ExceptionPtr & = default;
 
     // Check is valid

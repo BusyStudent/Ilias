@@ -384,6 +384,7 @@ auto FinallyAwaiterBase::await_suspend(CoroHandle caller) -> std::coroutine_hand
     mContext->setStoppedHandler(mainCallback);
     mainHandle.setContext(*mContext);
     mainHandle.setCompletionHandler(mainCallback);
+    runtime::tracing::childBegin(*mContext);
     return mainHandle.toStd(); // Switch into it, caller -> task -> finally -> (caller or caller.setStopped())
 }
 
@@ -395,10 +396,12 @@ auto FinallyAwaiterBase::onTaskCompletion() -> void {
 
         // Store the context info
         auto &executor = mContext->executor();
+        auto parent = mContext->parent();
         mStopped = mContext->isStopped();
         mReg.reset();
 
         // Call the child to store the result
+        runtime::tracing::childEnd(*mContext);
         auto handle = mOnTaskCompletion(*this);
         mContext.reset(); // Destroy the task， quit the scope
         
@@ -406,13 +409,17 @@ auto FinallyAwaiterBase::onTaskCompletion() -> void {
         mContext.emplace(handle, std::nostopstate);
         mContext->setUserdata(this);
         mContext->setExecutor(executor);
+        mContext->setParent(*parent);
         handle.setContext(*mContext);
         handle.setCompletionHandler(finallyCallback);
+
+        runtime::tracing::childBegin(*mContext);
         handle.resume();
     });
 }
 
 auto FinallyAwaiterBase::onFinallyCompletion() -> void {
+    runtime::tracing::childEnd(*mContext);
     if (mStopped) { // Forward the stop completion to the caller
         mCaller.setStopped();
     }

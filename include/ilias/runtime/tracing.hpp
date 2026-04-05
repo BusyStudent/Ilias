@@ -29,14 +29,14 @@ public:
      * 
      * @param ctxt 
      */
-    virtual auto onTaskSpawn(const CoroContext &ctxt) noexcept -> void {}
+    virtual auto onTaskSpawn(CoroContext &ctxt) noexcept -> void {}
 
     /**
      * @brief an spawned task is completed
      * 
      * @param ctxt 
      */
-    virtual auto onTaskComplete(const CoroContext &ctxt) noexcept -> void {}
+    virtual auto onTaskComplete(CoroContext &ctxt) noexcept -> void {}
 
     // Executor
     /**
@@ -44,14 +44,14 @@ public:
      * 
      * @param ctxt 
      */
-    virtual auto onResume(const CoroContext &ctxt) noexcept -> void {}
+    virtual auto onResume(CoroContext &ctxt) noexcept -> void {}
 
     /**
      * @brief The task is suspended
      * 
      * @param ctxt 
      */
-    virtual auto onSuspend(const CoroContext &ctxt) noexcept -> void {}
+    virtual auto onSuspend(CoroContext &ctxt) noexcept -> void {}
 
     // SubTask
     /**
@@ -60,14 +60,14 @@ public:
      * 
      * @param child 
      */
-    virtual auto onChildBegin(const CoroContext &child) noexcept -> void {}
+    virtual auto onChildBegin(CoroContext &child) noexcept -> void {}
 
     /**
      * @brief The sub task is completed
      * 
      * @param child 
      */
-    virtual auto onChildEnd(const CoroContext &child) noexcept -> void {}
+    virtual auto onChildEnd(CoroContext &child) noexcept -> void {}
 
     /**
      * @brief Install the subscriber to current thread
@@ -96,71 +96,59 @@ inline auto TracingSubscriber::currentThread() noexcept -> TracingSubscriber * {
 // Call the current thread subscriber
 namespace runtime::tracing {
 
-/// @copydoc TracingSubscriber::onTaskSpawn
-inline auto taskSpawn([[maybe_unused]] const CoroContext &ctxt) noexcept -> void {
-
 #if defined(ILIAS_CORO_TRACE)
+/// @copydoc TracingSubscriber::onTaskSpawn
+inline auto taskSpawn(CoroContext &ctxt) noexcept -> void {
     if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
         sub->onTaskSpawn(ctxt);
     }
-#endif // defined(ILIAS_CORO_TRACE)
 
 }
 
 /// @copydoc TracingSubscriber::onTaskComplete
-inline auto taskComplete([[maybe_unused]] const CoroContext &ctxt) noexcept -> void {
-
-#if defined(ILIAS_CORO_TRACE)
+inline auto taskComplete(CoroContext &ctxt) noexcept -> void {
     if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
         sub->onTaskComplete(ctxt);
     }
-#endif // defined(ILIAS_CORO_TRACE)
-
 }
 
 /// @copydoc TracingSubscriber::onResume
-inline auto resume([[maybe_unused]] const CoroContext &ctxt) noexcept -> void {
-
-#if defined(ILIAS_CORO_TRACE)
+inline auto resume(CoroContext &ctxt) noexcept -> void {
     if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
         sub->onResume(ctxt);
     }
-#endif // defined(ILIAS_CORO_TRACE)
-
 }
 
 /// @copydoc TracingSubscriber::onSuspend
-inline auto suspend([[maybe_unused]] const CoroContext &ctxt) noexcept -> void {
-    
-#if defined(ILIAS_CORO_TRACE)
+inline auto suspend(CoroContext &ctxt) noexcept -> void {
     if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
         sub->onSuspend(ctxt);
     }
-#endif // defined(ILIAS_CORO_TRACE)
 
 }
 
 /// @copydoc TracingSubscriber::onChildBegin
-inline auto childBegin([[maybe_unused]] const CoroContext &child) noexcept -> void {
-    
-#if defined(ILIAS_CORO_TRACE)
+inline auto childBegin(CoroContext &child) noexcept -> void {
     if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
         sub->onChildBegin(child);
     }
-#endif // defined(ILIAS_CORO_TRACE)
 
 }
 
 /// @copydoc TracingSubscriber::onChildEnd
-inline auto childEnd([[maybe_unused]] const CoroContext &child) noexcept -> void {
-
-#if defined(ILIAS_CORO_TRACE)
+inline auto childEnd(CoroContext &child) noexcept -> void {
     if (auto sub = runtime::TracingSubscriber::currentThread(); sub) [[unlikely]] {
         sub->onChildEnd(child);
     }
-#endif // defined(ILIAS_CORO_TRACE)
-
 }
+#else // Disabled
+inline auto taskSpawn(CoroContext &) noexcept -> void {}
+inline auto taskComplete(CoroContext &) noexcept -> void {}
+inline auto resume(CoroContext &) noexcept -> void {}
+inline auto suspend(CoroContext &) noexcept -> void {}
+inline auto childBegin(CoroContext &) noexcept -> void {}
+inline auto childEnd(CoroContext &) noexcept -> void {}
+#endif // defined(ILIAS_CORO_TRACE)
 
 } // namespace runtime::tracing
 

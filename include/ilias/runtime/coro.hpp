@@ -9,6 +9,7 @@
 #include <coroutine> // std::coroutine_handle<>
 #include <concepts> // std::invocable
 #include <utility> // std::exchange
+#include <memory> // std::shared_ptr
 
 #if defined(_MSC_VER) || defined(__clang__) || defined(__GNUC__)
     #define ILIAS_USE_CORO_ABI
@@ -27,11 +28,11 @@ extern auto ILIAS_API allocationSize() noexcept -> size_t; // Get previous alloc
 // Helper class to switch between coroutines
 class SwitchCoroutine {
 public:
-    SwitchCoroutine(std::coroutine_handle<> handle) : mHandle(handle) {}
+    constexpr SwitchCoroutine(std::coroutine_handle<> handle) : mHandle(handle) {}
 
-    auto await_ready() noexcept { return false; }
-    auto await_suspend(std::coroutine_handle<>) noexcept { return mHandle; }
-    auto await_resume() noexcept {}
+    constexpr auto await_ready() noexcept { return false; }
+    constexpr auto await_suspend(std::coroutine_handle<>) noexcept { return mHandle; }
+    constexpr auto await_resume() noexcept {}
 private:
     std::coroutine_handle<> mHandle;
 };
@@ -41,6 +42,7 @@ private:
 class CoroContext {
 public:
     CoroContext() = default;
+    CoroContext(CoroContext &&) = default;
     CoroContext(std::nostopstate_t) : mStopSource(std::nostopstate) {}
 
     // Request to stop the coroutine
@@ -65,22 +67,22 @@ public:
         return mUser;
     }
 
-    auto setExecutor(Executor &executor) noexcept {
+    auto setExecutor(Executor &executor) noexcept -> void {
         mExecutor = &executor;
     }
 
-    auto setStoppedHandler(void (*handler)(CoroContext &)) noexcept {
+    auto setStoppedHandler(void (*handler)(CoroContext &)) noexcept -> void {
         mStoppedHandler = handler;
     }
 
-    auto setUserdata(void *user) noexcept {
+    auto setUserdata(void *user) noexcept -> void {
         mUser = user;
     }
 
     // MARK: Tracing
-    // TRACING: Set the parent of the ctxt
-    auto setParent(CoroContext &parent) noexcept {
 #if defined(ILIAS_CORO_TRACE)
+    // TRACING: Set the parent of the ctxt
+    auto setParent(CoroContext &parent) noexcept -> void {
         if (!parent.mParent) { // The parent is the root
             mRoot = &parent;
         }
@@ -88,87 +90,83 @@ public:
             mRoot = parent.mRoot; // Has parent, used the cache
         }
         mParent = &parent;
-#else
-        static_cast<void>(parent);
-#endif // defined(ILIAS_CORO_TRACE)
     }
 
     // TRACING: Set the name of the ctxt
-    auto setName(std::string_view name) noexcept {
-#if defined(ILIAS_CORO_TRACE)
+    auto setName(std::string_view name) noexcept -> void {
         mName.assign(name);
-#else
-        static_cast<void>(name);
-#endif // defined(ILIAS_CORO_TRACE)
+    }
+
+    // TRACING: Set the extra data of the ctxt
+    auto setExtraData(std::shared_ptr<void> data) noexcept -> void {
+        mExtra = data;
     }
 
     // TRACING: Push the frame to the stack, return the index of the frame
     template <typename ...Args>
     auto pushFrame(Args &&...args) noexcept {
-#if defined(ILIAS_CORO_TRACE)
         mFrames.emplace_back(std::forward<Args>(args)...);
         return mFrames.size() - 1;
-#else
-        (static_cast<void>(args), ...);
-        return 0;
-#endif // defined(ILIAS_CORO_TRACE)
     }
 
     // TRACING: Pop the frame from the stack
-    auto popFrame() noexcept {
-#if defined(ILIAS_CORO_TRACE)
+    auto popFrame() noexcept -> void {
         ILIAS_ASSERT(!mFrames.empty());
         mFrames.pop_back();
-#endif // defined(ILIAS_CORO_TRACE)
     }
 
     // TRACING: Get the top frame of the ctxt (return pointer, nullptr on empty)
     auto topFrame() noexcept {
-#if defined(ILIAS_CORO_TRACE)
         return mFrames.empty() ? nullptr : &mFrames.back();
-#else
-        return static_cast<StackFrame *>(nullptr);
-#endif // defined(ILIAS_CORO_TRACE)
     }
-    
+
     auto topFrame() const noexcept {
-#if defined(ILIAS_CORO_TRACE)
         return mFrames.empty() ? nullptr : &mFrames.back();
-#else
-        return static_cast<const StackFrame *>(nullptr);
-#endif
     }
 
     // TRACING: Get the stacktrace of the ctxt
     auto stacktrace() const noexcept {
-#if defined(ILIAS_CORO_TRACE)
         auto vec = std::vector<StackFrame> {};
         for (auto cur = this; cur != nullptr; cur = cur->mParent) {
             vec.insert(vec.end(), cur->mFrames.rbegin(), cur->mFrames.rend());
         }
         return Stacktrace { std::move(vec) };
-#else
-        return Stacktrace {};
-#endif // defined(ILIAS_CORO_TRACE)
     }
 
     // TRACING: Get the parent of the ctxt
     auto parent() const noexcept {
-#if defined(ILIAS_CORO_TRACE)
         return mParent;
-#else
-        return static_cast<CoroContext *>(nullptr);
-#endif
+    }
+
+    // TRACING: Get the root of the ctxt
+    auto root() const noexcept {
+        return mRoot;
     }
 
     // TRACING: Get the debug name of the ctxt
     auto name() const noexcept {
-#if defined(ILIAS_CORO_TRACE)
         return std::string_view {mName};
-#else
-        return std::string_view {};
-#endif // defined(ILIAS_CORO_TRACE)
     }
+
+    // TRACING: Get the extra data of the ctxt
+    template <typename T>
+    auto extraData() const noexcept -> T * {
+        return static_cast<T *>(mExtra.get());
+    }
+#else // Disabled
+    auto setParent(CoroContext &) noexcept {}
+    auto setName(std::string_view) noexcept {}
+    auto pushFrame(auto ...) noexcept { return 0; }
+    auto popFrame() noexcept {}
+    auto topFrame() const noexcept { return static_cast<StackFrame *>(nullptr); }
+    auto stacktrace() const noexcept { return Stacktrace {}; }
+    auto parent() const noexcept { return static_cast<CoroContext *>(nullptr); }
+    auto root() const noexcept { return static_cast<CoroContext *>(nullptr); }
+    auto name() const noexcept { return std::string_view {}; }
+#endif // defined(ILIAS_CORO_TRACE)
+
+    // Other operator
+    auto operator =(CoroContext &&) -> CoroContext & = default;
 
     // Memory pool for coroutines (maybe.)
     auto operator new(size_t n) -> void * {
@@ -185,11 +183,12 @@ private:
     void         *mUser = nullptr;                           // The user data, useful in the callback
     bool          mStopped = false;                          // The coroutine is actually stopped
 #if defined(ILIAS_CORO_TRACE)
-    bool          mSuspended = true;                           // The coroutine is suspended
+    bool          mSuspended = true;                         // The coroutine is suspended
     CoroContext  *mParent = nullptr;                         // Use for stacktrace to dump the whole stack
     CoroContext  *mRoot = nullptr;                           // The root context of the coroutine (spawn or blocking wait), used for tracing
     std::string   mName;                                     // The name of the coroutine, used for tracing
     size_t        mStackSize = 0;                            // The size of the stack, used for tracing
+    std::shared_ptr<void>   mExtra;                          // The extra data for tracing
     std::vector<StackFrame> mFrames;                         // The frames of the coroutine,
 #endif // defined(ILIAS_CORO_TRACE)
 template <typename T, bool Forward>
@@ -208,8 +207,9 @@ public:
     // std coroutine interface
     auto initial_suspend() noexcept {
         struct Awaiter {
+            constexpr
             auto await_ready() noexcept { return false; }
-            auto await_suspend([[maybe_unused]] std::coroutine_handle<> handle) noexcept {}
+            auto await_suspend(std::coroutine_handle<>) noexcept {}
             auto await_resume() noexcept { self.init(); }
             CoroPromise &self;
         };
@@ -218,8 +218,9 @@ public:
 
     auto final_suspend() noexcept {
         struct Awaiter {
+            constexpr
             auto await_ready() noexcept { return false; }
-            auto await_suspend([[maybe_unused]] std::coroutine_handle<> handle) noexcept { return self.final(); }
+            auto await_suspend(std::coroutine_handle<>) noexcept { return self.final(); }
             [[noreturn]]
             auto await_resume() noexcept { // UNREACHABLE here, we can't resume an done coroutine
                 ILIAS_UNREACHABLE(); // LCOV_EXCL_LINE
@@ -234,7 +235,7 @@ public:
     }
 
     template <RawAwaitable T, bool Forward = true>
-    auto await_transform(T &&awaitable, CaptureSource source = {}) -> decltype(auto) { // We apply the environment on here
+    auto await_transform(T &&awaitable, [[maybe_unused]] CaptureSource source = {}) -> decltype(auto) { // We apply the environment on here
 #if defined(ILIAS_CORO_TRACE)
         // TRACING: Update the current await point's line number
         // Our frame should be the top frame of the context
@@ -248,7 +249,6 @@ public:
             awaitable.setContext(*mContext, source);
         }
         else if constexpr (requires { awaitable.setContext(*mContext); }) { // It support setContext
-            static_cast<void>(source);
             awaitable.setContext(*mContext);
         }
 #if defined(ILIAS_CORO_TRACE)
@@ -472,10 +472,12 @@ public:
     TracingAwaitable(const TracingAwaitable &) = delete;
 
     // Hooks
-    auto await_ready() { return mAwaiter.await_ready(); }
+    auto await_ready() noexcept(noexcept(mAwaiter.await_ready())) { 
+        return mAwaiter.await_ready(); 
+    }
 
     template <typename U>
-    auto await_suspend(std::coroutine_handle<U> handle) {
+    auto await_suspend(std::coroutine_handle<U> handle) noexcept(noexcept(mAwaiter.await_suspend(handle))) {
         using Ret = decltype(mAwaiter.await_suspend(handle));
         if constexpr (std::is_same_v<Ret, void>) {
             mAwaiter.await_suspend(handle);
@@ -496,7 +498,7 @@ public:
         }
     }
 
-    auto await_resume() -> decltype(auto) { 
+    auto await_resume() noexcept(noexcept(mAwaiter.await_resume())) -> decltype(auto) { 
         if (mCtxt->mSuspended) { // Notify the tracing, we actually resume
             mCtxt->mSuspended = false;
             tracing::resume(*mCtxt);
@@ -504,7 +506,7 @@ public:
         return mAwaiter.await_resume();
     }
 private:
-    auto suspend() -> void {
+    auto suspend() noexcept -> void {
         if (!mCtxt->mSuspended) { // Notify the tracing, we actually suspend
             mCtxt->mSuspended = true;
             tracing::suspend(*mCtxt);
@@ -529,6 +531,7 @@ using runtime::StopToken;
 using runtime::Executor;
 
 struct AwaiterBase {
+    constexpr
     auto await_ready() noexcept { return true; }
     auto await_suspend(CoroHandle) noexcept {}
     auto setContext(CoroContext &ctxt) noexcept { mCtxt = &ctxt; }

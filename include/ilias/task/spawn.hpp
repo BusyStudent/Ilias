@@ -297,7 +297,7 @@ inline auto spawn(Fn fn, runtime::CaptureSource source = {}) -> WaitHandle<typen
         auto wrapper = [](auto fn) -> std::invoke_result_t<Fn> {
             co_return co_await fn();
         };
-        return spawn(wrapper(fn), source);
+        return spawn(wrapper(std::move(fn)), source);
     }
 }
 

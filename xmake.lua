@@ -18,7 +18,7 @@ option("log",        {default = false,     description = "Enable logging"})
 option("openssl",    {default = false,     description = "Always use openssl instead of native tls"})
 option("spdlog",     {default = false,     description = "Use spdlog for logging"})
 option("io_uring",   {default = false,     description = "Use io uring as platform context"})
-option("coro_trace", {default = false,     description = "Add coroutine stacktrace for debug use"})
+option("coro_trace", {default = false,     description = "Add coroutine trace for debug use"})
 option("tls",        {default = true,      description = "Enable tls support"})
 option("fiber",      {default = true,      description = "Enable stackful coroutine 'fiber' support"})
 
