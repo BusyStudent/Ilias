@@ -221,6 +221,59 @@ ILIAS_TEST(Io, Duplex) {
     EXPECT_EQ(co_await b.read(makeBuffer(tmp)), 0);
 }
 
+ILIAS_TEST(Io, ReadableView) {
+    auto readOne = [](ReadableView view) -> Task<void> {
+        EXPECT_EQ(co_await view.readU8(), 'H');
+    };
+    { // from Readable concept
+        auto reader = SpanReader{"Hello, world!"_bin};
+        co_await readOne(reader);
+    }
+    { // from Stream concept
+        auto [a, b] = DuplexStream::make(10);
+        EXPECT_TRUE(co_await b.writeU8('H'));
+        EXPECT_TRUE(co_await b.writeU8('H'));
+        EXPECT_TRUE(co_await b.writeU8('H'));
+
+        // Test construct directlyy from Stream concept
+        co_await readOne(a);
+        
+        // From StreamView
+        co_await readOne(StreamView {a});
+
+        // From DynStream
+        auto dyn = DynStream {std::move(a)};
+        co_await readOne(dyn);
+    }
+}
+
+ILIAS_TEST(Io, WritableView) {
+    auto writeOne = [](WritableView view) -> Task<void> {
+        EXPECT_TRUE(co_await view.writeU8('H'));
+    };
+    
+    { // from Writable concept
+        auto content = std::string {};
+        auto writer = StringWriter{content};
+        co_await writeOne(writer);
+        EXPECT_EQ(content, "H");
+    }
+    { // from Stream concept
+        auto [a, b] = DuplexStream::make(10);
+
+        // As same as above
+        co_await writeOne(b);
+        EXPECT_EQ(co_await a.readU8(), 'H');
+
+        co_await writeOne(StreamView {b});
+        EXPECT_EQ(co_await a.readU8(), 'H');
+
+        auto dyn = DynStream {std::move(b)};
+        co_await writeOne(dyn);
+        EXPECT_EQ(co_await a.readU8(), 'H');
+    }
+}
+
 TEST(Experimental, IoVec) {
     static_assert(std::is_trivially_destructible_v<IoVec>);
     static_assert(std::is_trivially_destructible_v<MutableIoVec>);
@@ -249,7 +302,7 @@ TEST(Experimental, IoVec) {
     buffers.emplace_back("Hello"_bin);
     buffers.emplace_back("World"_bin);
     auto seq = makeIoSequence(buffers);
-    auto span = std::span(seq);
+    auto span = std::span{seq};
 
     std::vector<MutableIoVec> mutableBuffers;
     std::byte subBuffer[1145];

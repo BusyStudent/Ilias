@@ -15,6 +15,7 @@
 #include <ilias/buffer.hpp> // Buffer
 #include <concepts>
 #include <cstddef>
+#include <cstdint> // int64_t
 #include <cstdio> // SEEK_CUR
 #include <span>
 
@@ -130,7 +131,7 @@ concept IntoFileDescriptor = requires(T &t) {
  * @tparam T 
  */
 template <typename T>
-concept IntoGenerator = requires(T &t) {
+concept IntoGenerator = requires(T &&t) {
     toGenerator(std::forward<T>(t));
 };
 
