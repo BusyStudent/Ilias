@@ -30,23 +30,6 @@ using runtime::CoroContext;
 using runtime::CoroHandle;
 using runtime::StopRegistration;
 
-class WhenAnyAwaiterBase;
-class WhenAnyTaskContext final : public TaskContext {
-public:
-    WhenAnyTaskContext(TaskHandle<> task) : TaskContext(task) { }
-
-private:
-    template <typename T>
-    auto value() {
-        return TaskHandle<T>::cast(mTask).value();
-    }
-
-    WhenAnyAwaiterBase *mAwaiter = nullptr;
-friend class WhenAnyAwaiterBase;
-template <typename ...Ts>
-friend class WhenAnyAwaiter;
-};
-
 /**
  * @brief tag for when Any on tuple
  * 
@@ -54,7 +37,7 @@ friend class WhenAnyAwaiter;
  */
 template <typename ...Types>
 struct WhenAnyTuple final {
-    std::array<WhenAnyTaskContext, sizeof ...(Types)> mTasks;
+    std::array<TaskContext, sizeof ...(Types)> mTasks;
     CoroContext *mContext = nullptr; // The context of the caller
 
     // Set the context of the task, call on await_transform
@@ -66,7 +49,7 @@ struct WhenAnyTuple final {
 // The common part of when Any awaiter
 class WhenAnyAwaiterBase {
 public:
-    WhenAnyAwaiterBase(std::span<WhenAnyTaskContext> tasks, CoroContext &context) : mTasks(tasks), mContext(context) {}
+    WhenAnyAwaiterBase(std::span<TaskContext> tasks, CoroContext &context) : mTasks(tasks), mContext(context) {}
 
     auto await_ready() -> bool {
         // Start all first
@@ -78,7 +61,7 @@ public:
 #endif // defined(ILIAS_CORO_TRACE)
         mLeft = mTasks.size();
         for (auto &ctxt: mTasks) {
-            ctxt.mAwaiter = this;
+            ctxt.setUserdata(this);
             ctxt.setParent(mContext);
             ctxt.setExecutor(mContext.executor());
             ctxt.setStoppedHandler(&onTaskCompleted);
@@ -107,8 +90,8 @@ protected:
     }
 
     static auto onTaskCompleted(CoroContext &_ctxt) -> void {
-        auto &ctxt = static_cast<WhenAnyTaskContext &>(_ctxt);
-        auto &self = *ctxt.mAwaiter;
+        auto &ctxt = static_cast<TaskContext &>(_ctxt);
+        auto &self = *static_cast<WhenAnyAwaiterBase *>(ctxt.userdata());
 
         // TRACING: a subtask is completed
         runtime::tracing::childEnd(ctxt);
@@ -133,8 +116,8 @@ protected:
         }
     }
 
-    std::span<WhenAnyTaskContext> mTasks;
-    WhenAnyTaskContext *mGot = nullptr;
+    std::span<TaskContext> mTasks;
+    TaskContext *mGot = nullptr;
     StopRegistration mReg;
     CoroContext &mContext;
     CoroHandle mCaller;
@@ -146,7 +129,7 @@ protected:
 template <typename ...Ts>
 class WhenAnyAwaiter final : public WhenAnyAwaiterBase {
 public:
-    WhenAnyAwaiter(std::span<WhenAnyTaskContext> tasks, CoroContext &context) : WhenAnyAwaiterBase(tasks, context) {}
+    WhenAnyAwaiter(std::span<TaskContext> tasks, CoroContext &context) : WhenAnyAwaiterBase(tasks, context) {}
 
     using Tuple = std::tuple<Option<Ts> ...>; // Using Option to replace void to std::monostate
     using RawTuple = std::tuple<Ts...>;
@@ -161,7 +144,8 @@ private:
         using Raw = std::tuple_element_t<I, RawTuple>;
         if (mGot == &mTasks[I]) {
             return makeOption([&]() { // We replace void to std::monostate in Tuple, but in here, we should use TaskHandle<void>, not std::monostate
-                return mTasks[I].template value<Raw>();
+                auto handle = TaskHandle<Raw>::cast(mTasks[I].task());
+                return handle.value();
             });
         }
         return std::nullopt;
@@ -191,7 +175,7 @@ template <Awaitable ...Ts> requires(sizeof...(Ts) > 0)
 [[nodiscard]]
 inline auto whenAny(Ts && ...args) noexcept {
     return task::WhenAnyTuple<AwaitableResult<Ts>... > { // Construct the task for the given awaitable
-        {  task::WhenAnyTaskContext{toTask(std::forward<Ts>(args))._leak()}... },
+        {  task::TaskContext {toTask(std::forward<Ts>(args))._leak()}... },
         nullptr // The context will be set in await_transform
     };
 }

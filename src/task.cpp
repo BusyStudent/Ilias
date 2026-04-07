@@ -409,7 +409,9 @@ auto FinallyAwaiterBase::onTaskCompletion() -> void {
         mContext.emplace(handle, std::nostopstate);
         mContext->setUserdata(this);
         mContext->setExecutor(executor);
-        mContext->setParent(*parent);
+#if defined(ILIAS_CORO_TRACE)
+        mContext->setParent(*parent); // This field only used for trace, think a better way?
+#endif // ILIAS_CORO_TRACE
         handle.setContext(*mContext);
         handle.setCompletionHandler(finallyCallback);
 

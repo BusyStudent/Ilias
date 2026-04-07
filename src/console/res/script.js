@@ -9,6 +9,40 @@ let updateInterval = null;
 let expandedTasks = new Set();
 let stackTraces = {};
 
+// State for tree
+let expandedTreeNodes = new Set();
+
+// When the tree is clicked
+function toggleTree(event, id) {
+    event.stopPropagation(); 
+    if (expandedTreeNodes.has(id)) {
+        expandedTreeNodes.delete(id);
+    }
+    else {
+        expandedTreeNodes.add(id);
+    }
+    render();
+}
+
+// Generic handle click
+function handleRowClick(task) {
+    const hasChildren = task.children && task.children.length > 0;
+    
+    if (hasChildren) {
+        if (expandedTreeNodes.has(task.id)) {
+            expandedTreeNodes.delete(task.id);
+        }
+        else {
+            expandedTreeNodes.add(task.id);
+        }
+        render();
+    }
+    else {
+        // If is the deepest node, toggle stacktrace
+        toggleStackTrace(task.id);
+    }
+}
+
 async function fetchTasks() {
     if (isPaused) return;
 
@@ -172,32 +206,74 @@ function formatTime(ms) {
 }
 
 function render() {
-    const sortedTasks = [...tasks].sort((a, b) => {
-        let valA = a[sortKey];
-        let valB = b[sortKey];
-        if (typeof valA === 'string') {
-            return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
-        }
-        return sortAsc ? valA - valB : valB - valA;
-    });
-
     const tbody = document.getElementById('task-body');
     tbody.innerHTML = '';
 
+    // Build the tree
+    const taskMap = new Map();
+    const childToParent = new Map();
     let runningCount = 0;
 
-    sortedTasks.forEach(t => {
+    tasks.forEach(t => {
+        taskMap.set(t.id, t);
         if (t.state === 'Running') runningCount++;
+        if (t.children && Array.isArray(t.children)) {
+            t.children.forEach(childId => childToParent.set(childId, t.id));
+        }
+    });
+
+    // Get the root
+    let rootTasks = tasks.filter(t => !childToParent.has(t.id));
+
+    // Sort it
+    const sortNodes = (nodes) => {
+        return nodes.sort((a, b) => {
+            let valA = a[sortKey];
+            let valB = b[sortKey];
+            if (typeof valA === 'string') {
+                return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            }
+            return sortAsc ? (valA || 0) - (valB || 0) : (valB || 0) - (valA || 0);
+        });
+    };
+
+    // Flat the tree
+    const renderList = [];
+    const buildRenderList = (nodes, depth) => {
+        sortNodes(nodes);
+        for (let t of nodes) {
+            t._depth = depth;
+            renderList.push(t);
+            
+            const hasChildren = t.children && t.children.length > 0;
+            if (hasChildren && expandedTreeNodes.has(t.id)) {
+                let childrenNodes = t.children
+                    .map(cid => taskMap.get(cid))
+                    .filter(Boolean);
+                buildRenderList(childrenNodes, depth + 1);
+            }
+        }
+    };
+
+    buildRenderList(rootTasks, 0);
+
+    // Render the table
+    renderList.forEach(t => {
+        const hasChildren = t.children && t.children.length > 0;
         
+        const isExpanded = hasChildren ? expandedTreeNodes.has(t.id) : expandedTasks.has(t.id);
         const busyRatio = Math.min((t.busy_time / t.total_time) * 100, 100) || 0;
-        const isExpanded = expandedTasks.has(t.id);
         
         const tr = document.createElement('tr');
         tr.className = 'clickable-row' + (isExpanded ? ' expanded' : '');
-        tr.onclick = () => toggleStackTrace(t.id); // Bind to show stacktrace
+        tr.onclick = () => handleRowClick(t); 
         
+        const indentPx = t._depth * 20;
+
         tr.innerHTML = `
-            <td><span class="expand-icon">▶</span> ${t.id}</td>
+            <td style="padding-left: ${12 + indentPx}px;">
+                <span class="expand-icon">▶</span> ${t.id}
+            </td>
             <td>${t.name}</td>
             <td class="cell-location" title="${t.location || ''}">${t.location || '-'}</td>
             <td class="state-${t.state}">${t.state}</td>
@@ -210,11 +286,12 @@ function render() {
         `;
         tbody.appendChild(tr);
 
-        if (isExpanded) {
+        // If the deepest and stacktrace was shown, show the stacktrace
+        if (!hasChildren && isExpanded) {
             const stackTr = document.createElement('tr');
             stackTr.className = 'stack-row';
             stackTr.innerHTML = `
-                <td colspan="7" style="padding: 10px 20px;">
+                <td colspan="7" style="padding: 10px 20px; padding-left: ${30 + indentPx}px;">
                     <pre class="stack-container">${stackTraces[t.id]}</pre>
                 </td>
             `;

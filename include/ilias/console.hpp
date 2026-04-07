@@ -20,7 +20,8 @@ ILIAS_NS_BEGIN
 class ILIAS_WEBUI_API TracingWebUi {
 public:
     TracingWebUi(std::string_view bind = "127.0.0.1:8066");
-    TracingWebUi(const TracingWebUi&) = delete;
+    TracingWebUi(const TracingWebUi &) = delete;
+    TracingWebUi(TracingWebUi &&) = default;
     ~TracingWebUi();
 
     /**
@@ -31,6 +32,13 @@ public:
      * @return false 
      */
     auto install() -> bool;
+
+    /**
+     * @brief Get the bind endpoint of the webui
+     * 
+     * @return std::string_view 
+     */
+    auto endpoint() const -> std::string_view;
 private:
     struct Impl;
     std::unique_ptr<Impl> d;
@@ -42,6 +50,7 @@ struct TracingWebUi::Impl {};
 inline TracingWebUi::TracingWebUi(std::string_view) {}
 inline TracingWebUi::~TracingWebUi() {}
 inline auto TracingWebUi::install() -> bool { return false; }
+inline auto TracingWebUi::endpoint() const -> std::string_view { return {}; }
 #endif
 
 ILIAS_NS_END
