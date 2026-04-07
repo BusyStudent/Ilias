@@ -103,6 +103,10 @@ IocpContext::~IocpContext() {
 // MARK: Executor
 auto IocpContext::post(void (*fn)(void *), void *args) -> void {
     ILIAS_ASSERT(fn);
+    if (runtime::Executor::currentThread() == this) { // In the same thread, use queue directly
+        mCallbacks.emplace_back(fn, args);
+        return;
+    }
     ::PostQueuedCompletionStatus(
         mIocpFd, 
         0x114514, 
@@ -117,7 +121,7 @@ auto IocpContext::run(runtime::StopToken token) -> void {
         schedule([&]() { running = false; });
     });
     DWORD timeout = INFINITE;
-    while (running) {
+    while (true) {
         if (!mTimerFd) { // Use iocp's timeout as timer
             auto nextTimepoint = mService.nextTimepoint();
             if (nextTimepoint) {
@@ -127,6 +131,18 @@ auto IocpContext::run(runtime::StopToken token) -> void {
             }
             mService.updateTimers();
         }
+        // Drain the callback queue first
+        while (!mCallbacks.empty()) {
+            auto cb = mCallbacks.front();
+            mCallbacks.pop_front();
+            cb.first(cb.second);
+            mService.updateTimers();
+        }
+        if (!running) {
+            break;
+        }
+
+        // Process io completion
         processCompletion(timeout);
     }
 }

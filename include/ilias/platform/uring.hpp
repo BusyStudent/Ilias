@@ -76,7 +76,6 @@ private:
     std::deque<Callback> mCallbacks; // The callbacks in current thread, non mutex
     std::deque<Callback> mPendingCallbacks; // The callbacks from another thread, protected by mMutex
     std::mutex           mMutex;
-    std::thread::id      mThreadId { std::this_thread::get_id() };
 
     // Features
     struct {

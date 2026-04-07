@@ -95,8 +95,8 @@ auto UringContext::allocSqe() -> ::io_uring_sqe * {
 }
 
 auto UringContext::post(void (*fn)(void *), void *args) -> void {
-    auto cb = std::pair(fn, args);
-    if (std::this_thread::get_id() == mThreadId) { // Same thread, just push to the queue
+    auto cb = std::pair {fn, args};
+    if (runtime::Executor::currentThread() == this) { // Same thread, just push to the queue
         mCallbacks.emplace_back(cb);
         return;
     }

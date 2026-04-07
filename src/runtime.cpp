@@ -54,7 +54,6 @@ struct EventLoop::Impl {
     std::queue<Callback> localQueue;
     std::queue<Callback> sharedQueue; // The queue shared between threads, protected by mutex
     std::condition_variable cond;
-    std::thread::id id = std::this_thread::get_id(); // The id of the thread running the event loop
     std::mutex mutex;
     TimerService service;
 };
@@ -63,7 +62,7 @@ EventLoop::EventLoop() : d(std::make_unique<Impl>()) {}
 EventLoop::~EventLoop() = default;
 
 auto EventLoop::post(void (*fn)(void *), void *args) -> void {
-    if (std::this_thread::get_id() == d->id) {
+    if (Executor::currentThread() == this) {
         d->localQueue.emplace(fn, args);
         return;
     }

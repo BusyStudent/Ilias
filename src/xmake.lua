@@ -29,6 +29,7 @@ target("ilias")
         add_syslinks("ws2_32", {public = true})
     end
 
+    -- On linux and android
     if is_plat("linux", "android") then
         if is_mode("release") then 
             set_symbols("hidden")
@@ -41,6 +42,12 @@ target("ilias")
 
         add_files("linux/*.cpp")
         add_syslinks("pthread", "dl", "rt", {public = true})
+    end
+
+    -- Unity build if release, for better performance
+    if is_mode("release") then 
+        add_rules("c.unity_build")
+        add_rules("c++.unity_build")
     end
 
     -- Set var if

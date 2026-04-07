@@ -282,7 +282,7 @@ auto EpollContext::post(void (*fn)(void *), void *args) -> void {
     ILIAS_ASSERT(fn != nullptr);
     ILIAS_TRACE("Epoll", "Post callback {} with args {}", (void *)fn, args);
     auto callback = std::pair {fn, args};
-    if (std::this_thread::get_id() == mThreadId) { // Same thread, just push to the queue
+    if (runtime::Executor::currentThread() == this) { // Same thread, just push to the queue
         mCallbacks.emplace_back(callback);
         return;
     }

@@ -65,10 +65,13 @@ private:
     auto processTimer() -> void;
     auto initTimer() -> void;
 
+    using Callback = std::pair<void (*)(void *), void *>;
+
     SockInitializer       mInit;
     HANDLE mIocpFd = nullptr;
     HANDLE mAfdDevice = nullptr; // For poll
     NtDll &mNt;
+    std::deque<Callback> mCallbacks; // For thread local post
     
     // Timer
     HANDLE mTimerFd = nullptr;
