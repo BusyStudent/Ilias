@@ -252,8 +252,13 @@ public:
             awaitable.setContext(*mContext);
         }
 #if defined(ILIAS_CORO_TRACE)
-        static_assert(Forward || std::move_constructible<std::decay_t<T> >, "Awaitable must be move_constructible, it will be moved to the awaiter");
-        return TracingAwaitable<T, Forward> { std::forward<T>(awaitable), mContext}; // Wrap it with tracing
+        if constexpr (requires { typename T::SkipTracing; }) {
+            return std::forward<T>(awaitable);
+        }
+        else {
+            static_assert(Forward || std::move_constructible<std::decay_t<T> >, "Awaitable must be move_constructible, it will be moved to the awaiter");
+            return TracingAwaitable<T, Forward> { std::forward<T>(awaitable), mContext}; // Wrap it with tracing
+        }
 #else
         return std::forward<T>(awaitable);
 #endif // defined(ILIAS_CORO_TRACE)
@@ -531,6 +536,8 @@ using runtime::StopToken;
 using runtime::Executor;
 
 struct AwaiterBase {
+    using SkipTracing = void;
+
     constexpr
     auto await_ready() noexcept { return true; }
     auto await_suspend(CoroHandle) noexcept {}

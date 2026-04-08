@@ -147,47 +147,9 @@ auto IocpContext::run(runtime::StopToken token) -> void {
     }
 }
 
-// TODO: Optimize it, Dyn Select between GetQueuedCompletionStatus and GetQueuedCompletionStatusEx 
-// TODO: based on the number of I/O operations within a specified time interval.
 auto IocpContext::processCompletion(DWORD timeout) -> void {
-    ULONG_PTR key = 0;
-    DWORD bytesTransferred = 0;
-    LPOVERLAPPED overlapped = nullptr;
-
-    BOOL ok = ::GetQueuedCompletionStatus(mIocpFd, &bytesTransferred, &key, &overlapped, timeout);
-    DWORD error = ERROR_SUCCESS;
-    if (!ok) {
-        error = ::GetLastError();
-        if (error == WAIT_TIMEOUT) {
-            return;
-        }
-    }
-
-    if (key) {
-        // When key is not 0, it means it is a function pointer
-        ILIAS_TRACE("IOCP", "Call callback function ({}, {})", (void*)key, (void*)overlapped);
-        ILIAS_ASSERT(bytesTransferred == 0x114514);
-        auto fn = reinterpret_cast<void (*)(void *)>(key);
-        fn(overlapped);
-        return;
-    }
-
-    if (overlapped) {
-        auto lap = static_cast<IocpOverlapped*>(overlapped);
-        ILIAS_ASSERT(lap->checkMagic());                     
-        lap->onCompleteCallback(lap, error, bytesTransferred);
-    }
-    else {
-        ILIAS_WARN("IOCP", "GetQueuedCompletionStatus returned nullptr overlapped, Error {}", error);
-    }
-}
-
-auto IocpContext::processCompletionEx(DWORD timeout) -> void {
     if (mEntriesIdx >= mEntriesSize) { // We need more entries
-        if (!mEntries) [[unlikely]] {
-            mEntries = std::make_unique<::OVERLAPPED_ENTRY[]>(mEntriesCapacity);
-        }
-        if (!::GetQueuedCompletionStatusEx(mIocpFd, mEntries.get(), mEntriesCapacity, &mEntriesSize, timeout, TRUE)) {
+        if (!::GetQueuedCompletionStatusEx(mIocpFd, mEntries.data(), mEntries.size(), &mEntriesSize, timeout, FALSE)) {
             mEntriesSize = 0;
             mEntriesIdx = 0;
             auto error = ::GetLastError();

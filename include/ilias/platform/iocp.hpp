@@ -17,6 +17,7 @@
 #include <ilias/net/system.hpp> // SockInitializer
 #include <ilias/io/context.hpp>
 #include <deque> // std::deque
+#include <array> // std::array
 
 ILIAS_NS_BEGIN
 
@@ -61,13 +62,12 @@ public:
 private:
     auto submitTimerWait(HANDLE handle, HANDLE packet, PBOOLEAN alreadySignaled) -> DWORD;
     auto processCompletion(DWORD timeout) -> void;
-    auto processCompletionEx(DWORD timeout) -> void;
     auto processTimer() -> void;
     auto initTimer() -> void;
 
     using Callback = std::pair<void (*)(void *), void *>;
 
-    SockInitializer       mInit;
+    SockInitializer mInit;
     HANDLE mIocpFd = nullptr;
     HANDLE mAfdDevice = nullptr; // For poll
     NtDll &mNt;
@@ -85,8 +85,7 @@ private:
     // Batching
     ULONG mEntriesIdx  = 0; // The index of the current entry (for dispatch)
     ULONG mEntriesSize = 0; // The number of entries valid in the mBatchEntries array
-    ULONG mEntriesCapacity = 64; // The size of the mBatchEntries array
-    std::unique_ptr<::OVERLAPPED_ENTRY[]> mEntries;
+    std::array<::OVERLAPPED_ENTRY, 64> mEntries;
 };
 
 } // namespace win32
