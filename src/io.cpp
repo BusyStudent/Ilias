@@ -22,7 +22,7 @@ namespace reflect {
 template <auto T>
 consteval auto nameof() {
 #ifdef _MSC_VER
-    constexpr std::string_view name(__FUNCSIG__);
+    constexpr std::string_view name {__FUNCSIG__};
     constexpr size_t nsEnd = name.find_last_of("::");
     constexpr size_t end = name.find('>', nsEnd);
     // size_t dotBegin = name.find_first_of(',');
@@ -30,7 +30,7 @@ consteval auto nameof() {
     // return name.substr(dotBegin + 1, end - dotBegin - 1);
     return name.substr(nsEnd + 1, end - nsEnd - 1);
 #else
-    std::string_view name(__PRETTY_FUNCTION__);
+    std::string_view name {__PRETTY_FUNCTION__};
     size_t eqBegin = name.find_last_of(' ');
     size_t end = name.find_last_of(']');
     return name.substr(eqBegin + 1, end - eqBegin - 1);
@@ -58,11 +58,11 @@ auto enum2str(std::index_sequence<N...>, T i) -> std::string_view {
     constexpr static auto data = std::tuple {
         reflect::nameof2<T(N)>()...
     };
-    constexpr std::array<std::string_view, sizeof...(N)> table {
-        std::string_view(
+    constexpr std::array table {
+        std::string_view {
             std::get<N>(data).data(),
             std::get<N>(data).size()
-        )...
+        }...
     };
     auto idx = static_cast<int64_t>(i);
     if (idx < 0 || idx >= int64_t(table.size())) {

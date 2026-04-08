@@ -24,7 +24,7 @@ target("ilias")
     add_cxxflags("cl::/wd4200")
 
     -- Add link and files by platform
-    if is_plat("windows") or is_plat("mingw") or is_plat("msys") then 
+    if is_plat("windows", "mingw", "msys") then 
         add_files("win32/*.cpp")
         add_syslinks("ws2_32", {public = true})
     end

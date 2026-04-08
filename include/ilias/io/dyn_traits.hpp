@@ -123,7 +123,7 @@ public:
     }
 
     // operator
-    auto operator <=>(const StreamView &other) const noexcept = default;
+    auto operator ==(const StreamView &other) const noexcept -> bool = default;
 
     /**
      * @brief Check is empty?
@@ -201,6 +201,9 @@ public:
         mVtbl = nullptr;
     }
 
+    // operator
+    auto operator ==(const DynStream &other) const noexcept -> bool = default;
+
     /**
      * @brief Move assignment operator 
      * 
@@ -272,7 +275,7 @@ public:
     }
 
     // operator
-    auto operator <=>(const ReadableView &other) const noexcept = default;
+    auto operator ==(const ReadableView &other) const noexcept -> bool = default;
 
     /**
      * @brief Check is empty?
@@ -347,7 +350,7 @@ public:
     }
 
     // operator
-    auto operator <=>(const WritableView &other) const noexcept = default;
+    auto operator ==(const WritableView &other) const noexcept -> bool = default;
 
     /**
      * @brief Check is empty?

@@ -162,10 +162,11 @@ auto IocpContext::processCompletion(DWORD timeout) -> void {
         mEntriesIdx = 0;
     }
     // Dispatch the completion
-    for (; mEntriesIdx < mEntriesSize; ++mEntriesIdx) {
-        const auto &bytesTransferred = mEntries[mEntriesIdx].dwNumberOfBytesTransferred;
-        const auto &overlapped = mEntries[mEntriesIdx].lpOverlapped;
-        const auto &key = mEntries[mEntriesIdx].lpCompletionKey;
+    while (mEntriesIdx < mEntriesSize) {
+        const auto idx = mEntriesIdx++; // Get the index of the current entry, and move to next immediately, because run is reentrant
+        const auto &bytesTransferred = mEntries[idx].dwNumberOfBytesTransferred;
+        const auto &overlapped = mEntries[idx].lpOverlapped;
+        const auto &key = mEntries[idx].lpCompletionKey;
         if (key) {
             // When key is not 0, it means it is a function pointer
             ILIAS_TRACE("IOCP", "Call callback function ({}, {})", (void*)key, (void*)overlapped);
@@ -182,7 +183,7 @@ auto IocpContext::processCompletion(DWORD timeout) -> void {
             lap->onCompleteCallback(lap, error, bytesTransferred);
         }
         else {
-            ILIAS_WARN("IOCP", "GetQueuedCompletionStatusEx returned nullptr overlapped, idx {}", mEntriesIdx);
+            ILIAS_WARN("IOCP", "GetQueuedCompletionStatusEx returned nullptr overlapped, idx {}", idx);
         }
     }
 }
