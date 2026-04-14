@@ -103,10 +103,10 @@
 #endif
 
 // Library mode
-#if   defined(ILIAS_STATIC) // Static library, no-op
+#if   defined(ILIAS_STATIC)    // Static library, no-op
     #define ILIAS_API
-#elif defined(ILIAS_DLL)    // Dynamic library
-    #if defined(_ILIAS_SOURCE) // Dynamic library
+#elif defined(ILIAS_DLL)       // Dynamic library
+    #if defined(_ILIAS_SOURCE) 
         #define ILIAS_API ILIAS_EXPORT
     #else
         #define ILIAS_API ILIAS_IMPORT
@@ -154,12 +154,6 @@ class Fiber;
 
 template <typename T>
 class Generator;
-
-// Common Concepts
-template <typename T>
-concept IntoString = requires (const T &t) {
-    { toString(t) } -> std::convertible_to<std::string_view>;
-};
 
 // MARK: Formatting
 #if defined(ILIAS_FMT_NAMESPACE)
@@ -238,7 +232,7 @@ template <typename ...Args>
 inline auto handler(std::string_view cond, std::source_location where, fmtlib::format_string<Args...> fmt, Args &&...args) {
     handlerImpl(cond, where, fmtlib::format(fmt, std::forward<Args>(args)...));
 }
-#else
+#else // No format support
 template <typename ...Args>
 [[noreturn]]
 inline auto handler(std::string_view cond, std::source_location where, Args &&...) {
@@ -249,7 +243,13 @@ inline auto handler(std::string_view cond, std::source_location where, Args &&..
 } // namespace assertion
 // LCOV_EXCL_STOP
 
-// MARK: Utils
+// MARK: ToString
+// Common Concepts
+template <typename T>
+concept IntoString = requires (const T &t) {
+    { toString(t) } -> std::convertible_to<std::string_view>;
+};
+
 template <typename T> requires 
     requires(const T &t) { t.toString(); } // Make sure the t has the toString() method
 inline auto toString(const T &t) {

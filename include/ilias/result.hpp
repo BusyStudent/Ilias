@@ -30,9 +30,9 @@ using BadResultAccess = exp::bad_expected_access<E>;
 
 // For compatibility
 template <typename T>
-using Unexpected = exp::unexpected<T>;
+using Unexpected [[deprecated("Use Err instead")]] = exp::unexpected<T>;
 
 template <typename E>
-using BadExpectedAccess = exp::bad_expected_access<E>;
+using BadExpectedAccess [[deprecated("Use BadResultAccess instead")]] = exp::bad_expected_access<E>;
 
 ILIAS_NS_END

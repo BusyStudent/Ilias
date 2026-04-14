@@ -4,6 +4,7 @@
 #include <ilias/net.hpp>
 #include <ilias/io.hpp>
 #include <ilias/tls.hpp>
+#include <charconv>
 #include "certs.inl"
 
 using namespace ilias::literals;
@@ -84,26 +85,44 @@ auto doHttps(TlsContext &tlsCtxt, std::string_view hostname) -> Task<void> {
     (co_await stream.writeAll(makeBuffer(headers))).value();
     (co_await stream.flush()).value();
 
+    auto contentLength = std::optional<size_t> {};
     while (true) {
         auto line = (co_await stream.getline("\r\n")).value();
         if (line.empty()) { // Header end
             break;
         }
+        if (line.starts_with("Content-Length: ")) {
+            size_t len = 0;
+            auto [ptr, ec] = std::from_chars(line.data() + 16, line.data() + line.size(), len);
+            if (ec == std::errc {}) {
+                contentLength = len;
+            }
+        }
         std::cout << line << std::endl;
     }
+
     char buffer[4096] {};
+    size_t readed = 0;
     while (true) {
-        auto size = (co_await stream.read(makeBuffer(buffer))).value();
-        if (size == 0) {
+        auto size = co_await stream.read(makeBuffer(buffer));
+        if (!size || size == 0) {
             break;
         }
-        std::cout << std::string_view(buffer, size) << std::endl;
+        readed += *size;
+        std::cout << std::string_view {buffer, *size} << std::endl;
+    }
+    if (contentLength) {
+        EXPECT_EQ(readed, *contentLength);
     }
 }
 
 ILIAS_TEST(Tls, Https) {
     auto ctxt = TlsContext {};
     co_await doHttps(ctxt, "www.baidu.com");
+}
+
+ILIAS_TEST(Tls, Tls1_3) {
+    auto ctxt = TlsContext {};
     co_await doHttps(ctxt, "websocket.org"); // This website support tls1.3
 }
 

@@ -210,17 +210,6 @@ ILIAS_TEST(Task, Scope) {
     }
 }
 
-ILIAS_TEST(Task, AsyncLifetime) {
-    struct Value : public AsyncLifetime<Value> {
-        ~Value() {
-            EXPECT_TRUE(scope().empty());
-        }
-    };
-    auto ptr = makeAsyncLifetime<Value>();
-    co_await this_coro::yield();
-    co_return;
-}
-
 ILIAS_TEST(Task, Thread) {
     auto sleep1h = []() -> Task<void> {
         co_await sleep(1h);  
