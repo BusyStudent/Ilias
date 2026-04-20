@@ -69,10 +69,10 @@ public:
     /**
      * @brief Sleep for a specified amount of time, make task
      * 
-     * @param ms 
+     * @param ns 
      * @return TimerAwaiter 
      */
-    auto sleep(uint64_t ms) -> TimerAwaiter;
+    auto sleep(std::chrono::nanoseconds ns) -> TimerAwaiter;
 private:
     /**
      * @brief Submit a timer task to run at a specified timepoint
@@ -110,7 +110,7 @@ private:
  */
 class TimerAwaiter {
 public:
-    TimerAwaiter(TimerService &service, uint64_t timeout) : mService(service), mTimeout(timeout) { }
+    TimerAwaiter(TimerService &service, std::chrono::nanoseconds timeout) : mService(service), mTimeout(timeout) { }
 
     auto await_ready() const -> bool;
     auto await_suspend(CoroHandle caller) -> void;
@@ -120,7 +120,7 @@ private:
     auto onTimeout() -> void;
 
     TimerService &mService;
-    uint64_t mTimeout;
+    std::chrono::nanoseconds mTimeout;
     
     CoroHandle mCaller;
     StopRegistration mReg;
@@ -162,8 +162,8 @@ inline auto TimerService::setCallback(Callback callback) -> void {
     mCallback = callback;
 }
 
-inline auto TimerService::sleep(uint64_t ms) -> TimerAwaiter {
-    return TimerAwaiter {*this, ms};    
+inline auto TimerService::sleep(std::chrono::nanoseconds ns) -> TimerAwaiter {
+    return TimerAwaiter {*this, ns};    
 }
 
 inline auto TimerService::submitTimer(TimePoint timepoint, TimerAwaiter *awaiter) -> TimerId {
@@ -192,13 +192,13 @@ inline auto TimerService::timerChanged() -> void {
 
 
 inline auto TimerAwaiter::await_ready() const -> bool {
-    return mTimeout == 0;
+    return mTimeout < std::chrono::nanoseconds::zero();
 }
 
 inline auto TimerAwaiter::await_suspend(CoroHandle caller) -> void {
     mCaller = caller;
     mTimerId = mService.submitTimer(
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(mTimeout),
+        std::chrono::steady_clock::now() + mTimeout,
         this
     );
     mReg.register_<&TimerAwaiter::onStopRequested>(mCaller.stopToken(), this);

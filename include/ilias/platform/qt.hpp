@@ -149,7 +149,7 @@ public:
     //< For Executor
     auto post(void (*fn)(void *), void *args) -> void override;
     auto run(runtime::StopToken token) -> void override;
-    auto sleep(uint64_t ms) -> Task<void> override;
+    auto sleep(std::chrono::nanoseconds ns) -> Task<void> override;
 
     // < For IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor*> override;
@@ -347,8 +347,8 @@ inline auto QIoContext::cancel(IoDescriptor *fd) -> IoResult<void> {
     return {};
 }
 
-inline auto QIoContext::sleep(uint64_t ms) -> Task<void> {
-    co_return co_await mService.sleep(ms);
+inline auto QIoContext::sleep(std::chrono::nanoseconds ns) -> Task<void> {
+    co_return co_await mService.sleep(ns);
 }
 
 inline auto QIoContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {

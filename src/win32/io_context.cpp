@@ -264,8 +264,8 @@ auto IocpContext::submitTimerWait(HANDLE packet, HANDLE handle, BOOLEAN *already
     return status;
 }
 
-auto IocpContext::sleep(uint64_t ms) -> Task<void> {
-    co_return co_await mService.sleep(ms);
+auto IocpContext::sleep(std::chrono::nanoseconds ns) -> Task<void> {
+    co_return co_await mService.sleep(ns);
 }
 
 // MARK: Context

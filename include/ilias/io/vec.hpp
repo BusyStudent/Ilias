@@ -164,7 +164,7 @@ inline auto toSystem(T *iovec) noexcept {
 template <BufferSequence T>
 inline auto makeIoSequence(const T &seq) {
     if constexpr (std::convertible_to<T, IoVecSequence>) {
-        return IoVecSequence(seq);
+        return IoVecSequence {seq};
     }
     else if constexpr (std::convertible_to<T, MutableIoVecSequence>) {
         // Mutable -> Const, OK!
@@ -187,7 +187,7 @@ inline auto makeIoSequence(const T &seq) {
 template <MutableBufferSequence T>
 inline auto makeMutableIoSequence(const T &seq) {
     if constexpr (std::convertible_to<T, MutableIoVecSequence>) {
-        return MutableIoVecSequence(seq);
+        return MutableIoVecSequence {seq};
     }
     else {
         std::vector<MutableIoVec> vec;

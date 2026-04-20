@@ -42,7 +42,7 @@ public:
     // For Executor
     auto post(void (*fn)(void *), void *args) -> void override;
     auto run(runtime::StopToken token) -> void override;
-    auto sleep(uint64_t ms) -> Task<void> override;
+    auto sleep(std::chrono::nanoseconds ns) -> Task<void> override;
 
     // For IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor *> override;

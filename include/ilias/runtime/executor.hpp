@@ -14,9 +14,9 @@
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/defines.hpp>
 #include <functional>
-#include <stop_token>
 #include <coroutine>
 #include <cstring>
+#include <chrono> // nanoseconds
 #include <memory>
 #include <array>
 
@@ -50,10 +50,10 @@ public:
     /**
      * @brief Sleep for a specified amount of time
      * 
-     * @param ms 
+     * @param ns 
      * @return Task<void> 
      */
-    virtual auto sleep(uint64_t ms) -> Task<void> = 0;
+    virtual auto sleep(std::chrono::nanoseconds ns) -> Task<void> = 0;
 
     /**
      * @brief Install the executor to the current thread
@@ -130,7 +130,7 @@ public:
 
     auto post(void (*fn)(void *), void *args) -> void override;
     auto run(StopToken token) -> void override;
-    auto sleep(uint64_t ms) -> Task<void> override;
+    auto sleep(std::chrono::nanoseconds ns) -> Task<void> override;
 private:
     struct Impl;
 

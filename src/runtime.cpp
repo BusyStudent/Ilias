@@ -109,8 +109,8 @@ auto EventLoop::run(StopToken token) -> void {
     }
 }
 
-auto EventLoop::sleep(uint64_t ms) -> Task<void> {
-    co_return co_await d->service.sleep(ms);
+auto EventLoop::sleep(std::chrono::nanoseconds ns) -> Task<void> {
+    co_return co_await d->service.sleep(ns);
 }
 
 auto threadpool::submit(CallableRef &callable) -> void {

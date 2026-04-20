@@ -13,6 +13,7 @@
 #include <ilias/task/generator.hpp>
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/sockfd.hpp>
+#include <ilias/net/msghdr.hpp> // MsgHdr
 #include <ilias/io/context.hpp>
 #include <ilias/io/method.hpp>
 
@@ -30,7 +31,18 @@ public:
     auto close() { return mHandle.close(); }
     auto cancel() const { return mHandle.cancel(); }
 
-    // Stream Concept
+    // Readable Concept
+    /**
+     * @brief Read data from the socket.
+     * 
+     * @param data 
+     * @return IoTask<size_t> 
+     */
+    auto read(MutableBuffer data) const -> IoTask<size_t> {
+        return mHandle.recvfrom(data, 0, nullptr);
+    }
+
+    // Writable Concept
     /**
      * @brief Write data to the socket.
      * 
@@ -60,14 +72,36 @@ public:
         co_return mHandle.fd().shutdown(how);
     }
 
+    // ScatterReadable
     /**
-     * @brief Read data from the socket.
+     * @brief Read an sequence of buffers to the socket.
      * 
-     * @param data 
+     * @tparam T 
+     * @param buffers 
      * @return IoTask<size_t> 
      */
-    auto read(MutableBuffer data) const -> IoTask<size_t> {
-        return mHandle.recvfrom(data, 0, nullptr);
+    template <MutableBufferSequence T>
+    auto readv(T &buffers) const -> IoTask<size_t> {
+        auto sequence = makeIoSequence(buffers);
+        MutableMsgHdr msg;
+        msg.setBuffers(sequence);
+        co_return co_await mHandle.recvmsg(msg, 0);
+    }
+
+    // GatherWritable
+    /**
+     * @brief Write an sequence of buffers to the socket.
+     * 
+     * @tparam T 
+     * @param buffers The sequence of buffers to write.
+     * @return IoTask<size_t> 
+     */
+    template <BufferSequence T>
+    auto writev(const T &buffers) const -> IoTask<size_t> {
+        auto sequence = makeIoSequence(buffers);
+        MsgHdr msg;
+        msg.setBuffers(sequence);
+        co_return co_await mHandle.sendmsg(msg, 0);
     }
 
     // Extension Methods
@@ -164,23 +198,6 @@ public:
             co_return Err(res.error());
         }
         co_return TcpStream(std::move(*handle));
-    }
-
-    /**
-     * @brief Wrap a socket into a TcpStream.
-     * 
-     * @param socket The socket must be SOCK_STREAM. otherwise, IoError::InvalidArgument will be returned.
-     * @return IoResult<TcpStream> 
-     */
-    static auto from(Socket socket) -> IoResult<TcpStream> {
-        if (socket.type() != SOCK_STREAM) {
-            return Err(IoError::InvalidArgument);
-        }
-        auto handle = IoHandle<Socket>::make(std::move(socket), IoDescriptor::Socket);
-        if (!handle) {
-            return Err(handle.error());
-        }
-        return TcpStream(std::move(*handle));
     }
 
     /**
@@ -373,22 +390,6 @@ private:
 };
 
 // For compatible with old version.
-using TcpClient = TcpStream;
-
-/**
- * @brief Convert the TcpListener to an Generator.
- * 
- * @param listener 
- * @return IoGenerator<TcpStream> 
- */
-inline auto toGenerator(TcpListener listener) -> IoGenerator<TcpStream> {
-    while (true) {
-        auto val = co_await listener.accept(nullptr);
-        if (!val) {
-            co_yield Err(val.error());
-        }
-        co_yield std::move(*val);
-    }
-}
+using TcpClient [[deprecated("Use TcpStream instead")]] = TcpStream;
 
 ILIAS_NS_END

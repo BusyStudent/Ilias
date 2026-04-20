@@ -68,7 +68,7 @@ public:
     auto removeDescriptor(IoDescriptor* fd) -> IoResult<void> override;
     auto cancel(IoDescriptor *fd) -> IoResult<void> override;
 
-    auto sleep(uint64_t ms) -> Task<void> override;
+    auto sleep(std::chrono::nanoseconds ns) -> Task<void> override;
 
     auto read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
     auto write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
@@ -147,8 +147,8 @@ inline auto ProxyContext::cancel(IoDescriptor *fd) -> IoResult<void> {
     return ret;
 }
 
-inline auto ProxyContext::sleep(uint64_t ms) -> Task<void> {
-    co_return co_await scheduleOn(mContext->sleep(ms), *mContext);
+inline auto ProxyContext::sleep(std::chrono::nanoseconds ns) -> Task<void> {
+    co_return co_await scheduleOn(mContext->sleep(ns), *mContext);
 }
 
 inline auto ProxyContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {

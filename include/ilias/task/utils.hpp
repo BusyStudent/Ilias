@@ -259,7 +259,7 @@ namespace runtime {
 
 // Dispatch tags
 namespace task {
-    struct SetTimeoutTags { std::chrono::milliseconds ms; };
+    struct SetTimeoutTags { std::chrono::nanoseconds ns; };
     struct ScheduleOnTags { runtime::Executor &exec; };
     struct UnstoppableTags {};
     template <typename T>
@@ -271,8 +271,8 @@ namespace task {
 // Set an timeout for a task, return nullopt on timeout
 template <Awaitable T>
 [[nodiscard]]
-inline auto setTimeout(T awaitable, std::chrono::milliseconds ms) -> Task<Option<AwaitableResult<T> > > {
-    auto [res, timeout] = co_await whenAny(std::move(awaitable), sleep(ms));
+inline auto setTimeout(T awaitable, std::chrono::nanoseconds ns) -> Task<Option<AwaitableResult<T> > > {
+    auto [res, timeout] = co_await whenAny(std::move(awaitable), sleep(ns));
     if (timeout) {
         co_return std::nullopt;
     }
@@ -316,8 +316,8 @@ inline auto fmap(T awaitable, Fn fn) -> task::MapAwaiter<AwaitableResult<T>, Fn>
 
 // Tags invoke here
 [[nodiscard]]
-inline auto setTimeout(std::chrono::milliseconds ms) -> task::SetTimeoutTags {
-    return {ms};
+inline auto setTimeout(std::chrono::nanoseconds ns) -> task::SetTimeoutTags {
+    return {ns};
 }
 
 [[nodiscard]]
@@ -345,7 +345,7 @@ inline auto fmap(T v) -> task::MapTags<T> {
 template <Awaitable T>
 [[nodiscard]]
 inline auto operator |(T awaitable, task::SetTimeoutTags tag) {
-    return setTimeout(std::move(awaitable), tag.ms);
+    return setTimeout(std::move(awaitable), tag.ns);
 }
 
 template <Awaitable T>

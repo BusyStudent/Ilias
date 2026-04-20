@@ -62,7 +62,7 @@ public:
         file.write(reinterpret_cast<const char*>(mContent.data()), mContent.size());
         file.close();
 #else
-        auto file = co_await File::open(filename.toStdString(), "wb");
+        auto file = co_await File::open(filename.toStdString(), OpenOptions::WriteOnly);
         if (!file) {
             co_return;
         }

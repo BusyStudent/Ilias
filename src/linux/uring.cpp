@@ -169,10 +169,10 @@ auto UringContext::cancel(IoDescriptor *fd) -> IoResult<void> {
     return {};
 }
 
-auto UringContext::sleep(uint64_t ms) -> Task<void> {
+auto UringContext::sleep(std::chrono::nanoseconds ns) -> Task<void> {
     ::__kernel_timespec ts { };
-    ts.tv_sec = ms / 1000;
-    ts.tv_nsec = (ms % 1000) * 1000000;
+    ts.tv_sec = ns.count() / 1000000000;
+    ts.tv_nsec = ns.count() % 1000000000;
     co_return co_await UringTimeoutAwaiter {mRing, ts};
 }
 

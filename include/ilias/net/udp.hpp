@@ -27,7 +27,7 @@ public:
     UdpSocket(IoHandle<Socket> h) : mHandle(std::move(h)) {}
 
     auto close() { return mHandle.close(); }
-    auto cancel() { return mHandle.cancel(); }
+    auto cancel() const { return mHandle.cancel(); }
 
     /**
      * @brief Receive datagram from the socket
@@ -35,7 +35,7 @@ public:
      * @param buffer The buffer to receive the data into.
      * @return IoTask<std::pair<size_t, IPEndpoint> > (The datagram size and the endpoint)
      */
-    auto recvfrom(MutableBuffer buffer) -> IoTask<std::pair<size_t, IPEndpoint> > {
+    auto recvfrom(MutableBuffer buffer) const -> IoTask<std::pair<size_t, IPEndpoint> > {
         IPEndpoint endpoint;
         auto n = co_await mHandle.recvfrom(buffer, 0, &endpoint);
         if (!n) {
@@ -51,7 +51,7 @@ public:
      * @param endpoint The endpoint to send the datagram to.
      * @return IoTask<size_t> 
      */
-    auto sendto(Buffer buffer, const IPEndpoint &endpoint) -> IoTask<size_t> {
+    auto sendto(Buffer buffer, const IPEndpoint &endpoint) const -> IoTask<size_t> {
         return mHandle.sendto(buffer, 0, &endpoint);
     }
 
@@ -64,7 +64,7 @@ public:
      * @return IoTask<std::pair<size_t, IPEndpoint> > 
      */
     template <MutableBufferSequence T>
-    auto recvfrom(T &buffers) -> IoTask<std::pair<size_t, IPEndpoint> > {
+    auto recvfrom(T &buffers) const -> IoTask<std::pair<size_t, IPEndpoint> > {
         auto sequence = makeMutableIoSequence(buffers); // Convert To ABI-Compatible Sequence
         MutableMsgHdr msg;
         IPEndpoint endpoint;
@@ -86,7 +86,7 @@ public:
      * @return IoTask<size_t> 
      */
     template <BufferSequence T>
-    auto sendto(const T &buffers, const IPEndpoint &endpoint) -> IoTask<size_t> {
+    auto sendto(const T &buffers, const IPEndpoint &endpoint) const -> IoTask<size_t> {
         auto sequence = makeIoSequence(buffers); // Convert To ABI-Compatible Sequence
         MsgHdr msg;
         msg.setEndpoint(endpoint);
@@ -102,7 +102,7 @@ public:
      * @return IoResult<void> 
      */
     template <SetSockOption T>
-    auto setOption(const T &opt) -> IoResult<void> {
+    auto setOption(const T &opt) const -> IoResult<void> {
         return mHandle.fd().setOption(opt);
     }
 
@@ -113,7 +113,7 @@ public:
      * @return IoResult<T> 
      */
     template <GetSockOption T>
-    auto getOption() -> IoResult<T> {
+    auto getOption() const -> IoResult<T> {
         return mHandle.fd().getOption<T>();
     }
 
@@ -215,6 +215,6 @@ private:
 };
 
 // For compatibility with the old API
-using UdpClient = UdpSocket;
+using UdpClient [[deprecated("Use UdpSocket instead")]] = UdpSocket;
 
 ILIAS_NS_END

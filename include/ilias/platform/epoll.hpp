@@ -74,7 +74,7 @@ public:
     auto run(runtime::StopToken token) -> void override;
 
     ///> @brief Sleep for a specified amount of time
-    auto sleep(uint64_t ms) -> Task<void> override;
+    auto sleep(std::chrono::nanoseconds ns) -> Task<void> override;
 private:
     auto processCompletion(bool &running) -> void;
     auto processEvents(std::span<const epoll_event> events) -> void;

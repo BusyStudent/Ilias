@@ -309,8 +309,8 @@ auto EpollContext::run(runtime::StopToken token) -> void {
     }
 }
 
-auto EpollContext::sleep(uint64_t ms) -> Task<void> {
-    co_return co_await mService.sleep(ms);
+auto EpollContext::sleep(std::chrono::nanoseconds ns) -> Task<void> {
+    co_return co_await mService.sleep(ns);
 }
 
 auto EpollContext::processCompletion(bool &running) -> void {
