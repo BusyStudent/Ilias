@@ -1,9 +1,10 @@
-#include <ilias_qt/network.hpp>
-#include <ilias_qt/dialog.hpp>
 #include <ilias/platform/qt.hpp>
 #include <ilias/fs/file.hpp>
 #include <ilias/task.hpp>
 #include <ilias/net.hpp>
+#include <ilias_qt/network.hpp>
+#include <ilias_qt/adapter.hpp>
+#include <ilias_qt/dialog.hpp>
 
 #include <QApplication>
 #include <QMainWindow>
@@ -37,7 +38,7 @@ public:
 
     }
 
-    auto onHttpSaveButtonClicked() -> QAsyncSlot<void> {
+    auto onHttpSaveButtonClicked() -> FireAndForget {
         if (mContent.isEmpty()) {
             QMessageBox::information(this, "No content", "No content to save");
             co_return;
@@ -71,13 +72,13 @@ public:
         co_return;
     }
 
-    auto onHttpSendButtonClicked() -> QAsyncSlot<void> {
+    auto onHttpSendButtonClicked() -> FireAndForget {
         ui.httpSendButton->setEnabled(false);
         co_await sendHttpRequest();
         ui.httpSendButton->setEnabled(true);
     }
 
-    auto onAddrinfoButtonClicked() -> QAsyncSlot<void> {
+    auto onAddrinfoButtonClicked() -> FireAndForget {
         ui.addrinfoListWidget->clear();
         ui.statusbar->clearMessage();
         auto addrinfo = co_await AddressInfo::fromHostname(ui.addrinfoEdit->text().toUtf8().data());
@@ -106,9 +107,9 @@ public:
         ui.httpContentBroswer->hide();
         ui.httpImageLabel->hide();
 
-        QNetworkRequest request(url);
+        QNetworkRequest request {url};
         request.setHeader(QNetworkRequest::UserAgentHeader, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.150 Safari/537.36");
-        auto reply = co_await mManager.get(QNetworkRequest(url));
+        auto reply = co_await mManager.get(request);
         if (reply->error() != QNetworkReply::NoError) {
             ui.statusbar->showMessage(
                 QString("HTTP %1 %2").arg(reply->error()).arg(reply->errorString())

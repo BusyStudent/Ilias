@@ -1,9 +1,4 @@
-option("qt_example")
-    set_default(false)
-    set_description("Enable qt example")
-option_end()
-
-if has_config("qt_example") then
+if has_config("qt_interop") then
     target("example_qt")
         set_default(false)
         add_rules("qt.widgetapp")

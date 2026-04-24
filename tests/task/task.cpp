@@ -62,6 +62,7 @@ auto testTask() -> Task<void> {
 
     co_await sleep(10ms);
     co_await sleep(20ms);
+    co_await sleepUntil(std::chrono::system_clock::now() + 30ms); // Check for using time point
     co_return;
 }
 

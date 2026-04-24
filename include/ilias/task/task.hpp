@@ -502,6 +502,13 @@ inline auto sleep(std::chrono::nanoseconds duration) -> Task<void> {
     return runtime::Executor::currentThread()->sleep(duration);
 }
 
+// Sleep until a time point
+template <typename Clock, typename Duration> requires (std::chrono::is_clock_v<Clock>)
+[[nodiscard]]
+inline auto sleepUntil(std::chrono::time_point<Clock, Duration> timepoint) -> Task<void> {
+    return sleep(timepoint - Clock::now());
+}
+
 // Abstraction for awaitable
 template <Awaitable T>
 inline auto toTask(T awaitable) -> Task<AwaitableResult<T> > {

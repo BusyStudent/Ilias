@@ -25,6 +25,9 @@ option("fiber",      {default = true,      description = "Enable stackful corout
 -- No-op Options (leave for compatibility)
 option("io",         {default = true,      description = "Enable io support"})
 
+-- Qt
+option("qt_interop", {default = false,     description = "Enable qt test and example"})
+
 includes("lua/check")
 check_macros("has_std_expected",    "__cpp_lib_expected",   {languages = stdcxx(), includes = "version"})
 

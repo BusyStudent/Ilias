@@ -22,7 +22,6 @@ if has_config("dev") then
             add_tests(name, {run_timeout = 10000, packages = "gtest"})
             add_packages("gtest")
             add_deps("ilias")
-            add_includedirs("./")
         target_end()
 
         ::continue::

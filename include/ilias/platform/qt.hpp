@@ -189,9 +189,15 @@ inline QIoContext::QIoContext(QObject *parent) : QObject(parent) {
         }
         if (timepoint) { // Has timers
             auto now = std::chrono::steady_clock::now();
-            auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(*timepoint - now);
-            auto interval = diff.count() <= 0 ? 1 : diff.count(); // If already elapsed, set 1ms
-            mTimerId = startTimer(interval, Qt::PreciseTimer);
+            auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(*timepoint - now);
+            if (diff.count() < 0) { // If already elapsed, set 1ms
+                diff = std::chrono::milliseconds {1};
+            }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0) // Since Qt 6.8, we can use nanoseconds
+            mTimerId = startTimer(diff, Qt::PreciseTimer);
+#else // Fallback to milliseconds
+            mTimerId = startTimer(diff.count() / 1000'000, Qt::PreciseTimer);
+#endif
         }
     });
 }

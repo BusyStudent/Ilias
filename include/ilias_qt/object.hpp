@@ -137,17 +137,4 @@ private:
     runtime::StopRegistration mReg;
 };
 
-template <typename T>
-class QAsyncSlot {
-public:
-    QAsyncSlot() = default;
-    QAsyncSlot(const QAsyncSlot &) = delete;
-    QAsyncSlot(QAsyncSlot &&) = default;
-    QAsyncSlot(ilias::Task<T> task) : mHandle(ilias::spawn(std::move(task))) {}
-
-    using promise_type = typename ilias::Task<T>::promise_type;
-private:
-    ilias::WaitHandle<T> mHandle;
-};
-
 } // namespace ilias_qt
