@@ -5,6 +5,9 @@
 #include <ilias/net.hpp>
 #include <ilias/io.hpp>
 #include <QCoreApplication>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QBuffer>
 #include <QTimer>
 #include <QTest>
 #include "qtest.hpp"
@@ -76,11 +79,67 @@ void Testing::testTcp() {
 }
 
 void Testing::testSignal() {
+    // Normal
     QTimer::singleShot(10ms, this, &Testing::notify);
     auto fn = [this]() -> Task<void> {
         co_await ilias_qt::QSignal(this, &Testing::notify);
     };
     fn().wait();
+
+    // Cancel
+    auto handle = ilias::spawn(fn());
+    handle.stop();
+    handle.wait();
+}
+
+void Testing::testStream() {
+    // Test Read the hello world
+    auto fn = [&]() -> IoTask<void> {
+        QByteArray array {"Hello World"};
+        QBuffer buffer {&array};
+        buffer.open(QIODevice::ReadOnly);
+        ilias_qt::StreamAdapter stream {&buffer};
+
+        auto str = std::string {};
+        ILIAS_CO_TRY(co_await stream.readToEnd(str));
+        co_return {};
+    };
+    QVERIFY(fn().wait());
+
+    // Test write some data
+    auto fn2 = [&]() -> IoTask<void> {
+        QByteArray array;
+        QBuffer buffer {&array};
+        buffer.open(QIODevice::WriteOnly);
+        ilias_qt::StreamAdapter stream {&buffer};
+
+        ILIAS_CO_TRY(co_await stream.writeAll("Hello World"_bin));
+        ILIAS_CO_TRY(co_await stream.flush());
+        co_return {};
+    };
+    QVERIFY(fn2().wait());
+
+    // Test with streaming
+    QNetworkAccessManager manager;  
+    auto fn3 = [&]() -> IoTask<void> {
+        QNetworkRequest request {QUrl {"https://www.baidu.com"}};
+        auto reply = manager.get(request);
+        if (!reply) {
+            co_return Err(IoError::Other);
+        }
+        struct Guard {
+            QNetworkReply *reply;
+            ~Guard() {
+                reply->deleteLater();
+            }
+        } guard {reply};
+
+        auto stream = ilias_qt::StreamAdapter {reply};
+        auto string = std::string {};
+        ILIAS_CO_TRY(co_await stream.readToEnd(string));
+        co_return {};
+    };
+    QVERIFY(fn3().wait());
 }
 
 QTEST_MAIN(Testing)

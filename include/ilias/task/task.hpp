@@ -47,7 +47,7 @@
         std::move(_res).value();                               \
     })
 #else
-    #define ILIAS_CO_TRY_IMPL(...) co_yield(__VA_ARGS__)
+    #define ILIAS_CO_TRY_IMPL(...) (co_yield(__VA_ARGS__))
 #endif
 
 /**

@@ -13,6 +13,7 @@ private slots:
     void testTimer();
     void testTcp();
     void testSignal();
+    void testStream();
 private:
     ilias::QIoContext mCtxt;
 };
