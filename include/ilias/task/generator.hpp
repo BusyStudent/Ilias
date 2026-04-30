@@ -226,7 +226,6 @@ public:
 
     Generator() = default;
     Generator(std::nullptr_t) noexcept {}
-    Generator(const Generator &) = delete;
     Generator(Generator &&other) noexcept : mHandle(std::exchange(other.mHandle, nullptr)) {}
     ~Generator() { clear(); }
 

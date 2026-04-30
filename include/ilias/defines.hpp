@@ -84,17 +84,14 @@
     #define ILIAS_NO_UNIQUE_ADDRESS msvc::no_unique_address
     #define ILIAS_ATTRIBUTE(x)  __declspec(x)
     #define ILIAS_UNREACHABLE() __assume(0)
-    #define ILIAS_ASSUME(...)   __assume(__VA_ARGS__)
     #define ILIAS_TRAP()        __debugbreak()
 #elif defined(__GNUC__)
     #define ILIAS_ATTRIBUTE(x)  __attribute__((x))
     #define ILIAS_UNREACHABLE() __builtin_unreachable()
-    #define ILIAS_ASSUME(...)   ((__VA_ARGS__) ? (void)0 : __builtin_unreachable())
     #define ILIAS_TRAP()        __builtin_trap()
 #else
     #define ILIAS_ATTRIBUTE(x)  // no-op
     #define ILIAS_UNREACHABLE() ::abort()
-    #define ILIAS_ASSUME(...)   // no-op
     #define ILIAS_TRAP()        ::abort()
 #endif
 
@@ -131,6 +128,14 @@
     ILIAS_STRINGIFY(ILIAS_VERSION_MAJOR) "."                         \
     ILIAS_STRINGIFY(ILIAS_VERSION_MINOR) "."                         \
     ILIAS_STRINGIFY(ILIAS_VERSION_PATCH)
+
+// Assume macro
+#define ILIAS_ASSUME(cond, ...) do {        \
+        ILIAS_ASSERT(cond, ##__VA_ARGS__);  \
+        if (!(cond)) {                      \
+            ILIAS_UNREACHABLE();            \
+        }                                   \
+    } while (0)
 
 // Formatter macro
 #define ILIAS_FORMATTER(type)                              \

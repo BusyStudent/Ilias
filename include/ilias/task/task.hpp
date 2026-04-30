@@ -127,7 +127,7 @@ public:
     auto yield_value(Result<U, UE> result) noexcept(std::is_nothrow_move_constructible_v<Result<T, E> >) {
         if (!result) [[unlikely]] { // Error, early return
             mValue.emplace(Err(std::move(result.error())));
-            return TaskTryAwaiter<U> {};
+            return TaskTryAwaiter<U> {std::nullopt};
         }
         else { // Success
             auto option = makeOption([&]() {
@@ -254,7 +254,7 @@ public:
     }
 };
 
-// Environment for the task, it bind the task with this
+// Environment for the task, it bind the task with this (take ownership)
 class TaskContext : public CoroContext {
 public:
     template <typename ...Super>
@@ -296,14 +296,15 @@ protected:
     TaskHandle<> mTask; // The task we use to wait for (take ownership)
 };
 
-// Environment for the blocking wait task
-class TaskBlockingContext final : private TaskContext {
+// Environment for the blocking wait task (borrow the task ownship)
+class TaskBlockingContext final : private CoroContext {
 public:
-    TaskBlockingContext(TaskHandle<> task, CaptureSource source) : TaskContext(task, std::nostopstate) {
+    TaskBlockingContext(TaskHandle<> task, CaptureSource source) : CoroContext(std::nostopstate), mTask(task) {
         auto executor = runtime::Executor::currentThread();
         ILIAS_ASSERT(executor, "The current thread has no executor");
 
         mTask.setCompletionHandler(TaskBlockingContext::onComplete);
+        mTask.setContext(*this);
         this->setExecutor(*executor);
         this->pushFrame("wait", source); // TRACING: trace the blocking point
     }
@@ -328,7 +329,8 @@ private:
         static_cast<TaskBlockingContext &>(_self).mStopExecutor.request_stop();
     }
     
-    StopSource mStopExecutor; // The stop source of the executor
+    TaskHandle<> mTask; // The task we use to wait for (borrow)
+    StopSource   mStopExecutor; // The stop source of the executor
 };
 
 // Awaiter for blocking
@@ -375,7 +377,7 @@ private:
 template <typename T>
 class TaskTryAwaiter final {
 public:
-    TaskTryAwaiter(Option<T> value = {}) : mValue(std::move(value)) {}
+    TaskTryAwaiter(Option<T> value) : mValue(std::move(value)) {}
     TaskTryAwaiter(TaskTryAwaiter &&) = default;
 
     auto await_ready() const noexcept { return mValue.has_value(); }
@@ -383,9 +385,7 @@ public:
         return caller.promise().final(); // Mark the caller as final and switch to the next frame
     }
     auto await_resume() noexcept -> T {
-        if (!mValue) {
-            ILIAS_UNREACHABLE(); // LCOV_EXCL_LINE
-        }
+        ILIAS_ASSUME(mValue, "Resume without value, internal bug"); // LCOV_EXCL_LINE
         return unwrapOption(std::move(mValue));
     }
 private:
@@ -408,15 +408,35 @@ public:
     using promise_type = task::TaskPromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
     using value_type = T;
-
-    Task() noexcept = default;
+   
+    Task() = default;
+    Task(const Task &) = delete; // Disable copy
     Task(std::nullptr_t) noexcept {}
-    Task(const Task &) = delete;
     Task(Task &&other) noexcept : mHandle(other._leak()) {}
-    ~Task() noexcept { 
+    ~Task() { clear(); }
+
+    /**
+     * @brief Clear the inernal coroutine handle
+     * 
+     */
+    auto clear() noexcept -> void {
         if (mHandle) {
             mHandle.destroy();
+            mHandle = nullptr;
         }
+    }
+
+    /**
+     * @brief Run the task and block until the task is done, return the value
+     * 
+     * @return T 
+     */
+    auto wait(runtime::CaptureSource source = {}) -> T {
+        ILIAS_ASSERT(mHandle, "Task is null");
+        ILIAS_ASSERT(!mHandle.done(), "Task is done, can't wait again");
+        auto context = task::TaskBlockingContext {mHandle, source};
+        context.enter();
+        return context.value<T>();
     }
 
     /**
@@ -439,23 +459,16 @@ public:
         return mHandle;
     }
 
-    // Set the context of the task, call on await_transform
+    /**
+     * @brief Set the context of the task, call on await_transform
+     * @note It is internal function, called by runtime
+     * 
+     * @param context 
+     */
     auto setContext(runtime::CoroContext &context) noexcept -> void {
         ILIAS_ASSERT(mHandle, "Task is null");
         auto handle = task::TaskHandle<T> {mHandle};
         handle.setContext(context);
-    }
-
-    /**
-     * @brief Run the task and block until the task is done, return the value
-     * 
-     * @return T 
-     */
-    auto wait(runtime::CaptureSource source = {}) -> T {
-        ILIAS_ASSERT(mHandle, "Task is null");
-        auto context = task::TaskBlockingContext {_leak(), source};
-        context.enter();
-        return context.value<T>();
     }
 
     // Swap with other task
@@ -464,20 +477,17 @@ public:
     }
 
     auto operator =(Task<T> &&other) noexcept -> Task & {
-        if (&other == this) {
-            return *this;
-        }
         swap(other);
         return *this;
-    }
-
-    explicit operator bool() const noexcept {
-        return bool(mHandle);
     }
 
     auto operator co_await() && noexcept -> task::TaskAwaiter<T> {
         ILIAS_ASSERT(mHandle, "Task is null");
         return task::TaskAwaiter<T> {_leak()};
+    }
+
+    explicit operator bool() const noexcept {
+        return bool(mHandle);
     }
 private:
     Task(handle_type handle) noexcept : mHandle(handle) {}

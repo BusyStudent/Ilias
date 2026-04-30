@@ -472,6 +472,7 @@ auto TracingWebUi::install() -> bool {
     if (!d->mServeHandle) {
         d->mServeHandle = spawn(d->serve());
     }
+    ::fprintf(stderr, "[TracingWebUi] Web UI is available at %s\n", d->mBind.c_str());
     return true;
 }
 

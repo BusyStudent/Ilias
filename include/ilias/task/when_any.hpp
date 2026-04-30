@@ -59,7 +59,7 @@ public:
             frame->setMessage("whenAny");
         }
 #endif // defined(ILIAS_CORO_TRACE)
-        mLeft = mTasks.size();
+        mLeft = 0;
         for (auto &ctxt: mTasks) {
             ctxt.setUserdata(this);
             ctxt.setParent(mContext);
@@ -69,19 +69,26 @@ public:
 
             // TRACING: a subtask is started
             runtime::tracing::childBegin(ctxt);
+            mLeft += 1;
+            mStarted += 1;
             ctxt.task().resume();
+
+            if (mGot) {
+                break;
+            }
         }
         return mGot && mLeft == 0; // All completed and one of them is got
     }
 
     auto await_suspend(CoroHandle caller) {
+        mSuspended = true;
         mCaller = caller;
         mReg.register_<&WhenAnyAwaiterBase::onStopRequested>(caller.stopToken(), this); // Forward the stop if needed
     }
 protected:
     auto stopAll() -> void {
-        for (auto &ctxt : mTasks) {
-            ctxt.stop();
+        for (size_t idx = 0; idx < mStarted; ++idx) { // Stop the started tasks
+            mTasks[idx].stop();
         }
     }
     auto onStopRequested() -> void {
@@ -103,6 +110,9 @@ protected:
         }
 
         self.mLeft -= 1;
+        if (!self.mSuspended) { // Still in await_ready
+            return;
+        }
         if (self.mLeft != 0) {
             return; // Still has some imcomplete tasks
         }
@@ -121,8 +131,10 @@ protected:
     StopRegistration mReg;
     CoroContext &mContext;
     CoroHandle mCaller;
-    size_t mLeft = 0;
+    size_t mLeft = 0;    // The number of the task still not completed
+    size_t mStarted = 0; // The bound of the started tasks
     bool mStopRequested = false;
+    bool mSuspended = false;
 };
 
 // The typed part, used to construct the result from the type-erased array
@@ -166,6 +178,9 @@ inline auto operator co_await(WhenAnyTuple<Ts...> &&tuple) noexcept {
 
 /**
  * @brief When Any on multiple awaitable
+ * @note whenAny starts children from left to right. 
+ *       If one child completes synchronously during startup, later children may not be started. 
+ *       Already-started children are requested to stop and are awaited before whenAny completes.
  * 
  * @tparam Ts 
  * @param args 

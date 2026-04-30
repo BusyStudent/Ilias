@@ -596,11 +596,7 @@ inline auto stopped() noexcept {
             h.setStopped();
         }
         auto await_resume() const noexcept {
-            // LCOV_EXCL_START
-            if (mStopped) {
-                ILIAS_UNREACHABLE();
-            }
-            // LCOV_EXCL_STOP
+            ILIAS_ASSUME(!mStopped, "Coro is stopped, but still resume"); // LCOV_EXCL_LINE
         }
 
         bool mStopped = false;
