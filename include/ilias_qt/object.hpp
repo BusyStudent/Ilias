@@ -49,8 +49,8 @@ public:
      */
     template <typename Class, typename RetT, typename SignalClass>
     QSignal(Class *object, RetT (SignalClass::*signal)(Args...)) {
-        mFn = [this, object, signal]() {
-            doConnect(object, signal);
+        mFn = [object, signal](QSignal *self) {
+            self->doConnect(object, signal);
         };
     }
 
@@ -63,8 +63,8 @@ public:
      */
     template <typename Class, typename Signal>
     QSignal(Class *object, Signal signal) {
-        mFn = [this, object, signal]() {
-            doConnect(object, signal);
+        mFn = [object, signal](QSignal *self) {
+            self->doConnect(object, signal);
         };
     }
 
@@ -78,7 +78,7 @@ public:
     auto await_ready() -> bool { return false; }
     
     auto await_suspend(runtime::CoroHandle caller) { 
-        mFn(); // Do connect the signal
+        mFn(this); // Do connect the signal
         mFn = nullptr;
         mCaller = caller;
         mReg.register_<&QSignal::onStopRequested>(caller.stopToken(), this);
@@ -127,7 +127,7 @@ private:
     }
 
     // Connect function
-    std::function<void()> mFn;
+    std::function<void(QSignal *self)> mFn;
 
     // Status Block
     QMetaObject::Connection mCon;

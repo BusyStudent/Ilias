@@ -1,5 +1,5 @@
 set_project("ilias")
-set_version("0.4.0", {soname = true})
+set_version("0.4.1", {soname = true})
 set_xmakever("3.0.0")
 
 option("stdcxx", {showmenu = true, default = 23, values = {26, 23, 20}})
