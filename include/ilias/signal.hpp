@@ -21,7 +21,7 @@ extern auto ILIAS_API ctrlC() -> IoTask<void>;
  * @param sig The signal number like SIGINT, SIGQUIT, etc.
  * @return IoTask<void> 
  */
-extern auto ILIAS_API signal(int sig) -> IoTask<void>;
+extern auto ILIAS_API waitFor(int sig) -> IoTask<void>;
 #endif
 
 } // namespace signal
