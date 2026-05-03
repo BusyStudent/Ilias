@@ -73,14 +73,12 @@ ILIAS_TEST(Sync, MutexCrossThread) {
     auto latch = std::latch {3};
     auto exec = useExecutor<EventLoop>();
     auto callable = [&]() -> Task<void> {
-        latch.arrive_and_wait();
         for (int i = 0; i < 100000; ++i) {
             auto lock = co_await mtx.lock();
             value += 1;
         }
     };
     auto callable2 = [&]() -> void {
-        latch.arrive_and_wait();
         for (int i = 0; i < 100000; ++i) {
             auto lock = mtx.blockingLock();
             value += 1;
@@ -90,7 +88,6 @@ ILIAS_TEST(Sync, MutexCrossThread) {
     auto thread = Thread(exec, callable);
     auto thread2 = std::thread(callable2);
     
-    latch.arrive_and_wait();
     for (int i = 0; i < 100000; ++i) {
         auto lock = co_await mtx.lock();
         value += 1;

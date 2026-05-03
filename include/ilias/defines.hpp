@@ -35,13 +35,13 @@
 
 // Exception check
 #if !defined(__cpp_exceptions)
-    #define ILIAS_THROW(x) ::abort()
+    #define ILIAS_THROW(...) ::abort()
     #define ILIAS_TRY if constexpr(true)
-    #define ILIAS_CATCH(x) if constexpr(false)
+    #define ILIAS_CATCH(...) if constexpr(false)
 #else
-    #define ILIAS_THROW(x) throw x
+    #define ILIAS_THROW(...) throw(__VA_ARGS__)
     #define ILIAS_TRY try
-    #define ILIAS_CATCH(x) catch(x)
+    #define ILIAS_CATCH(...) catch(__VA_ARGS__)
 #endif
 
 // Assertion

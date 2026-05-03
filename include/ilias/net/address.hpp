@@ -327,7 +327,7 @@ public:
      * @return std::span<const std::byte> 
      */
     auto span() const -> std::span<const std::byte> {
-        return std::as_bytes(std::span(this, 1));
+        return std::as_bytes(std::span {this, 1});
     }
 
     /**

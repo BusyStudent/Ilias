@@ -503,9 +503,24 @@ auto ThreadBase::start() -> void {
 auto ThreadBase::setName(std::string_view name) -> void {
 
 #if defined(_WIN32)
-    win32::setThreadName(mThread.native_handle(), name);
+    using T = std::thread::native_handle_type;
+    auto winHandle = [](auto handle) -> HANDLE {
+        if constexpr (std::is_same_v<T, HANDLE>) { // Normal msvc
+            return handle;
+        }
+    #if defined(__MINGW32__) // Handle the mingw
+        if constexpr (std::is_same_v<T, pthread_t>) {
+            return ::pthread_gethandle(handle);
+        }
+    #endif // __MINGW32__
+        else {
+            static_assert(std::is_same_v<decltype(handle), void>, "Unsupport thread handle type");
+        }
+    }(mThread.native_handle());
+
+    win32::setThreadName(winHandle, name);
 #else
-    ::pthread_setname_np(mThread.native_handle(), std::string(name).c_str());
+    ::pthread_setname_np(mThread.native_handle(), std::string {name}.c_str());
 #endif // _WIN32
 
 }

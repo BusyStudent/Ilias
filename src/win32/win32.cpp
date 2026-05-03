@@ -1,4 +1,5 @@
 #include <ilias/detail/win32defs.hpp>
+#include <atomic> // std::atomic
 #include <mutex> // std::once_flag
 
 ILIAS_NS_BEGIN

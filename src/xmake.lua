@@ -62,7 +62,7 @@ target("ilias")
 
     if has_config("tls") then
         set_configvar("ILIAS_TLS", 1)
-        if is_plat("windows") and not has_config("openssl") then
+        if is_plat("windows", "mingw") and not has_config("openssl") then
             -- Is windows and not force use openssl, use schannel
             add_files("tls/schannel.cpp")
         else 

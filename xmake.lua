@@ -46,7 +46,7 @@ end
 
 if has_config("tls") then
     -- Not in windows or force use openssl
-    if not is_plat("windows") or has_config("openssl") then 
+    if not is_plat("windows", "mingw") or has_config("openssl") then 
         add_requires("openssl3")
     end
 end

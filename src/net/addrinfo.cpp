@@ -9,6 +9,13 @@
     #include <VersionHelpers.h>
 #endif
 
+#if defined(__MINGW32__) // Polyfill for mingw missing function
+    extern "C" {
+        extern INT WSAAPI GetAddrInfoExCancel(LPHANDLE lpHandle);
+        extern INT WSAAPI GetAddrInfoExOverlappedResult(LPOVERLAPPED lpOverlapped);
+    }
+#endif // __MINGW32__
+
 ILIAS_NS_BEGIN
 
 
@@ -108,8 +115,8 @@ auto AddressInfo::fromHostname(std::string_view name, std::string_view service, 
             if (err != 0) {
                 return Err(GaiError(err));
             }
-            return AddressInfo(info);
-        }
+            return AddressInfo {info};
+        } 
 
         auto onStopRequested() -> void {
             ::GetAddrInfoExCancel(&namedHandle);
