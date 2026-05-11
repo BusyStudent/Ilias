@@ -197,8 +197,14 @@ class UseExecutor {};
 template <typename T>
 class Thread {
 public:
-    Thread() = default;
+    /**
+     * @brief Allow to use `auto fn() -> Thread<void> { co_return; }`
+     * 
+     */
+    using promise_type = task::TaskPromise<T>;
+
     Thread(Thread &&) = default;
+    Thread() = default;
     ~Thread() = default;
 
     /**
@@ -224,6 +230,17 @@ public:
         mHandle->template setExecutor<E>();
         mHandle->start();
     }
+
+    /**
+     * @brief Start an new thread by given task
+     * @note We didn't add explicit to support `auto fn() -> Thread<void> { co_return; }` this usecase
+     * 
+     * @param task The task to run in a new thread
+     */
+    Thread(Task<T> task) : Thread([t = std::move(task)]() mutable {
+        ILIAS_ASSERT(t, "Can't create a thread with invalid task");
+        return std::move(t);
+    }) {}
 
     /**
      * @brief Check the thread is joinable
@@ -272,12 +289,6 @@ public:
     auto operator =(Thread &&) -> Thread & = default;
 
     /**
-     * @brief Check the thread is joinable
-     * 
-     */
-    explicit operator bool() const noexcept { return joinable(); }
-
-    /**
      * @brief Join the thread, as same as co_await thread.join()
      * 
      * @return co_await 
@@ -285,6 +296,12 @@ public:
     auto operator co_await() && -> task::ThreadAwaiter<T> { 
         return join();
     }
+
+    /**
+     * @brief Check the thread is joinable
+     * 
+     */
+    explicit operator bool() const noexcept { return joinable(); }
 private:
     task::ThreadHandle<T> mHandle;
 };
@@ -294,6 +311,9 @@ Thread(Fn fn, Args &&...args) -> Thread<typename std::invoke_result_t<Fn, Args..
 
 template <typename E, typename Fn, typename ...Args>
 Thread(UseExecutor<E>, Fn fn, Args &&...args) -> Thread<typename std::invoke_result_t<Fn, Args...>::value_type>;
+
+template <typename T>
+Thread(Task<T>) -> Thread<T>;
 
 template <typename E>
 auto useExecutor() -> UseExecutor<E> {

@@ -224,6 +224,7 @@ public:
     }
 private:
     Mutex mMutex;
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
     T     mValue;
 };
 

@@ -164,7 +164,7 @@ private:
 
 
 template <typename T>
-concept Sendable = std::movable<T> && (!std::is_reference_v<T>);
+concept Sendable = std::is_move_constructible_v<T> && (!std::is_reference_v<T>);
 
 template <Sendable T>
 class Sender;
