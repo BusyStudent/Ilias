@@ -153,7 +153,7 @@ private:
  * @brief The File class, used to represent a file stream
  * 
  */
-class File final : public StreamExt<File> {
+class File final : public StreamExt<File>, public SeekableExt<File> {
 public:
     File() = default;
     File(File &&) = default;
@@ -297,15 +297,6 @@ public:
             co_return Err(IoError::OperationNotSupported);
         }
         co_return fd_utils::truncate(fd(), size);
-    }
-
-    /**
-     * @brief Doing seek operation
-     * 
-     * @return IoTask<uint64_t> 
-     */
-    auto tell() -> IoTask<uint64_t> {
-        return seek(0, SeekOrigin::Current);
     }
 
     /**

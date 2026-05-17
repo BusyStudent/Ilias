@@ -27,7 +27,7 @@ namespace posix {
  * @brief The common base for aio awaiter
  * 
  */
-class AioAwaiterBase : public intrusive::Node<AioAwaiterBase>, 
+class AioAwaiterBase : public intrusive::ListNode<AioAwaiterBase>, 
                        public ::aiocb // The control block
 {
 public:

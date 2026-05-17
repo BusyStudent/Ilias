@@ -84,7 +84,7 @@ public:
             return -1;
         }
         len = std::min(len, span.size());
-        std::memcpy(data, span.data(), len);
+        ::memcpy(data, span.data(), len);
         mReadBuffer.consume(len);
         *ret = len;
         return 1;

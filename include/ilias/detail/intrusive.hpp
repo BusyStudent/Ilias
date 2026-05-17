@@ -16,11 +16,11 @@ namespace intrusive {
 ///   v                                       |
 /// Sentinel -> Node1 -> Node2 -> Node3 ------+
 ///
-class NodeBase {
+class ListNodeBase {
 public:
-    NodeBase() = default;
-    NodeBase(const NodeBase &) = delete;
-    NodeBase(NodeBase &&other) noexcept {
+    ListNodeBase() = default;
+    ListNodeBase(const ListNodeBase &) = delete;
+    ListNodeBase(ListNodeBase &&other) noexcept {
         if (!other.isLinked()) {
             mNext = this;
             mPrev = this;
@@ -38,7 +38,7 @@ public:
         other.mPrev = &other;
         other.mNext = &other;
     }
-    ~NodeBase() {
+    ~ListNodeBase() {
         unlink();
     }
 
@@ -60,7 +60,7 @@ public:
     }
 
     // Insert self after the where node
-    auto insertAfter(NodeBase *where) noexcept -> void {
+    auto insertAfter(ListNodeBase *where) noexcept -> void {
         unlink();
 
         // where -> this -> next
@@ -72,7 +72,7 @@ public:
     }
 
     // Insert self before the where node
-    auto insertBefore(NodeBase *where) noexcept -> void {
+    auto insertBefore(ListNodeBase *where) noexcept -> void {
         unlink();
 
         // prev -> this -> where
@@ -92,15 +92,15 @@ public:
         return mPrev;
     }
 
-    auto operator =(const NodeBase &) = delete;
-    auto operator =(NodeBase &&) = delete;
+    auto operator =(const ListNodeBase &) = delete;
+    auto operator =(ListNodeBase &&) = delete;
 private:
-    NodeBase *mPrev = this;
-    NodeBase *mNext = this;
+    ListNodeBase *mPrev = this;
+    ListNodeBase *mNext = this;
 };
 
 // The List Sentinel
-class ListBase : public NodeBase {
+class ListBase : public ListNodeBase {
 public:
     ListBase() = default;
     ListBase(ListBase &&) = default;
@@ -132,15 +132,15 @@ public:
 
 // User API
 template <typename T>
-class Node : protected NodeBase {
+class ListNode : protected ListNodeBase {
 public:
-    Node() = default;
-    Node(Node &&) = default;
-    ~Node() = default;
+    ListNode() = default;
+    ListNode(ListNode &&) = default;
+    ~ListNode() = default;
 
     // Re-export it
-    using NodeBase::isLinked;
-    using NodeBase::unlink;
+    using ListNodeBase::isLinked;
+    using ListNodeBase::unlink;
 
 template <typename U>
 friend class List;
@@ -150,7 +150,7 @@ friend class List;
 template <typename T>
 class List final : protected ListBase {
 public:
-    static_assert(std::is_base_of_v<Node<T>, T>, "The element T must be derived from Node<T>");
+    static_assert(std::is_base_of_v<ListNode<T>, T>, "The element T must be derived from ListNode<T>");
 
     List() = default;
     List(List &&) = default;
@@ -158,7 +158,7 @@ public:
 
     template <bool Const>
     struct Iterator {
-        using Ptr = std::conditional_t<Const, const NodeBase *, NodeBase *>;
+        using Ptr = std::conditional_t<Const, const ListNodeBase *, ListNodeBase *>;
         using Element = std::conditional_t<Const, const T, T>;
 
         auto operator ++() -> Iterator & { mCur = mCur->next(); return *this; }
@@ -187,8 +187,8 @@ public:
     auto end() const -> const_iterator { return {this}; }
 
     // Insert
-    auto push_back(T &node) -> void { static_cast<Node<T> &>(node).insertBefore(this); }
-    auto push_front(T &node) -> void { static_cast<Node<T> &>(node).insertAfter(this); }
+    auto push_back(T &node) -> void { static_cast<ListNode<T> &>(node).insertBefore(this); }
+    auto push_front(T &node) -> void { static_cast<ListNode<T> &>(node).insertAfter(this); }
 
     auto pop_front() -> void {
         ILIAS_ASSERT(!empty());
@@ -272,10 +272,10 @@ template <RefCountedLike T>
 class Rc final {
 public:
     Rc() = default;
+    Rc(std::nullptr_t) noexcept {}
     Rc(const Rc &other) noexcept : Rc(other.mPtr) {}
     Rc(Rc &&other) noexcept : mPtr(other.mPtr) { other.mPtr = nullptr; }
     Rc(T *obj) noexcept { reset(obj); }
-    Rc(std::nullptr_t) noexcept {}
     ~Rc() { reset(); }
 
     // Clear the Rc, and take the ownhip of the newObject (nullptr is ok)

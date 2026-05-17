@@ -10,7 +10,7 @@
  */
 #pragma once
 
-#include <ilias/detail/intrusive.hpp> // intrusive::Node
+#include <ilias/detail/intrusive.hpp> // intrusive::ListNode
 #include <ilias/io/system_error.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/log.hpp>
@@ -55,7 +55,7 @@ typedef struct _AFD_POLL_INFO {
  * @note CancelIoEx won't work on poll (because we actually submit this poll op is on the afd device), so use instrusive list to manage it
  * 
  */
-class AfdPollAwaiter final : public IocpAwaiter<AfdPollAwaiter>, public intrusive::Node<AfdPollAwaiter> {
+class AfdPollAwaiter final : public IocpAwaiter<AfdPollAwaiter>, public intrusive::ListNode<AfdPollAwaiter> {
 public:
     AfdPollAwaiter(HANDLE device, SOCKET sock, uint32_t events) : IocpAwaiter(device) {
         // Fill the info

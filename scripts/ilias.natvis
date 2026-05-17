@@ -20,7 +20,7 @@
 </Type>
 
 <!-- Intrusive ListNode -->
-<Type Name="ilias::intrusive::Node&lt;*&gt;" Inheritable="false">
+<Type Name="ilias::intrusive::ListNode&lt;*&gt;" Inheritable="false">
 	<Intrinsic Name="isLinked" Expression="mNext != this || mNext != this"></Intrinsic>
 	<DisplayString Condition="isLinked()">linked</DisplayString>
 	<DisplayString Condition="!isLinked()">not linked</DisplayString>

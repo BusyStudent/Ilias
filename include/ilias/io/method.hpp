@@ -443,6 +443,40 @@ public:
 
     auto operator <=>(const ReadableExt &rhs) const noexcept = default;
 };
+
+/**
+ * @brief Extension for Seekable types
+ * 
+ * @tparam T 
+ */
+template <typename T>
+class SeekableExt {
+public:
+    // MARK: Seekable
+    /**
+     * @brief Rewind the stream to the beginning
+     * @note equal to stream.seek(0, SeekOrigin::Begin)
+     * 
+     * @return IoTask<uint64_t>
+     */
+    template <char = 0>
+    auto rewind() -> IoTask<uint64_t> requires Seekable<T> {
+        return static_cast<T &>(*this).seek(0, SeekOrigin::Begin);
+    }
+
+    /**
+     * @brief Get the position of the stream cursor
+     * @note equal to stream.seek(0, SeekOrigin::Current)
+     * 
+     * @return IoTask<uint64_t> The position of the stream cursor
+     */
+    template <char = 0>
+    auto tell() -> IoTask<uint64_t> requires Seekable<T> {
+        return static_cast<T &>(*this).seek(0, SeekOrigin::Current);
+    }
+
+    auto operator <=>(const SeekableExt &rhs) const noexcept = default;
+};
             
 /**
  * @brief Extension for both Readable and Writable

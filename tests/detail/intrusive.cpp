@@ -3,7 +3,7 @@
 
 using namespace ilias::intrusive;
 
-struct ListElem : public Node<ListElem> {
+struct ListElem : public ListNode<ListElem> {
     ListElem(int val) : value(val) {}
     int value;
 };

@@ -25,7 +25,7 @@ namespace task {
 
 // Some containers
 using intrusive::RefCounted;
-using intrusive::Node;
+using intrusive::ListNode;
 using intrusive::List;
 using intrusive::Rc;
 
@@ -37,7 +37,7 @@ using runtime::CoroPromise;
 
 // Environment for the spawn task common part
 class TaskSpawnContextBase : public RefCounted<TaskSpawnContextBase>,
-                             public Node<TaskSpawnContextBase>,
+                             public ListNode<TaskSpawnContextBase>,
                              protected TaskContext
 {
 public:

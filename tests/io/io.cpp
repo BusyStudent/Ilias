@@ -284,6 +284,49 @@ ILIAS_TEST(Io, Writable) {
     }
 }
 
+ILIAS_TEST(Io, MemStream) {
+    using namespace std::literals;
+
+    {
+        auto reader = MemReader {"Hello, world!"s};
+
+        // Test Read
+        EXPECT_EQ(co_await reader.readU8(), 'H');
+        EXPECT_EQ(co_await reader.readU8(), 'e');
+
+        // Test Seek
+        EXPECT_TRUE(co_await reader.rewind());
+        auto content = std::string {};
+        EXPECT_TRUE(co_await reader.readToEnd(content));
+        EXPECT_EQ(content, "Hello, world!");
+
+        // Seek End
+        EXPECT_TRUE(co_await reader.seek(0, SeekOrigin::End));
+        EXPECT_EQ(co_await reader.tell(), 13);
+        EXPECT_FALSE(co_await reader.readU8()); // EOF
+
+        // Seek Current 
+        EXPECT_TRUE(co_await reader.seek(-1, SeekOrigin::Current));
+        EXPECT_EQ(co_await reader.readU8(), '!');
+    }
+    {
+        auto buffer = std::string {};
+        auto writer = MemWriter {std::ref(buffer)};
+
+        EXPECT_TRUE(co_await writer.writeString("Hello"));
+        EXPECT_EQ(buffer, "Hello");
+
+        EXPECT_TRUE(co_await writer.rewind());
+        EXPECT_TRUE(co_await writer.writeString("World"));
+        EXPECT_EQ(buffer, "World"); // Should be overwritten
+
+        // Seek End
+        EXPECT_TRUE(co_await writer.seek(0, SeekOrigin::End));
+        EXPECT_TRUE(co_await writer.writeString("Hello"));
+        EXPECT_EQ(buffer, "WorldHello");
+    }
+}
+
 TEST(Experimental, IoVec) {
     static_assert(std::is_trivially_destructible_v<IoVec>);
     static_assert(std::is_trivially_destructible_v<MutableIoVec>);

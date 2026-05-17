@@ -16,7 +16,7 @@ namespace sync {
 class WaitQueue;
 
 // The common base class for all waiters, (support blocking & async)
-class WaiterBase : public intrusive::Node<WaiterBase> {
+class WaiterBase : public intrusive::ListNode<WaiterBase> {
 public:
     WaiterBase(WaitQueue &queue) : mQueue(queue) {}
     WaiterBase(WaiterBase &&) = default;

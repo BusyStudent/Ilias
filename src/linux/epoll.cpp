@@ -26,7 +26,7 @@ namespace os_linux {
 
 class EpollDescriptor;
 
-class EpollAwaiter final : public intrusive::Node<EpollAwaiter> {
+class EpollAwaiter final : public intrusive::ListNode<EpollAwaiter> {
 public:
     EpollAwaiter(EpollDescriptor *fd, uint32_t events) : mFd(fd), mEvents(events) { }
 
