@@ -17,6 +17,17 @@
 
 ILIAS_NS_BEGIN
 
+// Helper for detection
+namespace detail {
+
+template <typename T>
+struct IsResult : std::false_type {};
+
+template <typename T, typename E>
+struct IsResult<ILIAS_EXPECTED_NAMESPACE::expected<T, E> > : std::true_type {};
+
+} // namespace detail
+
 namespace exp = ILIAS_EXPECTED_NAMESPACE;
 
 template <typename T, typename E>
@@ -34,5 +45,9 @@ using Unexpected [[deprecated("Use Err instead")]] = exp::unexpected<T>;
 
 template <typename E>
 using BadExpectedAccess [[deprecated("Use BadResultAccess instead")]] = exp::bad_expected_access<E>;
+
+// For detection
+template <typename T>
+concept IsResult = detail::IsResult<T>::value;
 
 ILIAS_NS_END

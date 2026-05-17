@@ -221,7 +221,7 @@ ILIAS_TEST(Io, Duplex) {
     EXPECT_EQ(co_await b.read(makeBuffer(tmp)), 0);
 }
 
-ILIAS_TEST(Io, ReadableView) {
+ILIAS_TEST(Io, Readable) {
     auto readOne = [](ReadableView view) -> Task<void> {
         EXPECT_EQ(co_await view.readU8(), 'H');
     };
@@ -245,9 +245,13 @@ ILIAS_TEST(Io, ReadableView) {
         auto dyn = DynStream {std::move(a)};
         co_await readOne(dyn);
     }
+    { // from DynReadable
+        auto reader = DynReadable {SpanReader{"Hello, world!"_bin}};
+        co_await readOne(reader);
+    }
 }
 
-ILIAS_TEST(Io, WritableView) {
+ILIAS_TEST(Io, Writable) {
     auto writeOne = [](WritableView view) -> Task<void> {
         EXPECT_TRUE(co_await view.writeU8('H'));
     };
@@ -271,6 +275,12 @@ ILIAS_TEST(Io, WritableView) {
         auto dyn = DynStream {std::move(b)};
         co_await writeOne(dyn);
         EXPECT_EQ(co_await a.readU8(), 'H');
+    }
+    { // The DynWritable
+        auto content = std::string {};
+        auto writer = DynWritable {StringWriter {content}};
+        co_await writeOne(writer);
+        EXPECT_EQ(content, "H");
     }
 }
 

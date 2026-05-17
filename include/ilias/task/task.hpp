@@ -105,44 +105,30 @@ public:
         mValue.emplace(std::forward<U>(value));
     }
 
+    // for Task<Result<T, E> >, provide await?
+    // co_yield (expression) -> xxx?
+    template <typename U, typename E> requires (
+        IsResult<T> &&                                 // T is a result type
+        std::convertible_to<E, typename T::error_type> // The E can be converted to the error type of T
+    )
+    auto yield_value(Result<U, E> result) noexcept(std::is_nothrow_move_constructible_v<T>) -> TaskTryAwaiter<U> {
+        if (!result) [[unlikely]] { // Error, early return
+            mValue.emplace(Err(std::move(result.error())));
+            return Option<U> {};
+        }
+        else { // Success
+            return makeOption([&]() {
+                return std::move(result).value();
+            });
+        }
+    }
+
     auto value() {
         this->rethrowIfAny();
         return std::move(*mValue);
     }
 private:
     std::optional<T> mValue;
-};
-
-// Return value part for Task<Result<T, E> >, provide await?
-template <typename T, typename E>
-class TaskPromiseBase<Result<T, E> > : public CoroPromise {
-public:
-    // co_return
-    auto return_value(Result<T, E> value) noexcept(std::is_nothrow_move_constructible_v<Result<T, E> >) {
-        mValue.emplace(std::move(value));
-    }
-
-    // co_yield (expression) -> xxx?
-    template <typename U, typename UE> requires (std::convertible_to<UE, E>)
-    auto yield_value(Result<U, UE> result) noexcept(std::is_nothrow_move_constructible_v<Result<T, E> >) {
-        if (!result) [[unlikely]] { // Error, early return
-            mValue.emplace(Err(std::move(result.error())));
-            return TaskTryAwaiter<U> {std::nullopt};
-        }
-        else { // Success
-            auto option = makeOption([&]() {
-                return std::move(result).value();
-            });
-            return TaskTryAwaiter<U> {std::move(option)};
-        }
-    }
-
-    auto value() {
-        this->rethrowIfAny();
-        return std::move(*mValue);
-    }
-private:
-    std::optional<Result<T, E> > mValue;
 };
 
 template <>
@@ -206,7 +192,7 @@ public:
     static auto cast(TaskHandle<> h) -> TaskHandle<T> {
         auto &promise = h.promise<promise_type>();
         auto handle = std::coroutine_handle<promise_type>::from_promise(promise);
-        return TaskHandle<T>(handle);
+        return handle;
     }
 };
 

@@ -51,11 +51,11 @@
         auto invoke = [&](auto callable) {                                          \
             auto task = makeTask(callable);                                         \
             if constexpr (std::is_same_v<decltype(task), ::ilias::Task<void> >) {   \
-                std::move(task).wait();                                             \
+                task.wait();                                                        \
                 return 0;                                                           \
             }                                                                       \
             else {                                                                  \
-                return std::move(task).wait();                                      \
+                return task.wait();                                                 \
             }                                                                       \
         };                                                                          \
         return invoke(_ilias_main);                                                 \
