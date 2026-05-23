@@ -318,8 +318,7 @@ public:
     
     auto operator =(Rc &&other) noexcept -> Rc & {
         if (this != &other) {
-            reset();
-            mPtr = std::exchange(other.mPtr, nullptr);
+            swap(other);
         }
         return *this;
     }

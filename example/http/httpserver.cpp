@@ -47,8 +47,8 @@ auto sendReply(BufStream<TcpStream> &stream, int statusCode, std::span<const std
         int(content.size())
     );
     auto buffer = std::string_view {headers};
-    ILIAS_CO_TRY (co_await stream.writeAll(makeBuffer(buffer)));
-    ILIAS_CO_TRY (co_await stream.writeAll(content));
+    ILIAS_CO_TRYX(co_await stream.writeAll(makeBuffer(buffer)));
+    ILIAS_CO_TRYX(co_await stream.writeAll(content));
     co_return {};
 }
 

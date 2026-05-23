@@ -35,12 +35,12 @@
 
 // Exception check
 #if !defined(__cpp_exceptions)
+    #define ILIAS_TRY_EXCEPTION if constexpr(true)
     #define ILIAS_THROW(...) ::abort()
-    #define ILIAS_TRY if constexpr(true)
     #define ILIAS_CATCH(...) if constexpr(false)
 #else
+    #define ILIAS_TRY_EXCEPTION try
     #define ILIAS_THROW(...) throw(__VA_ARGS__)
-    #define ILIAS_TRY try
     #define ILIAS_CATCH(...) catch(__VA_ARGS__)
 #endif
 
@@ -113,6 +113,8 @@
 #endif // ILIAS_STATIC
 
 // Utils macro
+#define ILIAS_CONCAT_IMPL(a, b) a##b
+#define ILIAS_CONCAT(a, b) ILIAS_CONCAT_IMPL(a, b)
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT(x, msg) // For old code
 #define ILIAS_STRINGIFY_(x) #x
 #define ILIAS_STRINGIFY(x) ILIAS_STRINGIFY_(x)

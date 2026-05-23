@@ -296,9 +296,7 @@ ILIAS_TEST(Io, MemStream) {
 
         // Test Seek
         EXPECT_TRUE(co_await reader.rewind());
-        auto content = std::string {};
-        EXPECT_TRUE(co_await reader.readToEnd(content));
-        EXPECT_EQ(content, "Hello, world!");
+        EXPECT_EQ(co_await reader.readTo<std::string>(), "Hello, world!");
 
         // Seek End
         EXPECT_TRUE(co_await reader.seek(0, SeekOrigin::End));
@@ -324,6 +322,14 @@ ILIAS_TEST(Io, MemStream) {
         EXPECT_TRUE(co_await writer.seek(0, SeekOrigin::End));
         EXPECT_TRUE(co_await writer.writeString("Hello"));
         EXPECT_EQ(buffer, "WorldHello");
+    }
+
+    {
+        // Test copy
+        auto reader = MemReader {"Hello, world!"sv};
+        auto writer = MemWriter {std::string {} };
+        EXPECT_TRUE(co_await io::copy(writer, reader));
+        EXPECT_EQ(writer.buffer(), "Hello, world!"sv);
     }
 }
 

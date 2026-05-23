@@ -159,7 +159,7 @@ auto WaitQueue::blockingWait(Fn pred) -> void {
 // LCOV_EXCL_START
 #if !defined(NDEBUG)
     if (runtime::Executor::currentThread() != nullptr) { // Current thread has executor
-        static constinit bool once = false;
+        static thread_local constinit bool once = false;
         if (!once) {
             once = true;
             ILIAS_WARN("Sync", "Current thread have executor, The blockingWait may cause deadlock");

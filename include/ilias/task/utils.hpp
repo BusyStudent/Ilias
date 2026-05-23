@@ -5,12 +5,13 @@
 #include <ilias/runtime/coro.hpp>
 #include <ilias/task/when_any.hpp>
 #include <ilias/task/task.hpp>
-#include <chrono> // std::chrono::milliseconds
+#include <chrono> // std::chrono::nanoseconds
 
 ILIAS_NS_BEGIN
 
 namespace task {
 
+// MARK: Unstoppable
 template <typename T>
 class UnstoppableAwaiter final {
 public:
@@ -50,6 +51,7 @@ private:
     TaskAwaiter<T> mAwaiter;
 };
 
+// MARK: Map
 // Add an sync map handler to awaitable
 template <typename T, typename Fn>
 class MapAwaiter final {
@@ -85,6 +87,7 @@ private:
     Fn             mFn;
 };
 
+// MARK: Schedule
 // Schedule task on another executor
 class ScheduleAwaiterBase : private TaskContext {
 public:
@@ -137,6 +140,7 @@ public:
     }
 };
 
+// MARK: Finally
 // Add an async cleanup handler to an awaitable
 class FinallyAwaiterBase {
 public:
@@ -223,6 +227,7 @@ private:
     Option<T> mValue;
 };
 
+// MARK: StopToken
 // Implement await on an stop token
 class StopTokenAwaiter final {
 public:

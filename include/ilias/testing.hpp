@@ -41,7 +41,7 @@
 #define ILIAS_TEST_IMPL(prefix, ...)                                  \
     static auto _ilias_test_##prefix() -> ::ilias::Task<void>;        \
     __VA_ARGS__ {                                                     \
-        ILIAS_TRY {                                                   \
+        ILIAS_TRY_EXCEPTION {                                         \
             _ilias_test_##prefix().wait();                            \
         }                                                             \
         ILIAS_CATCH (::ilias::BadResultAccess<std::error_code> &e) {  \

@@ -254,9 +254,9 @@ auto TracingWebUi::Impl::sendReply(BufStream<TcpStream> &stream, int status, std
         contentType,
         body.size()
     );
-    ILIAS_CO_TRY(co_await stream.writeAll(ilias::makeBuffer(header)));
+    ILIAS_CO_TRYX(co_await stream.writeAll(ilias::makeBuffer(header)));
     if (!body.empty()) {
-        ILIAS_CO_TRY(co_await stream.writeAll(ilias::makeBuffer(body)));
+        ILIAS_CO_TRYX(co_await stream.writeAll(ilias::makeBuffer(body)));
     }
     co_return {};
 }
@@ -270,7 +270,7 @@ auto TracingWebUi::Impl::onChildBegin(runtime::CoroContext &ctxt) noexcept -> vo
 auto TracingWebUi::Impl::onChildEnd(runtime::CoroContext &ctxt) noexcept -> void     { observe(EventKind::ChildEnd, ctxt); }
 
 auto TracingWebUi::Impl::observe(EventKind kind, runtime::CoroContext &ctxt) noexcept -> void {
-    ILIAS_TRY { observeImpl(kind, ctxt); }
+    ILIAS_TRY_EXCEPTION { observeImpl(kind, ctxt); }
     ILIAS_CATCH (...) {}
 }
 

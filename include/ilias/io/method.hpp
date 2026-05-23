@@ -194,6 +194,23 @@ inline auto readToEnd(T &stream, Container &container) -> IoTask<size_t> {
     }
 }
 
+/**
+ * @brief Read all data from stream to an container
+ * 
+ * @tparam T 
+ * @tparam Container 
+ * @param stream The stream to read from
+ * @return IoTask<Container> The container containing all data read, or error if any read fails
+ */
+template <MemWritable Container, Readable T>
+inline auto readTo(T &stream) -> IoTask<Container> {
+    Container c;
+    if (auto res = co_await readToEnd(stream, c); !res) {
+        co_return Err(res.error());
+    }
+    co_return c;
+}
+
 // MARK: BufReadable
 /**
  * @brief Read a line from stream and append to string
@@ -391,6 +408,18 @@ public:
     template <MemWritable Container>
     auto readToEnd(Container &container) -> IoTask<size_t> requires(Readable<T>) {
         return io::readToEnd(static_cast<T &>(*this), container);
+    }
+
+    /**
+     * @brief Read all data from stream to container
+     * @note equal to io::readTo<Container>(stream)
+     * 
+     * @tparam Container
+     * @return IoTask<Container>
+     */
+    template <MemWritable Container>
+    auto readTo() -> IoTask<Container> requires(Readable<T>) {
+        return io::readTo<Container>(static_cast<T &>(*this));
     }
 
     /**

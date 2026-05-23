@@ -35,44 +35,6 @@
     #define ILIAS_CORO_ELIDABLE_ARGUMENT
 #endif // __has_cpp_attribute(clang::coro_await_elidable_argument)
 
-// Clang supports statement expressions with coroutine keywords;
-// GCC ICEs on it (all versions as of trunk). Everyone else uses co_yield fallback.
-#if defined(__clang__)
-    #define ILIAS_CO_TRY_IMPL(...) ({                          \
-        auto _res = (__VA_ARGS__);                             \
-        if (!_res) {                                           \
-            co_return ::ilias::Err(std::move(_res).error());   \
-        }                                                      \
-                                                               \
-        std::move(_res).value();                               \
-    })
-#else
-    #define ILIAS_CO_TRY_IMPL(...) (co_yield(__VA_ARGS__))
-#endif
-
-/**
- * @brief Unwrap an expected/optional value inside a coroutine, short-circuiting on error.
- * 
- * Analogous to Rust's `?` operator. If the expression yields a value, it is unwrapped
- * and returned as the result of the macro invocation. If the expression yields an error,
- * the enclosing coroutine immediately completes with that error propagated to the caller.
- * 
- * @param ... An expression that evaluates to an expected-like type (e.g. `Result<T, E>`, `Option<T>`).
- *            May include `co_await` subexpressions.
- * 
- * @note This macro expands to a `co_yield` expression or `co_return` and is only valid inside a coroutine
- *       whose promise type provides a compatible `yield_value()` overload.
- * 
- * @code
- *   auto example() -> IoTask<int> {
- *       auto val  = ILIAS_CO_TRY(co_await fetchData());
- *       auto parsed = ILIAS_CO_TRY(parse(val));
- *       co_return parsed + 1;
- *   }
- * @endcode
- */
-#define ILIAS_CO_TRY(...) ILIAS_CO_TRY_IMPL(__VA_ARGS__)
-
 ILIAS_NS_BEGIN
 
 namespace task {
@@ -343,7 +305,7 @@ public:
         }
     }
     auto operator()() noexcept {
-        ILIAS_TRY {
+        ILIAS_TRY_EXCEPTION {
             mValue = makeOption([&]() { return mFn(); });
         }
         ILIAS_CATCH (...) {

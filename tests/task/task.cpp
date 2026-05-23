@@ -27,7 +27,15 @@ auto testOk() -> Task<Result<int, double> > {
         co_await sleep(1ms); // Add more complexity
         co_return 42;
     };
-    auto val = ILIAS_CO_TRY(co_await ok());
+    // TRYX
+    auto val = ILIAS_CO_TRYX(co_await ok());
+    // TRYV
+    ILIAS_CO_TRYV(co_await ok());
+    // TRY
+    ILIAS_CO_TRY(auto v, co_await ok());
+    ILIAS_CO_TRY(auto u, co_await ok());
+    assert(val == v);
+    assert(v == u);
     co_return val;
 }
 
@@ -36,7 +44,7 @@ auto testErr() -> Task<Result<void, int> > {
         co_await sleep(1ms);
         co_return Err(114514);
     };
-    ILIAS_CO_TRY(co_await err());
+    ILIAS_CO_TRYX(co_await err());
     co_return {};
 }
 

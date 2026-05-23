@@ -47,7 +47,7 @@ auto TaskSpawnContextBase::onComplete() -> void {
     // TRACING: trace the completion point
     runtime::tracing::taskComplete(*this);
 
-    if (use_count() == 1) { // We are the last one, only can be deref in the event loop
+    if (this->use_count() == 1) { // We are the last one, only can be deref in the event loop
         executor().schedule([this]() { 
             this->deref();
         });
@@ -464,7 +464,7 @@ auto ThreadBase::start() -> void {
         executor->install();
 
         // Start
-        ILIAS_TRY {
+        ILIAS_TRY_EXCEPTION {
             auto taskHandle = spawn(mInvoke(*this));
             auto stopHandle = StopHandle {taskHandle};
             auto cb = runtime::StopCallback(mSource.get_token(), [&]() {
@@ -508,11 +508,11 @@ auto ThreadBase::setName(std::string_view name) -> void {
         if constexpr (std::is_same_v<T, HANDLE>) { // Normal msvc
             return handle;
         }
-    #if defined(__MINGW32__) // Handle the mingw
+#if defined(__MINGW32__) // Handle the mingw
         if constexpr (std::is_same_v<T, pthread_t>) {
             return ::pthread_gethandle(handle);
         }
-    #endif // __MINGW32__
+#endif // __MINGW32__
         else {
             static_assert(std::is_same_v<decltype(handle), void>, "Unsupport thread handle type");
         }

@@ -320,7 +320,7 @@ private:
     [[ILIAS_NO_UNIQUE_ADDRESS]] // The ExceptionPtr will be empty class if disabled
     ExceptionPtr       mException = nullptr;
     void             (*mCompletionHandler)(CoroContext &) = nullptr; // Called when coroutine is completed, stopped is not completed for promise
-    bool               mDone = false; // Logical done, used for ILIAS_CO_TRY
+    bool               mDone = false; // Logical done, used for ILIAS_CO_TRYx
 protected: // protected ...
     [[ILIAS_NO_UNIQUE_ADDRESS]] // The CaptureSource will be std::monostate if disabled, so add it
     CaptureSource           mCreation = {}; // The source of the coroutine creation
