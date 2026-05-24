@@ -31,18 +31,19 @@
 #endif
 
 // Impl TRY...
-#define ILIAS_CO_TRY_IMPL(var, tmp, ...)                   \
+#define ILIAS_BASIC_TRY_IMPL(var, tmp, ret, ...)           \
     auto tmp = (__VA_ARGS__);                              \
     if (!tmp) {                                            \
-        co_return ::ilias::Err(std::move(tmp).error());    \
+        ret ::ilias::Err(std::move(tmp).error());          \
     }                                                      \
+    static_cast<void>(tmp);                                \
     var = std::move(*tmp)
 
 // Impl TRYV...
-#define ILIAS_CO_TRYV_IMPL(...)                                \
+#define ILIAS_BASIC_TRYV_IMPL(ret, ...)                        \
     do {                                                       \
         if (auto _res = (__VA_ARGS__); !_res) {                \
-            co_return ::ilias::Err(std::move(_res).error());   \
+            ret ::ilias::Err(std::move(_res).error());         \
         }                                                      \
     } while (false)
 
@@ -86,7 +87,7 @@
  *   }
  * @endcode
  */
-#define ILIAS_CO_TRY(var, ...) ILIAS_CO_TRY_IMPL(var, ILIAS_CONCAT(_tmp, __LINE__), __VA_ARGS__)
+#define ILIAS_CO_TRY(var, ...) ILIAS_BASIC_TRY_IMPL(var, ILIAS_CONCAT(_tmp_, __LINE__), co_return, __VA_ARGS__)
 
 /**
  * @brief Check an expected/optional result inside a coroutine and discard the success value.
@@ -111,12 +112,28 @@
  *   }
  * @endcode
  */
-#define ILIAS_CO_TRYV(...) ILIAS_CO_TRYV_IMPL(__VA_ARGS__)
+#define ILIAS_CO_TRYV(...) ILIAS_BASIC_TRYV_IMPL(co_return, __VA_ARGS__)
 
-// Short name
-#define ILIAS_TRY(...)  ILIAS_CO_TRY(__VA_ARGS__)
-#define ILIAS_TRYV(...) ILIAS_CO_TRYV(__VA_ARGS__)
-#define ILIAS_TRYX(...) ILIAS_CO_TRYX(__VA_ARGS__)
+// Sync version
+/**
+ * @brief Unwrap an expected/optional value inside a coroutine and bind it to a local variable.
+ *
+ * @param var The name of the local variable to declare.
+ * @param ... An expression that evaluates to an expected-like type, such as
+ *            `Result<T, E>`.
+ *
+ * @note This macro is only valid inside a normal function.
+ *
+ * @code
+ *   auto example() -> int {
+ *       ILIAS_TRY(auto data, fetchData());
+ *       ILIAS_TRY(auto value, parse(data));
+ *       return value + 1;
+ *   }
+ * @endcode
+ */
+#define ILIAS_TRY(var, ...)  ILIAS_BASIC_TRY_IMPL(var, ILIAS_CONCAT(_tmp_, __LINE__), return, __VA_ARGS__)
+#define ILIAS_TRYV(...) ILIAS_BASIC_TRYV_IMPL(return, __VA_ARGS__)
 
 ILIAS_NS_BEGIN
 

@@ -56,11 +56,8 @@ public:
      * @return IoTask<Poller> 
      */
     static auto make(fd_t fd, IoDescriptor::Type type = IoDescriptor::Unknown) -> IoTask<Poller> {
-        auto handle = IoHandle<fd_t>::make(fd, type);
-        if (!handle) {
-            co_return Err(handle.error());
-        }
-        co_return Poller {std::move(*handle)};
+        ILIAS_CO_TRY(auto handle, IoHandle<fd_t>::make(fd, type));
+        co_return Poller {std::move(handle)};
     }
 
 #if defined(_WIN32)

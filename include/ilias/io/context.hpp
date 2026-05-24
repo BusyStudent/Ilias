@@ -319,13 +319,10 @@ public:
      * @return IoResult<IoHandle<T> > 
      */
     static auto make(IoContext &ctxt, T fd, IoDescriptor::Type type = IoDescriptor::Unknown) -> IoResult<IoHandle<T> > {
-        auto desc = ctxt.addDescriptor(fd_t(fd), type);
-        if (!desc) {
-            return Err(desc.error());
-        }
+        ILIAS_TRY(auto desc, ctxt.addDescriptor(fd_t(fd), type));
         return IoHandle<T> {
             std::move(fd),
-            IoDescriptor::Ptr {*desc, IoDescriptor::Deleter {&ctxt} }
+            IoDescriptor::Ptr {desc, IoDescriptor::Deleter {&ctxt} }
         };
     }
 

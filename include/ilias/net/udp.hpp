@@ -37,11 +37,8 @@ public:
      */
     auto recvfrom(MutableBuffer buffer) const -> IoTask<std::pair<size_t, IPEndpoint> > {
         IPEndpoint endpoint;
-        auto n = co_await mHandle.recvfrom(buffer, 0, &endpoint);
-        if (!n) {
-            co_return Err(n.error());
-        }
-        co_return std::make_pair(n.value(), endpoint);
+        ILIAS_CO_TRY(auto n, co_await mHandle.recvfrom(buffer, 0, &endpoint));
+        co_return std::pair {n, endpoint};
     }
 
     /**
@@ -70,11 +67,8 @@ public:
         IPEndpoint endpoint;
         msg.setBuffers(sequence);
         msg.setEndpoint(endpoint);
-        auto n = co_await mHandle.recvmsg(msg, 0);
-        if (!n) {
-            co_return Err(n.error());
-        }
-        co_return std::make_pair(n.value(), endpoint);
+        ILIAS_CO_TRY(auto n, co_await mHandle.recvmsg(msg, 0));
+        co_return std::pair {n, endpoint};
     }
 
     /**
@@ -145,11 +139,8 @@ public:
      * @return IoTask<UdpSocket> 
      */
     static auto bind(IPEndpoint endpoint) -> IoTask<UdpSocket> {
-        auto sockfd = Socket::make(endpoint.family(), SOCK_DGRAM, IPPROTO_UDP);
-        if (!sockfd) {
-            co_return Err(sockfd.error());
-        }
-        co_return bindImpl(std::move(*sockfd), endpoint);
+        ILIAS_CO_TRY(auto sockfd, Socket::make(endpoint.family(), SOCK_DGRAM, IPPROTO_UDP));
+        co_return bindImpl(std::move(sockfd), endpoint);
     }
 
     /**
@@ -162,17 +153,9 @@ public:
      */
     template <typename Fn> requires (std::invocable<Fn, SocketView>)
     static auto bind(IPEndpoint endpoint, Fn fn) -> IoTask<UdpSocket> {
-        auto sockfd = Socket::make(endpoint.family(), SOCK_DGRAM, IPPROTO_UDP)
-            .and_then([&](Socket self) -> IoResult<Socket> {
-                if (auto res = fn(SocketView(self)); !res) {
-                    return Err(res.error());
-                }
-                return self;
-            });
-        if (!sockfd) {
-            co_return Err(sockfd.error());
-        }
-        co_return bindImpl(std::move(*sockfd), endpoint);
+        ILIAS_CO_TRY(auto sockfd, Socket::make(endpoint.family(), SOCK_DGRAM, IPPROTO_UDP));
+        ILIAS_CO_TRYV(fn(SocketView {sockfd}));
+        co_return bindImpl(std::move(sockfd), endpoint);
     }
 
     /**
@@ -185,11 +168,8 @@ public:
         if (socket.type() != SOCK_DGRAM) {
             return Err(IoError::InvalidArgument);
         }
-        auto handle = IoHandle<Socket>::make(std::move(socket), IoDescriptor::Socket);
-        if (!handle) {
-            return Err(handle.error());
-        }
-        return UdpSocket(std::move(*handle));
+        ILIAS_TRY(auto handle, IoHandle<Socket>::make(std::move(socket), IoDescriptor::Socket));
+        return UdpSocket {std::move(handle)};
     }
 
     /**
@@ -201,14 +181,9 @@ public:
     explicit operator bool() const { return bool(mHandle); }
 private:
     static auto bindImpl(Socket sockfd, const IPEndpoint &endpoint) -> IoResult<UdpSocket> {
-        if (auto res = sockfd.bind(endpoint); !res) {
-            return Err(res.error());
-        }
-        auto handle = IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket);
-        if (!handle) {
-            return Err(handle.error());
-        }
-        return UdpSocket(std::move(*handle));
+        ILIAS_TRYV(sockfd.bind(endpoint));
+        ILIAS_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
+        return UdpSocket {std::move(handle)};
     }
 
     IoHandle<Socket> mHandle;

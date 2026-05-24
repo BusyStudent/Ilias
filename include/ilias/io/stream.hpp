@@ -502,16 +502,12 @@ public:
     auto write(Buffer buffer) -> IoTask<size_t> {
         // Bigger than capacity / 2, write directly
         if (buffer.size() >= mBuffer.maxCapacity() / 2) {
-            if (auto res = co_await flush(); !res) {
-                co_return Err(res.error());
-            }
+            ILIAS_CO_TRYV(co_await flush());
             co_return co_await mStream.write(buffer);
         }
         // No room in buffer
         if (mBuffer.maxCapacity() - mBuffer.size() < buffer.size()) {
-            if (auto res = co_await flush(); !res) {
-                co_return Err(res.error());
-            }
+            ILIAS_CO_TRYV(co_await flush());
         }
         // Copy into buffer
         auto data = mBuffer.prepare(buffer.size());
@@ -522,22 +518,17 @@ public:
 
     auto flush() -> IoTask<void> {
         while (!mBuffer.empty()) {
-            auto n = co_await mStream.write(mBuffer.data());
-            if (!n) {
-                co_return Err(n.error());
-            }
-            if (*n == 0) {
+            ILIAS_CO_TRY(auto n, co_await mStream.write(mBuffer.data()));
+            if (n == 0) {
                 co_return Err(IoError::WriteZero);
             }
-            mBuffer.consume(*n);
+            mBuffer.consume(n);
         }
         co_return co_await mStream.flush();
     }
 
     auto shutdown() -> IoTask<void> {
-        if (auto res = co_await flush(); !res) {
-            co_return Err(res.error());
-        }
+        ILIAS_CO_TRYV(co_await flush());
         co_return co_await mStream.shutdown();
     }
 
@@ -548,9 +539,7 @@ public:
 
     // Expose Seekable if the stream is seekable
     auto seek(int64_t offset, SeekOrigin origin) -> IoTask<uint64_t> requires Seekable<T> {
-        if (auto res = co_await flush(); !res) {
-            co_return Err(res.error());
-        }
+        ILIAS_CO_TRYV(co_await flush());
         co_return co_await mStream.seek(offset, origin);
     }
 

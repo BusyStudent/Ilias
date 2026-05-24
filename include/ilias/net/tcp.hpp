@@ -186,18 +186,10 @@ public:
      * @return IoTask<TcpStream> 
      */
     static auto connect(IPEndpoint endpoint) -> IoTask<TcpStream> {
-        auto sockfd = Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP);
-        if (!sockfd) {
-            co_return Err(sockfd.error());
-        }
-        auto handle = IoHandle<Socket>::make(std::move(*sockfd), IoDescriptor::Socket);
-        if (!handle) {
-            co_return Err(handle.error());
-        }
-        if (auto res = co_await handle->connect(endpoint); !res) {
-            co_return Err(res.error());
-        }
-        co_return TcpStream(std::move(*handle));
+        ILIAS_CO_TRY(auto sockfd, Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP));
+        ILIAS_CO_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
+        ILIAS_CO_TRYV(co_await handle.connect(endpoint));
+        co_return TcpStream {std::move(handle)};
     }
 
     /**
@@ -253,11 +245,11 @@ public:
      */
     auto accept() const -> IoTask<std::pair<TcpStream, IPEndpoint> > {
         IPEndpoint endpoint;
-        auto client = co_await accept(&endpoint);
-        if (!client) {
-            co_return Err(client.error());
-        }
-        co_return std::make_pair(std::move(*client), endpoint);
+        ILIAS_CO_TRY(auto client, co_await accept(&endpoint));
+        co_return std::pair {
+            TcpStream {std::move(client)},
+            endpoint
+        };
     }
 
     /**
@@ -267,15 +259,9 @@ public:
      * @return IoTask<TcpStream> 
      */
     auto accept(IPEndpoint *endpoint) const -> IoTask<TcpStream> {
-        auto sockfd = co_await mHandle.accept(endpoint);
-        if (!sockfd) {
-            co_return Err(sockfd.error());
-        }
-        auto handle = IoHandle<Socket>::make(Socket(std::move(*sockfd)), IoDescriptor::Socket);
-        if (!handle) {
-            co_return Err(handle.error());
-        }
-        co_return TcpStream(std::move(*handle));
+        ILIAS_CO_TRY(auto sockfd, co_await mHandle.accept(endpoint));
+        ILIAS_CO_TRY(auto handle, IoHandle<Socket>::make(Socket {sockfd}, IoDescriptor::Socket));
+        co_return TcpStream {std::move(handle)};
     }
 
     /**
@@ -315,11 +301,8 @@ public:
      * @return IoTask<TcpListener> 
      */
     static auto bind(IPEndpoint endpoint, int backlog = SOMAXCONN) -> IoTask<TcpListener> {
-        auto sockfd = Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP);
-        if (!sockfd) {
-            co_return Err(sockfd.error());
-        }
-        co_return bindImpl(std::move(*sockfd), endpoint, backlog);
+        ILIAS_CO_TRY(auto sockfd, Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP));
+        co_return bindImpl(std::move(sockfd), endpoint, backlog);
     }
 
     /**
@@ -333,34 +316,23 @@ public:
      */
     template <typename Fn> requires(std::invocable<Fn, SocketView>)
     static auto bind(IPEndpoint endpoint, int backlog, Fn fn) -> IoTask<TcpListener> {
-        auto sockfd = Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP)
-            .and_then([&](Socket self) -> IoResult<Socket> {
-                if (auto res = fn(SocketView(self)); !res) {
-                    return Err(res.error());
-                }
-                return self;
-            });
-        if (!sockfd) {
-            co_return Err(sockfd.error());
-        }
-        co_return bindImpl(std::move(*sockfd), endpoint, backlog);
+        ILIAS_CO_TRY(auto sockfd, Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP));
+        ILIAS_CO_TRYV(fn(SocketView {sockfd}));
+        co_return bindImpl(std::move(sockfd), endpoint, backlog);
     }
 
     /**
      * @brief Wrap a socket in a TcpListener.
      * 
-     * @param socket The socket must be SOCK_STREAM. otherwise, IoError::InvalidArgument will be returned.
+     * @param sockfd The socket must be SOCK_STREAM. otherwise, IoError::InvalidArgument will be returned.
      * @return IoResult<TcpListener> 
      */
-    static auto from(Socket socket) -> IoResult<TcpListener> {
-        if (socket.type() != SOCK_STREAM) {
+    static auto from(Socket sockfd) -> IoResult<TcpListener> {
+        if (sockfd.type() != SOCK_STREAM) {
             return Err(IoError::InvalidArgument);
         }
-        auto handle = IoHandle<Socket>::make(std::move(socket), IoDescriptor::Socket);
-        if (!handle) {
-            return Err(handle.error());
-        }
-        return TcpListener(std::move(*handle));
+        ILIAS_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
+        return TcpListener {std::move(handle)};
     }
 
     /**
@@ -373,17 +345,10 @@ public:
 private:
     // Common part of it
     static auto bindImpl(Socket sockfd, const IPEndpoint &endpoint, int backlog) -> IoResult<TcpListener> {
-        if (auto res = sockfd.bind(endpoint); !res) {
-            return Err(res.error());
-        }
-        if (auto res = sockfd.listen(backlog); !res) {
-            return Err(res.error());
-        }
-        auto handle = IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket);
-        if (!handle) {
-            return Err(handle.error());
-        }
-        return TcpListener(std::move(*handle));
+        ILIAS_TRYV(sockfd.bind(endpoint));
+        ILIAS_TRYV(sockfd.listen(backlog));
+        ILIAS_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
+        return TcpListener {std::move(handle)};
     }
 
     IoHandle<Socket> mHandle;

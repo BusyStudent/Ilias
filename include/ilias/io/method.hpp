@@ -80,15 +80,12 @@ template <Writable T>
 inline auto writeAll(T &stream, Buffer buffer) -> IoTask<size_t> {
     size_t written = 0;
     while (!buffer.empty()) {
-        auto n = co_await stream.write(buffer);
-        if (!n) {
-            co_return Err(n.error());
-        }
-        if (*n == 0) {
+        ILIAS_CO_TRY(auto n, co_await stream.write(buffer));
+        if (n == 0) {
             co_return Err(IoError::WriteZero);
         }
-        written += *n;
-        buffer = buffer.subspan(*n);
+        written += n;
+        buffer = buffer.subspan(n);
     }
     co_return written;
 }
@@ -108,9 +105,7 @@ inline auto writeInt(T &stream, Int value) -> IoTask<void> {
     if constexpr (std::endian::native != E) {
         value = byteswap(value);
     }
-    if (auto res = co_await io::writeAll(stream, makeBuffer(&value, sizeof(value))); !res) {
-        co_return Err(res.error());
-    }
+    ILIAS_CO_TRYV(co_await io::writeAll(stream, makeBuffer(&value, sizeof(value))));
     co_return {};
 }
 
@@ -127,15 +122,12 @@ template <Readable T>
 inline auto readAll(T &stream, MutableBuffer buffer) -> IoTask<size_t> {
     size_t read = 0;
     while (!buffer.empty()) {
-        auto n = co_await stream.read(buffer);
-        if (!n) {
-            co_return Err(n.error());
-        }
-        if (*n == 0) {
+        ILIAS_CO_TRY(auto n, co_await stream.read(buffer));
+        if (n == 0) {
             co_return Err(IoError::UnexpectedEOF);
         }
-        read += *n;
-        buffer = buffer.subspan(*n);
+        read += n;
+        buffer = buffer.subspan(n);
     }
     co_return read;
 }
@@ -152,9 +144,7 @@ inline auto readAll(T &stream, MutableBuffer buffer) -> IoTask<size_t> {
 template <std::endian E, std::integral Int, Readable T>
 inline auto readInt(T &stream) -> IoTask<Int> {
     Int value {};
-    if (auto res = co_await io::readAll(stream, makeBuffer(&value, sizeof(value))); !res) {
-        co_return Err(res.error());
-    }
+    ILIAS_CO_TRYV(co_await io::readAll(stream, makeBuffer(&value, sizeof(value))));
     if constexpr (std::endian::native != E) {
         value = byteswap(value);
     }
@@ -205,9 +195,7 @@ inline auto readToEnd(T &stream, Container &container) -> IoTask<size_t> {
 template <MemWritable Container, Readable T>
 inline auto readTo(T &stream) -> IoTask<Container> {
     Container c;
-    if (auto res = co_await readToEnd(stream, c); !res) {
-        co_return Err(res.error());
-    }
+    ILIAS_CO_TRYV(co_await io::readToEnd(stream, c));
     co_return c;
 }
 
@@ -225,17 +213,14 @@ template <BufReadable T>
 inline auto readline(T &stream, std::string &str, std::string_view delim = "\n") -> IoTask<size_t> {
     size_t readed = 0;
     while (true) {
-        auto buf = co_await stream.fill(FillPolicy::None);
-        if (!buf) {
-            co_return Err(buf.error());
-        }
-        if (buf->empty() && readed != 0) { // EOF, but we have readed some data
+        ILIAS_CO_TRY(auto buf, co_await stream.fill(FillPolicy::None));
+        if (buf.empty() && readed != 0) { // EOF, but we have readed some data
             co_return readed;
         }
-        if (buf->empty()) { // EOF
+        if (buf.empty()) { // EOF
             co_return Err(IoError::UnexpectedEOF);
         }
-        auto view = std::string_view {reinterpret_cast<const char *>(buf->data()), buf->size()};
+        auto view = std::string_view {reinterpret_cast<const char *>(buf.data()), buf.size()};
         auto pos = view.find(delim);
         if (pos == std::string_view::npos) {
             str.append(view);
@@ -265,10 +250,7 @@ inline auto readline(T &stream, std::string &str, std::string_view delim = "\n")
 template <BufReadable T>
 inline auto getline(T &stream, std::string_view delim = "\n") -> IoTask<std::string> {
     std::string str {};
-    auto res = co_await io::readline(stream, str, delim);
-    if (!res) {
-        co_return Err(res.error());
-    }
+    ILIAS_CO_TRYV(co_await io::readline(stream, str, delim));
     if (str.ends_with(delim)) {
         str.resize(str.size() - delim.size());
     }
@@ -291,17 +273,12 @@ inline auto copy(T &dst, U &src) -> IoTask<size_t> {
     std::byte buffer[1024 * 8]; // 8KB buffer, change the size if needed
     size_t written = 0;
     while (true) {
-        auto readed = co_await src.read(buffer);
-        if (!readed) {
-            co_return Err(readed.error());
-        }
-        if (*readed == 0) { // EOF
+        ILIAS_CO_TRY(auto readed, co_await src.read(buffer));
+        if (readed == 0) { // EOF
             break;
         }
-        if (auto res = co_await io::writeAll(dst, std::span{buffer}.subspan(0, *readed)); !res) {
-            co_return Err(res.error());
-        }
-        written += *readed;
+        ILIAS_CO_TRYV(co_await io::writeAll(dst, std::span{buffer}.subspan(0, readed)));
+        written += readed;
     }
     co_return written;
 }

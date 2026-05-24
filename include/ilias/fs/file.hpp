@@ -192,9 +192,9 @@ public:
      * @return IoTask<size_t> 
      */
     auto write(Buffer buffer) -> IoTask<size_t> {
-        auto res = co_await mHandle.write(buffer, mOffset);
-        if (res && mOffset) {
-            *mOffset += *res;
+        ILIAS_CO_TRY(auto res, co_await mHandle.write(buffer, mOffset));
+        if (mOffset) {
+            *mOffset += res;
         }
         co_return res;
     }
@@ -275,11 +275,8 @@ public:
             case SeekOrigin::Begin: now = offset; break;
             case SeekOrigin::Current: now += offset; break;
             case SeekOrigin::End: {
-                auto s = co_await size();
-                if (!s) {
-                    co_return Err(s.error());
-                }
-                now = *s + offset;
+                ILIAS_CO_TRY(auto s, co_await size());
+                now = s + offset;
             }
         }
         mOffset = std::max<int64_t>(0, now);
@@ -495,17 +492,13 @@ inline auto OpenOptions::doOpen(OpenOptions self, fs::Path path) -> IoTask<File>
 #endif // defined(_WIN32)
 
     // Wrap the file descriptor
-    auto handle = IoHandle<FileDescriptor>::make(FileDescriptor {fd}, IoDescriptor::File);
-    if (!handle) {
-        co_return Err(handle.error());
-    }
-
+    ILIAS_CO_TRY(auto handle, IoHandle<FileDescriptor>::make(FileDescriptor {fd}, IoDescriptor::File));
 
     std::optional<uint64_t> off;
     // Check if the file is a regular file (support offset)
     // Copy the lowlevel offset from the fd, and let us manage it
     if (self.mAppend) { // Append mode, the offset is not available
-        co_return File {std::move(*handle), std::nullopt};
+        co_return File {std::move(handle), std::nullopt};
     }
 #if defined(_WIN32)
     if (::GetFileType(fd) == FILE_TYPE_DISK) {
@@ -525,7 +518,7 @@ inline auto OpenOptions::doOpen(OpenOptions self, fs::Path path) -> IoTask<File>
     }
 #endif // defined(_WIN32)
 
-    co_return File {std::move(*handle), off};
+    co_return File {std::move(handle), off};
 }
 
 // Predefined open options
