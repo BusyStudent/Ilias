@@ -1,6 +1,9 @@
 #pragma once
 
 #include <ilias/defines.hpp>
+#include <type_traits>
+#include <optional>
+#include <utility>
 
 #if defined(ILIAS_USE_ZEUS_EXPECTED)
     #include <zeus/expected.hpp>
@@ -21,7 +24,7 @@
     #define ILIAS_CO_TRYX_IMPL(...) ({                         \
         auto _res = (__VA_ARGS__);                             \
         if (!_res) {                                           \
-            co_return ::ilias::Err(std::move(_res).error());   \
+            co_return ::ilias::makeErr(std::move(_res));       \
         }                                                      \
                                                                \
         std::move(_res).value();                               \
@@ -34,7 +37,7 @@
 #define ILIAS_BASIC_TRY_IMPL(var, tmp, ret, ...)           \
     auto tmp = (__VA_ARGS__);                              \
     if (!tmp) {                                            \
-        ret ::ilias::Err(std::move(tmp).error());          \
+        ret ::ilias::makeErr(std::move(tmp));              \
     }                                                      \
     static_cast<void>(tmp);                                \
     var = std::move(*tmp)
@@ -43,7 +46,7 @@
 #define ILIAS_BASIC_TRYV_IMPL(ret, ...)                        \
     do {                                                       \
         if (auto _res = (__VA_ARGS__); !_res) {                \
-            ret ::ilias::Err(std::move(_res).error());         \
+            ret ::ilias::makeErr(std::move(_res));             \
         }                                                      \
     } while (false)
 
@@ -54,7 +57,7 @@
  * and returned as the result of the macro invocation. If the expression yields an error,
  * the enclosing coroutine immediately completes with that error propagated to the caller.
  * 
- * @param ... An expression that evaluates to an expected-like type (e.g. `Result<T, E>`).
+ * @param ... An expression that evaluates to an expected-like type (e.g. `Result<T, E>`, `std::optional<T>`).
  *            May include `co_await` subexpressions.
  * 
  * @note This macro expands to a `co_yield` expression or `co_return` and is only valid inside a coroutine
@@ -106,8 +109,8 @@
  *
  * @code
  *   auto example() -> IoTask<void> {
- *       ILIAS_TRYV(co_await connect());
- *       ILIAS_TRYV(co_await sendRequest());
+ *       ILIAS_CO_TRYV(co_await connect());
+ *       ILIAS_CO_TRYV(co_await sendRequest());
  *       co_return {};
  *   }
  * @endcode
@@ -125,7 +128,7 @@
  * @note This macro is only valid inside a normal function.
  *
  * @code
- *   auto example() -> int {
+ *   auto example() -> IoResult<int> {
  *       ILIAS_TRY(auto data, fetchData());
  *       ILIAS_TRY(auto value, parse(data));
  *       return value + 1;
@@ -133,6 +136,30 @@
  * @endcode
  */
 #define ILIAS_TRY(var, ...)  ILIAS_BASIC_TRY_IMPL(var, ILIAS_CONCAT(_tmp_, __LINE__), return, __VA_ARGS__)
+
+/**
+ * @brief Check an expected/optional result inside a coroutine and discard the success value.
+ *
+ * It evaluates the given expression and continues execution if the expression succeeds.
+ * If the expression contains an error, the enclosing coroutine immediately completes by
+ * propagating that error to the caller.
+ *
+ * Use this macro when the success value is not needed, or when the expression returns
+ * a void-like result such as `Result<void, E>`.
+ *
+ * @param ... An expression that evaluates to an expected-like type, such as
+ *            `Result<T, E>`.
+ *
+ * @note This macro is only valid inside a normal function.
+ *
+ * @code
+ *   auto example() -> IoResult<void> {
+ *       ILIAS_TRYV(connect());
+ *       ILIAS_TRYV(sendRequest());
+ *       return {};
+ *   }
+ * @endcode
+ */
 #define ILIAS_TRYV(...) ILIAS_BASIC_TRYV_IMPL(return, __VA_ARGS__)
 
 ILIAS_NS_BEGIN
@@ -168,6 +195,19 @@ using BadExpectedAccess [[deprecated("Use BadResultAccess instead")]] = exp::bad
 
 // For detection
 template <typename T>
-concept IsResult = detail::IsResult<T>::value;
+concept IsResult = detail::IsResult<std::remove_cv_t<T> >::value;
+
+// Utils function to make error, used in TRY macro
+template <typename T, typename E>
+inline auto makeErr(Result<T, E> result) -> Err<E> {
+    ILIAS_ASSUME(!result, "The result should contains a error");
+    return Err(std::move(result.error()));
+}
+
+template <typename T>
+inline auto makeErr(std::optional<T> option) -> std::nullopt_t {
+    ILIAS_ASSUME(!option, "The option should be empty");
+    return std::nullopt;
+}
 
 ILIAS_NS_END

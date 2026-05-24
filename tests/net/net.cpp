@@ -414,18 +414,18 @@ ILIAS_TEST(Net, Timers) {
     auto _ = co_await whenAll(sleep(10ms), sleep(20ms), sleep(30ms));
 }
 
-ILIAS_TEST(Net, Http) {
-    auto info = (co_await AddressInfo::fromHostname("www.baidu.com", "http")).value();
-    auto client = (co_await TcpStream::connect(info.endpoints().at(0))).value();
-    auto stream = BufStream(std::move(client));
+ILIAS_RTEST(Net, Http) {
+    ILIAS_CO_TRY(auto info, co_await AddressInfo::fromHostname("www.baidu.com", "http"));
+    ILIAS_CO_TRY(auto client, co_await TcpStream::connect(info.endpoints().at(0)));
+    auto stream = BufStream {std::move(client)};
 
     // Prepare payload
-    (co_await stream.writeAll("GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n"_bin)).value();
-    (co_await stream.flush()).value();
+    ILIAS_CO_TRYV(co_await stream.writeAll("GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n"_bin));
+    ILIAS_CO_TRYV(co_await stream.flush());
 
     // Read response
     while (true) {
-        auto line = (co_await stream.getline("\r\n")).value();
+        ILIAS_CO_TRY(auto line, co_await stream.getline("\r\n"));
         if (line.empty()) { // Header end
             break;
         }
@@ -433,12 +433,13 @@ ILIAS_TEST(Net, Http) {
     }
     char buffer[4096] {};
     while (true) {
-        auto size = (co_await stream.read(makeBuffer(buffer))).value();
+        ILIAS_CO_TRY(auto size, co_await stream.read(makeBuffer(buffer)));
         if (size == 0) {
             break;
         }
         std::cout << std::string_view(buffer, size) << std::endl;
     }
+    co_return {};
 }
 
 class IoEventLoop : public ProxyContext {

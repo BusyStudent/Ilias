@@ -59,9 +59,51 @@
     static auto _ilias_test_##prefix() -> ::ilias::Task<void>
 
 /**
+ * @brief The implementation of ILIAS_RTEST
+ * 
+ */
+#define ILIAS_RTEST_IMPL(prefix, ...)                                 \
+    static auto _ilias_rtest_##prefix() -> ::ilias::IoTask<void>;     \
+    __VA_ARGS__ {                                                     \
+        std::error_code ec {};                                        \
+        ILIAS_TRY_EXCEPTION {                                         \
+            auto res = _ilias_rtest_##prefix().wait();                \
+            ec = res.error_or(std::error_code {});                    \
+        }                                                             \
+        ILIAS_CATCH (::ilias::BadResultAccess<std::error_code> &e) {  \
+            ec = e.error();                                           \
+        }                                                             \
+        if (ec) {                                                     \
+            std::fprintf(                                             \
+                stderr,                                               \
+                "[ilias::Test(%s)] Err %s: (%s)\n",                   \
+                #prefix,                                              \
+                ec.category().name(),                                 \
+                ec.message().c_str()                                  \
+            );                                                        \
+            FAIL();                                                   \
+        }                                                             \
+    }                                                                 \
+    static auto _ilias_rtest_##prefix() -> ::ilias::IoTask<void>
+
+/**
  * @brief Create a async test case with gtest
  * 
  * @param name The test suite name
  * @param test The test name
  */
 #define ILIAS_TEST(name, test) ILIAS_TEST_IMPL(name##_##test, TEST(name, test))
+
+/**
+ * @brief Create a result based test case with gtest
+ * @param name The test suite name
+ * @param test The test name
+ * 
+ * @code
+ *  ILIAS_RTEST(MyTest, MyTest) {
+ *    if (auto res = co_await doSth(); !res) co_return Err(res.error()); 
+ *    co_return {};
+ *  }
+ * @endcode
+ */
+#define ILIAS_RTEST(name, test) ILIAS_RTEST_IMPL(name##_##test, TEST(name, test))

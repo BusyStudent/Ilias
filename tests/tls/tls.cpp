@@ -16,14 +16,9 @@ using namespace std::literals;
 // Test Client / Server
 auto onServer(TlsContext &tlsCtxt, DuplexStream duplexStream) -> IoTask<void> {
     auto stream = TlsStream {tlsCtxt, std::move(duplexStream)};
-    if (auto res = co_await stream.handshake(TlsRole::Server); !res) {
-        co_return Err(res.error());
-    }
+    ILIAS_CO_TRYV(co_await stream.handshake(TlsRole::Server));
     // Read the hello world
-    auto content = std::string {};
-    if (auto res = co_await stream.readToEnd(content); !res) {
-        co_return Err(res.error());
-    }
+    ILIAS_CO_TRY(auto content, co_await stream.readTo<std::string>());
     EXPECT_EQ(content, "Hello World");
     co_return {};
 }
@@ -31,19 +26,11 @@ auto onServer(TlsContext &tlsCtxt, DuplexStream duplexStream) -> IoTask<void> {
 auto onClient(TlsContext &tlsCtxt, DuplexStream duplexStream) -> IoTask<void> {
     auto stream = TlsStream {tlsCtxt, std::move(duplexStream)};
     stream.setHostname("localhost");
-    if (auto res = co_await stream.handshake(TlsRole::Client); !res) {
-        co_return Err(res.error());
-    }
+    ILIAS_CO_TRYV(co_await stream.handshake(TlsRole::Client));
     // Send hello world and read back
-    if (auto res = co_await stream.writeAll("Hello World"_bin); !res) {
-        co_return Err(res.error());
-    }
-    if (auto res = co_await stream.flush(); !res) {
-        co_return Err(res.error());
-    }
-    if (auto res = co_await stream.shutdown(); !res) {
-        co_return Err(res.error());
-    }
+    ILIAS_CO_TRYV(co_await stream.writeAll("Hello World"_bin));
+    ILIAS_CO_TRYV(co_await stream.flush());
+    ILIAS_CO_TRYV(co_await stream.shutdown());
     co_return {};
 }
 
@@ -66,28 +53,28 @@ ILIAS_TEST(Tls, Local) {
     EXPECT_TRUE(server);
 }
 
-auto doHttps(TlsContext &tlsCtxt, std::string_view hostname) -> Task<void> {
-    auto info = (co_await AddressInfo::fromHostname(hostname, "https")).value();
-    auto client = (co_await TcpStream::connect(info.endpoints().at(0))).value();
+auto doHttps(TlsContext &tlsCtxt, std::string_view hostname) -> IoTask<void> {
+    ILIAS_CO_TRY(auto info, co_await AddressInfo::fromHostname(hostname, "https"));
+    ILIAS_CO_TRY(auto client, co_await TcpStream::connect(info.endpoints().at(0)));
     auto ssl = TlsStream {tlsCtxt, std::move(client)};
 
     // Do ssl here
     auto alpn = std::to_array({"http/1.1"sv});
     ssl.setHostname(hostname);
     ssl.setAlpnProtocols(alpn);
-    (co_await ssl.handshake(TlsRole::Client)).value();
+    ILIAS_CO_TRYV(co_await ssl.handshake(TlsRole::Client));
 
     std::cout << "Alpn Result : " << ssl.alpnSelected() << std::endl;
 
     // Prepare payload, as same as Http
     auto stream = BufStream {std::move(ssl)};
     auto headers = "GET / HTTP/1.1\r\nHost: " + std::string(hostname) + "\r\nConnection: close\r\n\r\n";
-    (co_await stream.writeAll(makeBuffer(headers))).value();
-    (co_await stream.flush()).value();
+    ILIAS_CO_TRYV(co_await stream.writeAll(makeBuffer(headers)));
+    ILIAS_CO_TRYV(co_await stream.flush());
 
     auto contentLength = std::optional<size_t> {};
     while (true) {
-        auto line = (co_await stream.getline("\r\n")).value();
+        ILIAS_CO_TRY(auto line, co_await stream.getline("\r\n"));
         if (line.empty()) { // Header end
             break;
         }
@@ -114,21 +101,22 @@ auto doHttps(TlsContext &tlsCtxt, std::string_view hostname) -> Task<void> {
     if (contentLength) {
         EXPECT_EQ(readed, *contentLength);
     }
+    co_return {};
 }
 
 ILIAS_TEST(Tls, Https) {
     auto ctxt = TlsContext {};
-    co_await doHttps(ctxt, "www.baidu.com");
+    EXPECT_TRUE(co_await doHttps(ctxt, "www.baidu.com"));
 }
 
 ILIAS_TEST(Tls, Tls1_3) {
     auto ctxt = TlsContext {};
-    co_await doHttps(ctxt, "websocket.org"); // This website support tls1.3
+    EXPECT_TRUE(co_await doHttps(ctxt, "websocket.org")); // This website support tls1.3
 }
 
 ILIAS_TEST(Tls, NoVerify) {
     auto ctxt = TlsContext { TlsContext::NoVerify };
-    co_await doHttps(ctxt, "expired.badssl.com");
+    EXPECT_TRUE(co_await doHttps(ctxt, "expired.badssl.com"));
 }
 #endif // ILIAS_TLS
 
