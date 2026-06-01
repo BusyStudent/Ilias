@@ -254,9 +254,9 @@ auto TracingWebUi::Impl::sendReply(BufStream<TcpStream> &stream, int status, std
         contentType,
         body.size()
     );
-    ILIAS_CO_TRYX(co_await stream.writeAll(ilias::makeBuffer(header)));
+    ILIAS_CO_TRYV(co_await stream.writeAll(ilias::makeBuffer(header)));
     if (!body.empty()) {
-        ILIAS_CO_TRYX(co_await stream.writeAll(ilias::makeBuffer(body)));
+        ILIAS_CO_TRYV(co_await stream.writeAll(ilias::makeBuffer(body)));
     }
     co_return {};
 }

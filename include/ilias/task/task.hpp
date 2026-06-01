@@ -67,24 +67,6 @@ public:
         mValue.emplace(std::forward<U>(value));
     }
 
-    // for Task<Result<T, E> >, provide await?
-    // co_yield (expression) -> xxx?
-    template <typename U, typename E> requires (
-        IsResult<T> &&                                 // T is a result type
-        std::convertible_to<E, typename T::error_type> // The E can be converted to the error type of T
-    )
-    auto yield_value(Result<U, E> result) noexcept(std::is_nothrow_move_constructible_v<T>) -> TaskTryAwaiter<U> {
-        if (!result) [[unlikely]] { // Error, early return
-            mValue.emplace(Err(std::move(result.error())));
-            return Option<U> {};
-        }
-        else { // Success
-            return makeOption([&]() {
-                return std::move(result).value();
-            });
-        }
-    }
-
     auto value() {
         this->rethrowIfAny();
         return std::move(*mValue);
@@ -321,25 +303,6 @@ private:
     Fn mFn; // The function to call
 };
 
-// Awaiter for try expression, co_yield (expression) -> xxx?
-template <typename T>
-class TaskTryAwaiter final {
-public:
-    TaskTryAwaiter(Option<T> value) : mValue(std::move(value)) {}
-    TaskTryAwaiter(TaskTryAwaiter &&) = default;
-
-    auto await_ready() const noexcept { return mValue.has_value(); }
-    auto await_suspend(CoroHandle caller) {
-        return caller.promise().final(); // Mark the caller as final and switch to the next frame
-    }
-    auto await_resume() noexcept -> T {
-        ILIAS_ASSUME(mValue, "Resume without value, internal bug"); // LCOV_EXCL_LINE
-        return unwrapOption(std::move(mValue));
-    }
-private:
-    Option<T> mValue;
-};
-
 // Tags here
 struct ToTaskTags {};
 
@@ -448,7 +411,7 @@ friend class task::TaskPromise<T>;
 template <std::invocable Fn>
 [[nodiscard]]
 inline auto blocking(Fn fn) {
-    return task::TaskBlockingAwaiter<decltype(fn)> {std::move(fn)};
+    return task::TaskBlockingAwaiter<Fn> {std::move(fn)};
 }
 
 // Sleep for a duration

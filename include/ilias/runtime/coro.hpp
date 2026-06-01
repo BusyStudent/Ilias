@@ -282,7 +282,6 @@ public:
     // Doing sth before the coroutine starts
     auto init() noexcept -> void {
         ILIAS_ASSERT(mContext, "Coroutine context must be set before coroutine starts");
-        ILIAS_ASSERT(!mDone, "Coroutine already done, memory corruption ???");
 #if defined(ILIAS_CORO_TRACE)
         // TRACING: Push the frame, we are start now
         if (mContext->mSuspended) {
@@ -295,8 +294,6 @@ public:
 
     // Doing sth after the coroutine done
     auto final() noexcept -> std::coroutine_handle<> {
-        ILIAS_ASSERT(!mDone, "Coroutine already done, internal BUG!!!");
-        mDone = true;
         if (mCompletionHandler) {
             mCompletionHandler(*mContext);
         }
@@ -320,7 +317,6 @@ private:
     [[ILIAS_NO_UNIQUE_ADDRESS]] // The ExceptionPtr will be empty class if disabled
     ExceptionPtr       mException = nullptr;
     void             (*mCompletionHandler)(CoroContext &) = nullptr; // Called when coroutine is completed, stopped is not completed for promise
-    bool               mDone = false; // Logical done, used for ILIAS_CO_TRYx
 protected: // protected ...
     [[ILIAS_NO_UNIQUE_ADDRESS]] // The CaptureSource will be std::monostate if disabled, so add it
     CaptureSource           mCreation = {}; // The source of the coroutine creation
@@ -345,7 +341,7 @@ public:
 
     // std coroutine interface
     auto done() const noexcept {
-        return mHandle.done() || promise().mDone;
+        return mHandle.done();
     }
 
     auto resume() const noexcept {

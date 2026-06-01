@@ -19,4 +19,5 @@
 #include <ilias/sync.hpp>
 #include <ilias/net.hpp>
 #include <ilias/tls.hpp>
+#include <ilias/fs.hpp>
 #include <ilias/io.hpp>

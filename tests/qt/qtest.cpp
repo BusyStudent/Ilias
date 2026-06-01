@@ -41,16 +41,17 @@ void Testing::testTimer() {
 void Testing::testTcp() {
     // Test sending and receiving data
     auto server = [](TcpListener listener) -> IoTask<void> {
-        auto [peer, _] = ILIAS_CO_TRYX(co_await listener.accept());
+        ILIAS_CO_TRY(auto peer, co_await listener.accept());
+        auto &[conn, _] = peer;
         auto buffer = "Hello World"_bin;
-        ILIAS_CO_TRYX(co_await peer.writeAll(buffer));
+        ILIAS_CO_TRYV(co_await conn.writeAll(buffer));
         co_return {};
 
     };
     auto client = [](IPEndpoint endpoint) -> IoTask<void> {
-        auto stream = ILIAS_CO_TRYX(co_await TcpStream::connect(endpoint));
+        ILIAS_CO_TRY(auto stream, co_await TcpStream::connect(endpoint));
         auto str = std::string {};
-        ILIAS_CO_TRYX(co_await stream.readToEnd(str));
+        ILIAS_CO_TRYV(co_await stream.readToEnd(str));
         if (str != "Hello World") {
             co_return Err(IoError::Other);
         }
@@ -58,8 +59,8 @@ void Testing::testTcp() {
     };
     auto fn = [&]() -> IoTask<void> {
         // Prepare the listener
-        auto listener = ILIAS_CO_TRYX(co_await TcpListener::bind("127.0.0.1:0"));
-        auto endpoint = ILIAS_CO_TRYX(listener.localEndpoint());
+        ILIAS_CO_TRY(auto listener, co_await TcpListener::bind("127.0.0.1:0"));
+        ILIAS_CO_TRY(auto endpoint, listener.localEndpoint());
 
         // Connect to it
         auto [c, s] = co_await whenAll(
@@ -67,8 +68,8 @@ void Testing::testTcp() {
             server(std::move(listener))
         );
         // Check it
-        ILIAS_CO_TRYX(c);
-        ILIAS_CO_TRYX(s);
+        ILIAS_CO_TRYV(c);
+        ILIAS_CO_TRYV(s);
         co_return {};
     };
     auto result = fn().wait();
@@ -101,7 +102,7 @@ void Testing::testStream() {
         ilias_qt::StreamAdapter stream {&buffer};
 
         auto str = std::string {};
-        ILIAS_CO_TRYX(co_await stream.readToEnd(str));
+        ILIAS_CO_TRYV(co_await stream.readToEnd(str));
         co_return {};
     };
     QVERIFY(fn().wait());
@@ -113,8 +114,8 @@ void Testing::testStream() {
         buffer.open(QIODevice::WriteOnly);
         ilias_qt::StreamAdapter stream {&buffer};
 
-        ILIAS_CO_TRYX(co_await stream.writeAll("Hello World"_bin));
-        ILIAS_CO_TRYX(co_await stream.flush());
+        ILIAS_CO_TRYV(co_await stream.writeAll("Hello World"_bin));
+        ILIAS_CO_TRYV(co_await stream.flush());
         co_return {};
     };
     QVERIFY(fn2().wait());
@@ -136,7 +137,7 @@ void Testing::testStream() {
 
         auto stream = ilias_qt::StreamAdapter {reply};
         auto string = std::string {};
-        ILIAS_CO_TRYX(co_await stream.readToEnd(string));
+        ILIAS_CO_TRYV(co_await stream.readToEnd(string));
         co_return {};
     };
     QVERIFY(fn3().wait());

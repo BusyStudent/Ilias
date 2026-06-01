@@ -18,21 +18,6 @@
 #error "This library need C++20 CTAD for aggregates and aliases"
 #endif // __cpp_deduction_guides
 
-// Clang supports statement expressions with coroutine keywords;
-// GCC ICEs on it (all versions as of trunk). Everyone else uses co_yield fallback.
-#if defined(__clang__)
-    #define ILIAS_CO_TRYX_IMPL(...) ({                         \
-        auto _res = (__VA_ARGS__);                             \
-        if (!_res) {                                           \
-            co_return ::ilias::makeErr(std::move(_res));       \
-        }                                                      \
-                                                               \
-        std::move(_res).value();                               \
-    })
-#else
-    #define ILIAS_CO_TRYX_IMPL(...) (co_yield(__VA_ARGS__))
-#endif
-
 // Impl TRY...
 #define ILIAS_BASIC_TRY_IMPL(var, tmp, ret, ...)           \
     auto tmp = (__VA_ARGS__);                              \
@@ -49,29 +34,6 @@
             ret ::ilias::makeErr(std::move(_res));             \
         }                                                      \
     } while (false)
-
-/**
- * @brief Unwrap an expected/optional value inside a coroutine, short-circuiting on error.
- * 
- * Analogous to Rust's `?` operator. If the expression yields a value, it is unwrapped
- * and returned as the result of the macro invocation. If the expression yields an error,
- * the enclosing coroutine immediately completes with that error propagated to the caller.
- * 
- * @param ... An expression that evaluates to an expected-like type (e.g. `Result<T, E>`, `std::optional<T>`).
- *            May include `co_await` subexpressions.
- * 
- * @note This macro expands to a `co_yield` expression or `co_return` and is only valid inside a coroutine
- *       whose promise type provides a compatible `yield_value()` overload.
- * 
- * @code
- *   auto example() -> IoTask<int> {
- *       auto val  = ILIAS_CO_TRYX(co_await fetchData());
- *       auto parsed = ILIAS_CO_TRYX(parse(val));
- *       co_return parsed + 1;
- *   }
- * @endcode
- */
-#define ILIAS_CO_TRYX(...) ILIAS_CO_TRYX_IMPL(__VA_ARGS__)
 
 /**
  * @brief Unwrap an expected/optional value inside a coroutine and bind it to a local variable.
@@ -209,5 +171,9 @@ inline auto makeErr(std::optional<T> option) -> std::nullopt_t {
     ILIAS_ASSUME(!option, "The option should be empty");
     return std::nullopt;
 }
+
+// Did you forget to use co_await ?
+template <typename T>
+inline auto makeErr(Task<T> task) -> T = delete;
 
 ILIAS_NS_END
