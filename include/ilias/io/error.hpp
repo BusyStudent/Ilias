@@ -4,11 +4,6 @@
 #include <system_error>
 #include <string>
 
-#define ILIAS_DECLARE_ERROR(errc, category)                                     \
-    inline auto _ilias_error_category_of(errc) -> const std::error_category & { \
-        return category::instance();                                            \
-    }                                                                           \
-
 ILIAS_NS_BEGIN
 
 // Result for doing io operations
@@ -23,25 +18,20 @@ using IoTask = Task<IoResult<T> >;
 template <typename T>
 using IoGenerator = Generator<IoResult<T> >;
 
-// Interop with std::error_code
-template <typename T>
-concept IntoError = requires(T t) {
-    _ilias_error_category_of(t);  // Get the error category of T
-};
-
 /**
  * @brief The error category for io operations
  * 
  */
-class ILIAS_API IoCategory final : public std::error_category {
+class IoCategory final : public std::error_category {
 public:
-    constexpr IoCategory() {}
-
     auto name() const noexcept -> const char* override;
     auto message(int value) const -> std::string override;
     auto equivalent(int value, const std::error_condition &other) const noexcept -> bool override;
 
+    ILIAS_API
     static auto instance() noexcept -> const IoCategory &;
+private:
+    constexpr IoCategory() {}
 };
 
 /**
@@ -127,7 +117,7 @@ public:
     auto operator <=>(const IoError &other) const noexcept = default;
 
     explicit operator int() const noexcept { 
-        return int(mErr);
+        return static_cast<int>(mErr);
     }
 private:
     Code mErr = Ok;
@@ -147,15 +137,20 @@ inline auto toKind(IoError::Code err) noexcept -> std::error_condition {
     return {static_cast<int>(err), IoCategory::instance()};
 }
 
-ILIAS_DECLARE_ERROR(IoError::Code, IoCategory);
-ILIAS_DECLARE_ERROR(IoError, IoCategory);
+// ADL for error code
+inline auto make_error_code(IoError err) noexcept -> std::error_code {
+    return {static_cast<int>(err), IoCategory::instance()};
+}
 
-template <IntoError T>
-inline auto make_error_code(T t) noexcept -> std::error_code {
-    return {static_cast<int>(t), _ilias_error_category_of(t)};
+inline auto make_error_code(IoError::Code err) noexcept -> std::error_code {
+    return {static_cast<int>(err), IoCategory::instance()};
 }
 
 ILIAS_NS_END
 
-template <ilias::IntoError T> 
-struct std::is_error_code_enum<T> : std::true_type {};
+// Interop with std::error_code
+template <> 
+struct std::is_error_code_enum<ilias::IoError> : std::true_type {};
+
+template <> 
+struct std::is_error_code_enum<ilias::IoError::Code> : std::true_type {};

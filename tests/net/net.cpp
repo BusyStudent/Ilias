@@ -314,6 +314,13 @@ ILIAS_TEST(Net, GetAddrInfo) {
         EXPECT_EQ(info.error(), GaiError::NotFound);
         std::cout << info.error().message() << std::endl;
     }
+    {
+        auto info = co_await AddressInfo::lookup("www.baidu.com:80");
+        EXPECT_TRUE(info);
+        for (auto endpoint : info.value()) {
+            std::cout << endpoint.toString() << std::endl;
+        }
+    }
 }
 
 ILIAS_TEST(Net, Tcp) {

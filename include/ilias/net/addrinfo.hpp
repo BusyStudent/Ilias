@@ -12,13 +12,14 @@
 #pragma once
 
 #include <ilias/net/endpoint.hpp>
-#include <ilias/net/system.hpp> // for
+#include <ilias/net/system.hpp> // for System
 #include <ilias/task/task.hpp> // for Task
 #include <ilias/io/error.hpp> // for IoResult
 #include <optional>
 
 #if defined(_WIN32)
     #define ILIAS_ADDRINFO ::ADDRINFOEXW
+    #include <ilias/detail/win32defs.hpp>
 #else
     #define ILIAS_ADDRINFO ::addrinfo
     #include <csignal>
@@ -48,17 +49,16 @@ enum class GaiError : int {
  * @brief Error for getaddrinfo and getnameinfo
  * 
  */
-class ILIAS_API GaiCategory final : public std::error_category {
+class GaiCategory final : public std::error_category {
 public:
-    constexpr GaiCategory() noexcept {}
-
-    auto name() const noexcept -> const char* override;
+    auto name() const noexcept -> const char * override;
     auto message(int value) const -> std::string override;
 
+    ILIAS_API
     static auto instance() noexcept -> const GaiCategory &;
+private:
+    constexpr GaiCategory() noexcept {}
 };
-
-ILIAS_DECLARE_ERROR(GaiError, GaiCategory);
 
 /**
  * @brief Wrapper for addrinfo
@@ -111,22 +111,13 @@ public:
     explicit operator bool() const noexcept;
 
     /**
-     * @brief Try get the address info by it asynchronously
+     * @brief Async lookup the address info by given host
      * 
-     * @param name The hostname string
-     * @param family 
+     * @param host The host (such as "localhost:1145")
+     * @param hints The hints for getaddrinfo
      * @return IoTask<AddressInfo> 
      */
-    static auto fromHostname(std::string_view name, int family = AF_UNSPEC) -> IoTask<AddressInfo>;
-
-    /**
-     * @brief Try get the address info by it
-     * 
-     * @param name The hostname string
-     * @param family 
-     * @return IoResult<AddressInfo> 
-     */
-    static auto fromHostnameBlocking(std::string_view name, int family = AF_UNSPEC) -> IoResult<AddressInfo>;
+    static auto lookup(std::string_view host, std::optional<addrinfo_t> hints = {}) -> IoTask<AddressInfo>;
 
     /**
      * @brief Wrapping the raw getaddrinfo asynchronously
@@ -136,7 +127,7 @@ public:
      * @param hints 
      * @return IoTask<AddressInfo> 
      */
-    static auto fromHostname(std::string_view name, std::string_view service, std::optional<addrinfo_t> hints = {}) -> IoTask<AddressInfo>;
+    static auto fromHostname(std::string_view name, std::string_view service = {}, std::optional<addrinfo_t> hints = {}) -> IoTask<AddressInfo>;
 
     /**
      * @brief Wrapping the raw getaddrinfo
@@ -146,7 +137,7 @@ public:
      * @param hint 
      * @return IoResult<AddressInfo> 
      */
-    static auto fromHostnameBlocking(std::string_view name, std::string_view service, std::optional<addrinfo_t> hints = {}) -> IoResult<AddressInfo>;
+    static auto fromHostnameBlocking(std::string_view name, std::string_view service = {}, std::optional<addrinfo_t> hints = {}) -> IoResult<AddressInfo>;
 private:
     struct FreeInfo {
         auto operator ()(addrinfo_t *info) const noexcept -> void {
@@ -189,19 +180,25 @@ inline auto AddressInfo::canonicalName() const -> std::string {
 #endif // _WIN32
 }
 
-inline auto AddressInfo::fromHostnameBlocking(std::string_view hostname, int family) -> IoResult<AddressInfo> {
-    addrinfo_t hints {
-        .ai_family = family,
-    };
-    return fromHostnameBlocking(hostname, {}, hints);
+inline auto AddressInfo::lookup(std::string_view host, std::optional<addrinfo_t> hints) -> IoTask<AddressInfo> {
+    std::string_view name;
+    std::string_view service;
+    if (auto sep = host.rfind(':'); sep != std::string_view::npos) {
+        name = host.substr(0, sep);
+        service = host.substr(sep + 1);
+    }
+    else {
+        name = host;
+    }
+    return AddressInfo::fromHostname(name, service, hints);
 }
 
-
-inline auto AddressInfo::fromHostname(std::string_view hostname, int family) -> IoTask<AddressInfo> {
-    addrinfo_t hints {
-        .ai_family = family,
-    };
-    return fromHostname(hostname, {}, hints);
+inline auto make_error_code(GaiError err) -> std::error_code {
+    return {static_cast<int>(err), GaiCategory::instance()};
 }
 
 ILIAS_NS_END
+
+// Enable error code
+template <>
+struct std::is_error_code_enum<ilias::GaiError> : std::true_type {};

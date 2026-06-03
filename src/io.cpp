@@ -2,6 +2,7 @@
 #include <ilias/io/duplex.hpp>
 #include <ilias/io/stream.hpp>
 #include <ilias/io/error.hpp>
+#include <atomic>
 #include <array>
 #include <tuple>
 
@@ -250,7 +251,7 @@ struct ByteChannel {
 struct DuplexStream::Impl {
     ByteChannel read;
     ByteChannel write;
-    uint8_t     ref = 2; // 2 because we have two streams
+    std::atomic<uint8_t> ref {2}; // 2 because we have two streams
 };
 
 auto DuplexStream::make(size_t size) -> std::pair<DuplexStream, DuplexStream> {
@@ -377,8 +378,8 @@ auto DuplexStream::flush() -> IoTask<void> {
 
 auto DuplexStream::closeImpl(Impl *d, bool flip) -> void {
     shutdownImpl(d, flip);
-    d->ref--;
-    if (d->ref == 0) {
+    auto value = d->ref.fetch_sub(1);
+    if (value == 1) {
         delete d;
     }
 }

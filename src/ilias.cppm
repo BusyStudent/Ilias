@@ -31,7 +31,7 @@ export namespace ilias {
     using ilias::whenAll;
     using ilias::finally;
     using ilias::unstoppable;
-    using ilias::setTimeout;
+    using ilias::timeout;
     using ilias::scheduleOn;
 
     // Io module

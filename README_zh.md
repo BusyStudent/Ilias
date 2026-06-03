@@ -318,13 +318,13 @@ auto fn() -> ilias::Task<void> {
 }
 ```
 
-#### setTimeout
+#### timeout
 
 让一个awaitable在指定时间后取消,返回 `Option<T>`.
 
 ```cpp
 auto fn() -> ilias::Task<void> {
-    if (auto res = co_await setTimeout(doJob(), 1s); res) {
+    if (auto res = co_await timeout(doJob(), 1s); res) {
         // doJob 在 1s 内完成
     } 
     else {

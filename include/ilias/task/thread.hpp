@@ -16,11 +16,11 @@
 #include <ilias/runtime/coro.hpp>
 #include <ilias/detail/option.hpp> // Option<T>
 #include <ilias/task/task.hpp>
-#include <semaphore> // std::binary_semaphore
 #include <concepts> // std::invocable
 #include <memory> // std::unique_ptr
 #include <thread> // std::thread
 #include <tuple> // std::tuple
+#include <mutex> // std::mutex
 
 ILIAS_NS_BEGIN
 
@@ -43,37 +43,35 @@ public:
 
     ThreadBase(const ThreadBase &) = delete;
 
-    // Try blocking join the thread (no-op if already joined)
+    // Try blocking join the thread
     auto blockingJoin() -> void {
-        if (mThread.joinable()) {
-            mThread.join();
-        }
+        mThread.join();
     }
 
     // Send the stop request to the thread
-    auto stop() -> void {
-        mSource.request_stop();
+    auto stop() -> bool {
+        return mSource.request_stop();
     }
 
     // Destroy tne thread, it will try to send stop request to the thread and then wait for the thread to exit.
     auto destroy() -> void { 
-        stop();
-        blockingJoin();
+        if (mThread.joinable()) {
+            mSource.request_stop();
+            mThread.join();
+        } 
         return mDestroy(this); 
     }
 
     // Try suspend the caller, return false if the thread is already completed.
     auto tryAwait(CoroHandle handle) noexcept -> bool {
-        bool ret = true;
-        mSem.acquire();
+        std::lock_guard locker {mMutex};
         if (mCompleted) { // The mValue is ready
-            ret = false;
+            return false;
         }
         else {
             mHandle = handle;
+            return true;
         }
-        mSem.release();
-        return ret;
     }
 
     // Set the executor used in the thread
@@ -102,13 +100,13 @@ private:
     StopSource            mSource;
     CoroHandle            mHandle; // For the coroutine who await this thread
     std::thread           mThread; // the thread that runs the task
-    std::binary_semaphore mSem {1}; // Used to locked the mHandle & mCompleted
+    std::mutex            mMutex; // Used to locked the mHandle & mCompleted
     bool                  mCompleted = false;
 };
 
 // The state object used for Thread<T>. hold the return value of the task.
 template <typename T>
-class ThreadImpl : public ThreadBase {
+class ThreadState : public ThreadBase {
 public:
     auto value() -> Option<T> {
         mException.rethrowIfAny();
@@ -119,7 +117,7 @@ protected:
 };
 
 template <typename Fn, typename ...Args> requires (std::invocable<Fn, Args...>)
-class ThreadCallable final : public ThreadImpl<typename std::invoke_result_t<Fn, Args...>::value_type> {
+class ThreadCallable final : public ThreadState<typename std::invoke_result_t<Fn, Args...>::value_type> {
 public:
     ThreadCallable(Fn fn, Args &&...args) : mFn(std::move(fn)), mArgs(std::forward<Args>(args)...) {
         this->mInvoke = &ThreadCallable::onInvoke;
@@ -147,7 +145,7 @@ private:
 
 // The RAII object that holds the thread handle
 template <typename T>
-using ThreadHandle = std::unique_ptr<ThreadImpl<T>, ThreadBase::Deleter>;
+using ThreadHandle = std::unique_ptr<ThreadState<T>, ThreadBase::Deleter>;
 
 // For co_await Thread<T>
 template <typename T>
@@ -269,7 +267,7 @@ public:
      * @return Option<T>, nullopt on stopped 
      */
     auto blockingJoin() -> Option<T> { 
-        ILIAS_ASSERT(joinable());
+        ILIAS_ASSERT(joinable(), "Can't join a non-joinable thread");
         auto ptr = std::exchange(mHandle, nullptr);
         ptr->blockingJoin();
         return ptr->value();
@@ -281,7 +279,7 @@ public:
      * @return task::ThreadAwaiter<T> 
      */
     auto join() -> task::ThreadAwaiter<T> {
-        ILIAS_ASSERT(joinable());
+        ILIAS_ASSERT(joinable(), "Can't join a non-joinable thread");
         return {std::exchange(mHandle, nullptr)};
     }
 

@@ -44,7 +44,7 @@ English | [中文](README_zh.md)
     - [Utilities](#utilities)
       - [whenAny](#whenany)
       - [whenAll](#whenall)
-      - [setTimeout](#settimeout)
+      - [timeout](#timeout)
       - [unstoppable](#unstoppable)
       - [finally](#finally)
       - [this\_coro](#this_coro)
@@ -343,13 +343,13 @@ auto fn() -> ilias::Task<void> {
 }
 ```
 
-#### setTimeout
+#### timeout
 
 Cancels an awaitable after a specified duration. Returns `Option<T>`.
 
 ```cpp
 auto fn() -> ilias::Task<void> {
-    if (auto res = co_await setTimeout(doJob(), 1s); res) {
+    if (auto res = co_await timeout(doJob(), 1s); res) {
         // doJob completed within 1s
     } 
     else {

@@ -19,18 +19,29 @@
 #endif // __cpp_deduction_guides
 
 // Impl TRY...
-#define ILIAS_BASIC_TRY_IMPL(var, tmp, ret, ...)           \
-    auto tmp = (__VA_ARGS__);                              \
-    if (!tmp) {                                            \
-        ret ::ilias::makeErr(std::move(tmp));              \
-    }                                                      \
-    static_cast<void>(tmp);                                \
-    var = std::move(*tmp)
+#if defined(__clang__) // Using clang's statement expression to optoimize away the temporary
+    #define ILIAS_BASIC_TRY_IMPL(var, tmp, ret, ...)           \
+        var = ({                                               \
+            auto &&tmp = (__VA_ARGS__);                        \
+            if (!tmp) {                                        \
+                ret ::ilias::makeErr(std::move(tmp));          \
+            }                                                  \
+            std::move(tmp).value();                            \
+        })
+#else
+    #define ILIAS_BASIC_TRY_IMPL(var, tmp, ret, ...)           \
+        auto &&tmp = (__VA_ARGS__);                            \
+        if (!tmp) {                                            \
+            ret ::ilias::makeErr(std::move(tmp));              \
+        }                                                      \
+        static_cast<void>(tmp);                                \
+        var = std::move(*tmp)
+#endif // __clang__
 
 // Impl TRYV...
 #define ILIAS_BASIC_TRYV_IMPL(ret, ...)                        \
     do {                                                       \
-        if (auto _res = (__VA_ARGS__); !_res) {                \
+        if (auto &&_res = (__VA_ARGS__); !_res) {              \
             ret ::ilias::makeErr(std::move(_res));             \
         }                                                      \
     } while (false)

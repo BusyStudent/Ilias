@@ -303,9 +303,6 @@ private:
     Fn mFn; // The function to call
 };
 
-// Tags here
-struct ToTaskTags {};
-
 } // namespace task
 
 /**
@@ -441,20 +438,10 @@ inline auto toTask(Task<T> task) -> Task<T> {
     return task;
 }
 
-inline auto toTask() -> task::ToTaskTags {
-    return {};
-}
-
 // Blocking wait an awaitable complete
 template <Awaitable T>
 inline auto blockingWait(T awaitable, runtime::CaptureSource source = {}) -> AwaitableResult<T> {
     return toTask(std::move(awaitable)).wait(source);
-}
-
-// Tags invoke
-template <Awaitable T>
-inline auto operator |(T awaitable, task::ToTaskTags) {
-    return toTask(std::move(awaitable));
 }
 
 ILIAS_NS_END

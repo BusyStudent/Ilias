@@ -33,16 +33,17 @@ ILIAS_NS_BEGIN
  * @brief The system error category, 
  * 
  */
-class ILIAS_API SystemCategory final : public std::error_category {
+class SystemCategory final : public std::error_category {
 public:
-    constexpr SystemCategory() noexcept {}
-
     auto name() const noexcept -> const char* override;
     auto message(int value) const -> std::string override;
     auto equivalent(int value, const std::error_condition &other) const noexcept -> bool override;
     auto default_error_condition(int value) const noexcept -> std::error_condition override;
     
+    ILIAS_API
     static auto instance() noexcept -> const SystemCategory &;
+private:
+    constexpr SystemCategory() noexcept {}
 };
 
 /**
@@ -146,10 +147,6 @@ private:
     error_t mErr = 0;
 };
 
-ILIAS_DECLARE_ERROR(SystemError, SystemCategory);
-ILIAS_DECLARE_ERROR(SystemError::Code, SystemCategory);
-
-
 // SystemError
 inline auto SystemError::fromErrno() -> SystemError {
 
@@ -165,6 +162,22 @@ inline auto SystemError::isOk() const noexcept -> bool {
     return mErr == 0;
 }
 
+// ADL for error code
+inline auto make_error_code(SystemError::Code err) -> std::error_code {
+    return {static_cast<int>(err), SystemCategory::instance()};
+}
+
+inline auto make_error_code(SystemError err) -> std::error_code {
+    return {static_cast<int>(err), SystemCategory::instance()};
+}
+
 ILIAS_NS_END
+
+// Enable error code
+template <>
+struct std::is_error_code_enum<ilias::SystemError::Code> : std::true_type {};
+
+template <>
+struct std::is_error_code_enum<ilias::SystemError> : std::true_type {};
 
 #undef MAP

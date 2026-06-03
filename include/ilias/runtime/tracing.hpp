@@ -3,6 +3,7 @@
 
 #include <ilias/runtime/capture.hpp>
 #include <ilias/log.hpp>
+#include <variant>
 
 ILIAS_NS_BEGIN
 

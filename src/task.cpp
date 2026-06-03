@@ -117,9 +117,9 @@ auto TaskGroupBase::insert(Rc<TaskSpawnContextBase> task) -> StopHandle {
 }
 
 auto TaskGroupBase::onTaskCompleted(TaskSpawnContextBase &ctxt) -> void {
-    ILIAS_ASSERT(ctxt.isLinked()); // Should be linked the running list
-    ILIAS_ASSERT(ctxt.isCompleted()); // Should be completed
-    ILIAS_ASSERT(mNumRunning > 0); // Should have at least one running task
+    ILIAS_ASSERT(ctxt.isLinked(), "Should be linked the running list");
+    ILIAS_ASSERT(ctxt.isCompleted(), "Should be completed");
+    ILIAS_ASSERT(mNumRunning > 0, "Should have at least one running task");
 
     // Remove the task from the running list
     ctxt.unlink();
@@ -482,10 +482,11 @@ auto ThreadBase::start() -> void {
         }
 
         // Ok try wakeup the awaiter
-        mSem.acquire();
-        mCompleted = true;
-        auto caller = mHandle; // Copy it from the critical section
-        mSem.release();
+        auto caller = [&]() {
+            std::lock_guard locker {mMutex};
+            mCompleted = true;
+            return mHandle;
+        }();
 
         if (!caller) {
             return;

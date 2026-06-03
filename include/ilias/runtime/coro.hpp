@@ -38,7 +38,20 @@ private:
 };
 
 // MARK: CoroContext
-// The Runtime environment for coroutines
+// The Runtime environment for coroutines.
+//
+// Cancellation invariants:
+// - stop_requested and stopped are different states. stop() only requests
+//   cooperative cancellation through the context's StopSource; it does not
+//   complete or destroy the coroutine by itself.
+// - A coroutine enters the stopped state only when an awaiter observes the
+//   request while the coroutine is suspended and calls CoroHandle::setStopped().
+// - Once mStopped becomes true, the coroutine must not be resumed or scheduled
+//   again. The stopped handler is the single handoff point to the owner/awaiter.
+// - Stopped is not the same as completed: final_suspend and the completion
+//   handler are used for normal/exceptional completion, while mStoppedHandler is
+//   used for cooperative cancellation.
+// - Contexts built with std::nostopstate are intentionally not cancellable.
 class CoroContext {
 public:
     CoroContext() = default;
@@ -177,7 +190,7 @@ public:
         return deallocate(ptr, n);
     }
 private:
-    StopSource    mStopSource;                               // Use this to try to stop the coroutine
+    StopSource    mStopSource;                               // Used to request cooperative cancellation
     Executor     *mExecutor = nullptr;
     void        (*mStoppedHandler)(CoroContext &) = nullptr; // Called when coroutine is stopped
     void         *mUser = nullptr;                           // The user data, useful in the callback
@@ -380,12 +393,16 @@ public:
         promise().mContext = &ctxt;
     }
 
-    // Tell the context, are we stopped now, it only can called when the stop was requested and coroutine is suspended
+    // Transition the context from stop-requested to stopped.
+    // This may only be called once, after a stop request has been observed by a
+    // suspended coroutine. The stopped handler owns the follow-up action, such
+    // as notifying a parent awaiter or releasing a spawned task.
     auto setStopped() const noexcept {
         auto &ctxt = context();
         ILIAS_ASSERT(ctxt.mStoppedHandler, "Stopped handler must be set, double call on CoroHandle::setStopped() ?");
         ILIAS_ASSERT(ctxt.mStopSource.stop_possible(), "Stop source must be possible to stop, invalid state ?");
         ILIAS_ASSERT(ctxt.mStopSource.stop_requested(), "Stop source must be requested, invalid state ?");
+        ILIAS_ASSERT(!ctxt.mStopped, "Cannot set stopped twice");
         ctxt.mStopped = true;
         ctxt.mStoppedHandler(ctxt); // Call the stopped handler, we are stopped
         ctxt.mStoppedHandler = nullptr; // Mark it as called
@@ -583,7 +600,10 @@ inline auto executor() noexcept {
 inline auto stopped() noexcept {
     struct Awaiter {       
         auto setContext(CoroContext &ctxt) noexcept { 
-            mStopped = ctxt.stopSource().stop_requested(); 
+            auto &source = ctxt.stopSource();
+            if (source.stop_possible()) {
+                mStopped = source.stop_requested(); 
+            }
         }
         auto await_ready() noexcept { // If stop requested, enter the stopped state (never resume)
             return !mStopped;
