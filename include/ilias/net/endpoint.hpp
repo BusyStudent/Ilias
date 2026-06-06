@@ -720,6 +720,12 @@ private:
     ::socklen_t mBufSize = 0;
 };
 
+// Mark all formattable
+ILIAS_FORMATTABLE(IPEndpoint);
+ILIAS_FORMATTABLE(UnixEndpoint);
+ILIAS_FORMATTABLE(EndpointView);
+ILIAS_FORMATTABLE(MutableEndpointView);
+
 ILIAS_NS_END
 
 // Interop with std

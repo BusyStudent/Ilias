@@ -361,6 +361,7 @@ inline auto toString(IoDescriptor::Type type) -> std::string_view {
         default: return "Unknown"; 
     }
 }
+ILIAS_FORMATTABLE(IoDescriptor::Type);
 
 #if defined(_WIN32)
 namespace win32 {

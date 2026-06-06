@@ -146,6 +146,7 @@ public:
 private:
     error_t mErr = 0;
 };
+ILIAS_FORMATTABLE(SystemError);
 
 // SystemError
 inline auto SystemError::fromErrno() -> SystemError {

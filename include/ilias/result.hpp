@@ -26,7 +26,7 @@
             if (!tmp) {                                        \
                 ret ::ilias::makeErr(std::move(tmp));          \
             }                                                  \
-            std::move(tmp).value();                            \
+            std::move(*tmp);                                   \
         })
 #else
     #define ILIAS_BASIC_TRY_IMPL(var, tmp, ret, ...)           \

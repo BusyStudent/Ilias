@@ -661,13 +661,18 @@ private:
     > mData;
 };
 
+// Mark all formattable
+ILIAS_FORMATTABLE(IPAddress);
+ILIAS_FORMATTABLE(IPAddress4);
+ILIAS_FORMATTABLE(IPAddress6);
+
 ILIAS_NS_END
 
 // Interop with std
 template <>
 struct std::hash<ilias::IPAddress4> {
     auto operator()(const ilias::IPAddress4 &addr) const noexcept -> size_t {
-        return std::hash<uint32_t>{}(addr.toUint32());
+        return std::hash<uint32_t>{}(addr.toUint32NetworkOrder());
     }
 };
 
@@ -676,7 +681,7 @@ struct std::hash<ilias::IPAddress6> {
     auto operator()(const ilias::IPAddress6 &addr) const noexcept -> size_t {
         auto span = addr.span();
         auto view = std::string_view {reinterpret_cast<const char*>(span.data()), span.size()};
-        return std::hash<std::string_view>{}(view); // HACKY way to do it :(
+        return std::hash<std::string_view>{}(view);
     }
 };
 
@@ -685,6 +690,6 @@ struct std::hash<ilias::IPAddress> {
     auto operator()(const ilias::IPAddress &addr) const noexcept -> size_t {
         auto span = addr.span();
         auto view = std::string_view {reinterpret_cast<const char*>(span.data()), span.size()};
-        return std::hash<std::string_view>{}(view); // HACKY way to do it :(
+        return std::hash<std::string_view>{}(view);
     }
 };

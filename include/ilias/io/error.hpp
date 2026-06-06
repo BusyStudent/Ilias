@@ -122,6 +122,7 @@ public:
 private:
     Code mErr = Ok;
 };
+ILIAS_FORMATTABLE(IoError);
 
 /**
  * @brief Convert the code to std::error_condition, useful when compare with std::error_code

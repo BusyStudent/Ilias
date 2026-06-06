@@ -313,76 +313,76 @@ ILIAS_NS_END
 #if !defined(ILIAS_NO_FORMAT)
 
 // Formatter for SOL_SOCKET options
-ILIAS_FORMATTER(sockopt::ReuseAddress) {
+ILIAS_FORMATTER(ilias::sockopt::ReuseAddress) {
     auto format(const auto &opt, auto &ctxt) const {
         return format_to(ctxt.out(), "ReuseAddress({})", bool(opt));
     }
 };
 
-ILIAS_FORMATTER(sockopt::Broadcast) {
+ILIAS_FORMATTER(ilias::sockopt::Broadcast) {
     auto format(const auto &opt, auto &ctxt) const {
         return format_to(ctxt.out(), "Broadcast({})", bool(opt));
     }
 };
 
-ILIAS_FORMATTER(sockopt::KeepAlive) {
+ILIAS_FORMATTER(ilias::sockopt::KeepAlive) {
     auto format(const auto &opt, auto &ctxt) const {
         return format_to(ctxt.out(), "KeepAlive({})", bool(opt));
     }
 };
 
-ILIAS_FORMATTER(sockopt::Linger) {
+ILIAS_FORMATTER(ilias::sockopt::Linger) {
     auto format(const auto &opt, auto &ctxt) const {
         auto li = ::linger(opt);
         return format_to(ctxt.out(), "Linger(.l_onoff = {}, .l_linger = {})", li.l_onoff, li.l_linger);
     }
 };
 
-ILIAS_FORMATTER(sockopt::OOBInline) {
+ILIAS_FORMATTER(ilias::sockopt::OOBInline) {
     auto format(const auto &opt, auto &ctxt) const {
         return format_to(ctxt.out(), "OOBInline({})", bool(opt));
     }
 };
 
-ILIAS_FORMATTER(sockopt::SendBufSize) {
+ILIAS_FORMATTER(ilias::sockopt::SendBufSize) {
     auto format(const auto &opt, auto &ctxt) const {
         return format_to(ctxt.out(), "SendBufSize({})", int(opt));
     }
 };
 
-ILIAS_FORMATTER(sockopt::RecvBufSize) {
+ILIAS_FORMATTER(ilias::sockopt::RecvBufSize) {
     auto format(const auto &opt, auto &ctxt) const {
         return format_to(ctxt.out(), "RecvBufSize({})", int(opt));
     }
 };
 
 // IPPROTO_TCP
-ILIAS_FORMATTER(sockopt::TcpNoDelay) {
+ILIAS_FORMATTER(ilias::sockopt::TcpNoDelay) {
     auto format(const auto &opt, auto &ctxt) const {
         return format_to(ctxt.out(), "TcpNoDelay({})", bool(opt));
     }
 };
 
-ILIAS_FORMATTER(sockopt::TcpKeepIdle) {
+ILIAS_FORMATTER(ilias::sockopt::TcpKeepIdle) {
     auto format(const auto &opt, auto &ctxt) const {
         return format_to(ctxt.out(), "TcpKeepIdle({})", int(opt));
     }
 };
 
-ILIAS_FORMATTER(sockopt::TcpKeepIntvl) {
+ILIAS_FORMATTER(ilias::sockopt::TcpKeepIntvl) {
     auto format(const auto &opt, auto &ctxt) const {
         return format_to(ctxt.out(), "TcpKeepIntvl({})", int(opt));
     }
 };
 
-ILIAS_FORMATTER(sockopt::TcpKeepCnt) {
+ILIAS_FORMATTER(ilias::sockopt::TcpKeepCnt) {
     auto format(const auto &opt, auto &ctxt) const {
         return format_to(ctxt.out(), "TcpKeepCnt({})", int(opt));
     }
 };
 
 #if defined(TCP_USER_TIMEOUT)
-ILIAS_FORMATTER(sockopt::TcpUserTimeout) {
+ILIAS_FORMATTER(ilias::sockopt::TcpUserTimeout) {
     auto format(const auto &opt, auto &ctxt) const {
         return format_to(ctxt.out(), "TcpUserTimeout({})", int(opt));
     }

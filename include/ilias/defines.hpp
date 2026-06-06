@@ -142,8 +142,33 @@
 // Formatter macro
 #define ILIAS_FORMATTER(type)                              \
     template <>                                            \
-    struct ILIAS_FMT_NAMESPACE::formatter<::ilias::type> : \
+    struct ILIAS_FMT_NAMESPACE::formatter<type> :          \
         ::ilias::detail::DefaultFormatter
+
+// Mark a type is formattable, generate the fmtlib bridge and ostream operator<<
+#define ILIAS_FORMATTABLE(type)                                       \
+    template <char = 0>                                               \
+    inline auto _ilias_detail_adl_to_string(const type &t) {          \
+        auto wrapper = [](const auto &t) {                            \
+            if constexpr (requires { t.toString(); }) {               \
+                return t.toString();                                  \
+            }                                                         \
+            else if constexpr (requires { toString(t); }) {           \
+                return toString(t);                                   \
+            }                                                         \
+            else {                                                    \
+                static_assert(std::is_same_v<decltype(t), void>, "The type is not formattable"); \
+            }                                                                      \
+        };                                                                         \
+        return wrapper(t);                                                         \
+    }                                                                              \
+                                                                                   \
+    template <typename Stream> requires(                                           \
+        requires(Stream &stream) { stream << std::string_view{}; }                 \
+    )                                                                              \
+    inline auto operator <<(Stream &stream, const type &t) -> decltype(auto) {     \
+        return stream << _ilias_detail_adl_to_string(t);                           \
+    }
 
 ILIAS_NS_BEGIN
 
@@ -254,29 +279,25 @@ inline auto handler(std::string_view cond, std::source_location where, Args &&..
 // Common Concepts
 template <typename T>
 concept IntoString = requires (const T &t) {
-    { toString(t) } -> std::convertible_to<std::string_view>;
+    { _ilias_detail_adl_to_string(t) } -> std::convertible_to<std::string_view>;
 };
-
-template <typename T> requires 
-    requires(const T &t) { t.toString(); } // Make sure the t has the toString() method
-inline auto toString(const T &t) {
-    return t.toString();
-}
-
-template <typename Stream, IntoString T> requires 
-    requires(Stream &stream) { stream << std::string_view{}; } // Make sure the stream can output string_view, like std::ostream
-inline auto operator <<(Stream &stream, const T &t) -> decltype(auto) {
-    return stream << toString(t);
-}
 
 ILIAS_NS_END
 
 // Make formatter for all type with InfoString concept
 #if !defined(ILIAS_NO_FORMAT)
 template <ilias::IntoString T>
-struct ilias::fmtlib::formatter<T> : ilias::detail::DefaultFormatter {
-    auto format(const auto &value, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", toString(value));
+class ilias::fmtlib::formatter<T> {
+public:
+    constexpr auto parse(auto &ctxt) {
+        return inner.parse(ctxt);
     }
+
+    auto format(const T &value, auto &ctxt) const {
+        auto str = _ilias_detail_adl_to_string(value);
+        return inner.format(std::string_view {str}, ctxt);
+    }
+private:
+    ilias::fmtlib::formatter<std::string_view> inner;
 };
 #endif // ILIAS_NO_FORMAT

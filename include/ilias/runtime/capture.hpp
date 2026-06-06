@@ -188,6 +188,10 @@ private:
     std::vector<StackFrame> mFrames;    
 };
 
+// Mark all formattable
+ILIAS_FORMATTABLE(StackFrame);
+ILIAS_FORMATTABLE(Stacktrace);
+
 #if defined(ILIAS_CORO_TRACE)
 
 /**
@@ -222,12 +226,3 @@ using runtime::StackFrame;
 using runtime::Stacktrace;
 
 ILIAS_NS_END
-
-// Formatter
-#if !defined(ILIAS_NO_FORMATTER)
-ILIAS_FORMATTER(runtime::Stacktrace) {
-    auto format(const auto &trace, auto &ctxt) const {
-        return format_to(ctxt.out(), "{}", trace.toString());
-    }
-};
-#endif // !defined(ILIAS_NO_FORMAT)
