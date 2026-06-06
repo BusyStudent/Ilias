@@ -23,11 +23,11 @@
 
 // Format check
 #if   defined(ILIAS_USE_FMT)
-    #define ILIAS_FMT_NAMESPACE fmt
+    #define ILIAS_FMT_NAMESPACE ::fmt
     #include <fmt/format.h>
     #include <fmt/chrono.h>
 #elif defined(__cpp_lib_format)
-    #define ILIAS_FMT_NAMESPACE std
+    #define ILIAS_FMT_NAMESPACE ::std
     #include <format>
 #else
     #define ILIAS_NO_FORMAT

@@ -91,3 +91,54 @@ jobs:
       - name: Test MSVC/clang-cl
         if: matrix.toolchain != 'mingw'
         run: xmake test -vD
+  coverage-windows-mingw:
+    name: coverage / windows / mingw
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2 for MinGW coverage
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          path-type: minimal
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-binutils
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-xmake
+            mingw-w64-ucrt-x86_64-gcovr
+            git
+
+      - name: Configure coverage
+        shell: msys2 {0}
+        run: |
+          which xmake
+          which gcc
+          which gcov
+          which gcovr
+          gcc -dumpmachine
+
+          xmake f -c \
+            -p mingw -a x64 \
+            -m coverage \
+            -k static \
+            --dev=y -y
+
+      - name: Build
+        shell: msys2 {0}
+        run: xmake -vD -y
+
+      - name: Test
+        shell: msys2 {0}
+        run: xmake test -vD
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
