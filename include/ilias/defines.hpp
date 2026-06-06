@@ -142,7 +142,7 @@
 // Formatter macro
 #define ILIAS_FORMATTER(type)                              \
     template <>                                            \
-    struct ILIAS_FMT_NAMESPACE::formatter<type> :          \
+    struct ilias::fmtlib::formatter<type> :                \
         ::ilias::detail::DefaultFormatter
 
 // Mark a type is formattable, generate the fmtlib bridge and ostream operator<<
