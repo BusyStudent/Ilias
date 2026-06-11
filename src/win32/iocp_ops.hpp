@@ -529,6 +529,6 @@ inline auto ioCall(const runtime::StopToken &token, Fn fn) -> std::invoke_result
     return result;
 }
 
-}
+} // namespace win32
 
 ILIAS_NS_END

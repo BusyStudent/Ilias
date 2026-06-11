@@ -5,6 +5,7 @@
 #include <ilias/testing.hpp>
 #include <gtest/gtest.h>
 #include <ranges>
+#include "subscriber.hpp"
 
 using namespace std::literals;
 using namespace ilias;
@@ -276,6 +277,8 @@ ILIAS_TEST(Task, StopToken) {
 auto main(int argc, char** argv) -> int {
     ::testing::InitGoogleTest(&argc, argv);
     EventLoop loop;
+    Subscriber sub;
     loop.install();
+    sub.install();
     return RUN_ALL_TESTS();
 }

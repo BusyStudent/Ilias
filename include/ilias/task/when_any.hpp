@@ -68,7 +68,7 @@ public:
             ctxt.task().setCompletionHandler(&onTaskCompleted);
 
             // TRACING: a subtask is started
-            runtime::tracing::childBegin(ctxt);
+            ctxt.tracingSpawn();
             mLeft += 1;
             mStarted += 1;
             ctxt.task().resume();
@@ -101,7 +101,7 @@ protected:
         auto &self = *static_cast<WhenAnyAwaiterBase *>(ctxt.userdata());
 
         // TRACING: a subtask is completed
-        runtime::tracing::childEnd(ctxt);
+        ctxt.tracingComplete();
         if (!ctxt.isStopped()) { // Only not stopped task can be got (value produced)
             if (self.mGot == nullptr) {
                 self.mGot = &ctxt; // The first completed task

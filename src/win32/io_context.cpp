@@ -299,30 +299,14 @@ auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<Io
 
     if (nfd->type == IoDescriptor::Socket) {
         // Get The ext function ptr
-        if (auto ret = WSAGetExtensionFnPtr(nfd->sockfd, WSAID_CONNECTEX, &nfd->sock.ConnectEx); !ret) {
-            return Err(ret.error());
-        }
-        if (auto ret = WSAGetExtensionFnPtr(nfd->sockfd, WSAID_ACCEPTEX, &nfd->sock.AcceptEx); !ret) {
-            return Err(ret.error());
-        }
-        if (auto ret = WSAGetExtensionFnPtr(nfd->sockfd, WSAID_DISCONNECTEX, &nfd->sock.DisconnectEx); !ret) {
-            return Err(ret.error());
-        }
-        if (auto ret = WSAGetExtensionFnPtr(nfd->sockfd, WSAID_TRANSMITFILE, &nfd->sock.TransmitFile); !ret) {
-            return Err(ret.error());
-        }
-        if (auto ret = WSAGetExtensionFnPtr(nfd->sockfd, WSAID_GETACCEPTEXSOCKADDRS, &nfd->sock.GetAcceptExSockaddrs); !ret) {
-            return Err(ret.error());
-        }
-        if (auto ret = WSAGetExtensionFnPtr(nfd->sockfd, WSAID_TRANSMITPACKETS,&nfd->sock.TransmitPackets); !ret) {
-            return Err(ret.error());
-        }
-        if (auto ret = WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSARECVMSG, &nfd->sock.WSARecvMsg); !ret) {
-            return Err(ret.error());
-        }
-        if (auto ret = WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSASENDMSG, &nfd->sock.WSASendMsg); !ret) {
-            return Err(ret.error());
-        }
+        ILIAS_TRYV(WSAGetExtensionFnPtr(nfd->sockfd, WSAID_CONNECTEX, &nfd->sock.ConnectEx));
+        ILIAS_TRYV(WSAGetExtensionFnPtr(nfd->sockfd, WSAID_ACCEPTEX, &nfd->sock.AcceptEx));
+        ILIAS_TRYV(WSAGetExtensionFnPtr(nfd->sockfd, WSAID_DISCONNECTEX, &nfd->sock.DisconnectEx));
+        ILIAS_TRYV(WSAGetExtensionFnPtr(nfd->sockfd, WSAID_TRANSMITFILE, &nfd->sock.TransmitFile));
+        ILIAS_TRYV(WSAGetExtensionFnPtr(nfd->sockfd, WSAID_GETACCEPTEXSOCKADDRS, &nfd->sock.GetAcceptExSockaddrs));
+        ILIAS_TRYV(WSAGetExtensionFnPtr(nfd->sockfd, WSAID_TRANSMITPACKETS, &nfd->sock.TransmitPackets));
+        ILIAS_TRYV(WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSARECVMSG, &nfd->sock.WSARecvMsg));
+        ILIAS_TRYV(WSAGetExtensionFnPtr(nfd->sockfd, WSAID_WSASENDMSG, &nfd->sock.WSASendMsg));
 
         ::WSAPROTOCOL_INFOW info {};
         ::socklen_t infoSize = sizeof(info);

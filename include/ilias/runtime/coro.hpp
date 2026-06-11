@@ -23,7 +23,6 @@ namespace runtime {
 // Memory pool for coroutines
 extern auto ILIAS_API allocate(size_t n) -> void *;
 extern auto ILIAS_API deallocate(void *ptr, size_t n) noexcept -> void;
-extern auto ILIAS_API allocationSize() noexcept -> size_t; // Get previous allocation size (useable when trace)
 
 // Helper class to switch between coroutines
 class SwitchCoroutine {
@@ -56,6 +55,7 @@ class CoroContext {
 public:
     CoroContext() = default;
     CoroContext(CoroContext &&) = default;
+    CoroContext(const CoroContext &) = delete;
     CoroContext(std::nostopstate_t) : mStopSource(std::nostopstate) {}
 
     // Request to stop the coroutine
@@ -106,14 +106,8 @@ public:
     }
 
     // TRACING: Set the name of the ctxt
-    auto setName(std::string_view name) noexcept -> void {
-        mName.assign(name);
-    }
-
-    // TRACING: Set the extra data of the ctxt
-    auto setExtraData(std::shared_ptr<void> data) noexcept -> void {
-        mExtra = data;
-    }
+    ILIAS_API
+    auto setName(std::string_view name) noexcept -> void;
 
     // TRACING: Push the frame to the stack, return the index of the frame
     template <typename ...Args>
@@ -151,31 +145,39 @@ public:
         return mParent;
     }
 
-    // TRACING: Get the root of the ctxt
-    auto root() const noexcept {
-        return mRoot;
-    }
-
     // TRACING: Get the debug name of the ctxt
     auto name() const noexcept {
         return std::string_view {mName};
     }
 
-    // TRACING: Get the extra data of the ctxt
-    template <typename T>
-    auto extraData() const noexcept -> T * {
-        return static_cast<T *>(mExtra.get());
-    }
+    // TRACING: 
+    ILIAS_API 
+    auto id() noexcept -> TaskId;
+
+    ILIAS_API
+    auto tracingSpawn(CaptureSource source = {}) noexcept -> void;
+
+    ILIAS_API
+    auto tracingComplete() noexcept -> void;
+    
+    ILIAS_API
+    auto tracingResume() noexcept -> void;
+
+    ILIAS_API
+    auto tracingSuspend() noexcept -> void;
 #else // Disabled
     auto setParent(CoroContext &) noexcept {}
     auto setName(std::string_view) noexcept {}
     auto pushFrame(auto ...) noexcept { return 0; }
     auto popFrame() noexcept {}
-    auto topFrame() const noexcept { return static_cast<StackFrame *>(nullptr); }
     auto stacktrace() const noexcept { return Stacktrace {}; }
     auto parent() const noexcept { return static_cast<CoroContext *>(nullptr); }
-    auto root() const noexcept { return static_cast<CoroContext *>(nullptr); }
     auto name() const noexcept { return std::string_view {}; }
+    auto id() const noexcept { return static_cast<TaskId>(reinterpret_cast<intptr_t>(this)); }
+    auto tracingSpawn(CaptureSource source = {}) noexcept {}
+    auto tracingComplete(CaptureSource source = {}) noexcept {}
+    auto tracingResume(CaptureSource source = {}) noexcept {}
+    auto tracingSuspend(CaptureSource source = {}) noexcept {}
 #endif // defined(ILIAS_CORO_TRACE)
 
     // Other operator
@@ -189,6 +191,9 @@ public:
     auto operator delete(void *ptr, size_t n) noexcept -> void {
         return deallocate(ptr, n);
     }
+
+    ILIAS_API
+    static auto fromId(TaskId id) noexcept -> CoroContext *;
 private:
     StopSource    mStopSource;                               // Used to request cooperative cancellation
     Executor     *mExecutor = nullptr;
@@ -196,12 +201,12 @@ private:
     void         *mUser = nullptr;                           // The user data, useful in the callback
     bool          mStopped = false;                          // The coroutine is actually stopped
 #if defined(ILIAS_CORO_TRACE)
+    bool          mStarted = false;                          // The coroutine is started
     bool          mSuspended = true;                         // The coroutine is suspended
     CoroContext  *mParent = nullptr;                         // Use for stacktrace to dump the whole stack
     CoroContext  *mRoot = nullptr;                           // The root context of the coroutine (spawn or blocking wait), used for tracing
     std::string   mName;                                     // The name of the coroutine, used for tracing
-    size_t        mStackSize = 0;                            // The size of the stack, used for tracing
-    std::shared_ptr<void>   mExtra;                          // The extra data for tracing
+    TaskId        mId {};                                    // The id of the coroutine, used for tracing
     std::vector<StackFrame> mFrames;                         // The frames of the coroutine,
 #endif // defined(ILIAS_CORO_TRACE)
 template <typename T, bool Forward>
@@ -297,10 +302,7 @@ public:
         ILIAS_ASSERT(mContext, "Coroutine context must be set before coroutine starts");
 #if defined(ILIAS_CORO_TRACE)
         // TRACING: Push the frame, we are start now
-        if (mContext->mSuspended) {
-            mContext->mSuspended = false;
-            tracing::resume(*mContext);
-        }
+        mContext->tracingResume();
         mContext->pushFrame(mCreation);
 #endif // defined(ILIAS_CORO_TRACE)
     }
@@ -478,13 +480,13 @@ public:
     TracingAwaitable(T awaitable, CoroContext *ctxt) requires(!Forward) : 
         mAwaitable(std::move(awaitable)), 
         mAwaiter(toAwaiter(std::move(mAwaitable))),
-        mCtxt(ctxt) {}
+        mCtxt(*ctxt) {}
 
     // Forward version, just store the reference
     TracingAwaitable(T awaitable, CoroContext *ctxt) requires(Forward) :
         mAwaitable(std::forward<T>(awaitable)),
         mAwaiter(toAwaiter(std::forward<T>(mAwaitable))),
-        mCtxt(ctxt) {}
+        mCtxt(*ctxt) {}
 
     // MUST NRVO, Pin the awaitable, avoid the awaiter implementation need an stable awaitable address, it will cause dangling if move
     TracingAwaitable(const TracingAwaitable &) = delete;
@@ -499,41 +501,31 @@ public:
         using Ret = decltype(mAwaiter.await_suspend(handle));
         if constexpr (std::is_same_v<Ret, void>) {
             mAwaiter.await_suspend(handle);
-            suspend();
+            mCtxt.tracingSuspend();
             return;
         }
         else if constexpr (std::convertible_to<Ret, bool>) { // Return bool
             auto ret = mAwaiter.await_suspend(handle);
             if (ret) { // true on actually suspend
-                suspend();
+                mCtxt.tracingSuspend();
             }
             return ret;
         }
         else { // std::coroutine_handle<>
             auto ret = mAwaiter.await_suspend(handle);
-            suspend();
+            mCtxt.tracingSuspend();
             return ret;
         }
     }
 
     auto await_resume() noexcept(noexcept(mAwaiter.await_resume())) -> decltype(auto) { 
-        if (mCtxt->mSuspended) { // Notify the tracing, we actually resume
-            mCtxt->mSuspended = false;
-            tracing::resume(*mCtxt);
-        }
+        mCtxt.tracingResume();
         return mAwaiter.await_resume();
     }
 private:
-    auto suspend() noexcept -> void {
-        if (!mCtxt->mSuspended) { // Notify the tracing, we actually suspend
-            mCtxt->mSuspended = true;
-            tracing::suspend(*mCtxt);
-        }
-    }
-
     Awaitable mAwaitable;
     Awaiter   mAwaiter;
-    CoroContext *mCtxt;
+    CoroContext &mCtxt;
 };
 #endif // defined(ILIAS_CORO_TRACE)
 

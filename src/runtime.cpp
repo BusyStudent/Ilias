@@ -196,8 +196,24 @@ auto threadpool::submit(CallableRef &callable) -> void {
 // TRACING
 #if defined(ILIAS_CORO_TRACE)
 namespace {
+    struct ContextsMap {
+        std::unordered_map<TaskId, CoroContext *> map;
+
+        ContextsMap() {
+            map.reserve(2048);
+        }
+        ~ContextsMap() {
+            if (!map.empty()) {
+                ILIAS_WARN("Runtime", "There are still {} coroutines running", map.size());
+            }
+        }
+    };
+
+    // Use negative values for child tasks
+    static thread_local constinit std::atomic<intptr_t> gChildTaskId {-1};
+    static thread_local constinit std::atomic<intptr_t> gTaskId {1};
     static thread_local constinit TracingSubscriber *gSubscriber {};
-    static thread_local constinit size_t gPrevAlloctionSize {};
+    static thread_local ContextsMap gContextsMap {};
 }
 
 TracingSubscriber::~TracingSubscriber() {
@@ -215,64 +231,111 @@ auto TracingSubscriber::currentThread() noexcept -> TracingSubscriber * {
     return gSubscriber;
 }
 
-auto runtime::allocationSize() noexcept -> size_t {
-    return gPrevAlloctionSize;
+// TRACING in the context
+auto CoroContext::id() noexcept -> TaskId {
+    if (mId == TaskId::Invalid) {
+        if (mParent) { // Child task
+            mId = static_cast<TaskId>(gChildTaskId.fetch_sub(1));
+        }
+        else {
+            mId = static_cast<TaskId>(gTaskId.fetch_add(1));
+        }
+    }
+    return mId;
 }
+
+auto CoroContext::setName(std::string_view name) noexcept -> void {
+    mName = name;
+    if (gSubscriber) {
+        gSubscriber->onEvent(TraceEvent {
+            .type = TraceEvent::NameChange,
+            .id = id(),
+            .name = name,
+        });
+    }
+}
+
+// TODO: Too much code duplication here
+auto CoroContext::tracingSpawn(CaptureSource source) noexcept -> void {
+    if (!gSubscriber) {
+        return;
+    }
+    auto [_, inserted] = gContextsMap.map.emplace(id(), this);
+    ILIAS_ASSERT(inserted, "TaskId {} already exists, this should never happen", static_cast<uintptr_t>(id()));
+
+    // Notify the subscriber
+    gSubscriber->onEvent(TraceEvent {
+        .type = TraceEvent::Spawn,
+        .id = id(),
+        .parentId = mParent ? mParent->id() : TaskId::Invalid,
+        .rootId = mRoot ? mRoot->id() : TaskId::Invalid,
+        .name = mName,
+        .location = source
+    });
+}
+
+auto CoroContext::tracingComplete() noexcept -> void {
+    if (!gSubscriber) {
+        return;
+    }
+    ILIAS_ASSERT(mId != TaskId::Invalid, "TaskId is invalid, did you call it before spawning?");
+
+    // Notify the subscriber
+    gSubscriber->onEvent(TraceEvent {
+        .type = TraceEvent::Complete,
+        .id = id(),
+        .parentId = mParent ? mParent->id() : TaskId::Invalid,
+        .rootId = mRoot ? mRoot->id() : TaskId::Invalid,
+        .name = mName,
+    });
+    gContextsMap.map.erase(mId);
+}
+
+auto CoroContext::tracingResume() noexcept -> void {
+    if (!gSubscriber) {
+        return;
+    }
+    if (!mSuspended) { // Not suspended
+        return;
+    }
+    mSuspended = false;
+    gSubscriber->onEvent(TraceEvent {
+        .type = TraceEvent::Resume,
+        .id = id(),
+        .parentId = mParent ? mParent->id() : TaskId::Invalid,
+        .rootId = mRoot ? mRoot->id() : TaskId::Invalid,
+        .name = mName,
+    });
+}
+
+auto CoroContext::tracingSuspend() noexcept -> void {
+    if (!gSubscriber) {
+        return;
+    }
+    if (mSuspended) { // Already suspended
+        return;
+    }
+    mSuspended = true;
+    gSubscriber->onEvent(TraceEvent {
+        .type = TraceEvent::Suspend,
+        .id = id(),
+        .parentId = mParent ? mParent->id() : TaskId::Invalid,
+        .rootId = mRoot ? mRoot->id() : TaskId::Invalid,
+        .name = mName,
+    });
+}
+
+auto CoroContext::fromId(TaskId id) noexcept -> CoroContext * {
+    auto it = gContextsMap.map.find(id);
+    if (it == gContextsMap.map.end()) {
+        return nullptr;
+    }
+    return it->second;
+}
+
 #endif // ILIAS_CORO_TRACE
 
-// Thread local memory Pool, default disable
-// FIXME: currently scheduleOn cancellation impl conflict with thread local memory pool
-//        It may cause task free mismatch when cancelled, so disable it for now
-#if 0
-namespace {
-    static thread_local std::pmr::unsynchronized_pool_resource mempool {
-        std::pmr::pool_options {
-            .max_blocks_per_chunk = 1024,
-            .largest_required_pool_block = 65536,
-        }
-    };
-
-    // For assertion on debug builds
-    struct alignas(__STDCPP_DEFAULT_NEW_ALIGNMENT__) PoolHeader {
-        std::thread::id id = std::this_thread::get_id();
-    };
-
-    static inline constexpr bool ENABLE_POOL_CHECK =
-#if defined(NDEBUG) && !defined(ILIAS_CORO_TRACE)
-        false;
-#else
-        true;
-#endif
-
-}
-
-auto runtime::allocate(size_t size) -> void * {
-    if constexpr (ENABLE_POOL_CHECK) {
-        auto ptr = mempool.allocate(size + sizeof(PoolHeader), alignof(PoolHeader));
-        new (ptr) PoolHeader {};
-        return static_cast<std::byte *>(ptr) + sizeof(PoolHeader);
-    }
-    else {
-        return mempool.allocate(size, alignof(PoolHeader));
-    }
-}
-
-auto runtime::deallocate(void *ptr, size_t size) noexcept -> void {
-    if constexpr (ENABLE_POOL_CHECK) {
-        auto header = reinterpret_cast<PoolHeader *>(static_cast<std::byte *>(ptr) - sizeof(PoolHeader));
-        if (header->id != std::this_thread::get_id()) [[unlikely]] {
-            ILIAS_ERROR("Runtime", "Cross-thread deallocation detected !!!");
-            ILIAS_TRAP();
-            std::abort();
-        }
-        header->~PoolHeader();
-        mempool.deallocate(header, size + sizeof(PoolHeader), alignof(PoolHeader));
-    }
-    else {
-        return mempool.deallocate(ptr, size, alignof(PoolHeader));
-    }
-}
-#else // Use system allocator
+// Use system allocator
 auto runtime::allocate(size_t size) -> void * { 
     return std::malloc(size); 
 }
@@ -280,6 +343,5 @@ auto runtime::allocate(size_t size) -> void * {
 auto runtime::deallocate(void *ptr, size_t) noexcept -> void { 
     return std::free(ptr);
 }
-#endif // ILIAS_USE_MEMORY_POOL
 
 ILIAS_NS_END

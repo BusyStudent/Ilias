@@ -19,7 +19,7 @@ public:
     UnstoppableAwaiter(UnstoppableAwaiter &&) = default;
 
     auto await_ready() -> bool {
-        runtime::tracing::childBegin(mCtxt);
+        mCtxt.tracingSpawn();
         mHandle.setContext(mCtxt); // Use the unstoppable context
         return mAwaiter.await_ready();
     }
@@ -29,7 +29,7 @@ public:
     }
 
     auto await_resume() -> T {
-        runtime::tracing::childEnd(mCtxt);
+        mCtxt.tracingComplete();
         return mAwaiter.await_resume();
     }
 
@@ -175,11 +175,13 @@ private:
     runtime::StopRegistration mReg;
 };
 
+// The finally awaiter
+// Cleanup is a function or Task<T> to run after the main task is completed
 template <typename T, typename Cleanup>
 class FinallyAwaiter final : public FinallyAwaiterBase {
 public:
     FinallyAwaiter(TaskHandle<T> main, Cleanup cleanup) : FinallyAwaiterBase(main), mCleanup(std::move(cleanup)) {
-        mOnTaskCompletion = FinallyAwaiter::onCompletion;
+        mOnTaskCompletion = &FinallyAwaiter::onCompletionHelper;
     }
 
     auto await_resume() -> T {
@@ -189,37 +191,36 @@ public:
 private:
     template <typename U>
     auto makeCleanup(Task<U> &task) -> TaskHandle<> {
-        return std::exchange(task, {})._leak();
+        return task._leak();
     }
 
     template <std::invocable U>
     auto makeCleanup(U &&fn) -> TaskHandle<> {
-        if constexpr (requires { fn(mValue); }) { // Check the cleanup function can take the value reference?
-            return fn(mValue)._leak();
-        }
-        else {
-            return fn()._leak();
-        }
+        return fn()._leak();
     }
 
-    static auto onCompletion(FinallyAwaiterBase &_self) -> TaskHandle<> {
-        auto &self = static_cast<FinallyAwaiter &>(_self);
+    auto onCompletion() -> TaskHandle<> {
         do {
-            auto &ctxt = *(self.mContext);
-            auto handle = TaskHandle<T>::cast(ctxt.task());
-            if (ctxt.isStopped()) {
+            ILIAS_ASSERT(mContext, "The main task should be alive");
+            auto handle = TaskHandle<T>::cast(mContext->task());
+            if (mContext->isStopped()) {
                 break; // Nothing to do
             }
-            self.mException = handle.takeException();
-            if (self.mException) {
+            mException = handle.takeException();
+            if (mException) {
                 break;
             }
-            self.mValue = makeOption([&]() { return handle.value(); });
+            mValue = makeOption([&]() { return handle.value(); });
             break;
         }
         while (0);
+
         // Prepare the cleanup task
-        return self.makeCleanup(self.mCleanup);
+        return makeCleanup(mCleanup);
+    }
+
+    static auto onCompletionHelper(FinallyAwaiterBase &_self) -> TaskHandle<> {
+        return static_cast<FinallyAwaiter &>(_self).onCompletion();
     }
 
     ExceptionPtr mException;

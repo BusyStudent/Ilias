@@ -44,17 +44,12 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
 
     using Clock = std::chrono::steady_clock;
 
-    enum class EventKind : uint8_t {
-        TaskSpawn, TaskComplete, Resume, Suspend, ChildBegin, ChildEnd
-    };
-
     enum class TaskState : uint8_t {
         Spawned, Running, Suspended, Completed, Stopped
     };
     struct TaskRecord {
-        intptr_t id = 0;
-        std::optional<intptr_t> parentId;
-        bool hasParent = false;
+        runtime::TaskId id {};
+        runtime::TaskId parentId {};
         TaskState state = TaskState::Spawned;
         Clock::time_point createdAt {};
         Clock::time_point lastSeenAt {};
@@ -66,26 +61,18 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
         size_t childrenCompleted = 0;
         bool stopRequested = false;
         bool stopped = false;
+        std::pmr::string name;
         std::pmr::string location; // The source location (file:line) of where the task was spawned
-        std::pmr::set<intptr_t> children; // The children of this task
+        std::pmr::set<runtime::TaskId> children; // The children of this task
     };
 
     // ── TracingSubscriber ───────────────────────────────────────────
-    auto onTaskSpawn(runtime::CoroContext &) noexcept -> void override;
-    auto onTaskComplete(runtime::CoroContext &) noexcept -> void override;
-    auto onResume(runtime::CoroContext &) noexcept -> void override;
-    auto onSuspend(runtime::CoroContext &) noexcept -> void override;
-    auto onChildBegin(runtime::CoroContext &) noexcept -> void override;
-    auto onChildEnd(runtime::CoroContext &) noexcept -> void override;
+    auto onEvent(const runtime::TraceEvent &event) noexcept -> void override;
 
     // ── Tracing core ────────────────────────────────────────────────
-    auto observe(EventKind kind, runtime::CoroContext &ctxt) noexcept -> void;
-    auto observeImpl(EventKind kind, runtime::CoroContext &ctxt) -> void;
     auto snapshotJson() -> std::pmr::string;
     auto snapshotTask(std::pmr::string &out) -> void;
     auto snapshotStacktrace(intptr_t taskId) -> std::pmr::string;
-    auto allocTaskId() -> intptr_t;
-    auto allocChildId() -> intptr_t;
 
     // ── HTTP server ─────────────────────────────────────────────────
     auto handleConnection(BufStream<TcpStream> stream) -> Task<void>;
@@ -96,16 +83,11 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
     Clock::time_point mEpoch = Clock::now();
     std::string       mBind;
     WaitHandle<void>  mServeHandle;
-    intptr_t          mTaskId  = 0; // [1, intptr_max]
-    intptr_t          mChildId = 0; // [-1, intptr_min]
     std::pmr::unsynchronized_pool_resource mPool;
-    std::pmr::polymorphic_allocator<TaskRecord> mAlloc {&mPool};
-    std::pmr::unordered_set<const runtime::CoroContext *> mTasks {&mPool}; // The all tasks (including children)
-    std::pmr::unordered_map<intptr_t, const runtime::CoroContext *> mIdMaps {&mPool}; // Mapping id to raw context, used for stacktrace
+    std::pmr::unordered_map<runtime::TaskId, TaskRecord> mIdMaps {&mPool}; // Mapping id to TaskRecord, used for snapshot
 };
 
 TracingWebUi::Impl::Impl() {
-    mTasks.reserve(1024);
     mIdMaps.reserve(1024);
 }
 
@@ -262,110 +244,91 @@ auto TracingWebUi::Impl::sendReply(BufStream<TcpStream> &stream, int status, std
 }
 
 // ─── TracingSubscriber callbacks ─────────────────────────────────────
-auto TracingWebUi::Impl::onTaskSpawn(runtime::CoroContext &ctxt) noexcept -> void    { observe(EventKind::TaskSpawn, ctxt); }
-auto TracingWebUi::Impl::onTaskComplete(runtime::CoroContext &ctxt) noexcept -> void { observe(EventKind::TaskComplete, ctxt); }
-auto TracingWebUi::Impl::onResume(runtime::CoroContext &ctxt) noexcept -> void       { observe(EventKind::Resume, ctxt); }
-auto TracingWebUi::Impl::onSuspend(runtime::CoroContext &ctxt) noexcept -> void      { observe(EventKind::Suspend, ctxt); }
-auto TracingWebUi::Impl::onChildBegin(runtime::CoroContext &ctxt) noexcept -> void   { observe(EventKind::ChildBegin, ctxt); }
-auto TracingWebUi::Impl::onChildEnd(runtime::CoroContext &ctxt) noexcept -> void     { observe(EventKind::ChildEnd, ctxt); }
-
-auto TracingWebUi::Impl::observe(EventKind kind, runtime::CoroContext &ctxt) noexcept -> void {
-    ILIAS_TRY_EXCEPTION { observeImpl(kind, ctxt); }
-    ILIAS_CATCH (...) {}
-}
-
-auto TracingWebUi::Impl::observeImpl(EventKind kind, runtime::CoroContext &ctxt) -> void {
-    switch (kind) {
-        case EventKind::ChildBegin: // New child task begin
-        case EventKind::TaskSpawn: { // New task spawn
-            intptr_t id = 0;
+auto TracingWebUi::Impl::onEvent(const runtime::TraceEvent &event) noexcept -> void {
+    switch (event.type) {
+        case runtime::TraceEvent::Spawn: { // New task spawn
+            // Add Parent
             std::pmr::string location {&mPool};
-            runtime::CoroContext *locationCtxt = nullptr;
-            if (kind == EventKind::ChildBegin) { // Child
-                id = allocChildId();
-                locationCtxt = ctxt.parent(); // The await point store at the parent
-            }
-            else { // Parent
-                id = allocTaskId();
-                locationCtxt = &ctxt; // The await point store at the current
-            }
-            if (locationCtxt) {
-                if (auto frame = locationCtxt->topFrame(); frame) {
-                    fmtlib::format_to(std::back_inserter(location), "{}:{}", frame->filename(), frame->line());
-                    std::ranges::replace(location, '\\', '/');
+            if (event.parentId != runtime::TaskId::Invalid) { // Add child
+                if (auto it = mIdMaps.find(event.parentId); it != mIdMaps.end()) {
+                    auto &[_, parent] = *it;
+                    parent.children.emplace(event.id);
                 }
             }
-            auto record = std::allocate_shared<TaskRecord>(mAlloc, TaskRecord {
-                .id = id,
-                .createdAt = Clock::now(),
-                .location = std::move(location),
-                .children = std::pmr::set<intptr_t> {&mPool}
-            });
-            if (ctxt.parent()) { // Has parent
-                if (auto parent = ctxt.parent()->extraData<TaskRecord>(); parent) {
-                    parent->children.emplace(id);
-                }
-            }
+            fmtlib::format_to(std::back_inserter(location), "{}:{}", event.location.file_name(), event.location.line());
+            std::ranges::replace(location, '\\', '/');
 
-            ctxt.setExtraData(record);
-            mTasks.emplace(&ctxt);
-            mIdMaps.emplace(id, &ctxt);
+            // Add it to map
+            mIdMaps.emplace(event.id, TaskRecord {
+                .id = event.id,
+                .parentId = event.parentId,
+                .createdAt = Clock::now(),
+                .name = std::pmr::string {event.name},
+                .location = std::move(location),
+                .children = std::pmr::set<runtime::TaskId> {&mPool}
+            });
             break;
         }
-        case EventKind::ChildEnd: // Child task end
-        case EventKind::TaskComplete: { // Task complete
-            if (auto task = ctxt.extraData<TaskRecord>(); task) {
-                if (kind == EventKind::ChildEnd) { // Remove the child from parent
-                    if (auto parent = ctxt.parent()->extraData<TaskRecord>(); parent) {
-                        parent->children.erase(task->id);
-                    }
-                }
-                mIdMaps.erase(task->id);
+        case runtime::TraceEvent::Complete: { // Task complete
+            if (auto it = mIdMaps.find(event.parentId); it != mIdMaps.end()) { // Remove child
+                auto &[_, record] = *it;
+                record.children.erase(event.id);
             }
-            mTasks.erase(&ctxt);
+            mIdMaps.erase(event.id);
             break;
         }
-        case EventKind::Resume: {
-            auto task = ctxt.extraData<TaskRecord>();
-            if (!task) {
+        case runtime::TraceEvent::Resume: {
+            auto it = mIdMaps.find(event.id);
+            if (it == mIdMaps.end()) {
                 break;
             }
-            task->lastResumeAt = Clock::now();
-            task->resumes++;
+            auto record = &it->second;
+            record->lastResumeAt = Clock::now();
+            record->resumes++;
 
             // Add resume count to all parent
-            for (auto cur = ctxt.parent(); cur; cur = cur->parent()) {
-                if (auto record = cur->extraData<TaskRecord>(); record) {
-                    record->resumes++;
+            for (auto cur = record->parentId; cur != runtime::TaskId::Invalid; ) {
+                it = mIdMaps.find(cur);
+                if (it == mIdMaps.end()) {
+                    break;
                 }
+                record = &it->second;
+                record->resumes++;
+                cur = record->parentId;
             }
             break;
         }
-        case EventKind::Suspend: {
-            auto task = ctxt.extraData<TaskRecord>();
-            if (!task) {
+        case runtime::TraceEvent::Suspend: {
+            auto it = mIdMaps.find(event.id);
+            if (it == mIdMaps.end()) {
                 break;
             }
-            auto time = Clock::now() - task->lastResumeAt;
-            task->totalBusy += time;
+            auto record = &it->second;
+            auto time = Clock::now() - record->lastResumeAt;
+            record->totalBusy += time;
 
             // Add busy time to all parent
-            for (auto cur = ctxt.parent(); cur; cur = cur->parent()) {
-                if (auto record = cur->extraData<TaskRecord>(); record) {
-                    record->totalBusy += time;
+            for (auto cur = record->parentId; cur != runtime::TaskId::Invalid; ) {
+                it = mIdMaps.find(cur);
+                if (it == mIdMaps.end()) {
+                    break;
                 }
+                record = &it->second;
+                record->totalBusy += time;
+                cur = record->parentId;
             }
+        }
+        case runtime::TraceEvent::NameChange: {
+            auto it = mIdMaps.find(event.id);
+            if (it == mIdMaps.end()) {
+                break;
+            }
+            auto record = &it->second;
+            record->name.assign(event.name);
+            break;
         }
         default: break;
     }
-}
-
-auto TracingWebUi::Impl::allocTaskId() -> intptr_t {
-    return ++mTaskId;
-}
-
-auto TracingWebUi::Impl::allocChildId() -> intptr_t {
-    return --mChildId;
 }
 
 auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
@@ -383,12 +346,11 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
     // ]
     std::pmr::string json {&mPool};
     json += "[";
-    for (auto ctxt : mTasks) {
-        auto task = ctxt->extraData<TaskRecord>();
+    for (const auto &[id, record] : mIdMaps) {
         auto totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(
-            Clock::now() - task->createdAt
+            Clock::now() - record.createdAt
         );
-        auto totalBusy = std::chrono::duration_cast<std::chrono::milliseconds>(task->totalBusy);
+        auto totalBusy = std::chrono::duration_cast<std::chrono::milliseconds>(record.totalBusy);
         fmtlib::format_to(
             std::back_inserter(json),
             R"({{
@@ -401,17 +363,17 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
                 "location": "{}",
                 "children": [{:n}]
             }},)",
-            task->id,
-            ctxt->name(),
+            record.id,
+            record.name,
             "Idle",
             totalTime.count(),
             totalBusy.count(),
-            task->resumes,
-            task->location,
-            task->children
+            record.resumes,
+            record.location,
+            record.children
         );
     }
-    if (!mTasks.empty()) {
+    if (!mIdMaps.empty()) {
         json.pop_back(); // Remove trailing comma
     }
     json += "]";
@@ -429,12 +391,11 @@ auto TracingWebUi::Impl::snapshotStacktrace(intptr_t id) -> std::pmr::string {
     std::pmr::string json {&mPool};
     json += "[";
 
-    auto iter = mIdMaps.find(id);
-    if (iter == mIdMaps.end()) {
+    auto ctxt = runtime::CoroContext::fromId(static_cast<runtime::TaskId>(id));
+    if (!ctxt) {
         json.assign("[]");
         return json;
     }
-    auto ctxt = iter->second;
     auto stacktrace = ctxt->stacktrace();
     for (auto &frame : stacktrace) {
         fmtlib::format_to(

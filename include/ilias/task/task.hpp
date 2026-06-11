@@ -241,7 +241,7 @@ public:
     TaskBlockingContext(const TaskBlockingContext &) = delete;
 
     auto enter() -> void {
-        runtime::tracing::taskSpawn(*this); // TRACING: blocking wait is also spawn
+        this->tracingSpawn(); // TRACING: blocking wait is also spawn
         mTask.resume();
         if (!mTask.done()) {
             executor().run(mStopExecutor.get_token());            
@@ -255,7 +255,7 @@ public:
     }
 private:
     static auto onComplete(CoroContext &_self) -> void { // Break the event loop
-        runtime::tracing::taskComplete(_self); // TRACING: completion
+        _self.tracingComplete(); // TRACING: completion
         static_cast<TaskBlockingContext &>(_self).mStopExecutor.request_stop();
     }
     

@@ -56,7 +56,7 @@ public:
             ctxt.task().setCompletionHandler(&onTaskCompleted);
 
             // TRACING: a subtask is started
-            runtime::tracing::childBegin(ctxt);
+            ctxt.tracingSpawn();
             ctxt.task().resume();
         }
         return mLeft == 0;
@@ -80,7 +80,7 @@ protected:
         self.mLeft -= 1;
 
         // TRACING: a subtask is completed
-        runtime::tracing::childEnd(ctxt);
+        ctxt.tracingComplete();
         if (self.mLeft != 0) {
             return; // Still has some imcomplete tasks
         }

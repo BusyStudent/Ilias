@@ -27,7 +27,7 @@ TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task, CaptureSource sour
 
     // TRACING: trace the spawn point
     this->pushFrame("spawn", source);
-    runtime::tracing::taskSpawn(*this);
+    this->tracingSpawn(source);
 
     this->ref(); // Ref it, we will deref it when it completed
     mTask.schedule(); // Schedule the task in the executor
@@ -45,7 +45,7 @@ auto TaskSpawnContextBase::onComplete() -> void {
         mCompletionHandler = nullptr;
     }
     // TRACING: trace the completion point
-    runtime::tracing::taskComplete(*this);
+    this->tracingComplete();
 
     if (this->use_count() == 1) { // We are the last one, only can be deref in the event loop
         executor().schedule([this]() { 
@@ -384,7 +384,7 @@ auto FinallyAwaiterBase::await_suspend(CoroHandle caller) -> std::coroutine_hand
     mContext->setStoppedHandler(mainCallback);
     mainHandle.setContext(*mContext);
     mainHandle.setCompletionHandler(mainCallback);
-    runtime::tracing::childBegin(*mContext);
+    mContext->tracingSpawn();
     return mainHandle.toStd(); // Switch into it, caller -> task -> finally -> (caller or caller.setStopped())
 }
 
@@ -401,7 +401,7 @@ auto FinallyAwaiterBase::onTaskCompletion() -> void {
         mReg.reset();
 
         // Call the child to store the result
-        runtime::tracing::childEnd(*mContext);
+        mContext->tracingComplete();
         auto handle = mOnTaskCompletion(*this);
         mContext.reset(); // Destroy the task， quit the scope
         
@@ -415,13 +415,13 @@ auto FinallyAwaiterBase::onTaskCompletion() -> void {
         handle.setContext(*mContext);
         handle.setCompletionHandler(finallyCallback);
 
-        runtime::tracing::childBegin(*mContext);
+        mContext->tracingSpawn();
         handle.resume();
     });
 }
 
 auto FinallyAwaiterBase::onFinallyCompletion() -> void {
-    runtime::tracing::childEnd(*mContext);
+    mContext->tracingComplete();
     if (mStopped) { // Forward the stop completion to the caller
         mCaller.setStopped();
     }
