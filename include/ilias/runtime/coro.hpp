@@ -51,6 +51,7 @@ private:
 //   handler are used for normal/exceptional completion, while mStoppedHandler is
 //   used for cooperative cancellation.
 // - Contexts built with std::nostopstate are intentionally not cancellable.
+// - Contexts should be Pinned to memory before any coroutine runs
 class CoroContext {
 public:
     CoroContext() = default;
@@ -59,9 +60,8 @@ public:
     CoroContext(std::nostopstate_t) : mStopSource(std::nostopstate) {}
 
     // Request to stop the coroutine
-    auto stop() noexcept -> bool {
-        return mStopSource.request_stop();
-    }
+    ILIAS_API
+    auto stop() noexcept -> bool;
 
     // Check if the coroutine is stopped
     auto isStopped() const noexcept -> bool {
@@ -151,8 +151,9 @@ public:
     }
 
     // TRACING: 
-    ILIAS_API 
-    auto id() noexcept -> TaskId;
+    auto id() noexcept -> TaskId {
+        return meta().id;
+    }
 
     ILIAS_API
     auto tracingSpawn(CaptureSource source = {}) noexcept -> void;
@@ -193,8 +194,12 @@ public:
     }
 
     ILIAS_API
-    static auto fromId(TaskId id) noexcept -> CoroContext *;
+    static 
+    auto fromId(TaskId id) noexcept -> CoroContext *;
 private:
+    ILIAS_API
+    auto meta() noexcept -> TraceMeta &;                     // Lazy initialization of the meta data
+
     StopSource    mStopSource;                               // Used to request cooperative cancellation
     Executor     *mExecutor = nullptr;
     void        (*mStoppedHandler)(CoroContext &) = nullptr; // Called when coroutine is stopped
@@ -205,8 +210,8 @@ private:
     bool          mSuspended = true;                         // The coroutine is suspended
     CoroContext  *mParent = nullptr;                         // Use for stacktrace to dump the whole stack
     CoroContext  *mRoot = nullptr;                           // The root context of the coroutine (spawn or blocking wait), used for tracing
+    TraceMeta     mMeta;                                     // The meta data of the coroutine, used for tracing
     std::string   mName;                                     // The name of the coroutine, used for tracing
-    TaskId        mId {};                                    // The id of the coroutine, used for tracing
     std::vector<StackFrame> mFrames;                         // The frames of the coroutine,
 #endif // defined(ILIAS_CORO_TRACE)
 template <typename T, bool Forward>

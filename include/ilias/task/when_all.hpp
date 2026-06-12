@@ -17,6 +17,7 @@ namespace task {
 using runtime::CoroContext;
 using runtime::CoroHandle;
 using runtime::StopRegistration;
+using runtime::CaptureSource;
 
 /**
  * @brief tag for when all on tuple
@@ -26,18 +27,22 @@ using runtime::StopRegistration;
 template <typename ...Types>
 struct WhenAllTuple final {
     std::array<TaskContext, sizeof ...(Types)> mTasks;
-    CoroContext *mContext = nullptr; // The context of the caller
+    CoroContext  *mContext = nullptr; // The context of the caller
+
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
+    CaptureSource mSource; // The source location of the await point
 
     // Set the context of the task, call on await_transform
-    auto setContext(CoroContext &context) noexcept {
+    auto setContext(CoroContext &context, CaptureSource source) noexcept {
         mContext = &context;
+        mSource = source;
     }
 };
 
 // The common part of when all awaiter
 class WhenAllAwaiterBase {
 public:
-    WhenAllAwaiterBase(std::span<TaskContext> tasks, CoroContext &context) : mTasks(tasks), mContext(context) {}
+    WhenAllAwaiterBase(std::span<TaskContext> tasks, CoroContext &context, CaptureSource source) : mTasks(tasks), mContext(context), mSource(source) {}
 
     auto await_ready() -> bool {
         // Start all first
@@ -56,7 +61,7 @@ public:
             ctxt.task().setCompletionHandler(&onTaskCompleted);
 
             // TRACING: a subtask is started
-            ctxt.tracingSpawn();
+            ctxt.tracingSpawn(mSource);
             ctxt.task().resume();
         }
         return mLeft == 0;
@@ -97,6 +102,8 @@ protected:
     StopRegistration mReg;
     CoroContext &mContext;
     CoroHandle mCaller;
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
+    CaptureSource mSource; // The source location of the await point
     size_t mLeft = 0;
     bool mStopRequested = false;
 };
@@ -105,7 +112,7 @@ protected:
 template <typename ...Ts>
 class WhenAllAwaiter final : public WhenAllAwaiterBase {
 public:
-    WhenAllAwaiter(std::span<TaskContext> tasks, CoroContext &context) : WhenAllAwaiterBase(tasks, context) {}
+    using WhenAllAwaiterBase::WhenAllAwaiterBase; // Inherit the constructor
 
     using Tuple = std::tuple<typename Option<Ts>::value_type ...>; // Using Option to replace void to std::monostate
     using RawTuple = std::tuple<Ts...>;
@@ -132,7 +139,7 @@ private:
 
 template <typename ...Ts>
 inline auto operator co_await(WhenAllTuple<Ts...> &&tuple) noexcept {
-    return WhenAllAwaiter<Ts...>(tuple.mTasks, *tuple.mContext);
+    return WhenAllAwaiter<Ts...> {tuple.mTasks, *tuple.mContext, tuple.mSource};
 }
 
 } // namespace task
@@ -148,8 +155,8 @@ template <Awaitable ...Ts>
 [[nodiscard]]
 inline auto whenAll(Ts && ...args) noexcept {
     return task::WhenAllTuple<AwaitableResult<Ts>... > { // Construct the task for the given awaitable
-        {  task::TaskContext {toTask(std::forward<Ts>(args))._leak()}... },
-        nullptr // The context will be set in await_transform
+        .mTasks = { task::TaskContext {toTask(std::forward<Ts>(args))._leak()}... },
+        .mContext = nullptr // The context will be set in await_transform
     };
 }
 

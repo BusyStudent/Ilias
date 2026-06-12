@@ -54,11 +54,8 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
         Clock::time_point createdAt {};
         Clock::time_point lastSeenAt {};
         Clock::time_point lastResumeAt {};
-        std::chrono::nanoseconds totalBusy {};
+        Clock::duration   totalBusy {};
         size_t resumes = 0;
-        size_t suspends = 0;
-        size_t childrenStarted = 0;
-        size_t childrenCompleted = 0;
         bool stopRequested = false;
         bool stopped = false;
         std::pmr::string name;
@@ -249,82 +246,44 @@ auto TracingWebUi::Impl::onEvent(const runtime::TraceEvent &event) noexcept -> v
         case runtime::TraceEvent::Spawn: { // New task spawn
             // Add Parent
             std::pmr::string location {&mPool};
-            if (event.parentId != runtime::TaskId::Invalid) { // Add child
-                if (auto it = mIdMaps.find(event.parentId); it != mIdMaps.end()) {
-                    auto &[_, parent] = *it;
-                    parent.children.emplace(event.id);
-                }
-            }
             fmtlib::format_to(std::back_inserter(location), "{}:{}", event.location.file_name(), event.location.line());
             std::ranges::replace(location, '\\', '/');
 
             // Add it to map
-            mIdMaps.emplace(event.id, TaskRecord {
-                .id = event.id,
-                .parentId = event.parentId,
+            mIdMaps.emplace(event.meta.id, TaskRecord {
+                .id = event.meta.id,
+                .parentId = event.meta.parentId,
                 .createdAt = Clock::now(),
-                .name = std::pmr::string {event.name},
+                .name = std::pmr::string {event.meta.name},
                 .location = std::move(location),
                 .children = std::pmr::set<runtime::TaskId> {&mPool}
             });
             break;
         }
         case runtime::TraceEvent::Complete: { // Task complete
-            if (auto it = mIdMaps.find(event.parentId); it != mIdMaps.end()) { // Remove child
+            if (auto it = mIdMaps.find(event.meta.parentId); it != mIdMaps.end()) { // Remove child
                 auto &[_, record] = *it;
-                record.children.erase(event.id);
+                record.children.erase(event.meta.id);
             }
-            mIdMaps.erase(event.id);
+            mIdMaps.erase(event.meta.id);
             break;
         }
         case runtime::TraceEvent::Resume: {
-            auto it = mIdMaps.find(event.id);
-            if (it == mIdMaps.end()) {
-                break;
-            }
-            auto record = &it->second;
-            record->lastResumeAt = Clock::now();
-            record->resumes++;
-
-            // Add resume count to all parent
-            for (auto cur = record->parentId; cur != runtime::TaskId::Invalid; ) {
-                it = mIdMaps.find(cur);
-                if (it == mIdMaps.end()) {
-                    break;
-                }
-                record = &it->second;
-                record->resumes++;
-                cur = record->parentId;
+            auto it = mIdMaps.find(event.meta.id);
+            if (it != mIdMaps.end()) {
+                auto &record = it->second;
+                record.totalBusy = event.meta.totalBusy;
+                record.resumes = event.meta.resumes;
             }
             break;
         }
-        case runtime::TraceEvent::Suspend: {
-            auto it = mIdMaps.find(event.id);
-            if (it == mIdMaps.end()) {
-                break;
-            }
-            auto record = &it->second;
-            auto time = Clock::now() - record->lastResumeAt;
-            record->totalBusy += time;
-
-            // Add busy time to all parent
-            for (auto cur = record->parentId; cur != runtime::TaskId::Invalid; ) {
-                it = mIdMaps.find(cur);
-                if (it == mIdMaps.end()) {
-                    break;
-                }
-                record = &it->second;
-                record->totalBusy += time;
-                cur = record->parentId;
-            }
-        }
         case runtime::TraceEvent::NameChange: {
-            auto it = mIdMaps.find(event.id);
+            auto it = mIdMaps.find(event.meta.id);
             if (it == mIdMaps.end()) {
                 break;
             }
             auto record = &it->second;
-            record->name.assign(event.name);
+            record->name.assign(event.meta.name);
             break;
         }
         default: break;

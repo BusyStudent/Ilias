@@ -192,6 +192,10 @@ auto threadpool::submit(CallableRef &callable) -> void {
 #endif
 }
 
+// CoroContext
+auto CoroContext::stop() noexcept -> bool {
+    return mStopSource.request_stop();
+}
 
 // TRACING
 #if defined(ILIAS_CORO_TRACE)
@@ -232,25 +236,35 @@ auto TracingSubscriber::currentThread() noexcept -> TracingSubscriber * {
 }
 
 // TRACING in the context
-auto CoroContext::id() noexcept -> TaskId {
-    if (mId == TaskId::Invalid) {
-        if (mParent) { // Child task
-            mId = static_cast<TaskId>(gChildTaskId.fetch_sub(1));
-        }
-        else {
-            mId = static_cast<TaskId>(gTaskId.fetch_add(1));
-        }
+auto CoroContext::meta() noexcept -> TraceMeta & {
+    if (mMeta.id != TaskId::Invalid) { // Initialized
+        return mMeta;
     }
-    return mId;
+
+    // Alloc self id
+    if (mParent) { // Child task
+        mMeta.id = static_cast<TaskId>(gChildTaskId.fetch_sub(1));
+    }
+    else {
+        mMeta.id = static_cast<TaskId>(gTaskId.fetch_add(1));
+    }
+
+    // Set parent it
+    mMeta.parentId = mParent ? mParent->id() : TaskId::Invalid;
+    mMeta.rootId = mParent ? mRoot->id() : TaskId::Invalid;
+
+    // Set name
+    mMeta.name = mName;
+    return mMeta;
 }
 
 auto CoroContext::setName(std::string_view name) noexcept -> void {
     mName = name;
+    meta().name = mName;
     if (gSubscriber) {
         gSubscriber->onEvent(TraceEvent {
             .type = TraceEvent::NameChange,
-            .id = id(),
-            .name = name,
+            .meta = meta()
         });
     }
 }
@@ -266,10 +280,7 @@ auto CoroContext::tracingSpawn(CaptureSource source) noexcept -> void {
     // Notify the subscriber
     gSubscriber->onEvent(TraceEvent {
         .type = TraceEvent::Spawn,
-        .id = id(),
-        .parentId = mParent ? mParent->id() : TaskId::Invalid,
-        .rootId = mRoot ? mRoot->id() : TaskId::Invalid,
-        .name = mName,
+        .meta = meta(),
         .location = source
     });
 }
@@ -278,17 +289,14 @@ auto CoroContext::tracingComplete() noexcept -> void {
     if (!gSubscriber) {
         return;
     }
-    ILIAS_ASSERT(mId != TaskId::Invalid, "TaskId is invalid, did you call it before spawning?");
+    ILIAS_ASSERT(mMeta.id != TaskId::Invalid, "TaskId is invalid, did you call it before spawning?");
 
     // Notify the subscriber
     gSubscriber->onEvent(TraceEvent {
         .type = TraceEvent::Complete,
-        .id = id(),
-        .parentId = mParent ? mParent->id() : TaskId::Invalid,
-        .rootId = mRoot ? mRoot->id() : TaskId::Invalid,
-        .name = mName,
+        .meta = meta()
     });
-    gContextsMap.map.erase(mId);
+    gContextsMap.map.erase(id());
 }
 
 auto CoroContext::tracingResume() noexcept -> void {
@@ -299,12 +307,18 @@ auto CoroContext::tracingResume() noexcept -> void {
         return;
     }
     mSuspended = false;
+    
+    // Calc the time
+    mMeta.lastResumeAt = std::chrono::steady_clock::now();
+    // Increase the resumes count to all parent
+    for (auto cur = this; cur != nullptr; cur = cur->parent()) {
+        cur->mMeta.resumes += 1;
+    }
+
+    // Notify the subscriber
     gSubscriber->onEvent(TraceEvent {
         .type = TraceEvent::Resume,
-        .id = id(),
-        .parentId = mParent ? mParent->id() : TaskId::Invalid,
-        .rootId = mRoot ? mRoot->id() : TaskId::Invalid,
-        .name = mName,
+        .meta = meta()
     });
 }
 
@@ -316,12 +330,19 @@ auto CoroContext::tracingSuspend() noexcept -> void {
         return;
     }
     mSuspended = true;
+
+    // Calc the time
+    auto now = std::chrono::steady_clock::now();
+    auto busyTime = now - mMeta.lastResumeAt;
+    // Increase the busy time to all parent
+    for (auto cur = this; cur != nullptr; cur = cur->parent()) {
+        cur->mMeta.totalBusy += busyTime;
+    }
+
+    // Notify the subscriber
     gSubscriber->onEvent(TraceEvent {
         .type = TraceEvent::Suspend,
-        .id = id(),
-        .parentId = mParent ? mParent->id() : TaskId::Invalid,
-        .rootId = mRoot ? mRoot->id() : TaskId::Invalid,
-        .name = mName,
+        .meta = meta()
     });
 }
 

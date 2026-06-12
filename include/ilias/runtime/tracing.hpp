@@ -4,6 +4,7 @@
 #include <ilias/runtime/capture.hpp>
 #include <ilias/log.hpp>
 #include <source_location>
+#include <chrono>
 #include <string>
 
 ILIAS_NS_BEGIN
@@ -16,6 +17,26 @@ namespace runtime {
  */
 enum class TaskId : intptr_t {
     Invalid = 0,
+};
+
+/**
+ * @brief The metadata of the trace event
+ * 
+ */
+class TraceMeta {
+public:
+    // Tree
+    TaskId id {};
+    TaskId parentId {};
+    TaskId rootId {};
+
+    // Name
+    std::string_view name;
+
+    // Resume / Suspend
+    std::chrono::steady_clock::time_point lastResumeAt {};
+    std::chrono::steady_clock::duration   totalBusy {};
+    size_t                                resumes {}; // The number of resumes counted
 };
 
 /**
@@ -32,12 +53,7 @@ public:
         NameChange, // The name of a task is changed
     } type {};
     
-    // Tree
-    TaskId id {};
-    TaskId parentId {};
-    TaskId rootId {};
-    
-    std::string_view name;
+    const TraceMeta &meta;
     std::source_location location; // The location of the event happened (currently only for spawn)
 };
 

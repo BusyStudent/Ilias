@@ -229,7 +229,7 @@ protected:
 // Environment for the blocking wait task (borrow the task ownship)
 class TaskBlockingContext final : private CoroContext {
 public:
-    TaskBlockingContext(TaskHandle<> task, CaptureSource source) : CoroContext(std::nostopstate), mTask(task) {
+    TaskBlockingContext(TaskHandle<> task, CaptureSource source) : CoroContext(std::nostopstate), mTask(task), mSource(source) {
         auto executor = runtime::Executor::currentThread();
         ILIAS_ASSERT(executor, "The current thread has no executor");
 
@@ -241,7 +241,7 @@ public:
     TaskBlockingContext(const TaskBlockingContext &) = delete;
 
     auto enter() -> void {
-        this->tracingSpawn(); // TRACING: blocking wait is also spawn
+        this->tracingSpawn(mSource); // TRACING: blocking wait is also spawn
         mTask.resume();
         if (!mTask.done()) {
             executor().run(mStopExecutor.get_token());            
@@ -261,6 +261,8 @@ private:
     
     TaskHandle<> mTask; // The task we use to wait for (borrow)
     StopSource   mStopExecutor; // The stop source of the executor
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
+    CaptureSource mSource; // The source location of the blocking wait
 };
 
 // Awaiter for blocking

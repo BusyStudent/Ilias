@@ -384,7 +384,7 @@ auto FinallyAwaiterBase::await_suspend(CoroHandle caller) -> std::coroutine_hand
     mContext->setStoppedHandler(mainCallback);
     mainHandle.setContext(*mContext);
     mainHandle.setCompletionHandler(mainCallback);
-    mContext->tracingSpawn();
+    mContext->tracingSpawn(mSource);
     return mainHandle.toStd(); // Switch into it, caller -> task -> finally -> (caller or caller.setStopped())
 }
 
@@ -415,7 +415,7 @@ auto FinallyAwaiterBase::onTaskCompletion() -> void {
         handle.setContext(*mContext);
         handle.setCompletionHandler(finallyCallback);
 
-        mContext->tracingSpawn();
+        mContext->tracingSpawn(mSource);
         handle.resume();
     });
 }

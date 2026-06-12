@@ -12,6 +12,6 @@ using namespace ilias;
 class Subscriber : public runtime::TracingSubscriber {
 public:
     auto onEvent(const runtime::TraceEvent &event) noexcept -> void override {
-        ILIAS_INFO("Subscriber", "Event {} at {}", event.type, event.id);
+        ILIAS_INFO("Subscriber", "Event {} at {}", event.type, event.meta.id);
     }
 };

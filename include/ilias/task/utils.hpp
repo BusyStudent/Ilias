@@ -19,7 +19,7 @@ public:
     UnstoppableAwaiter(UnstoppableAwaiter &&) = default;
 
     auto await_ready() -> bool {
-        mCtxt.tracingSpawn();
+        mCtxt.tracingSpawn(mSource);
         mHandle.setContext(mCtxt); // Use the unstoppable context
         return mAwaiter.await_ready();
     }
@@ -34,7 +34,7 @@ public:
     }
 
     // Set the context of the task, call on await_transform
-    auto setContext(runtime::CoroContext &ctxt) {
+    auto setContext(runtime::CoroContext &ctxt, runtime::CaptureSource sorce) {
 #if defined(ILIAS_CORO_TRACE)
         // TRACING: mark the current await point is unstoppable
         if (auto frame = mCtxt.topFrame(); frame) {
@@ -44,8 +44,11 @@ public:
         // We just need the executor info from the context
         mCtxt.setParent(ctxt);
         mCtxt.setExecutor(ctxt.executor());
+        mSource = sorce;
     }
 private:
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
+    runtime::CaptureSource mSource; // Await point source location
     runtime::CoroContext mCtxt {std::nostopstate};
     TaskHandle<T>  mHandle;
     TaskAwaiter<T> mAwaiter;
@@ -152,13 +155,14 @@ public:
     auto await_suspend(runtime::CoroHandle caller) -> std::coroutine_handle<>;
     auto await_ready() -> bool { return false; } // Always suspend, because althrough the task is ready, we need to call the finally handler
 
-    auto setContext(runtime::CoroContext &ctxt) noexcept {
+    auto setContext(runtime::CoroContext &ctxt, runtime::CaptureSource source) noexcept {
 #if defined(ILIAS_CORO_TRACE)
         // TRACING: mark the current await point is finally
         if (auto frame = ctxt.topFrame(); frame) {
             frame->setMessage("finally");
         }
 #endif // defined(ILIAS_CORO_TRACE)
+        mSource = source;
         mContext->setParent(ctxt);
         mContext->setExecutor(ctxt.executor());
     }
@@ -171,7 +175,9 @@ private:
     auto onFinallyCompletion() -> void;
 
     bool mStopped = false; // Did main ctxt receive the stop request and actually stopped ?
-    runtime::CoroHandle mCaller;
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
+    runtime::CaptureSource mSource; // Await point source location
+    runtime::CoroHandle    mCaller;
     runtime::StopRegistration mReg;
 };
 
