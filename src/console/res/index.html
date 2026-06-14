@@ -8,25 +8,46 @@
 </head>
 <body>
     <div class="toolbar">
-        <div>
-            <strong>⚡ Async Task Console</strong>
-            <span id="stats" style="margin-left: 20px; color: #888;">Tasks: 0 | Running: 0</span>
+        <div class="toolbar-title">
+            <strong>Async Task Console</strong>
+            <span id="stats" class="stats">Tasks: 0 | Running: 0</span>
         </div>
-        <div>
+        <div class="toolbar-actions">
             <button id="pauseBtn" onclick="togglePause()">Pause</button>
+            <button id="settingsBtn" class="secondary-button" onclick="toggleSettings()" aria-expanded="false">Settings</button>
+        </div>
+    </div>
+
+    <div id="settingsPanel" class="settings-panel" hidden>
+        <div class="settings-grid">
+            <label class="setting-control" for="refreshIntervalSelect">
+                <span>Refresh</span>
+                <select id="refreshIntervalSelect" onchange="setRefreshInterval(this.value)">
+                    <option value="250">250 ms</option>
+                    <option value="500">500 ms</option>
+                    <option value="1000">1 s</option>
+                    <option value="2000">2 s</option>
+                    <option value="5000">5 s</option>
+                </select>
+            </label>
+            <label class="setting-control toggle-control" for="hideOrphanChildrenToggle">
+                <input id="hideOrphanChildrenToggle" class="toggle-input" type="checkbox" onchange="setHideOrphanChildren(this.checked)">
+                <span class="toggle-track"></span>
+                <span>Hide orphan child tasks</span>
+            </label>
         </div>
     </div>
 
     <table>
         <thead>
             <tr>
-                <th onclick="setSort('id')">ID <span id="sort-id"></span></th>
-                <th onclick="setSort('name')">Task Name <span id="sort-name"></span></th>
-                <th onclick="setSort('location')">Location <span id="sort-location"></span></th>
-                <th onclick="setSort('state')">State <span id="sort-state"></span></th>
-                <th onclick="setSort('total_time')">Total Time <span id="sort-total_time"></span></th>
-                <th onclick="setSort('busy_time')">Busy Time <span id="sort-busy_time"></span></th>
-                <th onclick="setSort('resumes')">Resumes <span id="sort-resumes"></span></th>
+                <th onclick="setSort('id')">ID <span id="sort-id" class="sort-indicator"></span></th>
+                <th onclick="setSort('name')">Task Name <span id="sort-name" class="sort-indicator"></span></th>
+                <th onclick="setSort('location')">Location <span id="sort-location" class="sort-indicator"></span></th>
+                <th onclick="setSort('state')">State <span id="sort-state" class="sort-indicator"></span></th>
+                <th onclick="setSort('total_time')">Total Time <span id="sort-total_time" class="sort-indicator"></span></th>
+                <th onclick="setSort('busy_time')">Busy Time <span id="sort-busy_time" class="sort-indicator"></span></th>
+                <th onclick="setSort('resumes')">Resumes <span id="sort-resumes" class="sort-indicator"></span></th>
             </tr>
         </thead>
         <tbody id="task-body">

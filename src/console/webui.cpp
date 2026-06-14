@@ -169,21 +169,21 @@ auto TracingWebUi::Impl::handleRequest(BufStream<TcpStream> &stream, std::string
         path = path.substr(0, q);
     }
     if (path == "/") {
-        auto html = std::string_view {
+        std::string_view html {
             _binary_index_html_start,
             _binary_index_html_end
         };
         co_return co_await sendReply(stream, 200, "text/html; charset=utf-8", html);
     }
     if (path == "/styles.css") {
-        auto css = std::string_view {
+        std::string_view css {
             _binary_styles_css_start,
             _binary_styles_css_end
         };
         co_return co_await sendReply(stream, 200, "text/css; charset=utf-8", css);
     }
     if (path == "/script.js") {
-        auto js = std::string_view {
+        std::string_view js {
             _binary_script_js_start,
             _binary_script_js_end
         };
@@ -246,18 +246,26 @@ auto TracingWebUi::Impl::onEvent(const runtime::TraceEvent &event) noexcept -> v
         case runtime::TraceEvent::Spawn: { // New task spawn
             // Add Parent
             std::pmr::string location {&mPool};
+            std::pmr::string name {&mPool};
+
             fmtlib::format_to(std::back_inserter(location), "{}:{}", event.location.file_name(), event.location.line());
             std::ranges::replace(location, '\\', '/');
+
+            name = event.meta.name;
 
             // Add it to map
             mIdMaps.emplace(event.meta.id, TaskRecord {
                 .id = event.meta.id,
                 .parentId = event.meta.parentId,
                 .createdAt = Clock::now(),
-                .name = std::pmr::string {event.meta.name},
+                .name = std::move(name),
                 .location = std::move(location),
                 .children = std::pmr::set<runtime::TaskId> {&mPool}
             });
+            // Register parent if exist
+            if (auto it = mIdMaps.find(event.meta.parentId); it != mIdMaps.end()) {
+                it->second.children.insert(event.meta.id);
+            }
             break;
         }
         case runtime::TraceEvent::Complete: { // Task complete
@@ -295,6 +303,7 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
     //     {
     //         "id": 0,
     //         "name": "Task 1",
+    //         "parent_id": 0,
     //         "state": "Running or Idle or Yielded or Completed",
     //         "total_time": 1234,
     //         "busy_time": 1000,
@@ -312,8 +321,9 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
         auto totalBusy = std::chrono::duration_cast<std::chrono::milliseconds>(record.totalBusy);
         fmtlib::format_to(
             std::back_inserter(json),
-            R"({{
+            R"JSON({{
                 "id": {},
+                "parent_id": {},
                 "name": "{}",
                 "state": "{}",
                 "total_time": {},
@@ -321,8 +331,9 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
                 "resumes": {},
                 "location": "{}",
                 "children": [{:n}]
-            }},)",
-            record.id,
+            }},)JSON",
+            static_cast<intptr_t>(id),
+            static_cast<intptr_t>(record.parentId),
             record.name,
             "Idle",
             totalTime.count(),

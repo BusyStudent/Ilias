@@ -4,6 +4,12 @@ let isPaused = false;
 let sortKey = 'id';
 let sortAsc = true;
 let updateInterval = null;
+let settings = {
+    refreshInterval: 1000,
+    hideOrphanChildren: false,
+};
+
+const SETTINGS_STORAGE_KEY = 'ilias-tracing-webui-settings';
 
 // State for stacktrace
 let expandedTasks = new Set();
@@ -12,9 +18,70 @@ let stackTraces = {};
 // State for tree
 let expandedTreeNodes = new Set();
 
-// When the tree is clicked
-function toggleTree(event, id) {
-    event.stopPropagation(); 
+function loadSettings() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}');
+        settings = {
+            ...settings,
+            ...saved,
+            refreshInterval: Number(saved.refreshInterval || settings.refreshInterval),
+            hideOrphanChildren: Boolean(saved.hideOrphanChildren),
+        };
+    }
+    catch (error) {
+        console.warn('Failed to load settings:', error);
+    }
+}
+
+function saveSettings() {
+    try {
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    }
+    catch (error) {
+        console.warn('Failed to save settings:', error);
+    }
+}
+
+function syncSettingsControls() {
+    const intervalSelect = document.getElementById('refreshIntervalSelect');
+    const orphanToggle = document.getElementById('hideOrphanChildrenToggle');
+    if (intervalSelect) intervalSelect.value = String(settings.refreshInterval);
+    if (orphanToggle) orphanToggle.checked = settings.hideOrphanChildren;
+}
+
+function restartUpdateTimer() {
+    if (updateInterval !== null) {
+        clearInterval(updateInterval);
+    }
+    updateInterval = setInterval(fetchTasks, settings.refreshInterval);
+}
+
+function setRefreshInterval(value) {
+    const interval = Number(value);
+    if (!Number.isFinite(interval) || interval < 100) {
+        return;
+    }
+    settings.refreshInterval = interval;
+    saveSettings();
+    restartUpdateTimer();
+}
+
+function setHideOrphanChildren(checked) {
+    settings.hideOrphanChildren = Boolean(checked);
+    saveSettings();
+    render();
+}
+
+function toggleSettings() {
+    const panel = document.getElementById('settingsPanel');
+    const btn = document.getElementById('settingsBtn');
+    const willOpen = panel.hidden;
+    panel.hidden = !willOpen;
+    btn.classList.toggle('is-active', willOpen);
+    btn.setAttribute('aria-expanded', String(willOpen));
+}
+
+function toggleTreeNode(id) {
     if (expandedTreeNodes.has(id)) {
         expandedTreeNodes.delete(id);
     }
@@ -24,18 +91,18 @@ function toggleTree(event, id) {
     render();
 }
 
+// When the tree is clicked
+function toggleTree(event, id) {
+    event.stopPropagation();
+    toggleTreeNode(id);
+}
+
 // Generic handle click
 function handleRowClick(task) {
     const hasChildren = task.children && task.children.length > 0;
     
     if (hasChildren) {
-        if (expandedTreeNodes.has(task.id)) {
-            expandedTreeNodes.delete(task.id);
-        }
-        else {
-            expandedTreeNodes.add(task.id);
-        }
-        render();
+        toggleTreeNode(task.id);
     }
     else {
         // If is the deepest node, toggle stacktrace
@@ -151,7 +218,7 @@ async function toggleStackTrace(id) {
     }
     expandedTasks.add(id);
     
-    stackTraces[id] = '<div style="color:#888;">Loading stacktrace...</div>';
+    stackTraces[id] = '<div class="st-status">Loading stacktrace...</div>';
     render();
 
     try {
@@ -170,14 +237,16 @@ async function toggleStackTrace(id) {
 
                 htmlStr += `
                     <div class="st-frame">
-                        <div class="st-header">
-                            <span class="st-frame-index">#${index}</span>
-                            <span class="st-func">${func}</span>
-                        </div>
-                        <div class="st-location">
-                            <span class="st-keyword">at</span>
-                            <span class="st-file">${file}</span>:<span class="st-line">${line}</span>
-                            ${message ? `<span class="st-message">[${message}]</span>` : ''}
+                        <span class="st-frame-index">#${index}</span>
+                        <div class="st-frame-main">
+                            <div class="st-header">
+                                <span class="st-func">${func}</span>
+                            </div>
+                            <div class="st-location">
+                                <span class="st-keyword">at</span>
+                                <span class="st-file">${file}</span>:<span class="st-line">${line}</span>
+                                ${message ? `<span class="st-message">[${message}]</span>` : ''}
+                            </div>
                         </div>
                     </div>
                 `;
@@ -185,12 +254,12 @@ async function toggleStackTrace(id) {
             stackTraces[id] = htmlStr;
         }
         else {
-            stackTraces[id] = '<div style="color:#888;">No stacktrace available.</div>';
+            stackTraces[id] = '<div class="st-status st-empty">No stacktrace available.</div>';
         }
     }
     catch (error) {
         console.error(`Failed to fetch stacktrace for task ${id}:`, error);
-        stackTraces[id] = '<div style="color: #f48771;">Error: Failed to load stacktrace.</div>';
+        stackTraces[id] = '<div class="st-status st-error">Error: Failed to load stacktrace.</div>';
     }
     
     if (expandedTasks.has(id)) {
@@ -211,19 +280,50 @@ function render() {
 
     // Build the tree
     const taskMap = new Map();
-    const childToParent = new Map();
+    const parentByChild = new Map();
+    const childrenByParent = new Map();
     let runningCount = 0;
 
     tasks.forEach(t => {
         taskMap.set(t.id, t);
+        childrenByParent.set(t.id, []);
         if (t.state === 'Running') runningCount++;
-        if (t.children && Array.isArray(t.children)) {
-            t.children.forEach(childId => childToParent.set(childId, t.id));
+    });
+
+    const addChild = (parentId, childId) => {
+        if (parentId === undefined || parentId === null || parentId === 0 || parentId === childId) {
+            return;
         }
+        if (!taskMap.has(parentId) || !taskMap.has(childId)) {
+            return;
+        }
+        const children = childrenByParent.get(parentId);
+        if (!children.includes(childId)) {
+            children.push(childId);
+        }
+        parentByChild.set(childId, parentId);
+    };
+
+    tasks.forEach(t => {
+        if (Array.isArray(t.children)) {
+            t.children.forEach(childId => addChild(t.id, childId));
+        }
+        addChild(t.parent_id ?? t.parentId, t.id);
     });
 
     // Get the root
-    let rootTasks = tasks.filter(t => !childToParent.has(t.id));
+    let rootTasks = tasks.filter(t => !parentByChild.has(t.id));
+    if (settings.hideOrphanChildren) {
+        rootTasks = rootTasks.filter(t => {
+            const id = Number(t.id);
+            const parentId = t.parent_id ?? t.parentId;
+            const missingParent = parentId === undefined ||
+                parentId === null ||
+                Number(parentId) === 0 ||
+                !taskMap.has(parentId);
+            return !(id < 0 && missingParent);
+        });
+    }
 
     // Sort it
     const sortNodes = (nodes) => {
@@ -245,9 +345,10 @@ function render() {
             t._depth = depth;
             renderList.push(t);
             
-            const hasChildren = t.children && t.children.length > 0;
+            const childrenIds = childrenByParent.get(t.id) || [];
+            const hasChildren = childrenIds.length > 0;
             if (hasChildren && expandedTreeNodes.has(t.id)) {
-                let childrenNodes = t.children
+                let childrenNodes = childrenIds
                     .map(cid => taskMap.get(cid))
                     .filter(Boolean);
                 buildRenderList(childrenNodes, depth + 1);
@@ -259,24 +360,47 @@ function render() {
 
     // Render the table
     renderList.forEach(t => {
-        const hasChildren = t.children && t.children.length > 0;
-        
-        const isExpanded = hasChildren ? expandedTreeNodes.has(t.id) : expandedTasks.has(t.id);
+        const childrenIds = childrenByParent.get(t.id) || [];
+        const hasChildren = childrenIds.length > 0;
+        const treeOpen = hasChildren && expandedTreeNodes.has(t.id);
+        const traceOpen = !hasChildren && expandedTasks.has(t.id);
+        const isExpanded = treeOpen || traceOpen;
         const busyRatio = Math.min((t.busy_time / t.total_time) * 100, 100) || 0;
+        const childCount = childrenIds.length;
+        const safeName = escapeHtml(t.name || '(anonymous)');
+        const safeLocation = escapeHtml(t.location || '');
+        const state = String(t.state || 'Unknown');
+        const safeState = escapeHtml(state);
+        const stateClass = escapeHtml(state.replace(/[^\w-]/g, ''));
         
         const tr = document.createElement('tr');
-        tr.className = 'clickable-row' + (isExpanded ? ' expanded' : '');
+        tr.className = [
+            'clickable-row',
+            hasChildren ? 'tree-parent' : 'tree-leaf',
+            isExpanded ? 'expanded' : '',
+            traceOpen ? 'trace-open' : ''
+        ].filter(Boolean).join(' ');
         tr.onclick = () => handleRowClick(t); 
         
-        const indentPx = t._depth * 20;
+        const indentPx = t._depth * 22;
+        const nestedClass = t._depth > 0 ? ' is-nested' : '';
+        const toggleLabel = hasChildren
+            ? `${treeOpen ? 'Collapse' : 'Expand'} task ${t.id} children`
+            : `${traceOpen ? 'Hide' : 'Show'} task ${t.id} stacktrace`;
 
         tr.innerHTML = `
-            <td style="padding-left: ${12 + indentPx}px;">
-                <span class="expand-icon">▶</span> ${t.id}
+            <td class="cell-id">
+                <div class="tree-cell${nestedClass}" style="--tree-indent: ${indentPx}px; --tree-guide: ${indentPx - 11}px;">
+                    <button class="tree-toggle ${hasChildren ? 'has-children' : 'is-leaf'}" type="button" aria-label="${escapeHtml(toggleLabel)}" aria-expanded="${isExpanded}">
+                        <span class="tree-chevron"></span>
+                    </button>
+                    <span class="task-id">#${escapeHtml(t.id)}</span>
+                    ${hasChildren ? `<span class="child-count" title="Children">${childCount}</span>` : '<span class="trace-dot" title="Stacktrace"></span>'}
+                </div>
             </td>
-            <td>${t.name}</td>
-            <td class="cell-location" title="${t.location || ''}">${t.location || '-'}</td>
-            <td class="state-${t.state}">${t.state}</td>
+            <td class="cell-name">${safeName}</td>
+            <td class="cell-location" title="${safeLocation}">${safeLocation || '-'}</td>
+            <td class="state-${stateClass}">${safeState}</td>
             <td>${formatTime(t.total_time)}</td>
             <td>
                 ${formatTime(t.busy_time)}
@@ -284,6 +408,11 @@ function render() {
             </td>
             <td>${t.resumes}</td>
         `;
+        const toggleBtn = tr.querySelector('.tree-toggle');
+        toggleBtn.onclick = (event) => {
+            event.stopPropagation();
+            handleRowClick(t);
+        };
         tbody.appendChild(tr);
 
         // If the deepest and stacktrace was shown, show the stacktrace
@@ -291,8 +420,14 @@ function render() {
             const stackTr = document.createElement('tr');
             stackTr.className = 'stack-row';
             stackTr.innerHTML = `
-                <td colspan="7" style="padding: 10px 20px; padding-left: ${30 + indentPx}px;">
-                    <pre class="stack-container">${stackTraces[t.id]}</pre>
+                <td colspan="7" class="stack-cell" style="--stack-indent: ${30 + indentPx}px;">
+                    <section class="stack-panel">
+                        <div class="stack-title">
+                            <span>Stacktrace</span>
+                            <span class="stack-meta">task #${escapeHtml(t.id)}</span>
+                        </div>
+                        <div class="stack-container">${stackTraces[t.id] || '<div class="st-status">Loading stacktrace...</div>'}</div>
+                    </section>
                 </td>
             `;
             tbody.appendChild(stackTr);
@@ -303,8 +438,11 @@ function render() {
     document.getElementById('stats').innerText = `Tasks: ${tasks.length} | Running: ${runningCount}`;
     
     // Sort indicators
-    document.querySelectorAll('th span').forEach(el => el.innerText = '');
-    document.getElementById(`sort-${sortKey}`).innerText = sortAsc ? ' ▲' : ' ▼';
+    document.querySelectorAll('th span').forEach(el => {
+        el.innerText = '';
+        el.removeAttribute('data-dir');
+    });
+    document.getElementById(`sort-${sortKey}`).dataset.dir = sortAsc ? 'asc' : 'desc';
 }
 
 function setSort(key) {
@@ -322,10 +460,12 @@ function togglePause() {
     isPaused = !isPaused;
     const btn = document.getElementById('pauseBtn');
     btn.innerText = isPaused ? 'Resume' : 'Pause';
-    btn.style.background = isPaused ? '#e51400' : '#007acc';
+    btn.classList.toggle('is-paused', isPaused);
     if (!isPaused) fetchTasks();
 }
 
 // Start it
+loadSettings();
+syncSettingsControls();
 fetchTasks();
-updateInterval = setInterval(fetchTasks, 1000);
+restartUpdateTimer();
