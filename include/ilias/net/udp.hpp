@@ -17,6 +17,53 @@
 
 ILIAS_NS_BEGIN
 
+// Forward declaration
+class UdpSocket;
+
+/**
+ * @brief The builder used to build udp socket.
+ * 
+ * @code
+ *  UdpBuilder {AF_INET}
+ *   .option(sockopt::ReuseAddress(true)),
+ *   .bind("127.0.0.1:0")
+ * @endcode
+ * 
+ */
+class UdpBuilder {
+public:
+    UdpBuilder(int family) : mFd(Socket::make(family, SOCK_DGRAM, IPPROTO_UDP)) {}
+    UdpBuilder(UdpBuilder &&) = default;
+
+    /**
+     * @brief Set an new socket option on this builder
+     * 
+     * @tparam T 
+     * @param opt 
+     * @return UdpBuilder && 
+     */
+    template <SetSockOption T>
+    auto option(const T &opt) -> UdpBuilder && {
+        if (mFd) {
+            if (auto res = mFd->setOption(opt); !res) {
+                mFd = Err(res.error());
+            }
+        }
+        return std::move(*this);
+    }
+
+    /**
+     * @brief Bind the socket to the specified endpoint.
+     * @note It will consume the builder.
+     * @param endpoint
+     * 
+     * @return IoTask<UdpSocket> 
+     */
+    auto bind(IPEndpoint endpoint) -> IoTask<UdpSocket>;
+private:
+    IoResult<Socket> mFd;
+};
+
 /**
  * @brief The Udp Socket wrapper.
  * 
@@ -139,23 +186,7 @@ public:
      * @return IoTask<UdpSocket> 
      */
     static auto bind(IPEndpoint endpoint) -> IoTask<UdpSocket> {
-        ILIAS_CO_TRY(auto sockfd, Socket::make(endpoint.family(), SOCK_DGRAM, IPPROTO_UDP));
-        co_return bindImpl(std::move(sockfd), endpoint);
-    }
-
-    /**
-     * @brief Bind the socket to the specified endpoint and apply the function to the socket before the bind.
-     * 
-     * @tparam Fn 
-     * 
-     * @param endpoint
-     * @param fn
-     */
-    template <typename Fn> requires (std::invocable<Fn, SocketView>)
-    static auto bind(IPEndpoint endpoint, Fn fn) -> IoTask<UdpSocket> {
-        ILIAS_CO_TRY(auto sockfd, Socket::make(endpoint.family(), SOCK_DGRAM, IPPROTO_UDP));
-        ILIAS_CO_TRYV(fn(SocketView {sockfd}));
-        co_return bindImpl(std::move(sockfd), endpoint);
+        return UdpBuilder {endpoint.family()}.bind(endpoint);
     }
 
     /**
@@ -180,14 +211,19 @@ public:
      */
     explicit operator bool() const { return bool(mHandle); }
 private:
-    static auto bindImpl(Socket sockfd, const IPEndpoint &endpoint) -> IoResult<UdpSocket> {
-        ILIAS_TRYV(sockfd.bind(endpoint));
-        ILIAS_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
-        return UdpSocket {std::move(handle)};
-    }
-
     IoHandle<Socket> mHandle;
 };
+
+// Impl
+inline auto UdpBuilder::bind(IPEndpoint endpoint) -> IoTask<UdpSocket> {
+    auto fn = [](UdpBuilder self, IPEndpoint endpoint) -> IoTask<UdpSocket> {
+        ILIAS_CO_TRY(auto sockfd, std::move(self.mFd));
+        ILIAS_CO_TRYV(sockfd.bind(endpoint));
+        ILIAS_CO_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
+        co_return UdpSocket {std::move(handle)};
+    };
+    return fn(std::move(*this), endpoint);
+}
 
 // For compatibility with the old API
 using UdpClient [[deprecated("Use UdpSocket instead")]] = UdpSocket;

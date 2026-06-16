@@ -19,6 +19,72 @@
 
 ILIAS_NS_BEGIN
 
+// Forward declarations
+class TcpStream;
+class TcpListener;
+
+/**
+ * @brief An builder to build tcp socket
+ * 
+ * @code
+ *  auto stream = co_await TcpBuilder {AF_INET}
+ *    .option(sockopt::NoDelay(true))
+ *    .connect("127.0.0.1:8080");
+ * @endcode
+ * 
+ */
+class TcpBuilder {
+public:
+    /**
+     * @brief Construct a new Tcp Builder by given address family.
+     * 
+     * @param family 
+     */
+    explicit TcpBuilder(int family) : mFd(Socket::make(family, SOCK_STREAM, IPPROTO_TCP)) {}
+    TcpBuilder(TcpBuilder &&) = default;
+
+    /**
+     * @brief Set an new socket option on this builder
+     * 
+     * @tparam T 
+     * @param opt 
+     * @return TcpBuilder && 
+     */
+    template <SetSockOption T>
+    auto option(const T &opt) -> TcpBuilder && {
+        if (mFd) {
+            if (auto res = mFd->setOption(opt); !res) {
+                mFd = Err(res.error());
+            }
+        }
+        return std::move(*this);
+    }
+
+    /**
+     * @brief Connect to a remote endpoint.
+     * @note It will consume the builder.
+     * 
+     * @param endpoint 
+     * @return IoTask<TcpStream> 
+     */
+    auto connect(IPEndpoint endpoint) -> IoTask<TcpStream>;
+
+    /**
+     * @brief Bind to a local endpoint.
+     * @note It will consume the builder.
+     * 
+     * @param endpoint 
+     * @param backlog 
+     * @return IoTask<TcpListener> 
+     */
+    auto bind(IPEndpoint endpoint, int backlog = SOMAXCONN) -> IoTask<TcpListener>;
+
+    // Operator
+    auto operator =(TcpBuilder &&) -> TcpBuilder & = default;
+private:
+    IoResult<Socket> mFd;
+};
+
 /**
  * @brief The tcp stream class.
  * 
@@ -182,14 +248,12 @@ public:
 
     /**
      * @brief Connect to a remote endpoint.
+     * @param endpoint
      * 
      * @return IoTask<TcpStream> 
      */
     static auto connect(IPEndpoint endpoint) -> IoTask<TcpStream> {
-        ILIAS_CO_TRY(auto sockfd, Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP));
-        ILIAS_CO_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
-        ILIAS_CO_TRYV(co_await handle.connect(endpoint));
-        co_return TcpStream {std::move(handle)};
+        return TcpBuilder {endpoint.family()}.connect(endpoint);
     }
 
     /**
@@ -301,24 +365,7 @@ public:
      * @return IoTask<TcpListener> 
      */
     static auto bind(IPEndpoint endpoint, int backlog = SOMAXCONN) -> IoTask<TcpListener> {
-        ILIAS_CO_TRY(auto sockfd, Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP));
-        co_return bindImpl(std::move(sockfd), endpoint, backlog);
-    }
-
-    /**
-     * @brief Bind the socket to an endpoint. apply the function to the socket before binding.
-     * 
-     * @tparam Fn 
-     * @param endpoint The endpoint to bind to.
-     * @param backlog The backlog for the socket.
-     * @param fn The function to apply to the socket before binding.
-     * @return IoTask<TcpListener>
-     */
-    template <typename Fn> requires(std::invocable<Fn, SocketView>)
-    static auto bind(IPEndpoint endpoint, int backlog, Fn fn) -> IoTask<TcpListener> {
-        ILIAS_CO_TRY(auto sockfd, Socket::make(endpoint.family(), SOCK_STREAM, IPPROTO_TCP));
-        ILIAS_CO_TRYV(fn(SocketView {sockfd}));
-        co_return bindImpl(std::move(sockfd), endpoint, backlog);
+        return TcpBuilder {endpoint.family()}.bind(endpoint, backlog);
     }
 
     /**
@@ -343,15 +390,29 @@ public:
      */
     explicit operator bool() const noexcept { return bool(mHandle); }
 private:
-    // Common part of it
-    static auto bindImpl(Socket sockfd, const IPEndpoint &endpoint, int backlog) -> IoResult<TcpListener> {
-        ILIAS_TRYV(sockfd.bind(endpoint));
-        ILIAS_TRYV(sockfd.listen(backlog));
-        ILIAS_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
-        return TcpListener {std::move(handle)};
-    }
-
     IoHandle<Socket> mHandle;
+};
+
+// Impl
+inline auto TcpBuilder::connect(IPEndpoint endpoint) -> IoTask<TcpStream> {
+    auto fn = [](TcpBuilder self, IPEndpoint endpoint) -> IoTask<TcpStream> {
+        ILIAS_CO_TRY(auto sockfd, std::move(self.mFd));
+        ILIAS_CO_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
+        ILIAS_CO_TRYV(co_await handle.connect(endpoint));
+        co_return TcpStream {std::move(handle)};
+    };
+    return fn(std::move(*this), endpoint);
+}
+
+inline auto TcpBuilder::bind(IPEndpoint endpoint, int backlog) -> IoTask<TcpListener> {
+    auto fn = [](TcpBuilder self, IPEndpoint endpoint, int backlog) -> IoTask<TcpListener> {
+        ILIAS_CO_TRY(auto sockfd, std::move(self.mFd));
+        ILIAS_CO_TRYV(sockfd.bind(endpoint));
+        ILIAS_CO_TRYV(sockfd.listen(backlog));
+        ILIAS_CO_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
+        co_return TcpListener {std::move(handle)};
+    };
+    return fn(std::move(*this), endpoint, backlog);
 };
 
 // For compatible with old version.

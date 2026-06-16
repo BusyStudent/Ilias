@@ -36,6 +36,27 @@ private:
     std::coroutine_handle<> mHandle;
 };
 
+// See https://devblogs.microsoft.com/oldnewthing/20220103-00/?p=106109
+// HACK: Use this to optimize the size of the coroutine handle
+class FrameABI {
+public:
+    void (*resume)(FrameABI *) = nullptr;
+    void (*destroy)(FrameABI *) = nullptr;
+    // std::byte promise [];
+
+    // Extract the promise from the frame
+    template <typename T>
+    auto promise() noexcept -> T & {
+        auto ptr = reinterpret_cast<std::byte *>(this) + sizeof(FrameABI);
+        return *reinterpret_cast<T *>(ptr);
+    }
+
+    // Get the frame from the coroutine handle
+    static auto from(std::coroutine_handle<> handle) -> FrameABI * {
+        return reinterpret_cast<FrameABI *>(handle.address());
+    }
+};
+
 // MARK: CoroContext
 // The Runtime environment for coroutines.
 //
@@ -378,9 +399,8 @@ public:
     auto promise() const noexcept -> T & {
         ILIAS_ASSERT(mHandle, "Can't get promise from null handle");
 #if defined(ILIAS_USE_CORO_ABI)
-        auto frame = reinterpret_cast<FrameABI *>(mHandle.address());
-        auto promise = reinterpret_cast<T *>(frame->promise);
-        return *promise;
+        auto frame = FrameABI::from(mHandle);
+        return frame->promise<T>();
 #else
         return static_cast<T &>(*mPromise);
 #endif // defined(ILIAS_USE_CORO_ABI)
@@ -459,14 +479,6 @@ private:
     std::coroutine_handle<> mHandle; // The std coroutine handle
 #if !defined(ILIAS_USE_CORO_ABI)
     CoroPromise            *mPromise = nullptr; // The promise of the coroutine
-#else
-    // See https://devblogs.microsoft.com/oldnewthing/20220103-00/?p=106109
-    // HACK: Use this to optimize the coroutine handle
-    struct FrameABI {
-        void (*resume)(FrameABI *);
-        void (*destroy)(FrameABI *);
-        std::byte promise[];
-    };
 #endif // defined(ILIAS_USE_CORO_ABI)
 };
 

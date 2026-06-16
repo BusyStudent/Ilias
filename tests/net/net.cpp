@@ -341,11 +341,22 @@ ILIAS_TEST(Net, Tcp) {
         }
     }
     {
-        // Test bind with configure
-        auto configure = [](SocketView view) {
-            return view.setOption(sockopt::ReuseAddress(true));
-        };
-        auto listener = (co_await TcpListener::bind("127.0.0.1:0", SOMAXCONN, configure)).value();
+        // Test builder Happy Path
+        auto endpoint = IPEndpoint {"127.0.0.1:0"};
+        auto listener = co_await TcpBuilder {endpoint.family()}
+            .option(sockopt::ReuseAddress(true))
+            .bind(endpoint);
+        EXPECT_TRUE(listener);
+
+        // Error Path
+        listener = co_await TcpBuilder {AF_UNSPEC}
+            .option(sockopt::ReuseAddress(true))
+            .bind(endpoint);
+        EXPECT_FALSE(listener);
+
+        listener = co_await TcpBuilder {endpoint.family()}
+            .bind(IPEndpoint {IPAddress6::loopback(), 0}); // Bind 6 address to 4 socket
+        EXPECT_FALSE(listener);
     }
 }
 
@@ -409,11 +420,19 @@ ILIAS_TEST(Net, Udp) {
     }
 
     {
-        // Test bind with configure
-        auto configure = [](SocketView view) {
-            return view.setOption(sockopt::ReuseAddress(true));
-        };
-        auto any = (co_await UdpSocket::bind("127.0.0.1:0", configure)).value();
+        // Test builder
+        auto endpoint = IPEndpoint {"127.0.0.1:0"};
+        auto socket = co_await UdpBuilder {endpoint.family()}
+            .option(sockopt::ReuseAddress(true))
+            .option(sockopt::Broadcast(true))
+            .bind(endpoint);
+        EXPECT_TRUE(socket);
+
+        // Error Path
+        socket = co_await UdpBuilder {AF_UNSPEC}
+            .option(sockopt::ReuseAddress(true))
+            .bind(endpoint);
+        EXPECT_FALSE(socket);
     }
 }
 
