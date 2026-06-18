@@ -64,17 +64,17 @@
 
 // Platform detection
 #if   defined(_WIN32)
-    #define ILIAS_EXPORT   ILIAS_ATTRIBUTE(dllexport)
-    #define ILIAS_IMPORT   ILIAS_ATTRIBUTE(dllimport)
-    #define ILIAS_ERROR_T  ::uint32_t
-    #define ILIAS_SOCKET_T ::uintptr_t
-    #define ILIAS_FD_T      void *
+    #define ILIAS_DLL_EXPORT ILIAS_ATTRIBUTE(dllexport)
+    #define ILIAS_DLL_IMPORT ILIAS_ATTRIBUTE(dllimport)
+    #define ILIAS_ERROR_T    ::uint32_t
+    #define ILIAS_SOCKET_T   ::uintptr_t
+    #define ILIAS_FD_T       void *
 #elif defined(__linux__)
-    #define ILIAS_EXPORT   ILIAS_ATTRIBUTE(visibility("default"))
-    #define ILIAS_IMPORT   // no-op
-    #define ILIAS_ERROR_T   int
-    #define ILIAS_SOCKET_T  int
-    #define ILIAS_FD_T      int
+    #define ILIAS_DLL_EXPORT ILIAS_ATTRIBUTE(visibility("default"))
+    #define ILIAS_DLL_IMPORT // no-op
+    #define ILIAS_ERROR_T    int
+    #define ILIAS_SOCKET_T   int
+    #define ILIAS_FD_T       int
 #else
     #error "Unsupported platform"
 #endif
@@ -104,9 +104,9 @@
     #define ILIAS_API
 #elif defined(ILIAS_DLL)       // Dynamic library
     #if defined(_ILIAS_SOURCE) 
-        #define ILIAS_API ILIAS_EXPORT
+        #define ILIAS_API ILIAS_DLL_EXPORT
     #else
-        #define ILIAS_API ILIAS_IMPORT
+        #define ILIAS_API ILIAS_DLL_IMPORT
     #endif
 #else
     #error "Library mode not specified"

@@ -26,19 +26,26 @@ ILIAS_NS_BEGIN
 
 namespace fiber {
 
-// The entry point configure of the fiber
+// The entry point of the fiber
 class FiberEntry {
 public:
-    void  (*cleanup)(void *) = nullptr; // For cleanup the args, destroy when the fiber context is destroyed
-    void *(*invoke)(void *) = nullptr; // The entry point of the fiber, return the pointer of the result
-    void   *args = nullptr;
+    void  (*destroy)(FiberEntry *self) = nullptr; // For cleanup the args, destroy when the fiber context is destroyed
+    void* (*invoke)(FiberEntry *self) = nullptr; // The entry point of the fiber
     size_t  stackSize = 0; // The stack size of the fiber (0 for default)
 };
 
 // The context of the fiber (user part)
 class ILIAS_API FiberContext {
 public:
+    class Deleter {
+    public:
+        auto operator()(FiberContext *ctxt) -> void {
+            ctxt->destroy();
+        }
+    };
+
     // Resume the fiber, return bool for whether the fiber is done
+    [[nodiscard]]
     auto resume() -> bool;
 
     // Blocking wait the fiber to be done
@@ -49,17 +56,14 @@ public:
 
     // Get the result of the fiber
     template <typename T>
+    [[nodiscard]]
     auto value() -> T;
 
     // Set the executor
     auto setExecutor(runtime::Executor &executor) -> void;
 
-    // Create the fiber by given entry
-    static auto create4(FiberEntry entry, runtime::CaptureSource source = {}) -> FiberContext *;
-
-    // Create the fiber by given callable
-    template <typename Fn, typename ...Args>
-    static auto create(Fn fn, Args ...args) -> FiberContext *;
+    // Create the fiber by given entry, it take the ownership of the entry
+    static auto create4(FiberEntry *entry) -> FiberContext *;
 protected:
     // Get the pointer of invoke return, it may throw the exception the fiber throw
     auto valuePointer() -> void *;
@@ -68,43 +72,41 @@ protected:
     ~FiberContext() = default;
 };
 
-// The callable of the fiber, for store the fn, args and the return value
+// RAII handle for fiber
+using FiberHandle = std::unique_ptr<FiberContext, FiberContext::Deleter>;
+
+// The callable of the fiber, for store the fn, args and the return value, it should be allocated on heap
 template <typename Fn, typename ...Args>
-class FiberCallable {
+class FiberCallable final : public FiberEntry {
 public:
     using T = std::invoke_result_t<Fn, Args...>;
 
-    FiberCallable(Fn fn, Args ...args) : mFn(fn), mArgs(args...) {}
-
-    static auto invoke(void *args) -> void * {
-        auto self = static_cast<FiberCallable *>(args);
+    FiberCallable(Fn fn, Args ...args) : mFn(std::forward<Fn>(fn)), mArgs(std::forward<Args>(args)...) {
+        // Setup vtable
+        this->invoke = &FiberCallable::onInvoke;
+        this->destroy = &FiberCallable::onDestroy;
+    }
+    FiberCallable(const FiberCallable &) = delete;
+private:
+    static auto onInvoke(FiberEntry *_self) -> void * {
+        auto self = static_cast<FiberCallable *>(_self);
         self->mValue = makeOption([&]() {
             return std::apply(self->mFn, self->mArgs);
         });
         return &self->mValue;
     }
 
-    static auto cleanup(void *args) noexcept -> void {
-        auto self = static_cast<FiberCallable *>(args);
-        delete self;
+    static auto onDestroy(FiberEntry *_self) -> void {
+        delete static_cast<FiberCallable *>(_self);
     }
-private:
-    Option<T> mValue; // Put the result here
 
-    [[no_unique_address]]
+    // State
+    Option<T> mValue; // Put the result here
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
     Fn mFn;
-    [[no_unique_address]] // The args may empty
+    [[ILIAS_NO_UNIQUE_ADDRESS]] // The args may empty
     std::tuple<Args...> mArgs;
 };
-
-class Deleter {
-public:
-    auto operator()(FiberContext *ctxt) -> void {
-        ctxt->destroy();
-    }
-};
-
-using FiberHandle = std::unique_ptr<FiberContext, Deleter>;
 
 // Awaiter for fiber, provide the bridge between fiber and std::coroutine
 class FiberAwaiterBase {
@@ -127,7 +129,7 @@ protected:
 };
 
 template <typename T>
-class FiberAwaiter : public FiberAwaiterBase {
+class FiberAwaiter final : public FiberAwaiterBase {
 public:
     using FiberAwaiterBase::FiberAwaiterBase;
 
@@ -139,18 +141,13 @@ public:
 template <typename T>
 inline auto FiberContext::value() -> T {
     auto result = static_cast<Option<T> *>(valuePointer());
+    ILIAS_ASSERT(result, "The result pointer is null, INTERNAL BUG???");
     return unwrapOption(std::move(*result));
 }
 
-template <typename Fn, typename ...Args>
-inline auto FiberContext::create(Fn fn, Args ...args) -> FiberContext * {
-    using Callable = FiberCallable<Fn, Args...>;
-    return create4({
-        .cleanup = Callable::cleanup,
-        .invoke = Callable::invoke,
-        .args = new Callable {std::forward<Fn>(fn), std::forward<Args>(args)...},
-    });
-}
+// Initialize the fiber environment (reference count)
+extern auto ILIAS_API initialize() -> void;
+extern auto ILIAS_API shutdown() -> void;
 
 } // namespace fiber
 
@@ -164,19 +161,38 @@ extern auto ILIAS_API stopToken() -> runtime::StopToken;
 extern auto ILIAS_API yield() -> void;
 
 // INTERNAL!!!, wait the stackless CoroHandle to done or stopped
-extern auto ILIAS_API await4(runtime::CoroHandle handle, runtime::CaptureSource source = {}) -> void;
+extern auto ILIAS_API awaitImpl(runtime::CoroHandle handle, runtime::CaptureSource source) -> void;
 
-template <typename T>
-inline auto await(Task<T> task, runtime::CaptureSource source = {}) -> T {
-    auto handle = task::TaskHandle<T>{task._handle()};
-    await4(handle, source);
-    return handle.value();
-}
+// Functor for impl await
+class Await {
+public:
+    template <typename T>
+    auto operator ()(Task<T> task, runtime::CaptureSource source = {}) const -> T {
+        task::TaskHandle<T> handle {task._handle()};
+        awaitImpl(handle, source);
+        ILIAS_ASSUME(handle, "This handle still exists");
+        return handle.value();
+    }
 
+    template <Awaitable T>
+    auto operator ()(T awaitable, runtime::CaptureSource source = {}) const -> AwaitableResult<T> {
+        return operator ()(toTask(std::move(awaitable)), source);
+    }
+};
+
+// For chain, doSomething() | await
 template <Awaitable T>
-inline auto await(T awaitable, runtime::CaptureSource source = {}) -> AwaitableResult<T> {
-    return await(toTask(std::move(awaitable)), source);
+inline auto operator |(T awaitable, Await tags) -> AwaitableResult<T> {
+    return tags(std::move(awaitable));
 }
+
+/**
+ * @brief Await given awaitable in current fiber
+ * 
+ * @param awaitable
+ * @return AwaitableResult<T>
+ */
+constexpr inline Await await {};
 
 } // namespace this_fiber
 
@@ -189,8 +205,7 @@ template <typename T>
 class Fiber {
 public:
     Fiber() = default;
-    Fiber(const Fiber &) = delete;
-    Fiber(Fiber &&) noexcept = default;
+    Fiber(Fiber &&) = default;
 
     /**
      * @brief Construct a new Fiber object
@@ -202,10 +217,9 @@ public:
      */
     template <typename Fn, typename ...Args>
         requires (std::invocable<Fn, Args...>)
-    explicit Fiber(Fn fn, Args ...args) : 
-        mHandle(fiber::FiberContext::create(std::forward<Fn>(fn), std::forward<Args>(args)...)) 
-    {
-
+    explicit Fiber(Fn fn, Args ...args) {
+        auto callable = new fiber::FiberCallable<Fn, Args...> {std::forward<Fn>(fn), std::forward<Args>(args)...};
+        mHandle.reset(fiber::FiberContext::create4(callable));
     }
 
     /**
@@ -234,7 +248,7 @@ public:
         mHandle->setExecutor(ctxt.executor());
     }
 
-    auto operator =(const Fiber &) -> Fiber & = delete;
+    // Operator
     auto operator =(Fiber &&) -> Fiber & = default;
 
     // co_await
@@ -251,6 +265,27 @@ private:
     fiber::FiberHandle mHandle;
 };
 
+/**
+ * @brief An RAII guard to initialize and shutdown the fiber environment (refcounted), it is recommended to use it before create any fiber
+ * @note It convert thread to Fiber on Win32, it current thread already fiber, no-op, and it's a no-op on other platforms
+ * 
+ * @code
+ *  FiberInitializer initializer;
+ *  Fiber fiber([]() { return 42; });
+ * @endcode 
+ * 
+ */
+class FiberInitializer {
+public:
+    FiberInitializer() {
+        fiber::initialize();
+    }
+    ~FiberInitializer() {
+        fiber::shutdown();
+    }
+    FiberInitializer(const FiberInitializer &) = delete;
+};
+
 template <typename Fn, typename ...Args>
 Fiber(Fn, Args ...) -> Fiber<std::invoke_result_t<Fn, Args...> >;
 
@@ -258,6 +293,6 @@ Fiber(Fn, Args ...) -> Fiber<std::invoke_result_t<Fn, Args...> >;
  * @brief The special exception for fiber cancellation
  * 
  */
-class FiberCancellation {};
+class FiberCancellation final {};
 
 ILIAS_NS_END

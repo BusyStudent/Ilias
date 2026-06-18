@@ -1,5 +1,6 @@
 #include <ilias/runtime/executor.hpp>
 #include <ilias/fiber.hpp>
+#include <ilias/task.hpp>
 #include <ilias/testing.hpp>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -14,24 +15,32 @@ TEST(Fiber, Simple) {
         std::cout << "Hello, World! from fiber" << std::endl;
         return 42;
     });
-    ASSERT_EQ(std::move(fiber).wait(), 42);
+    ASSERT_EQ(fiber.wait(), 42);
 
-    auto fiber2 = Fiber([s = "HelloWorld"]() {
-        return std::string {s};
+    auto fiber2 = Fiber([s = "HelloWorld", other = std::make_unique<int>(42)]() {
+        return std::string {s} + " " + std::to_string(*other);
     });
-    ASSERT_EQ(std::move(fiber2).wait(), "HelloWorld");
+    ASSERT_EQ(fiber2.wait(), "HelloWorld 42");
 
     auto fiber3 = Fiber([]() {
         throw std::exception {};
     });
-    ASSERT_THROW(std::move(fiber3).wait(), std::exception);
+    ASSERT_THROW(fiber3.wait(), std::exception);
 }
 
 TEST(Fiber, Await) {
     auto fiber = Fiber([]() {
         this_fiber::await(sleep(10ms));
+
+        // Test WhenAny
+        auto [a, b] = whenAny(
+            sleep(10ms),
+            sleep(1s)
+        ) | this_fiber::await;
+        EXPECT_TRUE(a);
+        EXPECT_FALSE(b);
     });
-    std::move(fiber).wait();
+    fiber.wait();
 }
 
 ILIAS_TEST(Fiber, Spawn) {
@@ -76,6 +85,7 @@ ILIAS_TEST(FiberAwait, Await) {
 
 auto main(int argc, char **argv) -> int {
     EventLoop loop;
+    FiberInitializer init;
     loop.install();
 
     ::testing::InitGoogleTest(&argc, argv);

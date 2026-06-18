@@ -2,9 +2,11 @@
 #include <ilias/runtime/executor.hpp> // Executor
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/fiber.hpp> // Fiber
+#include <cstdint>
+#include <limits>
 
 #if defined(_WIN32)
-    #include <ilias/detail/win32defs.hpp> // CreateFiber
+    #include <ilias/detail/win32defs.hpp> // CreateFiberEx
 #elif __has_include(<ucontext.h>)
     #include "libucontext.hpp" // sys::getcontext, sys::makecontext
     #include <sys/mman.h> // mmap
@@ -29,6 +31,10 @@ public:
     // Guard magic
     uint32_t mMagic = 0x114514;
 
+    // Environment Guard
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
+    FiberInitializer mInitializer;
+
     // TODO: TRACING
     [[ILIAS_NO_UNIQUE_ADDRESS]]
     runtime::CaptureSource mSuspendPoint; // The source location of the fiber suspend
@@ -46,11 +52,7 @@ public:
     void  *mUser = nullptr;
 
     // Entry
-    struct {
-        void  (*cleanup)(void *) = nullptr;
-        void *(*invoke)(void *) = nullptr;
-        void   *args = nullptr;
-    } mEntry;
+    FiberEntry *mEntry = nullptr;
 
     // Result
     void *mValue = nullptr;
@@ -87,7 +89,9 @@ public:
     static auto current() -> FiberContextImpl *;
 };
 
-#if !defined(_WIN32) // Not in windows, we should save it by ourselves
+#if defined(_WIN32) // Not in windows, we should save it by ourselves
+static constinit thread_local size_t gInitializeCount {0}; // MAX on current thread is already a fiber
+#else
 static constinit thread_local FiberContextImpl *gCurrentContext {};
 
 struct CurrentGuard { // RAII guard for manage the current fiber
@@ -108,13 +112,13 @@ auto FiberContextImpl::main() -> void {
 
     // Call the entry
     try {
-        mValue = mEntry.invoke(mEntry.args);
+        mValue = mEntry->invoke(mEntry);
     }
     catch (FiberCancellation &) {
         mStopped = true;
     }
     catch (...) { // Another user exception
-        mException = runtime::ExceptionPtr::currentException();;
+        mException = runtime::ExceptionPtr::currentException();
     }
     mComplete = true;
     mRunning = false;
@@ -136,9 +140,8 @@ auto FiberContextImpl::destroyImpl() -> void {
     ::munmap(posix.mmapPtr, posix.mmapSize);
 #endif // _WIN32
 
-    // Destroy the entry
-    if (mEntry.cleanup) {
-        mEntry.cleanup(mEntry.args);
+    if (mEntry) {
+        mEntry->destroy(mEntry);
     }
     delete this;
 }
@@ -147,26 +150,6 @@ auto FiberContextImpl::resumeImpl() -> bool {
     ILIAS_ASSERT(!mRunning && !mComplete, "Cannot resume a running or complete fiber");
 
 #if defined(_WIN32)
-    struct ConvertGuard {
-        ConvertGuard() { // The main fiber may use float point, save it
-            if (::IsThreadAFiber()) {
-                return;
-            }
-            if (auto ret = ::ConvertThreadToFiberEx(nullptr, FIBER_FLAG_FLOAT_SWITCH); !ret) {
-                ILIAS_THROW(std::system_error(std::error_code(GetLastError(), std::system_category()), "Faliled to convert thread to fiber"));
-            }
-            converted = true;
-        }
-        ~ConvertGuard() {
-            if (converted) {
-                auto ok = ::ConvertFiberToThread();
-                ILIAS_ASSERT(ok);
-            }
-        }
-
-        bool converted = false;
-    };
-    static thread_local ConvertGuard guard;
     win32.caller = ::GetCurrentFiber();
     ::SwitchToFiber(win32.handle);
 #else
@@ -193,25 +176,31 @@ auto FiberContextImpl::suspend() -> void {
 }
 
 auto FiberContextImpl::schedule() -> void {
-    mExecutor->post([](void *ptr) {
-        static_cast<FiberContextImpl *>(ptr)->resumeImpl();
-    }, this);
+    mExecutor->schedule([this]() {
+        resumeImpl();
+    });
 }
 
 auto FiberContextImpl::current() -> FiberContextImpl * {
-
+    FiberContextImpl *ptr = nullptr;
 #if defined(_WIN32)
-    auto data = static_cast<FiberContextImpl *>(::GetFiberData());
-    ILIAS_ASSERT(data->mMagic == 0x114514, "Magic number mismatch, memory corrupted ???");
-    return data;
+    // boost/context/continuation_winfib.hpp
+    // 0x1E00 is a magic number that current thread is not a fiber
+    if (auto fiber = ::GetCurrentFiber(); fiber != nullptr || fiber != reinterpret_cast<void*>(0x1E00)) [[likely]] {
+        auto data = static_cast<FiberContextImpl *>(::GetFiberData());
+        ILIAS_ASSERT(data->mMagic == 0x114514, "Magic number mismatch, memory corrupted ???");
+        ptr = data;
+    }
 #else
-    return gCurrentContext;
+    ptr = gCurrentContext;
 #endif // _WIN32
-
+    if (!ptr) [[unlikely]] {
+        ILIAS_THROW(std::runtime_error{"No current fiber"});
+    }
+    return ptr;
 }
 
-auto callContext(void *ctxt) -> void {
-    auto self = static_cast<FiberContextImpl *>(ctxt);
+auto callContext(FiberContextImpl *self) -> void {
     self->main();
 
     // Switch back to the resume point
@@ -234,13 +223,11 @@ auto ucontextEntry() -> void {
 // User interface
 // MARK: User
 auto FiberContext::destroy() -> void {
-    auto self = static_cast<FiberContextImpl *>(this);
-    self->destroyImpl();
+    return static_cast<FiberContextImpl *>(this)->destroyImpl();
 }
 
 auto FiberContext::resume() -> bool {
-    auto self = static_cast<FiberContextImpl *>(this);
-    return self->resumeImpl();
+    return static_cast<FiberContextImpl *>(this)->resumeImpl();
 }
 
 auto FiberContext::wait(runtime::CaptureSource where) -> void {
@@ -262,26 +249,24 @@ auto FiberContext::setExecutor(runtime::Executor &e) -> void {
     self->mExecutor = &e;
 }
 
-auto FiberContext::create4(FiberEntry entry, runtime::CaptureSource source) -> FiberContext * {
+auto FiberContext::create4(FiberEntry *entry) -> FiberContext * {
     auto ctxt = std::make_unique<FiberContextImpl>();
 
-    ILIAS_ASSERT(entry.invoke);
-    ctxt->mCreation = source;
-    ctxt->mEntry.args = entry.args;
-    ctxt->mEntry.invoke = entry.invoke;
-    ctxt->mEntry.cleanup = entry.cleanup;
+    ctxt->mEntry = entry;
 
 #if defined(_WIN32)
     ctxt->win32.handle = ::CreateFiberEx(
-        entry.stackSize, 
+        entry->stackSize, 
         0, 
         FIBER_FLAG_FLOAT_SWITCH, 
-        callContext, 
+        [](void *ctxt) {
+            return callContext(static_cast<FiberContextImpl *>(ctxt));
+        },
         ctxt.get()
     );
 #else
-    if (entry.stackSize == 0) {
-        entry.stackSize = 1024 * 1024; // Use 1MB
+    if (entry->stackSize == 0) {
+        entry->stackSize = 1024 * 1024; // Use 1MB
     }
 
     // Allocate a stack
@@ -320,6 +305,41 @@ auto FiberContext::valuePointer() -> void * {
     return self->mValue;
 }
 
+// Handle the environment
+#if defined(_WIN32)
+auto initialize() -> void {
+    if (gInitializeCount > 0) { // Information probed
+        if (gInitializeCount != std::numeric_limits<size_t>::max()) {
+            gInitializeCount++;
+        }
+        return;
+    }
+    if (::IsThreadAFiber()) {
+        gInitializeCount = std::numeric_limits<size_t>::max();
+        return;
+    }
+    if (!::ConvertThreadToFiberEx(nullptr, FIBER_FLAG_FLOAT_SWITCH)) {
+        ILIAS_THROW(std::runtime_error{"Failed to ConvertThreadToFiberEx"});
+    }
+    gInitializeCount = 1;
+}
+
+auto shutdown() -> void {
+    ILIAS_ASSERT(gInitializeCount > 0, "Fiber not initialized, but shutdown called");
+    if (gInitializeCount == std::numeric_limits<size_t>::max()) {
+        return;
+    }
+    if (--gInitializeCount == 0) {
+        if (!::ConvertFiberToThread()) { // Why?, didwe need to handle it or just abort?
+            ILIAS_ERROR("Fiber", "Failed to ConvertFiberToThread {}", ::GetLastError());
+        }
+    }
+}
+#else // No-op
+auto initialize() -> void {}
+auto shutdown() -> void {}
+#endif // _WIN32
+
 } // namespace fiber
 
 using namespace fiber;
@@ -334,33 +354,39 @@ auto this_fiber::stopToken() -> runtime::StopToken {
     return FiberContextImpl::current()->mStopSource.get_token();
 }
 
-auto this_fiber::await4(runtime::CoroHandle coro, runtime::CaptureSource source) -> void {
-    auto fiber = FiberContextImpl::current();
-    auto ctxt = runtime::CoroContext {};
+auto this_fiber::awaitImpl(runtime::CoroHandle handle, runtime::CaptureSource source) -> void {
     auto handler = [](runtime::CoroContext &ctxt) {
         auto self = static_cast<FiberContextImpl *>(ctxt.userdata());
         if (self) {
             self->schedule();
         }
     };
+    auto fiber = FiberContextImpl::current();
 
-    // Forward the stop 
-    auto cb = runtime::StopCallback(fiber->mStopSource.get_token(), [&]() {
+    // Forward the stop to the context
+    runtime::CoroContext ctxt {};
+    runtime::StopCallback callback {fiber->mStopSource.get_token(), [&]() {
         ctxt.stop();
-    });
+    }};
 
     // Begin execute
     ctxt.setExecutor(*fiber->mExecutor);
     ctxt.setStoppedHandler(handler);
-    coro.setCompletionHandler(handler);
-    coro.setContext(ctxt);
-    coro.resume();
-    if (!coro.done()) {
+    handle.setCompletionHandler(handler);
+    handle.setContext(ctxt);
+
+    // Execute it
+    handle.resume();
+    if (!handle.done()) {
         ctxt.setUserdata(fiber);
-        fiber->suspend(); // Suspend self, wait for the coro to complete
+
+        // Suspend self, wait for the coro to complete
+        fiber->mSuspendPoint = source;
+        fiber->suspend();
     }
-    ILIAS_ASSERT(coro.done() || ctxt.isStopped());
-    // Ok check
+    ILIAS_ASSERT(handle.done() || ctxt.isStopped(), "The coroutine should be stopped or done");
+
+    // Ok check the stop, if it is stopped, forward the stop to the caller
     if (ctxt.isStopped()) {
         throw FiberCancellation {};
     }
