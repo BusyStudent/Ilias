@@ -13,7 +13,7 @@ namespace task {
 
 // MARK: Unstoppable
 template <typename T>
-class UnstoppableAwaiter final {
+class [[ILIAS_CORO_AWAIT_ELIDABLE]] UnstoppableAwaiter final {
 public:
     UnstoppableAwaiter(TaskHandle<T> handle) : mHandle(handle), mAwaiter(handle) {}
     UnstoppableAwaiter(UnstoppableAwaiter &&) = default;
@@ -57,7 +57,7 @@ private:
 // MARK: Map
 // Add an sync map handler to awaitable
 template <typename T, typename Fn>
-class MapAwaiter final {
+class [[ILIAS_CORO_AWAIT_ELIDABLE]] MapAwaiter final {
 public:
     MapAwaiter(TaskHandle<T> handle, Fn fn) : mHandle(handle), mAwaiter(handle), mFn(std::move(fn)) {}
     MapAwaiter(MapAwaiter &&) = default;
@@ -92,7 +92,7 @@ private:
 
 // MARK: Schedule
 // Schedule task on another executor
-class ScheduleAwaiterBase : private TaskContext {
+class [[ILIAS_CORO_AWAIT_ELIDABLE]] ScheduleAwaiterBase : private TaskContext {
 public:
     ScheduleAwaiterBase(runtime::Executor &exec, TaskHandle<> handle) : TaskContext(handle), mHandle(handle), mExecutor(exec) {}
     ScheduleAwaiterBase(ScheduleAwaiterBase &&) = default;
@@ -134,7 +134,7 @@ protected:
 };
 
 template <typename T>
-class ScheduleAwaiter final : public ScheduleAwaiterBase {
+class [[ILIAS_CORO_AWAIT_ELIDABLE]] ScheduleAwaiter final : public ScheduleAwaiterBase {
 public:
     ScheduleAwaiter(runtime::Executor &exec, TaskHandle<T> handle) : ScheduleAwaiterBase(exec, handle) {}
 
@@ -145,7 +145,7 @@ public:
 
 // MARK: Finally
 // Add an async cleanup handler to an awaitable
-class FinallyAwaiterBase {
+class [[ILIAS_CORO_AWAIT_ELIDABLE]] FinallyAwaiterBase {
 public:
     FinallyAwaiterBase(TaskHandle<> main) : mContext(main) {}
     FinallyAwaiterBase(FinallyAwaiterBase &&) = default;
@@ -184,7 +184,7 @@ private:
 // The finally awaiter
 // Cleanup is a function or Task<T> to run after the main task is completed
 template <typename T, typename Cleanup>
-class FinallyAwaiter final : public FinallyAwaiterBase {
+class [[ILIAS_CORO_AWAIT_ELIDABLE]] FinallyAwaiter final : public FinallyAwaiterBase {
 public:
     FinallyAwaiter(TaskHandle<T> main, Cleanup cleanup) : FinallyAwaiterBase(main), mCleanup(std::move(cleanup)) {
         mOnTaskCompletion = &FinallyAwaiter::onCompletionHelper;
@@ -236,7 +236,7 @@ private:
 
 // MARK: StopToken
 // Implement await on an stop token
-class StopTokenAwaiter final {
+class [[ILIAS_CORO_AWAIT_ELIDABLE]] StopTokenAwaiter final {
 public:
     StopTokenAwaiter(runtime::StopToken token) : mToken(std::move(token)) {}
     StopTokenAwaiter(StopTokenAwaiter &&) = default;
@@ -283,7 +283,7 @@ namespace task {
 // Set an timeout for a task, return nullopt on timeout
 template <Awaitable T>
 [[nodiscard]]
-inline auto timeout(T awaitable, std::chrono::nanoseconds ns) -> Task<Option<AwaitableResult<T> > > {
+inline auto timeout([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, std::chrono::nanoseconds ns) -> Task<Option<AwaitableResult<T> > > {
     auto [res, timeout] = co_await whenAny(std::move(awaitable), sleep(ns));
     if (timeout) {
         co_return std::nullopt;
@@ -294,7 +294,7 @@ inline auto timeout(T awaitable, std::chrono::nanoseconds ns) -> Task<Option<Awa
 // Make a awaitable execute on another executor
 template <Awaitable T>
 [[nodiscard]]
-inline auto scheduleOn(T awaitable, runtime::Executor &exec) -> task::ScheduleAwaiter<AwaitableResult<T> > {
+inline auto scheduleOn([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, runtime::Executor &exec) -> task::ScheduleAwaiter<AwaitableResult<T> > {
     return {exec, toTask(std::move(awaitable))._leak()};
 }
 
@@ -302,27 +302,27 @@ inline auto scheduleOn(T awaitable, runtime::Executor &exec) -> task::ScheduleAw
 // Make a awaitable execute on an unstoppable context
 template <Awaitable T>
 [[nodiscard]]
-inline auto unstoppable(T awaitable) -> task::UnstoppableAwaiter<AwaitableResult<T> > {
+inline auto unstoppable([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable) -> task::UnstoppableAwaiter<AwaitableResult<T> > {
     return {toTask(std::move(awaitable))._leak()};
 }
 
 // Add an async cleanup task to an awaitable
 template <Awaitable T, typename U>
 [[nodiscard]]
-inline auto finally(T awaitable, Task<U> cleanup) -> task::FinallyAwaiter<AwaitableResult<T>, Task<U> > {
+inline auto finally([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Task<U> cleanup) -> task::FinallyAwaiter<AwaitableResult<T>, Task<U> > {
     return {toTask(std::move(awaitable))._leak(), std::move(cleanup)};
 }
 
 // Add an async cleanup handler to an awaitable
 template <Awaitable T, std::invocable Fn>
 [[nodiscard]]
-inline auto finally(T awaitable, Fn fn) -> task::FinallyAwaiter<AwaitableResult<T>, Fn> {
+inline auto finally([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Fn fn) -> task::FinallyAwaiter<AwaitableResult<T>, Fn> {
     return {toTask(std::move(awaitable))._leak(), std::move(fn)};
 }
 
 // Map an awaitable result to another type
 template <Awaitable T, typename Fn>
-inline auto fmap(T awaitable, Fn fn) -> task::MapAwaiter<AwaitableResult<T>, Fn> {
+inline auto fmap([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Fn fn) -> task::MapAwaiter<AwaitableResult<T>, Fn> {
     return {toTask(std::move(awaitable))._leak(), std::move(fn)};
 }
 
@@ -356,31 +356,31 @@ inline auto fmap(T v) -> task::MapTags<T> {
 
 template <Awaitable T>
 [[nodiscard]]
-inline auto operator |(T awaitable, task::TimeoutTags tag) {
+inline auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, task::TimeoutTags tag) {
     return timeout(std::move(awaitable), tag.ns);
 }
 
 template <Awaitable T>
 [[nodiscard]]
-inline auto operator |(T awaitable, task::ScheduleOnTags tag) {
+inline auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, task::ScheduleOnTags tag) {
     return scheduleOn(std::move(awaitable), tag.exec);
 }
 
 template <Awaitable T>
 [[nodiscard]]
-inline auto operator |(T awaitable, task::UnstoppableTags) {
+inline auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, task::UnstoppableTags) {
     return unstoppable(std::move(awaitable));
 }
 
 template <Awaitable T, typename U>
 [[nodiscard]]
-inline auto operator |(T awaitable, task::FinallyTags<U> tag) {
+inline auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, task::FinallyTags<U> tag) {
     return finally(std::move(awaitable), std::move(tag.v));
 }
 
 template <Awaitable T, typename U>
 [[nodiscard]]
-inline auto operator |(T awaitable, task::MapTags<U> tag) {
+inline auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, task::MapTags<U> tag) {
     return fmap(std::move(awaitable), std::move(tag.v));
 }
 

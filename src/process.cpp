@@ -11,6 +11,7 @@
     #include <sys/wait.h> // waitpid
     #include <unistd.h> // pipe, vfork, execve
     #include <csignal> // SIGCHLD
+    #include <cerrno>
 #endif // _WIN32
 
 ILIAS_NS_BEGIN
@@ -146,8 +147,8 @@ auto Process::Builder::spawn() -> IoResult<Process> {
     return proc;
 #else // Posix platform, use posix_spawn
     // Allocate argv array with space for program name + args + nullptr
-    auto args = std::vector<char *> {};
-    auto envs = std::vector<char *> {};
+    std::vector<char *> args {};
+    std::vector<char *> envs {};
 
     // Prepare args
     args.reserve(mArgs.size() + 2);
@@ -211,15 +212,15 @@ auto Process::Builder::spawn() -> IoResult<Process> {
         while (0);
 
         // Error happened
-        ::error_t err = errno;
+        int err = errno;
         ::write(state.errpipes[1], &err, sizeof(err));
         ::_Exit(127);
     }
 
     // Parent, close the write end
     state.pid = pid;
+    int err = 0;
     ::close(std::exchange(state.errpipes[1], -1));
-    ::error_t err = 0;
     ::ssize_t nbytes = 0;
     while ((nbytes = ::read(state.errpipes[0], &err, sizeof(err))) == -1 && errno == EINTR) {}
     if (nbytes == sizeof(err)) { // Got error from the child
@@ -237,11 +238,8 @@ auto Process::Builder::spawn() -> IoResult<Process> {
         return Err(SystemError::fromErrno());
     }
     else {
-        auto handle = IoHandle<FileDescriptor>::make(FileDescriptor {pidfd}, IoDescriptor::Pollable);
-        if (!handle) {
-            return Err(handle.error());
-        }
-        proc.mHandle = std::move(*handle);
+        ILIAS_TRY(auto handle, IoHandle<FileDescriptor>::make(FileDescriptor {pidfd}, IoDescriptor::Pollable));
+        proc.mHandle = std::move(handle);
         proc.mPid = static_cast<uint32_t>(pid);
     }
     state.pid = -1; // All done, clear the guard
@@ -251,30 +249,21 @@ auto Process::Builder::spawn() -> IoResult<Process> {
 }
 
 auto Process::Builder::output() -> IoTask<Output> {
-    auto out = PipePair::make();
-    auto err = PipePair::make();
-    if (!out) {
-        co_return Err(out.error());
-    }
-    if (!err) {
-        co_return Err(err.error());
-    }
+    ILIAS_CO_TRY(auto out, PipePair::make());
+    ILIAS_CO_TRY(auto err, PipePair::make());
 
     // Bind the pipes
-    this->cout(std::move(out->writer));
-    this->cerr(std::move(err->writer));
+    this->cout(std::move(out.writer));
+    this->cerr(std::move(err.writer));
 
     // Start it
-    auto proc = this->spawn();
-    if (!proc) {
-        co_return Err(proc.error());
-    }
+    ILIAS_CO_TRY(auto proc, this->spawn());
 
     Output output {};
     auto [outDone, errDone, done] = co_await whenAll(
-        out->reader.readToEnd(output.cout),
-        err->reader.readToEnd(output.cerr),
-        proc->wait()
+        out.reader.readToEnd(output.cout),
+        err.reader.readToEnd(output.cerr),
+        proc.wait()
     );
     if (!done) {
         co_return Err(done.error());

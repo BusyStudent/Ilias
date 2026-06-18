@@ -25,7 +25,7 @@ using runtime::CaptureSource;
  * @tparam Types 
  */
 template <typename ...Types>
-struct WhenAllTuple final {
+struct [[ILIAS_CORO_AWAIT_ELIDABLE]] WhenAllTuple final {
     std::array<TaskContext, sizeof ...(Types)> mTasks;
     CoroContext  *mContext = nullptr; // The context of the caller
 
@@ -153,7 +153,7 @@ inline auto operator co_await(WhenAllTuple<Ts...> &&tuple) noexcept {
  */
 template <Awaitable ...Ts>
 [[nodiscard]]
-inline auto whenAll(Ts && ...args) noexcept {
+inline auto whenAll([[ILIAS_CORO_ELIDABLE_ARGUMENT]] Ts && ...args) noexcept {
     return task::WhenAllTuple<AwaitableResult<Ts>... > { // Construct the task for the given awaitable
         .mTasks = { task::TaskContext {toTask(std::forward<Ts>(args))._leak()}... },
         .mContext = nullptr // The context will be set in await_transform
@@ -163,7 +163,10 @@ inline auto whenAll(Ts && ...args) noexcept {
 // Logical and operator for awaitable, same as whenAll
 template <Awaitable T1, Awaitable T2>
 [[nodiscard]]
-inline auto operator &&(T1 &&a, T2 &&b) noexcept {
+inline auto operator &&(
+    [[ILIAS_CORO_ELIDABLE_ARGUMENT]] T1 &&a, 
+    [[ILIAS_CORO_ELIDABLE_ARGUMENT]] T2 &&b) noexcept 
+{
     return whenAll(std::forward<T1>(a), std::forward<T2>(b));
 }
 

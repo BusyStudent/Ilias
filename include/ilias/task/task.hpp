@@ -24,13 +24,13 @@
 
 // HALO attribute for clang
 #if __has_cpp_attribute(clang::coro_await_elidable)
-    #define ILIAS_CORO_AWAIT_ELIDABLE [[clang::coro_await_elidable]]
+    #define ILIAS_CORO_AWAIT_ELIDABLE clang::coro_await_elidable
 #else
     #define ILIAS_CORO_AWAIT_ELIDABLE
 #endif // __has_cpp_attribute(clang::coro_await_elidable)
 
 #if __has_cpp_attribute(clang::coro_await_elidable_argument)
-    #define ILIAS_CORO_ELIDABLE_ARGUMENT [[clang::coro_await_elidable_argument]]
+    #define ILIAS_CORO_ELIDABLE_ARGUMENT clang::coro_await_elidable_argument
 #else
     #define ILIAS_CORO_ELIDABLE_ARGUMENT
 #endif // __has_cpp_attribute(clang::coro_await_elidable_argument)
@@ -313,7 +313,7 @@ private:
  * @tparam T The return type of the task (default: void)
  */
 template <typename T>
-class [[nodiscard]] ILIAS_CORO_AWAIT_ELIDABLE Task final {
+class [[nodiscard]] [[ILIAS_CORO_AWAIT_ELIDABLE]] Task final {
 public:
     using promise_type = task::TaskPromise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
@@ -423,7 +423,7 @@ inline auto sleep(std::chrono::nanoseconds duration) -> Task<void> {
 }
 
 // Sleep until a time point
-template <typename Clock, typename Duration> requires (std::chrono::is_clock_v<Clock>)
+template <typename Clock, typename Duration>
 [[nodiscard]]
 inline auto sleepUntil(std::chrono::time_point<Clock, Duration> timepoint) -> Task<void> {
     return sleep(timepoint - Clock::now());
@@ -431,12 +431,12 @@ inline auto sleepUntil(std::chrono::time_point<Clock, Duration> timepoint) -> Ta
 
 // Abstraction for awaitable
 template <Awaitable T>
-inline auto toTask(T awaitable) -> Task<AwaitableResult<T> > {
+inline auto toTask([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable) -> Task<AwaitableResult<T> > {
     co_return co_await std::move(awaitable);
 }
 
 template <typename T>
-inline auto toTask(Task<T> task) -> Task<T> {
+inline auto toTask([[ILIAS_CORO_ELIDABLE_ARGUMENT]] Task<T> task) -> Task<T> {
     return task;
 }
 

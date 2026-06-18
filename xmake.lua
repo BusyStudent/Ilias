@@ -10,6 +10,7 @@ set_encodings("utf-8")
 
 add_rules("mode.release", "mode.debug", "mode.releasedbg", "mode.coverage")
 add_rules("plugin.compile_commands.autoupdate", {lsp = "clangd", outputdir = ".vscode"})
+set_policy("package.include_external_headers", false)
 
 -- Options
 option("dev",        {default = false,     description = "Enable dev mode, we are debugging"})

@@ -47,6 +47,10 @@ public:
     bool mComplete = false;
     bool mStopped = false;
 
+    // Internal state
+    bool mRunning = false;
+    bool mStarted = false;
+
     // Handler invoked when complete
     void (*mCompletionHandler)(FiberContext *ctxt, void *) = nullptr;
     void  *mUser = nullptr;
@@ -57,10 +61,6 @@ public:
     // Result
     void *mValue = nullptr;
     runtime::ExceptionPtr mException;
-
-    // Internal state
-    bool mRunning = false;
-    bool mStarted = false;
 
     // Platform data
 #if defined(_WIN32)
@@ -271,7 +271,7 @@ auto FiberContext::create4(FiberEntry *entry) -> FiberContext * {
 
     // Allocate a stack
     size_t pageSize = ::sysconf(_SC_PAGESIZE);
-    size_t mmapSize = entry.stackSize + pageSize; // Add one guard page
+    size_t mmapSize = entry->stackSize + pageSize; // Add one guard page
     auto mmapPtr = ::mmap(nullptr, mmapSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
     if (mmapPtr == MAP_FAILED) {
         ILIAS_THROW(std::bad_alloc{});
@@ -289,7 +289,7 @@ auto FiberContext::create4(FiberEntry *entry) -> FiberContext * {
     // Create the context
     sys::getcontext(&ctxt->posix.self);
     ctxt->posix.self.uc_stack.ss_sp = stack;
-    ctxt->posix.self.uc_stack.ss_size = entry.stackSize;
+    ctxt->posix.self.uc_stack.ss_size = entry->stackSize;
     ctxt->posix.self.uc_link = &ctxt->posix.caller; // Return to the caller
     sys::makecontext(&ctxt->posix.self, ucontextEntry, 0);
 #endif // _WIN32
