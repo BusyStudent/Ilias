@@ -1,9 +1,9 @@
 #pragma once
 
 #include <ilias/io/dyn_traits.hpp>
-#include <ilias/io/method.hpp>
 #include <ilias/io/traits.hpp>
 #include <ilias/io/error.hpp>
+#include <ilias/io/ext.hpp>
 #include <ilias/buffer.hpp>
 #include <memory> // std::unique_ptr
 #include <string> // std::string_view

@@ -1,7 +1,7 @@
 /**
- * @file method.hpp
+ * @file ext.hpp
  * @author BusyStudent (fyw90mc@gmail.com)
- * @brief For basic traits helper method
+ * @brief For basic traits helper extension method
  * @version 0.1
  * @date 2024-08-26
  * 
@@ -19,7 +19,7 @@
 #include <span>
 #include <bit>
 
-// For .writeU8 writeU16BE etc....
+// For .writeUint8 writeUint16BE etc....
 #define ILIAS_DEFINE_EXT_WRITE(name, type)                                     \
     template <char = 0>                                                        \
     auto write##name(type value) -> IoTask<void> requires Writable<T> {        \
@@ -33,16 +33,16 @@
     }
 
 #define ILIAS_DEFINE_EXT_READ_INT_PAIR(bits)                                   \
-    ILIAS_DEFINE_EXT_READ(U##bits##Be, uint##bits##_t)                         \
-    ILIAS_DEFINE_EXT_READ(U##bits##Le, uint##bits##_t)                         \
-    ILIAS_DEFINE_EXT_READ(I##bits##Be, int##bits##_t)                          \
-    ILIAS_DEFINE_EXT_READ(I##bits##Le, int##bits##_t)
+    ILIAS_DEFINE_EXT_READ(Uint##bits##BE, uint##bits##_t)                      \
+    ILIAS_DEFINE_EXT_READ(Uint##bits##LE, uint##bits##_t)                      \
+    ILIAS_DEFINE_EXT_READ(Int##bits##BE, int##bits##_t)                        \
+    ILIAS_DEFINE_EXT_READ(Int##bits##LE, int##bits##_t)
 
 #define ILIAS_DEFINE_EXT_WRITE_INT_PAIR(bits)                                  \
-    ILIAS_DEFINE_EXT_WRITE(U##bits##Be, uint##bits##_t)                        \
-    ILIAS_DEFINE_EXT_WRITE(U##bits##Le, uint##bits##_t)                        \
-    ILIAS_DEFINE_EXT_WRITE(I##bits##Be, int##bits##_t)                         \
-    ILIAS_DEFINE_EXT_WRITE(I##bits##Le, int##bits##_t)                         \
+    ILIAS_DEFINE_EXT_WRITE(Uint##bits##BE, uint##bits##_t)                     \
+    ILIAS_DEFINE_EXT_WRITE(Uint##bits##LE, uint##bits##_t)                     \
+    ILIAS_DEFINE_EXT_WRITE(Int##bits##BE, int##bits##_t)                       \
+    ILIAS_DEFINE_EXT_WRITE(Int##bits##LE, int##bits##_t)                       \
 
 // For io::writeU8 io::readU8 etc....
 #define ILIAS_DEFINE_IO_INT_FUNC(name, type, endian_)                          \
@@ -56,10 +56,10 @@
     }                                                                          \
 
 #define ILIAS_DEFINE_IO_INT_PAIR(bits)                                         \
-    ILIAS_DEFINE_IO_INT_FUNC(U##bits##Be, uint##bits##_t, big)                 \
-    ILIAS_DEFINE_IO_INT_FUNC(U##bits##Le, uint##bits##_t, little)              \
-    ILIAS_DEFINE_IO_INT_FUNC(I##bits##Be, int##bits##_t,  big)                 \
-    ILIAS_DEFINE_IO_INT_FUNC(I##bits##Le, int##bits##_t,  little)
+    ILIAS_DEFINE_IO_INT_FUNC(Uint##bits##BE, uint##bits##_t, big)              \
+    ILIAS_DEFINE_IO_INT_FUNC(Uint##bits##LE, uint##bits##_t, little)           \
+    ILIAS_DEFINE_IO_INT_FUNC(Int##bits##BE, int##bits##_t,  big)               \
+    ILIAS_DEFINE_IO_INT_FUNC(Int##bits##LE, int##bits##_t,  little)
 
 
 ILIAS_NS_BEGIN
@@ -304,8 +304,8 @@ inline auto lowestLayer(T &layer) -> decltype(auto) {
 }
 
 // Read / Wrtie Integer
-ILIAS_DEFINE_IO_INT_FUNC(U8, uint8_t, big);
-ILIAS_DEFINE_IO_INT_FUNC(I8, int8_t,  big);
+ILIAS_DEFINE_IO_INT_FUNC(Uint8, uint8_t, big);
+ILIAS_DEFINE_IO_INT_FUNC(Int8, int8_t,  big);
 ILIAS_DEFINE_IO_INT_PAIR(16);
 ILIAS_DEFINE_IO_INT_PAIR(32);
 ILIAS_DEFINE_IO_INT_PAIR(64);
@@ -344,8 +344,8 @@ public:
     }
 
     // Write integer family
-    ILIAS_DEFINE_EXT_WRITE(U8, uint8_t);
-    ILIAS_DEFINE_EXT_WRITE(I8, int8_t);
+    ILIAS_DEFINE_EXT_WRITE(Uint8, uint8_t);
+    ILIAS_DEFINE_EXT_WRITE(Int8, int8_t);
     ILIAS_DEFINE_EXT_WRITE_INT_PAIR(16);
     ILIAS_DEFINE_EXT_WRITE_INT_PAIR(32);
     ILIAS_DEFINE_EXT_WRITE_INT_PAIR(64);
@@ -413,8 +413,8 @@ public:
     }
 
     // Read integer family
-    ILIAS_DEFINE_EXT_READ(U8, uint8_t);
-    ILIAS_DEFINE_EXT_READ(I8, int8_t);
+    ILIAS_DEFINE_EXT_READ(Uint8, uint8_t);
+    ILIAS_DEFINE_EXT_READ(Int8, int8_t);
     ILIAS_DEFINE_EXT_READ_INT_PAIR(16);
     ILIAS_DEFINE_EXT_READ_INT_PAIR(32);
     ILIAS_DEFINE_EXT_READ_INT_PAIR(64);

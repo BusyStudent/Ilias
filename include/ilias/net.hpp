@@ -17,5 +17,6 @@
 #include <ilias/net/sockfd.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/net/poller.hpp>
+#include <ilias/net/pipe.hpp>
 #include <ilias/net/tcp.hpp>
 #include <ilias/net/udp.hpp>

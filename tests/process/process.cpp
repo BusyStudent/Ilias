@@ -1,7 +1,6 @@
 #include <ilias/platform.hpp>
 #include <ilias/process.hpp>
 #include <ilias/testing.hpp>
-#include <ilias/fs/pipe.hpp>
 #include <gtest/gtest.h>
 #include <iostream>
 

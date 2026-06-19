@@ -13,7 +13,7 @@
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
-#include <ilias/io/method.hpp>
+#include <ilias/io/ext.hpp>
 #include <ilias/io/fd.hpp>
 
 ILIAS_NS_BEGIN
@@ -113,21 +113,12 @@ public:
      * @return IoResult<PipePair> 
      */
     static auto make() -> IoResult<PipePair> {
-        auto pair = fd_utils::pipe();
-        if (!pair) {
-            return Err(pair.error());
-        }
-        auto writer = IoHandle<FileDescriptor>::make(FileDescriptor {pair->writer}, IoDescriptor::Pipe);
-        auto reader = IoHandle<FileDescriptor>::make(FileDescriptor {pair->reader}, IoDescriptor::Pipe);
-        if (!writer) {
-            return Err(writer.error());
-        }
-        if (!reader) {
-            return Err(reader.error());
-        }
+        ILIAS_TRY(auto pair, fd_utils::pipe());
+        ILIAS_TRY(auto writer, IoHandle<FileDescriptor>::make(FileDescriptor {pair.writer}, IoDescriptor::Pipe));
+        ILIAS_TRY(auto reader, IoHandle<FileDescriptor>::make(FileDescriptor {pair.reader}, IoDescriptor::Pipe));
         return PipePair {
-            .writer = PipeWriter {std::move(*writer)},
-            .reader = PipeReader {std::move(*reader)}
+            .writer = PipeWriter {std::move(writer)},
+            .reader = PipeReader {std::move(reader)}
         };
     }
 };

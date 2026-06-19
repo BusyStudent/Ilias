@@ -12,8 +12,8 @@
 
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
-#include <ilias/io/method.hpp>
 #include <ilias/io/error.hpp>
+#include <ilias/io/ext.hpp>
 #include <ilias/io/fd.hpp>
 
 #if defined(_WIN32)

@@ -12,7 +12,7 @@
 #include <ilias/io/context.hpp>
 #include <ilias/io/error.hpp>
 #include <ilias/io/fd.hpp>
-#include <ilias/fs/pipe.hpp>
+#include <ilias/net/pipe.hpp>
 #include <initializer_list>
 #include <string>
 #include <ranges>
@@ -23,13 +23,7 @@ ILIAS_NS_BEGIN
 namespace detail {
 
 #if defined(_WIN32)
-struct HandleDeleter {
-    void operator()(void *handle) const {
-        ::CloseHandle(handle);
-    }
-};
-
-using ProcessHandle = std::unique_ptr<void, HandleDeleter>;
+using ProcessHandle = Win32Handle; // HANDLE
 #else // linux
 using ProcessHandle = IoHandle<FileDescriptor>; // pidfd
 #endif // _WIN32

@@ -184,13 +184,13 @@ ILIAS_TEST(Io, Duplex) {
         EXPECT_EQ(co_await stream.writeString("Hello, world!"), 13);
 
         // Test int
-        EXPECT_TRUE(co_await stream.writeU8(255));
-        EXPECT_TRUE(co_await stream.writeU16Be(2233));
-        EXPECT_TRUE(co_await stream.writeU16Le(2233));
-        EXPECT_TRUE(co_await stream.writeU32Be(1234567890));
-        EXPECT_TRUE(co_await stream.writeU32Le(1234567890));
-        EXPECT_TRUE(co_await stream.writeU64Be(1234567890123456789));
-        EXPECT_TRUE(co_await stream.writeU64Le(1234567890123456789));
+        EXPECT_TRUE(co_await stream.writeUint8(255));
+        EXPECT_TRUE(co_await stream.writeUint16BE(2233));
+        EXPECT_TRUE(co_await stream.writeUint16LE(2233));
+        EXPECT_TRUE(co_await stream.writeUint32BE(1234567890));
+        EXPECT_TRUE(co_await stream.writeUint32LE(1234567890));
+        EXPECT_TRUE(co_await stream.writeUint64BE(1234567890123456789));
+        EXPECT_TRUE(co_await stream.writeUint64LE(1234567890123456789));
     };
     auto receiver = [](DuplexStream &stream) -> Task<void> {
         char buffer[13];
@@ -200,13 +200,13 @@ ILIAS_TEST(Io, Duplex) {
         EXPECT_EQ(std::string_view(buffer, 13), "Hello, world!");
 
         // Test int
-        EXPECT_EQ(co_await stream.readU8(), 255);
-        EXPECT_EQ(co_await stream.readU16Be(), 2233);
-        EXPECT_EQ(co_await stream.readU16Le(), 2233);
-        EXPECT_EQ(co_await stream.readU32Be(), 1234567890);
-        EXPECT_EQ(co_await stream.readU32Le(), 1234567890);
-        EXPECT_EQ(co_await stream.readU64Be(), 1234567890123456789);
-        EXPECT_EQ(co_await stream.readU64Le(), 1234567890123456789);
+        EXPECT_EQ(co_await stream.readUint8(), 255);
+        EXPECT_EQ(co_await stream.readUint16BE(), 2233);
+        EXPECT_EQ(co_await stream.readUint16LE(), 2233);
+        EXPECT_EQ(co_await stream.readUint32BE(), 1234567890);
+        EXPECT_EQ(co_await stream.readUint32LE(), 1234567890);
+        EXPECT_EQ(co_await stream.readUint64BE(), 1234567890123456789);
+        EXPECT_EQ(co_await stream.readUint64LE(), 1234567890123456789);
     };
 
     co_await whenAll(sender(a), receiver(b));
@@ -223,7 +223,7 @@ ILIAS_TEST(Io, Duplex) {
 
 ILIAS_TEST(Io, Readable) {
     auto readOne = [](ReadableView view) -> Task<void> {
-        EXPECT_EQ(co_await view.readU8(), 'H');
+        EXPECT_EQ(co_await view.readUint8(), 'H');
     };
     { // from Readable concept
         auto reader = SpanReader{"Hello, world!"_bin};
@@ -231,9 +231,9 @@ ILIAS_TEST(Io, Readable) {
     }
     { // from Stream concept
         auto [a, b] = DuplexStream::make(10);
-        EXPECT_TRUE(co_await b.writeU8('H'));
-        EXPECT_TRUE(co_await b.writeU8('H'));
-        EXPECT_TRUE(co_await b.writeU8('H'));
+        EXPECT_TRUE(co_await b.writeUint8('H'));
+        EXPECT_TRUE(co_await b.writeUint8('H'));
+        EXPECT_TRUE(co_await b.writeUint8('H'));
 
         // Test construct directlyy from Stream concept
         co_await readOne(a);
@@ -253,7 +253,7 @@ ILIAS_TEST(Io, Readable) {
 
 ILIAS_TEST(Io, Writable) {
     auto writeOne = [](WritableView view) -> Task<void> {
-        EXPECT_TRUE(co_await view.writeU8('H'));
+        EXPECT_TRUE(co_await view.writeUint8('H'));
     };
     
     { // from Writable concept
@@ -267,14 +267,14 @@ ILIAS_TEST(Io, Writable) {
 
         // As same as above
         co_await writeOne(b);
-        EXPECT_EQ(co_await a.readU8(), 'H');
+        EXPECT_EQ(co_await a.readUint8(), 'H');
 
         co_await writeOne(StreamView {b});
-        EXPECT_EQ(co_await a.readU8(), 'H');
+        EXPECT_EQ(co_await a.readUint8(), 'H');
 
         auto dyn = DynStream {std::move(b)};
         co_await writeOne(dyn);
-        EXPECT_EQ(co_await a.readU8(), 'H');
+        EXPECT_EQ(co_await a.readUint8(), 'H');
     }
     { // The DynWritable
         auto content = std::string {};
@@ -291,8 +291,8 @@ ILIAS_TEST(Io, MemStream) {
         auto reader = MemReader {"Hello, world!"s};
 
         // Test Read
-        EXPECT_EQ(co_await reader.readU8(), 'H');
-        EXPECT_EQ(co_await reader.readU8(), 'e');
+        EXPECT_EQ(co_await reader.readUint8(), 'H');
+        EXPECT_EQ(co_await reader.readUint8(), 'e');
 
         // Test Seek
         EXPECT_TRUE(co_await reader.rewind());
@@ -301,11 +301,11 @@ ILIAS_TEST(Io, MemStream) {
         // Seek End
         EXPECT_TRUE(co_await reader.seek(0, SeekOrigin::End));
         EXPECT_EQ(co_await reader.tell(), 13);
-        EXPECT_FALSE(co_await reader.readU8()); // EOF
+        EXPECT_FALSE(co_await reader.readUint8()); // EOF
 
         // Seek Current 
         EXPECT_TRUE(co_await reader.seek(-1, SeekOrigin::Current));
-        EXPECT_EQ(co_await reader.readU8(), '!');
+        EXPECT_EQ(co_await reader.readUint8(), '!');
     }
     {
         auto buffer = std::string {};

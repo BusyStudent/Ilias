@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include <ilias/io/method.hpp>
 #include <ilias/io/traits.hpp> // Readable Writable
+#include <ilias/io/ext.hpp>
 #include <ilias/buffer.hpp> // Buffer MutableBuffer
 #include <utility> // std::min
 #include <string> // std::string

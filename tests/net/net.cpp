@@ -440,10 +440,20 @@ ILIAS_TEST(Net, Timers) {
     auto _ = co_await whenAll(sleep(10ms), sleep(20ms), sleep(30ms));
 }
 
+ILIAS_TEST(Net, Pipe) {
+    auto [writer, reader] = PipePair::make().value();
+    for (auto val : std::views::iota(0, 100)) {
+        EXPECT_TRUE(co_await writer.writeUint32LE(val));
+    }
+    for (auto val : std::views::iota(0, 100)) {
+        EXPECT_EQ(co_await reader.readUint32LE(), val);
+    }
+}
+
 ILIAS_RTEST(Net, Http) {
     ILIAS_CO_TRY(auto info, co_await AddressInfo::fromHostname("www.baidu.com", "http"));
     ILIAS_CO_TRY(auto client, co_await TcpStream::connect(info.endpoints().at(0)));
-    auto stream = BufStream {std::move(client)};
+    BufStream stream {std::move(client)};
 
     // Prepare payload
     ILIAS_CO_TRYV(co_await stream.writeAll("GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n"_bin));

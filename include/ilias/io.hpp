@@ -20,5 +20,5 @@
 #include <ilias/io/duplex.hpp>
 #include <ilias/io/traits.hpp>
 #include <ilias/io/stream.hpp>
-#include <ilias/io/method.hpp>
+#include <ilias/io/ext.hpp>
 #include <ilias/io/mem.hpp>

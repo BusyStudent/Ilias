@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ilias/io/traits.hpp>
-#include <ilias/io/method.hpp>
+#include <ilias/io/ext.hpp>
 #include <compare>
 #include <utility>
 

@@ -15,7 +15,7 @@
 #include <ilias/net/sockfd.hpp>
 #include <ilias/net/msghdr.hpp> // MsgHdr
 #include <ilias/io/context.hpp>
-#include <ilias/io/method.hpp>
+#include <ilias/io/ext.hpp>
 
 ILIAS_NS_BEGIN
 

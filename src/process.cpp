@@ -1,6 +1,5 @@
 #include <ilias/task/when_all.hpp>
 #include <ilias/io/context.hpp>
-#include <ilias/fs/pipe.hpp>
 #include <ilias/process.hpp>
 
 #if defined(_WIN32)

@@ -9,6 +9,5 @@
  * 
  */
 #pragma once
-#include <ilias/fs/pipe.hpp>
 #include <ilias/fs/path.hpp>
 #include <ilias/fs/file.hpp>

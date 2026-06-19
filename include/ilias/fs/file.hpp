@@ -13,7 +13,7 @@
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
-#include <ilias/io/method.hpp>
+#include <ilias/io/ext.hpp>
 #include <ilias/io/fd.hpp>
 #include <ilias/fs/path.hpp>
 #include <filesystem>

@@ -29,27 +29,6 @@ ILIAS_NS_BEGIN
 namespace fd_utils {
 
 /**
- * @brief Closes a file descriptor.
- * 
- * @param fd 
- * @return IoResult<void> 
- */
-inline auto close(fd_t fd) -> IoResult<void> {
-
-#if defined(_WIN32)
-    if (::CloseHandle(fd)) {
-        return {};
-    }
-#else
-    if (::close(fd) == 0) {
-        return {};
-    }
-#endif // defined(_WIN32)
-
-    return Err(SystemError::fromErrno());
-}
-
-/**
  * @brief The pipe pair. User can write on the first fd and read from the second one.
  * 
  */
@@ -78,23 +57,6 @@ inline auto pipe() -> IoResult<PipePair> {
     }
 
     return Err(SystemError::fromErrno());
-#endif // defined(_WIN32)
-
-}
-
-/**
- * @brief Checks if the file descriptor is a terminal.
- * 
- * @param fd 
- * @return true 
- * @return false 
- */
-inline auto isatty(fd_t fd) -> bool {
-
-#if defined(_WIN32)
-    return ::GetFileType(fd) == FILE_TYPE_CHAR;
-#else
-    return ::isatty(fd) != 0;
 #endif // defined(_WIN32)
 
 }
