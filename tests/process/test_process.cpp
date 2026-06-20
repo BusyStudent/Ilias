@@ -40,12 +40,6 @@ ILIAS_TEST(Process, Kill) {
     EXPECT_TRUE(co_await proc->wait());
 }
 
-int main(int argc, char** argv) {
+ILIAS_TEST_MAIN() {
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
-    ILIAS_TEST_SETUP_UTF8();
-    PlatformContext ctxt;
-    ctxt.install();
-
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }

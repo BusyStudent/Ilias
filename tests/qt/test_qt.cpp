@@ -10,7 +10,7 @@
 #include <QBuffer>
 #include <QTimer>
 #include <QTest>
-#include "qtest.hpp"
+#include "test_qt.hpp"
 
 using namespace ilias;
 using namespace ilias::literals;

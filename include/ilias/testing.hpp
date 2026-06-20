@@ -107,3 +107,24 @@
  * @endcode
  */
 #define ILIAS_RTEST(name, test) ILIAS_RTEST_IMPL(name##_##test, TEST(name, test))
+
+/**
+ * @brief Create a main testing function, the function body will be call before executing the test cases
+ * 
+ * @code 
+ *  ILIAS_TEST(MyTest, MyTest) {
+ *    co_return;
+ *  }
+ *  ILIAS_TEST_MAIN() {}
+ */
+#define ILIAS_TEST_MAIN()                       \
+    static auto _ilias_before_test() -> void;   \
+    auto main(int argc, char **argv) -> int {   \
+        ILIAS_TEST_SETUP_UTF8();                \
+        ::testing::InitGoogleTest(&argc, argv); \
+        _ilias_before_test();                   \
+        ::ilias::PlatformContext ctxt;          \
+        ctxt.install();                         \
+        return RUN_ALL_TESTS();                 \
+    }                                           \
+    static auto _ilias_before_test() -> void

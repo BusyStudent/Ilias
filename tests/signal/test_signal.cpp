@@ -47,9 +47,8 @@ ILIAS_TEST(Signal, Invalid) {
     EXPECT_FALSE(co_await signal::waitFor(SIGSTOP));
 }
 
-int main(int argc, char** argv) {
+ILIAS_TEST_MAIN() {
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
-    ILIAS_TEST_SETUP_UTF8();
 
     // Prepare signal handler
     struct sigaction action {};
@@ -57,11 +56,4 @@ int main(int argc, char** argv) {
     action.sa_flags = SA_SIGINFO;
     ::sigaction(SIGUSR1, &action, nullptr);
     ::signal(SIGALRM, alarmHandler);
-
-    // Prepare context
-    PlatformContext ctxt;
-    ctxt.install();
-
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }

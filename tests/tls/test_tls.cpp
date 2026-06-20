@@ -120,12 +120,6 @@ ILIAS_TEST(Tls, NoVerify) {
 }
 #endif // ILIAS_TLS
 
-int main(int argc, char** argv) {
-    ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
-    ILIAS_TEST_SETUP_UTF8();
-    PlatformContext ctxt;
-    ctxt.install();
-
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+ILIAS_TEST_MAIN() {
+    
 }

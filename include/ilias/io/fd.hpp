@@ -71,7 +71,7 @@ public:
 
     // Os specific Invalid Handle
 #if defined(_WIN32)
-    static constexpr HANDLE Invalid = INVALID_HANDLE_VALUE;
+    static const inline HANDLE Invalid = INVALID_HANDLE_VALUE;
 #else
     static constexpr int Invalid = -1;
 #endif // _WIN32

@@ -273,12 +273,3 @@ ILIAS_TEST(Task, StopToken) {
         EXPECT_TRUE(co_await std::move(handle)); // This token is stopped
     }
 }
-
-auto main(int argc, char** argv) -> int {
-    ::testing::InitGoogleTest(&argc, argv);
-    EventLoop loop;
-    Subscriber sub;
-    loop.install();
-    sub.install();
-    return RUN_ALL_TESTS();
-}

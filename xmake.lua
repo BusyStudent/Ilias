@@ -63,7 +63,11 @@ if has_config("dev") then
     end
 end
 
+-- Another target
 includes("./src")
-includes("./tests")
 includes("./example")
 includes("./benchmark")
+
+if has_config("dev") then
+    includes("./tests")
+end
