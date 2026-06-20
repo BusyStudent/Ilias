@@ -31,6 +31,7 @@ English | [中文](README_zh.md)
     - [Adding to Your Project](#adding-to-your-project)
       - [For xmake projects](#for-xmake-projects)
       - [For CMake projects](#for-cmake-projects)
+    - [Benchmark](#benchmark)
     - [Basic Environment](#basic-environment)
       - [Simplified with the `ilias_main` macro](#simplified-with-the-ilias_main-macro)
     - [Network Programming](#network-programming)
@@ -38,7 +39,6 @@ English | [中文](README_zh.md)
       - [Accepting Connections](#accepting-connections)
     - [Spawning Coroutines](#spawning-coroutines)
     - [Error Handling](#error-handling)
-      - [Two Ways to Handle Errors](#two-ways-to-handle-errors)
     - [Qt Integration](#qt-integration)
     - [Cancellation](#cancellation)
     - [Utilities](#utilities)
@@ -101,6 +101,21 @@ FetchContent_MakeAvailable(ilias)
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE ilias::ilias)
 ```
+
+### Benchmark
+
+HTTP server benchmark against standalone Asio, src in `benchmark`
+
+- Platform: Windows x64, release build
+- CPU: 12th Gen Intel(R) Core(TM) i7-12700H
+- Compiler: MSVC 2022
+- Load generator: `hey -z 15s -c 100`
+- Response: `HTTP/1.1 200 OK` with a fixed 10 KiB body
+
+| Server | Requests/sec | Avg latency | P50 latency | P95 latency | P99 latency |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Ilias | 22,778.72 | 4.4 ms | 4.3 ms | 4.8 ms | 5.4 ms |
+| Asio | 22,788.80 | 4.4 ms | 4.3 ms | 4.8 ms | 5.4 ms |
 
 ### Basic Environment
 
@@ -244,8 +259,27 @@ Both error codes and exceptions are supported. The core type is `Result<T, E>`, 
 - `Result<T, E>` is equivalent to `std::expected<T, E>`.
 - `Err<T>` is equivalent to `std::unexpected<T>`.
 - `IoResult<T>` is equivalent to `Result<T, std::error_code>`.
+- Useful macro like ``ILIAS_TRY`` and ``ILIAS_CO_TRY`` are provided for convenience.
 
-#### Two Ways to Handle Errors
+```cpp
+#include <ilias/io/error.hpp>
+#include <ilias/result.hpp>
+#include <ilias/task.hpp>
+
+auto fn() -> IoTask<void> {
+    // It looks like Rust's ?
+    ILIAS_CO_TRY(auto listener, co_await TcpListener::bind("127.0.0.1:8080"));
+    ILIAS_CO_TRYV(doSomething()); // Check, if error occurred, return the error
+
+}
+// Equivalent to
+auto fn2() -> IoTask<void> {
+    auto res = co_await TcpListener::bind("127.0.0.1:8080");
+    if (!res) {
+        co_return Err(res.error());
+    }
+    auto listener = std::move(*res);
+}
 
 ```cpp
 auto example() -> ilias::Task<void> {

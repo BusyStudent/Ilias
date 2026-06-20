@@ -73,7 +73,7 @@ public:
 #if defined(_WIN32)
     static constexpr HANDLE Invalid = INVALID_HANDLE_VALUE;
 #else
-    sttaic constexpr int Invalid = -1;
+    static constexpr int Invalid = -1;
 #endif // _WIN32
 private:
     fd_t mFd = Invalid;

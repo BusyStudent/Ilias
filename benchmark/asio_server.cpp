@@ -1,23 +1,27 @@
-#include <asio.hpp>
 #include <iostream>
-#include <string>
 #include <memory>
+#include <string>
+#include <array>
+#include <asio.hpp>
 
 using asio::ip::tcp;
+
+namespace {
+    constexpr size_t requestBufferSize = 1024;
+    constexpr size_t responseSize = 10 * 1024;
+    constexpr std::string_view responseHeader =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: 10240\r\n"
+        "Connection: keep-alive\r\n"
+        "Keep-Alive: timeout=5, max=1000\r\n"
+        "\r\n";
+    const std::array<std::byte, responseSize> responseBody {}; // 10K Empty response body
+} // namespace
 
 class HTTPSession : public std::enable_shared_from_this<HTTPSession> {
 public:
     HTTPSession(tcp::socket socket)
-        : socket_(std::move(socket)) {
-        response_data_.resize(10 * 1024, 0);
-        
-        response_header_ = 
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Length: 10240\r\n"
-            "Connection: keep-alive\r\n"
-            "Keep-Alive: timeout=5, max=1000\r\n"
-            "\r\n";
-    }
+        : socket_(std::move(socket)) {}
 
     void start() {
         do_read();
@@ -40,12 +44,12 @@ private:
         
         asio::async_write(
             socket_,
-            asio::buffer(response_header_),
+            asio::buffer(responseHeader.data(), responseHeader.size()),
             [this, self](std::error_code ec, std::size_t) {
                 if (!ec) {
                     asio::async_write(
                         socket_,
-                        asio::buffer(response_data_),
+                        asio::buffer(responseBody.data(), responseBody.size()),
                         [this, self](std::error_code ec, std::size_t) {
                             if (!ec) {
                                 do_read();
@@ -56,15 +60,13 @@ private:
     }
 
     tcp::socket socket_;
-    std::array<char, 1024> buffer_;
-    std::string response_header_;
-    std::string response_data_;
+    std::array<char, requestBufferSize> buffer_;
 };
 
 class HTTPServer {
 public:
     HTTPServer(asio::io_context& io_context, short port)
-        : acceptor_(io_context, tcp::endpoint(tcp::v4(), port)) {
+        : acceptor_(io_context, tcp::endpoint(asio::ip::address_v4::loopback(), port)) {
         for (int i = 0; i < 32; ++i) {
             do_accept();            
         }

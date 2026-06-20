@@ -2,26 +2,33 @@
 #include <ilias/task.hpp>
 #include <ilias/net.hpp>
 #include <iostream>
+#include <string>
+#include <array>
 
 using namespace ilias;
 
-auto handle(TcpClient sock) -> Task<void> {
-    std::string_view header =
+namespace {
+    constexpr size_t requestBufferSize = 1024;
+    constexpr size_t responseSize = 10 * 1024;
+    constexpr std::string_view responseHeader =
         "HTTP/1.1 200 OK\r\n"
         "Content-Length: 10240\r\n"
         "Connection: keep-alive\r\n"
         "Keep-Alive: timeout=5, max=1000\r\n"
         "\r\n";
+    const std::array<std::byte, responseSize> responseBody {}; // 10K Empty response body
+} // namespace
 
-    std::byte buffer[1024 * 10] {};
+auto handle(TcpStream sock) -> Task<void> {
+    std::array<std::byte, requestBufferSize> buffer {};
     while (true) {
         if (!co_await sock.read(buffer)) {
             break;
         }
-        if (!co_await sock.writeAll(makeBuffer(header))) {
+        if (!co_await sock.writeAll(makeBuffer(responseHeader))) {
             break;
         }
-        if (!co_await sock.writeAll(buffer)) {
+        if (!co_await sock.writeAll(makeBuffer(responseBody))) {
             break;
         }
     }
