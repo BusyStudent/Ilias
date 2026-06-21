@@ -50,20 +50,31 @@ public:
     } afd;
 };
 
-IocpContext::IocpContext() : mNt(ntdll()) {
-    mIocpFd = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
-    if (!mIocpFd) {
+// The magic used to assert is a valid callback
+constexpr DWORD CALLBACK_MAGIC = 0x114514;
+
+// Create the completion port, it must success
+static auto createCompletionPort() -> ::HANDLE {
+    auto handle = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
+    if (!handle) {
         ILIAS_ERROR("IOCP", "Failed to create iocp: {}", ::GetLastError());
         ILIAS_THROW(std::system_error(SystemError::fromErrno()));
     }
-    if (auto afd = afdOpenDevice(mNt); afd) {
-        if (::CreateIoCompletionPort(*afd, mIocpFd, 0, 0) != mIocpFd) {
+    return handle;
+}
+
+IocpContext::IocpContext() : 
+    mNt(ntdll()),
+    mIocpFd(createCompletionPort()), // MUST success
+    mAfdDevice(afdOpenDevice(mNt).value_or(nullptr))
+{
+    if (mAfdDevice) {
+        if (::CreateIoCompletionPort(mAfdDevice.get(), mIocpFd.get(), 0, 0) != mIocpFd.get()) {
             ILIAS_WARN("IOCP", "Failed to add afd device handle to iocp: {}", ::GetLastError());
         }
-        if (!::SetFileCompletionNotificationModes(*afd, FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE)) {
+        if (!::SetFileCompletionNotificationModes(mAfdDevice.get(), FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE)) {
             ILIAS_WARN("IOCP", "Failed to set completion notification modes: {}", ::GetLastError());
         }
-        mAfdDevice = *afd;
     }
 
     // Using high resolution timer if available
@@ -73,51 +84,27 @@ IocpContext::IocpContext() : mNt(ntdll()) {
 }
 
 IocpContext::~IocpContext() {
-    for (auto packet : mCompletionPackets) {
-        if (!::CloseHandle(packet)) {
-            ILIAS_WARN("IOCP", "Failed to close completion packet: {}", ::GetLastError());
-        }
-    }
-    if (mAfdDevice) {
-        if (!::CloseHandle(mAfdDevice)) {
-            ILIAS_WARN("IOCP", "Failed to close afd handle: {}", ::GetLastError());
-        }
-    }
-    if (mIocpFd) {
-        if (!::CloseHandle(mIocpFd)) {
-            ILIAS_WARN("IOCP", "Failed to close iocp handle: {}", ::GetLastError());
-        }
-    }
-    if (mTimerFd) {
-        if (!::CloseHandle(mTimerFd)) {
-            ILIAS_WARN("IOCP", "Failed to close timer handle: {}", ::GetLastError());
-        }
-    }
-    if (mTimerPacket) {
-        if (!::CloseHandle(mTimerPacket)) {
-            ILIAS_WARN("IOCP", "Failed to close timer packet handle: {}", ::GetLastError());
-        }
-    }
+
 }
 
 // MARK: Executor
 auto IocpContext::post(void (*fn)(void *), void *args) -> void {
-    ILIAS_ASSERT(fn);
+    ILIAS_ASSERT(fn, "fn must not be nullptr");
     if (runtime::Executor::currentThread() == this) { // In the same thread, use queue directly
         mCallbacks.emplace_back(fn, args);
         return;
     }
     ::PostQueuedCompletionStatus(
-        mIocpFd, 
-        0x114514, 
+        mIocpFd.get(), 
+        CALLBACK_MAGIC, 
         reinterpret_cast<ULONG_PTR>(fn), 
         reinterpret_cast<LPOVERLAPPED>(args)
     );
 }
 
 auto IocpContext::run(runtime::StopToken token) -> void {
-    auto running = true;
-    auto cb = runtime::StopCallback(token, [&, this]() {
+    bool running = true;
+    runtime::StopCallback calback(token, [&, this]() {
         schedule([&]() { running = false; });
     });
     DWORD timeout = INFINITE;
@@ -149,7 +136,7 @@ auto IocpContext::run(runtime::StopToken token) -> void {
 
 auto IocpContext::processCompletion(DWORD timeout) -> void {
     if (mEntriesIdx >= mEntriesSize) { // We need more entries
-        if (!::GetQueuedCompletionStatusEx(mIocpFd, mEntries.data(), mEntries.size(), &mEntriesSize, timeout, FALSE)) {
+        if (!::GetQueuedCompletionStatusEx(mIocpFd.get(), mEntries.data(), mEntries.size(), &mEntriesSize, timeout, FALSE)) {
             mEntriesSize = 0;
             mEntriesIdx = 0;
             auto error = ::GetLastError();
@@ -170,16 +157,17 @@ auto IocpContext::processCompletion(DWORD timeout) -> void {
         if (key) {
             // When key is not 0, it means it is a function pointer
             ILIAS_TRACE("IOCP", "Call callback function ({}, {})", (void*)key, (void*)overlapped);
-            ILIAS_ASSERT(bytesTransferred == 0x114514);
+            ILIAS_ASSERT(bytesTransferred == CALLBACK_MAGIC);
             auto fn = reinterpret_cast<void (*)(void *)>(key);
             fn(overlapped);
             continue;
         }
         if (overlapped) {
+            ILIAS_TRACE("IOCP", "Dispatch completion for overlapped {}", (void*)overlapped);
             auto lap = static_cast<IocpOverlapped*>(overlapped);
             auto status = overlapped->Internal; //< Acroding to Microsoft, it stores the error code, BUT NTSTATUS
             auto error = mNt.RtlNtStatusToDosError(status);
-            ILIAS_ASSERT(lap->checkMagic());
+            ILIAS_ASSERT(lap->checkMagic(), "The magic of {} is not correct, memory is corrupted?", (void*)overlapped);
             lap->onCompleteCallback(lap, error, bytesTransferred);
         }
         else {
@@ -190,11 +178,13 @@ auto IocpContext::processCompletion(DWORD timeout) -> void {
 
 // MARK: Timer
 auto IocpContext::initTimer() -> void {
-    if (auto status = mNt.NtCreateWaitCompletionPacket(&mTimerPacket, GENERIC_ALL, nullptr); FAILED(status)) {
-        ILIAS_WARN("Win32", "NtCreateWaitCompletionPacket failed: {}", SystemError(mNt.RtlNtStatusToDosError(status)));
+    HANDLE packet = nullptr;
+    if (auto status = mNt.NtCreateWaitCompletionPacket(&packet, GENERIC_ALL, nullptr); FAILED(status)) {
+        ILIAS_WARN("IOCP", "NtCreateWaitCompletionPacket failed: {}", SystemError(mNt.RtlNtStatusToDosError(status)));
         return;
     }
-    mTimerFd = ::CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    mTimerPacket.reset(packet);
+    mTimerFd.reset(::CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS));
     if (!mTimerFd) {
         ILIAS_WARN("IOCP", "Failed to create timer: {}", ::GetLastError());
         return;
@@ -202,15 +192,14 @@ auto IocpContext::initTimer() -> void {
 
     // Bind it to iocp
     BOOLEAN alreadySignaled = FALSE;
-    if (auto err = submitTimerWait(mTimerPacket, mTimerFd, &alreadySignaled); err != 0 || alreadySignaled) { // Impossible for alreadySignaled to be true
+    if (auto err = submitTimerWait(mTimerPacket.get(), mTimerFd.get(), &alreadySignaled); err != 0 || alreadySignaled) { // Impossible for alreadySignaled to be true
         ILIAS_WARN("IOCP", "Failed to associate timer packet with iocp: {}", SystemError(err));
-        ::CloseHandle(mTimerFd);
         mTimerFd = nullptr;
         return;
     }
     mService.setCallback([this](auto timepoint) {
         if (!timepoint) { // No timers
-            ::CancelWaitableTimer(mTimerFd);
+            ::CancelWaitableTimer(mTimerFd.get());
             return;
         }
         // Convert the timeout to FILETIME
@@ -222,7 +211,7 @@ auto IocpContext::initTimer() -> void {
         if (time.QuadPart > 0) { // The diff is negative, so we need to set the time to 0
             time.QuadPart = 0;
         }
-        if (!::SetWaitableTimer(mTimerFd, &time, 0, nullptr, nullptr, FALSE)) { // Oneshot
+        if (!::SetWaitableTimer(mTimerFd.get(), &time, 0, nullptr, nullptr, FALSE)) { // Oneshot
             ILIAS_WARN("IOCP", "Failed to set timer: {}", ::GetLastError());
         }
     });
@@ -235,7 +224,7 @@ auto IocpContext::processTimer() -> void {
         mService.updateTimers(); // Update the timers group
 
         // Re-arm it
-        if (auto err = submitTimerWait(mTimerPacket, mTimerFd, &alreadySignaled); err != 0) {
+        if (auto err = submitTimerWait(mTimerPacket.get(), mTimerFd.get(), &alreadySignaled); err != 0) {
             ILIAS_WARN("IOCP", "Failed to associate timer packet with iocp: {}", SystemError(err));
             return;
         }
@@ -243,18 +232,17 @@ auto IocpContext::processTimer() -> void {
 }
 
 auto IocpContext::submitTimerWait(HANDLE packet, HANDLE handle, BOOLEAN *alreadySignaled) -> DWORD {
-    auto callback = [](void *ctxt) {
+    auto callback = +[](void *ctxt) {
         return static_cast<IocpContext*>(ctxt)->processTimer();
     };
-    auto ptr = static_cast<void (*)(void*)>(callback);
     auto status = mNt.NtAssociateWaitCompletionPacket(
         packet,
-        mIocpFd,
+        mIocpFd.get(),
         handle,
-        reinterpret_cast<void*>(ptr), // CompletionKey callback fn (using function pointer as key)
-        this,                         // Overlapped callback args (this)
+        reinterpret_cast<void*>(callback), // CompletionKey callback fn (using function pointer as key)
+        this,                              // Overlapped callback args (this)
         0,
-        0x114514,                     // Callback magic
+        CALLBACK_MAGIC,                    // Callback magic
         alreadySignaled
     );
     if (status != STATUS_SUCCESS) {
@@ -284,7 +272,7 @@ auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<Io
 
     // Try add it to the completion port
     if (type != IoDescriptor::Tty) {
-        if (::CreateIoCompletionPort(fd, mIocpFd, 0, 0) != mIocpFd) {
+        if (::CreateIoCompletionPort(fd, mIocpFd.get(), 0, 0) != mIocpFd.get()) {
             return Err(SystemError::fromErrno());
         }
 
@@ -460,42 +448,44 @@ auto IocpContext::recvmsg(IoDescriptor *fd, MutableMsgHdr &msg, int flags) -> Io
 // MARK: Poll
 auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
-    if (nfd->type != IoDescriptor::Socket || mAfdDevice == INVALID_HANDLE_VALUE) {
+    if (nfd->type != IoDescriptor::Socket || !mAfdDevice) {
         co_return Err(IoError::OperationNotSupported);
     }
-    auto awaiter = AfdPollAwaiter(mAfdDevice, nfd->sockfd, events);
+    auto awaiter = AfdPollAwaiter(mAfdDevice.get(), nfd->sockfd, events);
     nfd->afd.awaiters.push_back(awaiter);
     co_return co_await awaiter;
 }
 
 // MARK: WaitObject
 auto IocpContext::waitObject(HANDLE object) -> IoTask<void> {
+    // https://learn.microsoft.com/en-us/windows/win32/devnotes/ntassociatewaitcompletionpacket
     do {
         if (!mNt.hasWaitCompletionPacket()) { // NtCreateWaitCompletionPacket, available in Windows 8
             break;
         }
         // Try to get a completion packet from the pool, if not, create a new one
-        HANDLE packet = nullptr;
+        Win32Handle packet {};
         if (mCompletionPackets.empty()) {
-            auto status = mNt.NtCreateWaitCompletionPacket(&packet, GENERIC_ALL, nullptr);
+            HANDLE handle = nullptr;
+            auto status = mNt.NtCreateWaitCompletionPacket(&handle, GENERIC_ALL, nullptr);
             if (FAILED(status)) {
-                ILIAS_ERROR("Win32", "NtCreateWaitCompletionPacket failed: {}", SystemError(mNt.RtlNtStatusToDosError(status)));
+                ILIAS_ERROR("IOCP", "NtCreateWaitCompletionPacket failed: {}", SystemError(mNt.RtlNtStatusToDosError(status)));
                 break;
             }
+            packet = Win32Handle {handle};
         }
         else {
-            packet = mCompletionPackets.front();
+            packet = std::move(mCompletionPackets.front());
             mCompletionPackets.pop_front();
         }
         ILIAS_ASSERT(packet);
 
         // Create an guard
-        auto guard = ScopeExit([packet, this]() {
+        auto guard = ScopeExit([&packet, this]() {
             if (mCompletionPackets.size() < mCompletionPacketsPoolSize) {
-                mCompletionPackets.push_back(packet);
+                mCompletionPackets.emplace_back(std::move(packet));
                 return;
             }
-            ::CloseHandle(packet);
         });
 
         // Wait for the packet
@@ -524,9 +514,8 @@ auto IocpContext::waitObject(HANDLE object) -> IoTask<void> {
                     error = nt->RtlNtStatusToDosError(status);
                     return false;
                 }
-                if (alreadySignaled) {
-                    return false; // If already signaled, we don't need to wait, just resume
-                }
+                // If already signaled, but the completion still be pending, so we need to wait for it
+                ILIAS_TRACE("IOCP", "WaitObject wait for overlapped: {}", static_cast<void*>(lap));
                 reg.register_<&Awaiter::onStopRequested>(handle.stopToken(), this);
                 return true;
             }
@@ -550,7 +539,7 @@ auto IocpContext::waitObject(HANDLE object) -> IoTask<void> {
                         break;
                     }
                     default: {
-                        ILIAS_ERROR("Win32", "NtCancelWaitCompletionPacket failed: {}", SystemError(nt->RtlNtStatusToDosError(status)));
+                        ILIAS_ERROR("IOCP", "NtCancelWaitCompletionPacket failed: {}", SystemError(nt->RtlNtStatusToDosError(status)));
                         break;
                     }
                 }
@@ -565,7 +554,7 @@ auto IocpContext::waitObject(HANDLE object) -> IoTask<void> {
             HANDLE iocp;
             HANDLE packet;
             HANDLE object;
-            NtDll *nt;
+            const NtDll *nt;
 
             // Status
             runtime::CoroHandle handle;
@@ -574,8 +563,8 @@ auto IocpContext::waitObject(HANDLE object) -> IoTask<void> {
         };
 
         Awaiter awaiter;
-        awaiter.iocp = mIocpFd;
-        awaiter.packet = packet;
+        awaiter.iocp = mIocpFd.get();
+        awaiter.packet = packet.get();
         awaiter.object = object;
         awaiter.nt = &mNt;
         co_return co_await awaiter;

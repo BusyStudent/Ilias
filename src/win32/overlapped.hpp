@@ -75,15 +75,12 @@ public:
  */
 class IocpAwaiterBase : public IocpOverlapped {
 public:
-    IocpAwaiterBase(SOCKET sockfd) {
-        mSockfd = sockfd;
-    }
-
-    IocpAwaiterBase(HANDLE handle) {
-        mHandle = handle;
-    }
+    IocpAwaiterBase(SOCKET sockfd) : mSockfd(sockfd) {}
+    IocpAwaiterBase(HANDLE handle) : mHandle(handle) {}
+    IocpAwaiterBase(IocpAwaiterBase &&) = default;
 
     auto await_suspend(runtime::CoroHandle caller) -> void {
+        ILIAS_TRACE("IOCP", "Wait for overlapped {} at fd: {}", static_cast<void*>(this), mHandle);
         mCaller = caller;
         onCompleteCallback = completeCallback;
         mRegistration.register_<&IocpAwaiterBase::cancel>(caller.stopToken(), this);
@@ -127,7 +124,7 @@ private:
         if (err == ERROR_SUCCESS) {
             return "(0, OK)";
         }
-        return fmtlib::format("({}, {})", err, SystemError(err).toString());
+        return fmtlib::format("({}, {})", err, SystemError(err));
     }
 #endif
 
@@ -151,9 +148,9 @@ friend class IocpAwaiter;
 template <typename T>
 class IocpAwaiter : public IocpAwaiterBase {
 public:
-    IocpAwaiter(SOCKET sockfd) : IocpAwaiterBase(sockfd) { }
-
-    IocpAwaiter(HANDLE handle) : IocpAwaiterBase(handle) { }
+    IocpAwaiter(SOCKET sockfd) : IocpAwaiterBase(sockfd) {}
+    IocpAwaiter(HANDLE handle) : IocpAwaiterBase(handle) {}
+    IocpAwaiter(IocpAwaiter &&) = default;
 
     auto await_ready() -> bool {
         if (static_cast<T*>(this)->onSubmit()) {

@@ -129,7 +129,7 @@ namespace win32 {
         }
     };
 
-    extern auto ntdll() -> NtDll &;
+    extern auto ntdll() -> const NtDll &;
 } // namespace win32
 
 ILIAS_NS_END

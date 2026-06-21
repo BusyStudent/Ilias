@@ -88,6 +88,7 @@ private:
 class Win32Handle {
 public:
     explicit Win32Handle(HANDLE handle) : mHandle(handle) {}
+    Win32Handle(std::nullptr_t) {}
     Win32Handle(Win32Handle &&) = default;
     Win32Handle() = default;
 
@@ -102,9 +103,11 @@ public:
     // Operator
     auto operator <=>(const Win32Handle &other) const noexcept = default;
     auto operator =(Win32Handle &&other) noexcept -> Win32Handle & = default;
+    auto operator =(std::nullptr_t) noexcept -> Win32Handle & { reset(); return *this; }
+    auto operator *() const noexcept -> HANDLE { return get(); }
 
     // Check if the handle is valid
-    explicit operator bool() const noexcept { return mHandle && mHandle.get() != INVALID_HANDLE_VALUE; };
+    explicit operator bool() const noexcept { return bool(mHandle); };
 private:
     struct Deleter {
         void operator()(HANDLE handle) const {

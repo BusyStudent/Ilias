@@ -2,8 +2,8 @@
 
 ILIAS_NS_BEGIN
 
-auto win32::ntdll() -> NtDll & {
-    static NtDll dll;
+auto win32::ntdll() -> const NtDll & {
+    static const NtDll dll;
     return dll;
 }
 

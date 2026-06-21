@@ -16,6 +16,7 @@
 #include <ilias/runtime/timer.hpp>
 #include <ilias/net/system.hpp> // SockInitializer
 #include <ilias/io/context.hpp>
+#include <ilias/io/fd.hpp>
 #include <deque> // std::deque
 #include <array> // std::array
 
@@ -67,19 +68,19 @@ private:
 
     using Callback = std::pair<void (*)(void *), void *>;
 
+    const NtDll &mNt; // For NtCompletionPacket & Afd
     SockInitializer mInit;
-    HANDLE mIocpFd = nullptr;
-    HANDLE mAfdDevice = nullptr; // For poll
-    NtDll &mNt;
+    Win32Handle mIocpFd;
+    Win32Handle mAfdDevice; // For poll
     std::deque<Callback> mCallbacks; // For thread local post
     
     // Timer
-    HANDLE mTimerFd = nullptr;
-    HANDLE mTimerPacket = nullptr;
+    Win32Handle mTimerFd;
+    Win32Handle mTimerPacket;
     runtime::TimerService mService;
 
     // NtCompletionPacket
-    std::deque<void *> mCompletionPackets;
+    std::deque<Win32Handle> mCompletionPackets;
     size_t mCompletionPacketsPoolSize = 64;
 
     // Batching

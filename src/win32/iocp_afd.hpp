@@ -12,6 +12,7 @@
 
 #include <ilias/detail/intrusive.hpp> // intrusive::ListNode
 #include <ilias/io/system_error.hpp>
+#include <ilias/io/fd.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/log.hpp>
 #include "overlapped.hpp"
@@ -152,7 +153,7 @@ private:
 };
 
 // Open the afd device for impl poll
-inline auto afdOpenDevice(NtDll &dll) -> Result<HANDLE, SystemError> {
+inline auto afdOpenDevice(const NtDll &dll) -> Result<Win32Handle, SystemError> {
     // Open the afd device for impl poll
     wchar_t path [] = L"\\Device\\Afd\\Ilias";
     ::HANDLE device = nullptr;
@@ -187,7 +188,7 @@ inline auto afdOpenDevice(NtDll &dll) -> Result<HANDLE, SystemError> {
         auto winerr = dll.RtlNtStatusToDosError(status);
         return Err(SystemError(winerr));
     }
-    return device;
+    return Win32Handle{device};
 }
 
 } // namespace win32
