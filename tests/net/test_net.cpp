@@ -20,6 +20,7 @@ ILIAS_TEST(Net, Pipe) {
     }
 }
 
+// Test for default WaitObject implementation
 #if defined(_WIN32)
 ILIAS_TEST(Net, Win32Handle) {
     Win32Handle event {

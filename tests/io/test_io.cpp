@@ -1,6 +1,7 @@
+#include <ilias/platform.hpp>
+#include <ilias/testing.hpp>
 #include <ilias/task.hpp>
 #include <ilias/io.hpp>
-#include <ilias/testing.hpp>
 #include <gtest/gtest.h>
 
 // Experimental API
@@ -209,10 +210,36 @@ ILIAS_TEST(Io, Duplex) {
         EXPECT_EQ(co_await stream.readUint64LE(), 1234567890123456789);
     };
 
+    // Single thread
     co_await whenAll(sender(a), receiver(b));
     co_await whenAll(sender(b), receiver(a));
     co_await whenAll(receiver(b), sender(a));
     co_await whenAll(receiver(a), sender(b));
+
+    // Cross thread
+    co_await whenAll(Thread{sender(a)}, Thread{receiver(b)});
+    co_await whenAll(Thread{sender(b)}, Thread{receiver(a)});
+    co_await whenAll(Thread{receiver(b)}, Thread{sender(a)});
+    co_await whenAll(Thread{receiver(a)}, Thread{sender(b)});
+
+    // Try cancel
+    auto worker = [](DuplexStream &stream) -> Task<void> {
+        auto val = co_await stream.readInt8();
+        ILIAS_TRAP(); // Should not reach here, it was canceled
+    };
+    {
+        auto handle = spawn(worker(a));
+        co_await this_coro::yield();
+        handle.stop();
+        co_await std::move(handle);
+    }
+    {
+        // Cross thread
+        Thread thread{worker(b)};
+        co_await this_coro::yield();
+        thread.stop();
+        co_await std::move(thread);
+    }
 
     // Try broken
     a.close();
@@ -369,9 +396,34 @@ TEST(Experimental, IoVec) {
     auto seq1 = makeIoSequence(mutableBuffers); // Mutable -> Const, OK!
 }
 
-auto main(int argc, char **argv) -> int {
-    EventLoop loop;
-    loop.install();
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+#if defined(_WIN32)
+ILIAS_TEST(Io, Win32Handle) {
+    Win32Handle event {
+        ::CreateEventW(nullptr, TRUE, FALSE, nullptr)
+    };
+    EXPECT_TRUE(event);
+
+    // Start an thread to notify the event after 0ms, 10ms, 20ms, 30ms, ...
+    for (auto val : std::views::iota(0, 10)) {
+        std::thread thread([&]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(val * 10));
+            ::SetEvent(event.get());
+        });
+        EXPECT_TRUE(co_await event);
+        thread.join();
+        ::ResetEvent(event.get());
+    }
+
+    // Test Cancel
+    {
+        auto handle = spawn(event.wait());
+        co_await this_coro::yield();
+        handle.stop();
+        EXPECT_FALSE(co_await std::move(handle));
+    }
+}
+#endif // _WIN32
+
+ILIAS_TEST_MAIN() {
+
 }

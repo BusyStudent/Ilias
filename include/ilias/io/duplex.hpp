@@ -8,8 +8,39 @@
 ILIAS_NS_BEGIN
 
 /**
- * @brief A Duplex stream is a stream that can be read from and written to at the same time. like a pipe. but in memory.
- * 
+ * @brief One endpoint of an in-memory full-duplex byte stream.
+ *
+ * A DuplexStream is created as a connected pair by make(). Data written to one
+ * endpoint can be read from the other endpoint, and vice versa. It behaves like
+ * a bidirectional in-memory pipe.
+ *
+ * @par Concurrency
+ * The two endpoints returned by make() may be used from different threads.
+ *
+ * For a single endpoint, the read side and the write side are independent:
+ * one read operation and one write operation may be pending at the same time,
+ * for example:
+ *
+ * @code
+ * co_await whenAll(stream.read(buf), stream.write(data));
+ * @endcode
+ *
+ * However, operations on the same side are not reentrant. A single endpoint
+ * must not have multiple concurrent reads or multiple concurrent writes unless
+ * the caller serializes them externally.
+ *
+ * In other words, this is allowed:
+ *
+ * @code
+ * co_await whenAll(stream.read(buf), stream.write(data));
+ * @endcode
+ *
+ * But this is not allowed:
+ *
+ * @code
+ * co_await whenAll(stream.read(buf1), stream.read(buf2));
+ * co_await whenAll(stream.write(data1), stream.write(data2));
+ * @endcode
  */
 class ILIAS_API DuplexStream final : public StreamExt<DuplexStream> {
 public:
@@ -41,6 +72,7 @@ public:
      */
     static auto make(size_t size) -> std::pair<DuplexStream, DuplexStream>;
 
+    // Check the stream is valid
     explicit operator bool() const noexcept { return bool(d); }
 private:
     static auto closeImpl(Impl *d, bool flip) -> void;

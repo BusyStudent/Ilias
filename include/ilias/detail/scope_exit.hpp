@@ -12,9 +12,16 @@ class ScopeExit {
 public:
     ScopeExit(Fn fn) : mFn(std::move(fn)) {}
     ScopeExit(const ScopeExit &) = delete;
-    ~ScopeExit() { mFn(); }
+    ~ScopeExit() { 
+        if(!mReleased) {
+            mFn();
+        }
+    }
+
+    auto release() { mReleased = true; }
 private:
-    Fn mFn;
+    Fn   mFn;
+    bool mReleased = false;
 };
 
 ILIAS_NS_END

@@ -43,11 +43,6 @@ public:
         int type = 0;
         int protocol = 0;
     } sock;
-
-    // For Afd Poll
-    struct {
-        intrusive::List<AfdPollAwaiter> awaiters;
-    } afd;
 };
 
 // The magic used to assert is a valid callback
@@ -429,9 +424,7 @@ auto IocpContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint32_t> {
     if (nfd->type != IoDescriptor::Socket || !mAfdDevice) {
         co_return Err(IoError::OperationNotSupported);
     }
-    auto awaiter = AfdPollAwaiter(mAfdDevice.get(), nfd->sockfd, events);
-    nfd->afd.awaiters.push_back(awaiter);
-    co_return co_await awaiter;
+    co_return co_await AfdPollAwaiter(mAfdDevice.get(), nfd->sockfd, events);
 }
 
 // MARK: WaitObject
@@ -459,7 +452,7 @@ auto IocpContext::waitObject(HANDLE object) -> IoTask<void> {
         ILIAS_ASSERT(packet);
 
         // Create an guard
-        auto guard = ScopeExit([&packet, this]() {
+        ScopeExit guard([&packet, this]() {
             if (mCompletionPackets.size() < mCompletionPacketsPoolSize) {
                 mCompletionPackets.emplace_back(std::move(packet));
                 return;
@@ -506,7 +499,7 @@ auto IocpContext::waitObject(HANDLE object) -> IoTask<void> {
             }
 
             auto onStopRequested() -> void {
-                auto status = nt->NtCancelWaitCompletionPacket(packet, FALSE);
+                auto status = nt->NtCancelWaitCompletionPacket(packet, TRUE);
                 switch (status) {
                     case STATUS_SUCCESS:
                     case STATUS_CANCELLED: {
