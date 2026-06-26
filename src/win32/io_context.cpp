@@ -323,29 +323,7 @@ auto IocpContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<Io
 
 auto IocpContext::removeDescriptor(IoDescriptor *descriptor) -> IoResult<void> {
     auto nfd = static_cast<IocpDescriptor*>(descriptor);
-    auto _ = cancel(nfd);
     delete nfd;
-    return {};
-}
-
-auto IocpContext::cancel(IoDescriptor *fd) -> IoResult<void> {
-    auto nfd = static_cast<IocpDescriptor*>(fd);
-    ILIAS_TRACE("IOCP", "Cancelling fd: {}", nfd->handle);
-
-    // Cancxel normal iocp base io
-    if (!CancelIoEx(nfd->handle, nullptr)) {
-        auto err = ::GetLastError();
-        if (err != ERROR_NOT_FOUND) { //< It's ok if the Io is not found, no any pending IO
-            ILIAS_WARN("IOCP", "Failed to cancel Io on fd: {}, error: {}", nfd->handle, err);
-            return Err(SystemError(err));
-        }
-    }
-    // Cancel poll operation
-    for (auto iter = nfd->afd.awaiters.begin(); iter != nfd->afd.awaiters.end(); ) {
-        auto &awaiter = *iter;
-        iter = nfd->afd.awaiters.erase(iter);
-        awaiter.cancel();
-    }
     return {};
 }
 

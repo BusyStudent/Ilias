@@ -95,7 +95,6 @@ public:
     TcpStream(IoHandle<Socket> h) : mHandle(std::move(h)) {}
 
     auto close() { return mHandle.close(); }
-    auto cancel() const { return mHandle.cancel(); }
 
     // Readable Concept
     /**
@@ -277,7 +276,6 @@ public:
     TcpListener(IoHandle<Socket> h) : mHandle(std::move(h)) {}
 
     auto close() { return mHandle.close(); }
-    auto cancel() const { return mHandle.cancel(); }
 
     /**
      * @brief Set the socket option.

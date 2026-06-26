@@ -22,14 +22,6 @@ ILIAS_TEST(Net, Udp) {
         EXPECT_FALSE((co_await std::move(handle)).has_value());
     }
 
-    // Test cancel by listener
-    {
-        auto handle = spawn(client.poll(PollEvent::In));
-        co_await sleep(10ms); // Make sure the poll actually submitted
-        auto _ = client.cancel();
-        EXPECT_EQ(co_await std::move(handle), Err(std::errc::operation_canceled));
-    }
-
     // Test send data
     auto receiver = (co_await UdpSocket::bind("127.0.0.1:0")).value();
     auto endpoint = receiver.localEndpoint().value();

@@ -1,32 +1,82 @@
 BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+
+# Basic layout
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
-AllowShortFunctionsOnASingleLine: InlineOnly
-ColumnLimit: 120
-BreakBeforeBraces: Custom
-BraceWrapping:
-  AfterEnum: false
-  AfterStruct: false
-  SplitEmptyFunction: true
-  BeforeElse: true
-SpacesBeforeTrailingComments: 1
-SpaceBeforeParens: ControlStatements
-PointerAlignment: Right
-AlignAfterOpenBracket: Align
-AlignOperands: true
-AlignConsecutiveAssignments: true
-AlignConsecutiveDeclarations: true
-AlignTrailingComments: true
-AllowShortIfStatementsOnASingleLine: false
-AllowShortLoopsOnASingleLine: false
-AlwaysBreakTemplateDeclarations: true
-Standard: Cpp11
-SortIncludes: false
+ColumnLimit: 0
+AccessModifierOffset: -4
 NamespaceIndentation: None
 IndentCaseLabels: true
-IndentPPDirectives: None
-IncludeBlocks: Preserve
-SpaceBeforeCpp11BracedList: true
 IndentWrappedFunctionNames: false
-AccessModifierOffset: -4
+
+# Keep project include / using order as written.
+SortIncludes: false
+SortUsingDeclarations: false
+IncludeBlocks: Preserve
+
+# Pointer/reference style used in the codebase: void *ptr, T &ref.
+PointerAlignment: Right
+ReferenceAlignment: Pointer
+DerivePointerAlignment: false
+
+# Preprocessor blocks in this project are indented inside #if/#else.
+IndentPPDirectives: BeforeHash
+PPIndentWidth: 4
+SkipMacroDefinitionBody: true
+
+# Calls / declarations: prefer preserving existing hand-wrapped code.
+BinPackArguments: true
+BinPackParameters: true
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+AlignAfterOpenBracket: Align
+AlignOperands: Align
+
+# Avoid clang-format creating large alignment blocks that fight existing style.
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignConsecutiveMacros: false
+AlignTrailingComments: false
+SpacesBeforeTrailingComments: 1
+AlignEscapedNewlines: Left
+
+# Spacing
+SpaceBeforeParens: ControlStatements
+SpaceBeforeCpp11BracedList: true
+Cpp11BracedListStyle: true
+SpacesInAngles: Leave
+
+# Braces: attach opening braces, but keep else/catch on a separate line.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeWhile: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+
+# Short constructs. This codebase already uses many one-line tiny accessors/helpers.
+AllowShortFunctionsOnASingleLine: All
+AllowShortLambdasOnASingleLine: All
+AllowShortBlocksOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortEnumsOnASingleLine: true
+
+# Templates / concepts
+BreakTemplateDeclarations: Yes
+
+# Comments
+ReflowComments: false
+FixNamespaceComments: true

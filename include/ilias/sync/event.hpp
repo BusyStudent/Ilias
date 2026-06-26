@@ -29,7 +29,7 @@ public:
     auto onWakeup() -> bool;
 private:
     Event &mEvent;
-friend class Event;
+friend class ilias::Event;
 };
 
 } // namespace sync

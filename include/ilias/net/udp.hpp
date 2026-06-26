@@ -74,7 +74,6 @@ public:
     UdpSocket(IoHandle<Socket> h) : mHandle(std::move(h)) {}
 
     auto close() { return mHandle.close(); }
-    auto cancel() const { return mHandle.cancel(); }
 
     /**
      * @brief Receive datagram from the socket

@@ -160,7 +160,6 @@ public:
     File(IoHandle<FileDescriptor> f, std::optional<uint64_t> offset = std::nullopt) : mHandle(std::move(f)), mOffset(offset) {}
 
     auto close() { return mHandle.close(); }
-    auto cancel() { return mHandle.cancel(); }
 
     // Readable
     /**

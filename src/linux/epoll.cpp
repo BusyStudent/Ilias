@@ -254,7 +254,6 @@ auto EpollContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<I
 
 auto EpollContext::removeDescriptor(IoDescriptor *fd) -> IoResult<void> {
     auto nfd = static_cast<EpollDescriptor *>(fd);
-    auto _ = cancel(nfd);
     if (nfd->pollable) {
         if (::epoll_ctl(mEpollFd, EPOLL_CTL_DEL, nfd->fd, nullptr) == -1) {
             ILIAS_ERROR("Epoll", "Failed to remove fd {} from epoll: {}", nfd->fd, SystemError::fromErrno());
@@ -263,20 +262,6 @@ auto EpollContext::removeDescriptor(IoDescriptor *fd) -> IoResult<void> {
     delete nfd;
     return {};
 }
-
-auto EpollContext::cancel(IoDescriptor *fd) -> IoResult<void> {
-    auto nfd = static_cast<EpollDescriptor *>(fd);
-    ILIAS_ASSERT(nfd != nullptr);
-    ILIAS_TRACE("Epoll", "Cancel fd {} all pending operations for {}", nfd->fd, nfd->awaiters.size());
-    if (nfd->pollable) { // if descriptor is pollable, cancel all poll awaiter
-        for (auto &awaiter : nfd->awaiters) {
-            awaiter.onNotify(Err(SystemError::Canceled));
-        }
-        nfd->awaiters.clear();
-    }
-    return {};
-}
-
 
 auto EpollContext::post(void (*fn)(void *), void *args) -> void {
     ILIAS_ASSERT(fn != nullptr);

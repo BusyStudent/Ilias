@@ -73,20 +73,13 @@ public:
     virtual auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor*> = 0;
 
     /**
-     * @brief Remove a descriptor from the context, it will cancel all async operations on this descriptor
+     * @brief Remove a descriptor from the context
+     * @note Call it only when no pending io operations on the descriptor
      * 
      * @param fd
      * @return IoResult<void> 
      */
     virtual auto removeDescriptor(IoDescriptor *fd) -> IoResult<void> = 0;
-
-    /**
-     * @brief Cancel all pending Io operations on a descriptor
-     * 
-     * @param fd
-     * @return IoResult<void> 
-     */
-    virtual auto cancel(IoDescriptor *fd) -> IoResult<void> = 0;
 
     /**
      * @brief Read from a descriptor
@@ -262,10 +255,6 @@ public:
     }
 
     // Forward to IoContext
-    auto cancel() const {
-        return context()->cancel(mDesc.get());
-    }
-
     auto write(auto &&...args) const {
         return context()->write(mDesc.get(), args...);
     }

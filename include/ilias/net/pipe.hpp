@@ -29,7 +29,6 @@ public:
     PipeReader(IoHandle<FileDescriptor> h) : mHandle(std::move(h)) {}
 
     auto close() { return mHandle.close(); }
-    auto cancel() { return mHandle.cancel(); }
     auto detach() { return mHandle.detach(); }
 
     // Readable
@@ -70,7 +69,6 @@ public:
     PipeWriter(IoHandle<FileDescriptor> h) : mHandle(std::move(h)) {}
 
     auto close() { return mHandle.close(); }
-    auto cancel() { return mHandle.cancel(); }
     auto detach() { return mHandle.detach(); }
 
     // Writable

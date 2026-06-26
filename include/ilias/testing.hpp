@@ -115,16 +115,18 @@
  *  ILIAS_TEST(MyTest, MyTest) {
  *    co_return;
  *  }
- *  ILIAS_TEST_MAIN() {}
+ *  ILIAS_TEST_MAIN_F(ilias::EventLoop) {}
  */
-#define ILIAS_TEST_MAIN()                       \
+#define ILIAS_TEST_MAIN_F(ctxt)                 \
     static auto _ilias_before_test() -> void;   \
     auto main(int argc, char **argv) -> int {   \
         ILIAS_TEST_SETUP_UTF8();                \
         ::testing::InitGoogleTest(&argc, argv); \
         _ilias_before_test();                   \
-        ::ilias::PlatformContext ctxt;          \
-        ctxt.install();                         \
+        ctxt c;                                 \
+        c.install();                            \
         return RUN_ALL_TESTS();                 \
     }                                           \
     static auto _ilias_before_test() -> void
+
+#define ILIAS_TEST_MAIN() ILIAS_TEST_MAIN_F(::ilias::PlatformContext)

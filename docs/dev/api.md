@@ -49,7 +49,6 @@ Many types expose similar operations:
 - `write(Buffer)`
 - `flush()`
 - `shutdown()`
-- `close()` / `cancel()`
 
 That makes protocol code reusable across `TcpStream`, `TlsStream<T>`, `File`, and `BufStream<T>`.
 

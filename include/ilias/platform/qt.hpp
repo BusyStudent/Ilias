@@ -154,7 +154,6 @@ public:
     // < For IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> IoResult<void> override;
-    auto cancel(IoDescriptor* fd) -> IoResult<void> override;
 
     auto read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
     auto write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
@@ -323,33 +322,8 @@ inline auto QIoContext::removeDescriptor(IoDescriptor *fd) -> IoResult<void> {
         return {};
     }
     auto nfd = static_cast<QIoDescriptor*>(fd);
-    auto _ = cancel(nfd);
     delete nfd;
     --mNumOfDescriptors;
-    return {};
-}
-
-inline auto QIoContext::cancel(IoDescriptor *fd) -> IoResult<void> {
-    auto nfd = static_cast<QIoDescriptor*>(fd);
-    
-#if defined(_WIN32)
-    if (!::CancelIoEx(nfd->fd, nullptr)) {
-        if (auto err = ::GetLastError(); err != ERROR_NOT_FOUND) {
-            ILIAS_WARN("QIo", "QIoContext::removeDescriptor(): failed to cancel any pending IO operation on {}, {}", nfd->fd, err);            
-        }
-    }
-#endif // defined(_WIN32)
-
-#if defined(__linux__) && __has_include(<aio.h>)
-    // Cancel all aio operations
-    for (auto it = nfd->aio.awaiters.begin(); it != nfd->aio.awaiters.end(); ) {
-        auto &awaiter = *it;
-        it = nfd->aio.awaiters.erase(it);
-        awaiter.cancel();
-    }
-#endif // defined(__linux__)
-
-    Q_EMIT nfd->destroyed(); // Using this signal to notify the operation is canceled
     return {};
 }
 

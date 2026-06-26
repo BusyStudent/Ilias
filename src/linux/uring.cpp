@@ -148,24 +148,7 @@ auto UringContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<I
 auto UringContext::removeDescriptor(IoDescriptor *fd) -> IoResult<void> {
     auto nfd = static_cast<UringDescriptor*>(fd);
     ILIAS_TRACE("Uring", "Removing fd {}", nfd->fd);
-    auto _ = cancel(nfd);
     delete nfd;
-    return {};
-}
-
-auto UringContext::cancel(IoDescriptor *fd) -> IoResult<void> {
-    auto nfd = static_cast<UringDescriptor*>(fd);
-    ILIAS_TRACE("Uring", "Cancelling fd {}", nfd->fd);
-
-#if IO_URING_VERSION_MINOR > 2
-    if (mFeatures.cancelFd) { // Allow cancelling fd
-        auto sqe = allocSqe();
-        ::io_uring_prep_cancel_fd(sqe, nfd->fd, 0);
-        ::io_uring_sqe_set_data(sqe, UringCallback::noop());
-        ::io_uring_submit(&mRing);    
-    }
-#endif
-    
     return {};
 }
 

@@ -37,8 +37,6 @@ public:
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor *> override;
     ///> @brief Remove a descriptor from the context
     auto removeDescriptor(IoDescriptor *fd) -> IoResult<void> override;
-    ///> @brief Cancel all pending Io operations on a descriptor
-    auto cancel(IoDescriptor *fd) -> IoResult<void> override;
 
     ///> @brief Read from a descriptor
     auto read(IoDescriptor *fd, MutableBuffer buffer, ::std::optional<size_t> offset)

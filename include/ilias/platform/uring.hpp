@@ -47,7 +47,6 @@ public:
     // For IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor *> override;
     auto removeDescriptor(IoDescriptor *fd) -> IoResult<void> override;
-    auto cancel(IoDescriptor *fd) -> IoResult<void> override;
 
     auto read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> override;
     auto write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t> override;

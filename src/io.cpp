@@ -5,6 +5,7 @@
 #include <atomic>
 #include <array>
 #include <tuple>
+#include <mutex>
 
 ILIAS_NS_BEGIN
 
@@ -100,12 +101,13 @@ auto IoCategory::equivalent(int value, const std::error_condition &other) const 
 
 auto IoError::toString() const -> std::string {
     auto view = reflect::enum2str(std::make_index_sequence<IoError::Other>(), mErr);
-    return std::string(view);
+    return std::string{view};
 }
 
 auto IoError::toStd() const -> std::errc {
+    // clang-format off
     switch (mErr) {
-        case IoError::Ok                        : return std::errc();
+        case IoError::Ok                        : return std::errc{};
         case IoError::AccessDenied              : return std::errc::permission_denied;
         case IoError::AddressInUse              : return std::errc::address_in_use;
         case IoError::AddressNotAvailable       : return std::errc::address_not_available;
@@ -138,6 +140,7 @@ auto IoError::toStd() const -> std::errc {
         case IoError::Canceled                  : return std::errc::operation_canceled;
         default                                 : return std::errc::io_error;
     }
+    // clang-format on
 }
 
 // MARK: SystemError
@@ -198,6 +201,7 @@ auto SystemError::toString() const -> std::string {
 }
 
 auto SystemError::toIoError() const -> IoError {
+    // clang-format off
     switch (mErr) {
         case SystemError::Ok                        : return IoError::Ok;
         case SystemError::AccessDenied              : return IoError::AccessDenied;
@@ -235,11 +239,13 @@ auto SystemError::toIoError() const -> IoError {
         case SystemError::Canceled                  : return IoError::Canceled;
         default                                     : return IoError::Other;
     }
+    // clang-format on
 }
 
 // MARK: DuplexStream
 
 struct ByteChannel {
+    std::mutex mtx; // Protects all the fields
     StreamBuffer buffer;
     runtime::CoroHandle reader; // suspend on read
     runtime::CoroHandle writer; // suspend on write
@@ -253,6 +259,26 @@ struct DuplexStream::Impl {
     ByteChannel write;
     std::atomic<uint8_t> ref {2}; // 2 because we have two streams
 };
+
+namespace {
+    auto wakeupIf(runtime::CoroHandle &handle) -> void {
+        if (handle) {
+            handle.schedule();
+            handle = nullptr;
+        }
+    }
+
+    auto shutdownImpl(DuplexStream::Impl *d, bool flip) -> void {
+        auto &readChan = flip ? d->write : d->read;
+        auto &writeChan = flip ? d->read : d->write;
+        std::scoped_lock locker {readChan.mtx, writeChan.mtx};
+
+        readChan.readerClose = true;
+        writeChan.writerClose = true;
+        wakeupIf(readChan.writer);
+        wakeupIf(writeChan.reader);
+    }
+}
 
 auto DuplexStream::make(size_t size) -> std::pair<DuplexStream, DuplexStream> {
     if (size == 0) {
@@ -268,24 +294,6 @@ auto DuplexStream::make(size_t size) -> std::pair<DuplexStream, DuplexStream> {
     };
 }
 
-namespace {
-    auto wakeupIf(runtime::CoroHandle &handle) -> void {
-        if (handle) {
-            handle.schedule();
-            handle = nullptr;
-        }
-    }
-
-    auto shutdownImpl(DuplexStream::Impl *d, bool flip) -> void {
-        auto &readChan = flip ? d->write : d->read;
-        auto &writeChan = flip ? d->read : d->write;
-
-        readChan.readerClose = true;
-        writeChan.writerClose = true;
-        wakeupIf(readChan.writer);
-        wakeupIf(writeChan.reader);
-    }
-}
 
 auto DuplexStream::read(MutableBuffer buffer) -> IoTask<size_t> {
     struct Awaiter {
@@ -293,37 +301,53 @@ auto DuplexStream::read(MutableBuffer buffer) -> IoTask<size_t> {
             return !chan.buffer.empty() || chan.writerClose; // Has data or no-none will write
         }
         auto await_suspend(runtime::CoroHandle h) -> void {
+            ILIAS_ASSERT(!chan.reader, "Reader already exists, cocurrent read???");
             chan.reader = h;
             handle = h;
+            locker.unlock(); // Leave the critical section
             reg.register_<&Awaiter::onStopRequested>(h.stopToken(), this);
         }
-        auto await_resume() {
-            return chan.buffer.data();
+        auto await_resume() -> size_t {
+            if (!locker.owns_lock()) { // Enter the critical section
+                locker.lock();
+            }
+
+            // Read data here
+            auto span = chan.buffer.data();
+
+            auto left = std::min(span.size(), buffer.size());
+            ::memcpy(buffer.data(), span.data(), left);
+            chan.buffer.consume(left);
+
+            // Wakeup writer if exists
+            wakeupIf(chan.writer);
+            return left;
         }
         auto onStopRequested() -> void {
-            if (!chan.reader) { // We are scheduled or already stopped
-                return;
+            ILIAS_ASSERT(!locker.owns_lock(), "We should not in critical section");
+            {
+                std::lock_guard locker {chan.mtx};
+                if (!chan.reader) { // We are scheduled or already stopped
+                    return;
+                }
+                chan.reader = nullptr;
             }
-            chan.reader = nullptr;
             handle.setStopped();
         }
 
         ByteChannel &chan;
+        MutableBuffer buffer;
         runtime::CoroHandle handle;
         runtime::StopRegistration reg;
+        std::unique_lock<std::mutex> locker; // Use mutex to protect chan
     };
 
     auto &chan = d.get_deleter().flip ? d->write : d->read;
-
-    // Read data here
-    auto span = co_await Awaiter{ .chan = chan };
-    auto left = std::min(span.size(), buffer.size());
-    ::memcpy(buffer.data(), span.data(), left);
-    chan.buffer.consume(left);
-
-    // Wakeup writer if exists
-    wakeupIf(chan.writer);
-    co_return left;
+    co_return co_await Awaiter {
+        .chan = chan,
+        .buffer = buffer,
+        .locker = std::unique_lock {chan.mtx}
+    };
 }
 
 auto DuplexStream::write(Buffer buffer) -> IoTask<size_t> {
@@ -332,39 +356,55 @@ auto DuplexStream::write(Buffer buffer) -> IoTask<size_t> {
             return chan.buffer.size() < chan.maxSize || chan.readerClose; // Has space or no-one will read
         }
         auto await_suspend(runtime::CoroHandle h) -> void {
+            ILIAS_ASSERT(!chan.writer, "Writer already exists, cocurrent write???");
             chan.writer = h;
             handle = h;
+            locker.unlock(); // Leave the critical section
             reg.register_<&Awaiter::onStopRequested>(h.stopToken(), this);
         }
-        auto await_resume() {}
-        auto onStopRequested() -> void {
-            if (!chan.writer) { // We are scheduled or already stopped
-                return;
+        auto await_resume() -> size_t {
+            // Write data here
+            if (!locker.owns_lock()) { // Enter the critical section
+                locker.lock();
             }
-            chan.writer = nullptr;
+            if (chan.readerClose) {
+                return 0; // EOF, no data written
+            }
+            auto left = std::min(buffer.size(), chan.maxSize - chan.buffer.size());
+            auto span = chan.buffer.prepare(left);
+            ::memcpy(span.data(), buffer.data(), left);
+            chan.buffer.commit(left);
+
+            // Wakeup reader if exists
+            wakeupIf(chan.reader);
+            return left;
+        }
+
+        auto onStopRequested() -> void {
+            ILIAS_ASSERT(!locker.owns_lock(), "We should not in critical section");
+            {
+                std::lock_guard locker {chan.mtx};
+                if (!chan.writer) { // We are scheduled or already stopped
+                    return;
+                }
+                chan.writer = nullptr;
+            }
             handle.setStopped();
         }
 
         ByteChannel &chan;
+        Buffer buffer;
         runtime::CoroHandle handle;
         runtime::StopRegistration reg;
+        std::unique_lock<std::mutex> locker; // Use mutex to protect chan
     };
 
     auto &chan = d.get_deleter().flip ? d->read : d->write;    
-    co_await Awaiter{ .chan = chan };
-
-    // Write data here
-    if (chan.readerClose) {
-        co_return 0; // EOF, no data written
-    }
-    auto left = std::min(buffer.size(), chan.maxSize - chan.buffer.size());
-    auto span = chan.buffer.prepare(left);
-    ::memcpy(span.data(), buffer.data(), left);
-    chan.buffer.commit(left);
-
-    // Wakeup reader if exists
-    wakeupIf(chan.reader);
-    co_return left;
+    co_return co_await Awaiter {
+        .chan = chan,
+        .buffer = buffer,
+        .locker = std::unique_lock {chan.mtx}
+    };
 }
 
 auto DuplexStream::shutdown() -> IoTask<void> {

@@ -23,10 +23,6 @@ public:
         return mHandle.close();
     }
 
-    auto cancel() {
-        return mHandle.cancel();
-    }
-
     /**
      * @brief Poll for events on the fd
      * 

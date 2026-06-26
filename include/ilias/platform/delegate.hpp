@@ -66,7 +66,6 @@ public:
     // IoContext
     auto addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoResult<IoDescriptor*> override;
     auto removeDescriptor(IoDescriptor* fd) -> IoResult<void> override;
-    auto cancel(IoDescriptor *fd) -> IoResult<void> override;
 
     auto sleep(std::chrono::nanoseconds ns) -> Task<void> override;
 
@@ -121,22 +120,6 @@ inline auto ProxyContext::removeDescriptor(IoDescriptor* fd) -> IoResult<void> {
 
     auto callback = [&]() {
         ret = mContext->removeDescriptor(fd);
-        latch.count_down();
-    };
-    mContext->post([](void *callbackPtr) {
-        auto cb = reinterpret_cast<decltype(callback) *>(callbackPtr);
-        (*cb)();
-    }, &callback);
-    latch.wait();
-    return ret;
-}
-
-inline auto ProxyContext::cancel(IoDescriptor *fd) -> IoResult<void> {
-    std::latch latch {1};
-    IoResult<void> ret;
-
-    auto callback = [&]() {
-        ret = mContext->cancel(fd);
         latch.count_down();
     };
     mContext->post([](void *callbackPtr) {
