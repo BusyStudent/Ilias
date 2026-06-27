@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/platform/detail/blocking.hpp>
 #include <ilias/runtime/timer.hpp>
 #include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
@@ -28,11 +29,6 @@
     #include <ilias/detail/win32defs.hpp> // Some win32 utils
     #include <QWinEventNotifier>
 #endif // defined(_WIN32)
-
-#if defined(__linux__) && __has_include(<aio.h>)
-    #include <ilias/platform/detail/aio_core.hpp> // For read file
-#endif
-
 
 ILIAS_NS_BEGIN
 
@@ -72,12 +68,6 @@ public:
         LPFN_WSARECVMSG recvmsg = nullptr;
     } sock;
 #endif // defined(_WIN32)
-
-#if defined(__linux__) && __has_include(<aio.h>)
-    struct {
-        intrusive::List<posix::AioAwaiterBase> awaiters; // The list of aio operations
-    } aio;
-#endif // defined(__linux__)
 
 };
 
@@ -251,12 +241,9 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoRes
         case IoDescriptor::Pipe:
             nfd->pollable = true; // Linux pipe can be pollable
             break;
-#if __has_include(<aio.h>) // If posix aio available, we can use it
         case IoDescriptor::Tty:
         case IoDescriptor::File:
             break;
-#endif
-
 #endif // defined(_WIN32)
 
         default:
@@ -376,14 +363,9 @@ inline auto QIoContext::read(IoDescriptor *fd, MutableBuffer buffer, std::option
         }
     }
 
-#if __has_include(<aio.h>)
     if (nfd->type == IoDescriptor::Tty || nfd->type == IoDescriptor::File) {
-        auto awaiter = posix::AioReadAwaiter(nfd->fd, buffer, offset);
-        nfd->aio.awaiters.push_back(awaiter);
-        co_return co_await awaiter;
+        co_return co_await runtime::threadpool::read(nfd->fd, buffer, offset);
     }
-#endif // __has_include(<aio.h>)
-
 #endif // defined(__linux__)
 
     if (nfd->type == IoDescriptor::Socket) {
@@ -435,14 +417,9 @@ inline auto QIoContext::write(IoDescriptor *fd, Buffer buffer, std::optional<siz
             }
         }
     }
-#if __has_include(<aio.h>)
     if (nfd->type == IoDescriptor::Tty || nfd->type == IoDescriptor::File) {
-        auto awaiter = posix::AioWriteAwaiter(nfd->fd, buffer, offset);
-        nfd->aio.awaiters.push_back(awaiter);
-        co_return co_await awaiter;
+        co_return co_await runtime::threadpool::write(nfd->fd, buffer, offset);
     }
-#endif // __has_include(<aio.h>)
-
 #endif // defined(__linux__)
 
     if (nfd->type == IoDescriptor::Socket) {

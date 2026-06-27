@@ -1,6 +1,7 @@
 // Impl some win32 io operations
 #define UMDF_USING_NTSTATUS // Avoid conflict with winnt.h
 #include <ilias/detail/scope_exit.hpp> // ScopeExit
+#include <ilias/platform/detail/blocking.hpp>
 #include <ilias/platform/iocp.hpp>
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/msghdr.hpp> // MsgHdr, MutableMsgHdr
@@ -326,20 +327,7 @@ auto IocpContext::removeDescriptor(IoDescriptor *descriptor) -> IoResult<void> {
 auto IocpContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
     if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use threadpool to execute it
-        auto token = co_await this_coro::stopToken();
-        auto val = co_await blocking([&]() {
-            return ioCall(token, [&]() -> IoResult<size_t> {
-                ::DWORD readed = 0;
-                if (::ReadFile(nfd->handle, buffer.data(), buffer.size(), &readed, nullptr)) {
-                    return readed;
-                }
-                return Err(SystemError::fromErrno());
-            });
-        });
-        if (val == Err(SystemError::Canceled)) {
-            co_await this_coro::stopped(); // Try set the context to stopped
-        }
-        co_return val;
+        co_return co_await runtime::threadpool::read(nfd->handle, buffer, offset);
     }
     co_return co_await IocpReadAwaiter(nfd->handle, buffer, offset);
 }
@@ -348,20 +336,7 @@ auto IocpContext::read(IoDescriptor *fd, MutableBuffer buffer, std::optional<siz
 auto IocpContext::write(IoDescriptor *fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto nfd = static_cast<IocpDescriptor*>(fd);
     if (nfd->type == IoDescriptor::Tty) { //< MSDN says console only can use blocking IO, use we use threadpool to execute it
-        auto token = co_await this_coro::stopToken();
-        auto val = co_await blocking([&]() {
-            return ioCall(token, [&]() -> IoResult<size_t> {
-                ::DWORD written = 0;
-                if (::WriteFile(nfd->handle, buffer.data(), buffer.size(), &written, nullptr)) {
-                    return written;
-                }
-                return Err(SystemError::fromErrno());
-            });
-        });
-        if (val == Err(SystemError::Canceled)) {
-            co_await this_coro::stopped(); // Try set the context to stopped
-        }
-        co_return val;
+        co_return co_await runtime::threadpool::write(nfd->handle, buffer, offset);
     }
     co_return co_await IocpWriteAwaiter(nfd->handle, buffer, offset);
 }

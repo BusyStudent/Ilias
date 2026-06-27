@@ -133,7 +133,7 @@ public:
      * @param how 
      * @return IoTask<void> 
      */
-    auto shutdown(int how = Shutdown::Both) const -> IoTask<void> {
+    auto shutdown(int how = Shutdown::Write) const -> IoTask<void> {
         co_return mHandle.fd().shutdown(how);
     }
 

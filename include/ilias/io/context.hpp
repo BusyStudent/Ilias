@@ -302,25 +302,20 @@ public:
     /**
      * @brief Create an wrapped IoHandle from an fd
      * 
-     * @param ctxt The IoContext to use
      * @param fd   The fd to wrap
      * @param type The type of the fd (default: Unknown)
      * @return IoResult<IoHandle<T> > 
      */
-    static auto make(IoContext &ctxt, T fd, IoDescriptor::Type type = IoDescriptor::Unknown) -> IoResult<IoHandle<T> > {
-        ILIAS_TRY(auto desc, ctxt.addDescriptor(fd_t(fd), type));
-        return IoHandle<T> {
-            std::move(fd),
-            IoDescriptor::Ptr {desc, IoDescriptor::Deleter {&ctxt} }
-        };
-    }
-
     static auto make(T fd, IoDescriptor::Type type = IoDescriptor::Unknown) -> IoResult<IoHandle<T> > {
         auto ctxt = IoContext::currentThread();
         if (!ctxt) {
             return Err(IoError::InvalidArgument);
         }
-        return make(*ctxt, std::move(fd), type);
+        ILIAS_TRY(auto desc, ctxt->addDescriptor(fd_t(fd), type));
+        return IoHandle<T> {
+            std::move(fd),
+            IoDescriptor::Ptr {desc, IoDescriptor::Deleter {ctxt} }
+        };
     }
 private:
     struct Deleter {
@@ -358,6 +353,6 @@ namespace win32 {
         return IoContext::currentThread()->waitObject(handle);
     }
 } // namespace win32
-#endif
+#endif // _WIN32
 
 ILIAS_NS_END

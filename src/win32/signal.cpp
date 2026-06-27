@@ -11,12 +11,13 @@ namespace {
 
     auto WINAPI ctrlCHandler(DWORD type) -> BOOL {
         auto handle = waiter.exchange(nullptr);
-        if (handle) {
-            handle.schedule();
+        if (!handle) {
+            return TRUE;
         }
         if (!::SetConsoleCtrlHandler(ctrlCHandler, FALSE)) {
             ILIAS_ERROR("Signal", "Failed to disable ctrlC handler {}", SystemError::fromErrno());
         }
+        handle.schedule();
         return TRUE;
     }
 }
@@ -45,6 +46,9 @@ auto signal::ctrlC() -> IoTask<void> {
         }
         auto onStopRequested() -> void {
             auto handle = waiter.exchange(nullptr);
+            if (!handle) { // Race
+                return;
+            }
             if (!::SetConsoleCtrlHandler(ctrlCHandler, FALSE)) {
                 ILIAS_ERROR("Signal", "Failed to disable ctrlC handler {}", SystemError::fromErrno());
             }

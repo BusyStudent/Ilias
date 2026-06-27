@@ -197,6 +197,12 @@ auto CoroContext::stop() noexcept -> bool {
     return mStopSource.request_stop();
 }
 
+auto CoroContext::setStopped() noexcept -> void {
+    mStopped = true;
+    mStoppedHandler(*this); // Call the stopped handler, we are stopped
+    mStoppedHandler = nullptr; // Mark it as called
+}
+
 // TRACING
 #if defined(ILIAS_CORO_TRACE)
 namespace {
@@ -256,6 +262,10 @@ auto CoroContext::meta() noexcept -> TraceMeta & {
     // Set name
     mMeta.name = mName;
     return mMeta;
+}
+
+auto CoroContext::id() noexcept -> TaskId {
+    return meta().id;
 }
 
 auto CoroContext::setName(std::string_view name) noexcept -> void {

@@ -84,6 +84,11 @@ public:
     ILIAS_API
     auto stop() noexcept -> bool;
 
+    // Set the coroutine to stopped state
+    // See more in CoroHandle::setStopped()
+    ILIAS_API
+    auto setStopped() noexcept -> void;
+
     // Check if the coroutine is stopped
     auto isStopped() const noexcept -> bool {
         return mStopped;
@@ -172,9 +177,8 @@ public:
     }
 
     // TRACING: 
-    auto id() noexcept -> TaskId {
-        return meta().id;
-    }
+    ILIAS_API
+    auto id() noexcept -> TaskId.
 
     ILIAS_API
     auto tracingSpawn(CaptureSource source = {}) noexcept -> void;
@@ -215,10 +219,8 @@ public:
     }
 
     ILIAS_API
-    static 
-    auto fromId(TaskId id) noexcept -> CoroContext *;
+    static auto fromId(TaskId id) noexcept -> CoroContext *;
 private:
-    ILIAS_API
     auto meta() noexcept -> TraceMeta &;                     // Lazy initialization of the meta data
 
     StopSource    mStopSource;                               // Used to request cooperative cancellation
@@ -412,10 +414,12 @@ public:
         return *(promise().mContext); // Context must be set before coroutine starts
     }
 
+    // Get the executor of the coroutine
     auto executor() const noexcept -> Executor & {
         return *context().mExecutor; // Executor must not be null
     }
 
+    // Set the context of the coroutine
     auto setContext(CoroContext &ctxt) const noexcept {
         promise().mContext = &ctxt;
     }
@@ -430,9 +434,7 @@ public:
         ILIAS_ASSERT(ctxt.mStopSource.stop_possible(), "Stop source must be possible to stop, invalid state ?");
         ILIAS_ASSERT(ctxt.mStopSource.stop_requested(), "Stop source must be requested, invalid state ?");
         ILIAS_ASSERT(!ctxt.mStopped, "Cannot set stopped twice");
-        ctxt.mStopped = true;
-        ctxt.mStoppedHandler(ctxt); // Call the stopped handler, we are stopped
-        ctxt.mStoppedHandler = nullptr; // Mark it as called
+        return ctxt.setStopped();
     }
 
     // Set the completion handler, it will be called when coroutine is completed, stopped is not completed
@@ -451,6 +453,7 @@ public:
         return executor().schedule(mHandle);
     }
 
+    // Get the stop source from the environment
     auto stopToken() const noexcept {
         return context().mStopSource.get_token();
     }
