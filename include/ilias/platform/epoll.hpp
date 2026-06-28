@@ -14,9 +14,11 @@
 #include <ilias/runtime/timer.hpp>
 #include <ilias/runtime/token.hpp>
 #include <ilias/io/context.hpp>
+#include <ilias/io/error.hpp>
+#include <ilias/io/fd.hpp>
 #include <ilias/task/task.hpp>
 #include <ilias/buffer.hpp>
-#include <thread> // std::thread_id
+#include <atomic> // std::atomic
 #include <mutex> // std::mutex
 #include <deque> // std::deque
 #include <span> // std::span
@@ -75,19 +77,20 @@ public:
     auto sleep(std::chrono::nanoseconds ns) -> Task<void> override;
 private:
     auto processCompletion(bool &running) -> void;
-    auto processEvents(std::span<const epoll_event> events) -> void;
+    auto processEvent(const ::epoll_event event) -> void;
     auto processTimer() -> void;
     auto pollCallbacks() -> void;
 
     using Callback = std::pair<void (*)(void *), void *>;
 
     ///> @brief The epoll file descriptor
-    int                    mEpollFd = -1;
-    int                    mEventFd = -1; // For wakeup the epoll, there is some new callback in the queue
-    int                    mTimerFd = -1; // For timer service, use timerfd for high resolution
+    FileDescriptor         mEpollFd;
+    FileDescriptor         mEventFd; // For wakeup the epoll, there is some new callback in the queue
+    FileDescriptor         mTimerFd; // For timer service, use timerfd for high resolution
     runtime::TimerService  mService;
     std::deque<Callback>   mCallbacks; // The callbacks in current thread, non mutex
     std::deque<Callback>   mPendingCallbacks; // The callbacks from another thread, protected by mMutex
+    std::atomic<bool>      mWakePending; // Whether there is a pending wakeup event set?
     std::mutex             mMutex;
 };
 

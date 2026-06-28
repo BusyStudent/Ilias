@@ -35,9 +35,10 @@ namespace {
         std::atomic<int> writer {};
     };
 
-    static constinit bool       signalActions[NSIG] {}; // true on is action
-    static constinit SignalSlot signalSlots[NSIG] {};
-    static auto actionHandler(int sig, ::siginfo_t *info, void *ctxt) -> void {
+    constinit bool       signalActions[NSIG] {}; // true on is action
+    constinit SignalSlot signalSlots[NSIG] {};
+    
+    auto actionHandler(int sig, ::siginfo_t *info, void *ctxt) -> void {
         auto &slot = signalSlots[sig];
 
         // Write the signal to the pipe

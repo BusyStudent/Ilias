@@ -90,9 +90,9 @@ public:
 };
 
 #if defined(_WIN32) // Not in windows, we should save it by ourselves
-static constinit thread_local size_t gInitializeCount {0}; // MAX on current thread is already a fiber
+constinit thread_local size_t gInitializeCount {0}; // MAX on current thread is already a fiber
 #else
-static constinit thread_local FiberContextImpl *gCurrentContext {};
+constinit thread_local FiberContextImpl *gCurrentContext {};
 
 struct CurrentGuard { // RAII guard for manage the current fiber
     CurrentGuard(FiberContextImpl *c) : cur(c) {

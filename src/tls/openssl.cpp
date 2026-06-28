@@ -22,7 +22,7 @@ namespace openssl {
 namespace {
 
 // Internal BIO Method
-static constinit BIO_METHOD *bioMethod = nullptr;
+constinit BIO_METHOD *bioMethod = nullptr;
 
 // MARK: OpenSSL
 class TlsCategoryImpl final : public std::error_category {

@@ -57,10 +57,10 @@ if has_config("spdlog") and has_config("log") then
 end
 
 if has_config("dev") then
-    if is_plat("linux") then 
-        set_policy("build.sanitizer.address", true)
-        set_policy("build.sanitizer.undefined", true)
-    end
+    -- if is_plat("linux") then 
+    --     set_policy("build.sanitizer.address", true)
+    --     set_policy("build.sanitizer.undefined", true)
+    -- end
 end
 
 -- Another target

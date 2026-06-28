@@ -36,6 +36,7 @@ ILIAS_TEST(Signal, Cancel) {
     );
     EXPECT_FALSE(ctrlC);
     EXPECT_TRUE(user1);
+    std::this_thread::sleep_for(1s);
     EXPECT_TRUE(user1Raised.load(std::memory_order_relaxed));
     thread.join();
 }

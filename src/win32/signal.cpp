@@ -7,7 +7,7 @@
 ILIAS_NS_BEGIN
 
 namespace {
-    static constinit std::atomic<runtime::CoroHandle> waiter;
+    constinit std::atomic<runtime::CoroHandle> waiter;
 
     auto WINAPI ctrlCHandler(DWORD type) -> BOOL {
         auto handle = waiter.exchange(nullptr);

@@ -79,8 +79,8 @@ auto win32::pipe(HANDLE *read, HANDLE *write, SECURITY_ATTRIBUTES *attr) -> bool
 }
 
 namespace {
-    static constinit std::once_flag once;
-    static constinit struct {
+    constinit std::once_flag once;
+    constinit struct {
         decltype(::SetThreadDescription) *SetThreadDescription = nullptr;
         decltype(::GetThreadDescription) *GetThreadDescription = nullptr;
     } apis;

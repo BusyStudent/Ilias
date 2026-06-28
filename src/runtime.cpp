@@ -22,7 +22,7 @@ using namespace runtime;
 
 // Executor
 namespace {
-    static thread_local constinit Executor *gCurrentExecutor {};
+    thread_local constinit Executor *gCurrentExecutor {};
 }
 
 Executor::~Executor() {
@@ -220,10 +220,10 @@ namespace {
     };
 
     // Use negative values for child tasks
-    static thread_local constinit std::atomic<intptr_t> gChildTaskId {-1};
-    static thread_local constinit std::atomic<intptr_t> gTaskId {1};
-    static thread_local constinit TracingSubscriber *gSubscriber {};
-    static thread_local ContextsMap gContextsMap {};
+    thread_local constinit std::atomic<intptr_t> gChildTaskId {-1};
+    thread_local constinit std::atomic<intptr_t> gTaskId {1};
+    thread_local constinit TracingSubscriber *gSubscriber {};
+    thread_local ContextsMap gContextsMap {};
 }
 
 TracingSubscriber::~TracingSubscriber() {
