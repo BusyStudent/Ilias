@@ -284,7 +284,7 @@ public:
     struct Tags { std::chrono::nanoseconds ns; };
 
     template <Awaitable T>
-    auto impl([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, std::chrono::nanoseconds ns) -> Task<Option<AwaitableResult<T> > > {
+    static auto impl([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, std::chrono::nanoseconds ns) -> Task<Option<AwaitableResult<T> > > {
         auto [res, timeout] = co_await whenAny(std::move(awaitable), sleep(ns));
         if (timeout) {
             co_return std::nullopt;
