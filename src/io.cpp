@@ -419,6 +419,7 @@ auto DuplexStream::flush() -> IoTask<void> {
 auto DuplexStream::closeImpl(Impl *d, bool flip) -> void {
     shutdownImpl(d, flip);
     auto value = d->ref.fetch_sub(1);
+    ILIAS_ASSERT(value == 1 || value == 2, "closeImpl: invalid ref count {}", static_cast<int>(value));
     if (value == 1) {
         delete d;
     }

@@ -156,7 +156,6 @@
 
 // Mark a type is formattable, generate the fmtlib bridge and ostream operator<<
 #define ILIAS_FORMATTABLE(type)                                       \
-    ILIAS_EXPORT                                                      \
     template <char = 0>                                               \
     inline auto _ilias_detail_adl_to_string(const type &t) {          \
         auto wrapper = [](const auto &t) {                            \
@@ -173,7 +172,6 @@
         return wrapper(t);                                                         \
     }                                                                              \
                                                                                    \
-    ILIAS_EXPORT                                                                   \
     template <typename Stream> requires(                                           \
         requires(Stream &stream) { stream << std::string_view{}; }                 \
     )                                                                              \

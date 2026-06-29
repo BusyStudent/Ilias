@@ -53,6 +53,7 @@ class Null {};
 template <typename T>
 class TaskTryAwaiter;
 
+// MARK: TaskPromise
 // The return value part of the task promise
 template <typename T>
 class TaskPromiseBase : public CoroPromise {
@@ -98,6 +99,7 @@ public:
     }
 };
 
+// MARK: TaskHandle
 // The task handle
 template <typename T = Null>
 class TaskHandle; 
@@ -305,6 +307,48 @@ private:
     Fn mFn; // The function to call
 };
 
+// Functor for the toTask(xxx) & xxx() | toTask
+class ToTask {
+public:
+    template <Awaitable T>
+    static auto impl([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable) -> Task<AwaitableResult<T> > {
+        co_return co_await std::move(awaitable);
+    }
+
+    template <typename T>
+    static auto impl([[ILIAS_CORO_ELIDABLE_ARGUMENT]] Task<T> task) -> Task<T> {
+        return task;
+    }
+
+    // Impl toTask(xxx())
+    template <Awaitable T>
+    auto operator()([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable) const {
+        return impl(std::move(awaitable));
+    }
+
+    // Impl xxx() | toTask
+    template <Awaitable T>
+    friend auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, const ToTask &) {
+        return impl(std::move(awaitable));
+    }
+};
+
+// Functor for blockingWait(xxx) && xxx() | blockingWait
+class BlockingWait {
+public:
+    // Impl blockingWait(xxx())
+    template <Awaitable T>
+    auto operator()(T awaitable) const {
+        return ToTask::impl(std::move(awaitable)).wait();
+    }
+
+    // Impl xxx() | blockingWait
+    template <Awaitable T>
+    friend auto operator |(T awaitable, const BlockingWait &) {
+        return ToTask::impl(std::move(awaitable)).wait();
+    }
+};
+
 } // namespace task
 
 /**
@@ -429,22 +473,11 @@ inline auto sleepUntil(std::chrono::time_point<Clock, Duration> timepoint) -> Ta
     return sleep(timepoint - Clock::now());
 }
 
-// Abstraction for awaitable
-template <Awaitable T>
-inline auto toTask([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable) -> Task<AwaitableResult<T> > {
-    co_return co_await std::move(awaitable);
-}
-
-template <typename T>
-inline auto toTask([[ILIAS_CORO_ELIDABLE_ARGUMENT]] Task<T> task) -> Task<T> {
-    return task;
-}
+// Convert any awaitable types to Task<T>
+constexpr inline task::ToTask toTask{};
 
 // Blocking wait an awaitable complete
-template <Awaitable T>
-inline auto blockingWait(T awaitable, runtime::CaptureSource source = {}) -> AwaitableResult<T> {
-    return toTask(std::move(awaitable)).wait(source);
-}
+constexpr inline task::BlockingWait blockingWait{};
 
 ILIAS_NS_END
 

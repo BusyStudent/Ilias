@@ -408,7 +408,7 @@ auto example() -> ilias::Task<void> {
 
 // Pipe syntax
 auto example2() -> ilias::Task<void> {
-    co_await (doJob() | unstoppable());
+    co_await (doJob() | unstoppable);
 }
 ```
 

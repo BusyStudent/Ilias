@@ -122,6 +122,7 @@ ILIAS_TEST(Task, WhenAnySequence) {
 ILIAS_TEST(Task, Unstoppable) {
     auto fn = []() -> Task<void> {
         co_await unstoppable(sleep(10ms));
+        co_await (sleep(10ms) | unstoppable);
     };
     auto handle = spawn(fn());
     handle.stop();

@@ -236,7 +236,7 @@ private:
 
 // MARK: StopToken
 // Implement await on an stop token
-class [[ILIAS_CORO_AWAIT_ELIDABLE]] StopTokenAwaiter final {
+class StopTokenAwaiter final {
 public:
     StopTokenAwaiter(runtime::StopToken token) : mToken(std::move(token)) {}
     StopTokenAwaiter(StopTokenAwaiter &&) = default;
@@ -259,129 +259,195 @@ private:
     runtime::StopRegistration mRuntimeReg;
 };
 
-} // namespace task
-
-// Add transform
-namespace runtime {
-    template <typename T> requires(std::is_same_v<std::remove_cvref_t<T>, StopToken>)
-    struct IntoRawAwaitableTraits<T> {
-        static auto into(T &&token) -> task::StopTokenAwaiter { return {std::forward<T>(token)}; }
-    };
-} // namespace runtime
-
-// Dispatch tags
-namespace task {
-    struct TimeoutTags { std::chrono::nanoseconds ns; };
-    struct ScheduleOnTags { runtime::Executor &exec; };
-    struct UnstoppableTags {};
-    template <typename T>
-    struct MapTags { T v; };
-    template <typename T>
-    struct FinallyTags { T v; };
-} // namespace task
-
-// Set an timeout for a task, return nullopt on timeout
-template <Awaitable T>
-[[nodiscard]]
-inline auto timeout([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, std::chrono::nanoseconds ns) -> Task<Option<AwaitableResult<T> > > {
-    auto [res, timeout] = co_await whenAny(std::move(awaitable), sleep(ns));
-    if (timeout) {
-        co_return std::nullopt;
+// Implement suspend foreever, only wait for the stop requested
+class SuspendAlwaysAwaiter {
+public:
+    auto await_ready() -> bool { return false; }
+    auto await_suspend(runtime::CoroHandle caller) -> void {
+        mCaller = caller;
+        mReg.register_<&SuspendAlwaysAwaiter::onStopRequested>(caller.stopToken(), this);
     }
-    co_return std::move(*res);
-}
+    auto await_resume() -> void { ILIAS_UNREACHABLE(); }
+private:
+    auto onStopRequested() -> void {
+        mCaller.setStopped();
+    }
+
+    runtime::CoroHandle mCaller;
+    runtime::StopRegistration mReg;
+};
+
+// MARK: Functors
+// Functor for timeout
+class Timeout {
+public:
+    struct Tags { std::chrono::nanoseconds ns; };
+
+    template <Awaitable T>
+    auto impl([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, std::chrono::nanoseconds ns) -> Task<Option<AwaitableResult<T> > > {
+        auto [res, timeout] = co_await whenAny(std::move(awaitable), sleep(ns));
+        if (timeout) {
+            co_return std::nullopt;
+        }
+        co_return std::move(*res);
+    }
+
+    // Impl timeout(xxx(), 10ms)
+    template <Awaitable T>
+    [[nodiscard]]
+    auto operator()([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, std::chrono::nanoseconds ns) const {
+        return impl(std::move(awaitable), ns);
+    }
+
+    // Impl xxx() | timeout(10ms)
+    [[nodiscard]]
+    auto operator ()(std::chrono::nanoseconds ns) const -> Tags {
+        return {ns};
+    }
+
+    template <Awaitable T>
+    [[nodiscard]]
+    friend auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Tags timeout) {
+        return impl(std::move(awaitable), timeout.ns);
+    }
+};
+
+// Functor for unstoppable
+class Unstoppable {
+public:
+    // Impl unstoppable(xxx())
+    template <Awaitable T>
+    [[nodiscard]]
+    auto operator()([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable) const -> UnstoppableAwaiter<AwaitableResult<T> > {
+        return {toTask(std::move(awaitable))._leak()};
+    }
+
+    // Impl xxx() | unstoppable
+    template <Awaitable T>
+    [[nodiscard]]
+    friend auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Unstoppable self) {
+        return self(std::move(awaitable));
+    }
+};
+
+// Functor for scheduleOn
+class ScheduleOn {
+public:
+    struct Tags { runtime::Executor &exec; };
+
+    // Impl scheduleOn(xxx(), exec)
+    template <Awaitable T>
+    [[nodiscard]]
+    auto operator()([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, runtime::Executor &exec) const -> ScheduleAwaiter<AwaitableResult<T> > {
+        return {exec, toTask(std::move(awaitable))._leak()};
+    }
+
+    // Impl xxx() | scheduleOn(exec)
+    [[nodiscard]]
+    auto operator()(runtime::Executor &exec) const -> Tags {
+        return {exec};
+    }
+
+    template <Awaitable T>
+    [[nodiscard]]
+    friend auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Tags scheduleOn) -> ScheduleAwaiter<AwaitableResult<T> > {
+        return ScheduleOn{}(std::move(awaitable), scheduleOn.exec);
+    }
+};
+
+// Functor for finally
+class Finally {
+public:
+    template <typename T>
+    struct Tags { T v; };
+
+    // Impl finally(xxx(), cleanup())
+    template <Awaitable T, Awaitable Cleanup>
+    [[nodiscard]]
+    auto operator ()(
+        [[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, 
+        [[ILIAS_CORO_ELIDABLE_ARGUMENT]] Cleanup cleanup) const -> FinallyAwaiter<AwaitableResult<T>, Task<AwaitableResult<Cleanup> > >
+    {
+        return {
+            toTask(std::move(awaitable))._leak(),
+            toTask(std::move(cleanup))
+        };
+    }
+
+    // Impl finally(xxx(), cleanup)
+    template <Awaitable T, std::invocable Fn>
+    [[nodiscard]]
+    auto operator ()([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Fn fn) const -> FinallyAwaiter<AwaitableResult<T>, Fn> {
+        return {
+            toTask(std::move(awaitable))._leak(),
+            std::move(fn)
+        };
+    }
+
+    // Impl xxx() | finally(something)
+    template <typename T>
+    [[nodiscard]]
+    auto operator ()(T v) const -> Tags<T> {
+        return {std::move(v)};
+    }
+
+    template <Awaitable T, typename U>
+    [[nodiscard]]
+    friend auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Tags<U> tag) -> FinallyAwaiter<AwaitableResult<T>, U> {
+        return Finally{}(std::move(awaitable), std::move(tag.v));
+    }
+};
+
+// Functor for map
+class Map {
+public:
+    template <typename T>
+    struct Tags { T v; };
+
+    // Impl map(xxx(), fn)
+    template <Awaitable T, typename Fn>
+    [[nodiscard]]
+    auto operator ()([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Fn fn) const -> MapAwaiter<AwaitableResult<T>, Fn> {
+        return {toTask(std::move(awaitable))._leak(), std::move(fn)};
+    }
+
+    // Impl xxx() | map(fn)
+    template <typename T>
+    [[nodiscard]]
+    auto operator ()(T v) const -> Tags<T> {
+        return {std::move(v)};
+    }
+
+    template <Awaitable T, typename U>
+    [[nodiscard]]
+    friend auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Tags<U> tag) -> MapAwaiter<AwaitableResult<T>, U> {
+        return Map{}(std::move(awaitable), std::move(tag.v));
+    }
+    
+};
+
+} // namespace task
+
+// impl co_await source.get_token()
+template <typename T> requires(std::is_same_v<std::remove_cvref_t<T>, runtime::StopToken>)
+struct runtime::IntoRawAwaitableTraits<T> {
+    static auto into(T &&token) -> task::StopTokenAwaiter { return {std::forward<T>(token)}; }
+};
+
+// Public interface
+// Set an timeout for a task, return nullopt on timeout
+constexpr inline task::Timeout timeout{};
 
 // Make a awaitable execute on another executor
-template <Awaitable T>
-[[nodiscard]]
-inline auto scheduleOn([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, runtime::Executor &exec) -> task::ScheduleAwaiter<AwaitableResult<T> > {
-    return {exec, toTask(std::move(awaitable))._leak()};
-}
-
+constexpr inline task::ScheduleOn scheduleOn{};
 
 // Make a awaitable execute on an unstoppable context
-template <Awaitable T>
-[[nodiscard]]
-inline auto unstoppable([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable) -> task::UnstoppableAwaiter<AwaitableResult<T> > {
-    return {toTask(std::move(awaitable))._leak()};
-}
+constexpr inline task::Unstoppable unstoppable{};
 
-// Add an async cleanup task to an awaitable
-template <Awaitable T, typename U>
-[[nodiscard]]
-inline auto finally([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Task<U> cleanup) -> task::FinallyAwaiter<AwaitableResult<T>, Task<U> > {
-    return {toTask(std::move(awaitable))._leak(), std::move(cleanup)};
-}
-
-// Add an async cleanup handler to an awaitable
-template <Awaitable T, std::invocable Fn>
-[[nodiscard]]
-inline auto finally([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Fn fn) -> task::FinallyAwaiter<AwaitableResult<T>, Fn> {
-    return {toTask(std::move(awaitable))._leak(), std::move(fn)};
-}
+// Add an async cleanup task or handler to an awaitable
+constexpr inline task::Finally finally{};
 
 // Map an awaitable result to another type
-template <Awaitable T, typename Fn>
-inline auto fmap([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Fn fn) -> task::MapAwaiter<AwaitableResult<T>, Fn> {
-    return {toTask(std::move(awaitable))._leak(), std::move(fn)};
-}
-
-// Tags invoke here
-[[nodiscard]]
-inline auto timeout(std::chrono::nanoseconds ns) -> task::TimeoutTags {
-    return {ns};
-}
-
-[[nodiscard]]
-inline auto scheduleOn(runtime::Executor &exec) -> task::ScheduleOnTags {
-    return {exec};
-}
-
-[[nodiscard]]
-inline auto unstoppable() -> task::UnstoppableTags {
-    return {};
-}
-
-template <typename T>
-[[nodiscard]]
-inline auto finally(T v) -> task::FinallyTags<T> {
-    return {std::move(v)};
-}
-
-template <typename T>
-[[nodiscard]]
-inline auto fmap(T v) -> task::MapTags<T> {
-    return {std::move(v)};
-}
-
-template <Awaitable T>
-[[nodiscard]]
-inline auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, task::TimeoutTags tag) {
-    return timeout(std::move(awaitable), tag.ns);
-}
-
-template <Awaitable T>
-[[nodiscard]]
-inline auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, task::ScheduleOnTags tag) {
-    return scheduleOn(std::move(awaitable), tag.exec);
-}
-
-template <Awaitable T>
-[[nodiscard]]
-inline auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, task::UnstoppableTags) {
-    return unstoppable(std::move(awaitable));
-}
-
-template <Awaitable T, typename U>
-[[nodiscard]]
-inline auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, task::FinallyTags<U> tag) {
-    return finally(std::move(awaitable), std::move(tag.v));
-}
-
-template <Awaitable T, typename U>
-[[nodiscard]]
-inline auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, task::MapTags<U> tag) {
-    return fmap(std::move(awaitable), std::move(tag.v));
-}
+constexpr inline task::Map fmap{};
 
 ILIAS_NS_END

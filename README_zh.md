@@ -349,7 +349,7 @@ auto example() -> ilias::Task<void> {
 
 // 管道语法
 auto example2() -> ilias::Task<void> {
-    co_await (doJob() | unstoppable());
+    co_await (doJob() | unstoppable);
 }
 ```
 
