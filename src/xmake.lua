@@ -14,9 +14,6 @@ target("ilias")
     add_files("net/*.cpp")
     add_files("*.cpp")
 
-    -- Add module interface
-    -- add_files("ilias.cppm", {public = true})
-
     -- Ignore specific warning for dllexport
     add_cxxflags("cl::/wd4251")
     add_cxxflags("cl::/wd4275")
@@ -105,3 +102,12 @@ target("ilias")
         set_configvar("ILIAS_DLL", 1)
     end
 target_end()
+
+-- Modules
+if has_config("modules") then
+    target("ilias_modules")
+        set_kind("moduleonly")
+        add_deps("ilias", {public = true})
+        add_files("../include/ilias.cppm", {install = true})
+    target_end()
+end

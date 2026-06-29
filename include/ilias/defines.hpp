@@ -19,8 +19,6 @@
 #include <cstdio>
 #include <string>
 
-#define ILIAS_NAMESPACE ilias
-
 // Format check
 #if   defined(ILIAS_USE_FMT)
     #define ILIAS_FMT_NAMESPACE ::fmt
@@ -112,14 +110,25 @@
     #error "Library mode not specified"
 #endif // ILIAS_STATIC
 
+// Module
+#if   defined(ILIAS_MODULE)
+    #define ILIAS_EXPORT_BEGIN export {
+    #define ILIAS_EXPORT_END }
+    #define ILIAS_EXPORT export
+#else
+    #define ILIAS_EXPORT_BEGIN
+    #define ILIAS_EXPORT_END
+    #define ILIAS_EXPORT
+#endif // ILIAS_MODULE
+
 // Utils macro
 #define ILIAS_CONCAT_IMPL(a, b) a##b
 #define ILIAS_CONCAT(a, b) ILIAS_CONCAT_IMPL(a, b)
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT(x, msg) // For old code
 #define ILIAS_STRINGIFY_(x) #x
 #define ILIAS_STRINGIFY(x) ILIAS_STRINGIFY_(x)
-#define ILIAS_NS_BEGIN namespace ILIAS_NAMESPACE {
-#define ILIAS_NS_END }
+#define ILIAS_NS_BEGIN ILIAS_EXPORT_BEGIN namespace ilias {
+#define ILIAS_NS_END } ILIAS_EXPORT_END
 
 // Version helper
 #define ILIAS_VERSION_AT_LEAST(major, minor, patch)                  \
@@ -147,6 +156,7 @@
 
 // Mark a type is formattable, generate the fmtlib bridge and ostream operator<<
 #define ILIAS_FORMATTABLE(type)                                       \
+    ILIAS_EXPORT                                                      \
     template <char = 0>                                               \
     inline auto _ilias_detail_adl_to_string(const type &t) {          \
         auto wrapper = [](const auto &t) {                            \
@@ -163,6 +173,7 @@
         return wrapper(t);                                                         \
     }                                                                              \
                                                                                    \
+    ILIAS_EXPORT                                                                   \
     template <typename Stream> requires(                                           \
         requires(Stream &stream) { stream << std::string_view{}; }                 \
     )                                                                              \

@@ -22,6 +22,7 @@ option("io_uring",   {default = false,     description = "Use io uring as platfo
 option("coro_trace", {default = false,     description = "Add coroutine trace for debug use"})
 option("tls",        {default = true,      description = "Enable tls support"})
 option("fiber",      {default = true,      description = "Enable stackful coroutine 'fiber' support"})
+option("modules",    {default = false,     description = "Enable c++ modules support"})
 
 -- No-op Options (leave for compatibility)
 option("io",         {default = true,      description = "Enable io support"})
@@ -57,10 +58,10 @@ if has_config("spdlog") and has_config("log") then
 end
 
 if has_config("dev") then
-    -- if is_plat("linux") then 
-    --     set_policy("build.sanitizer.address", true)
-    --     set_policy("build.sanitizer.undefined", true)
-    -- end
+    if is_plat("linux") then 
+        set_policy("build.sanitizer.address", true)
+        set_policy("build.sanitizer.undefined", true)
+    end
 end
 
 -- Another target
