@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/runtime/await.hpp> // Awaitable
 #include <ilias/io/error.hpp> // IoTask
 #include <ilias/io/vec.hpp> // IoVec
 #include <ilias/buffer.hpp> // Buffer
@@ -41,13 +42,25 @@ enum class FillPolicy : int {
 };
 
 /**
+ * @brief Concept for check types that is awaitable && await result is same as IoResult<U>
+ * 
+ * @tparam T
+ * @tparam U
+ */
+template <typename T, typename U>
+concept IsIoAwaitable = requires {
+    requires Awaitable<T>; // T is awaitable
+    requires std::same_as<AwaitableResult<T>, IoResult<U> >; // T's await result is same as IoResult<U>
+};
+
+/**
  * @brief Concept for types that can be read to a a byte span.
  * 
  * @tparam T 
  */
 template <typename T>
 concept Readable = requires(T &t) {
-    { t.read(MutableBuffer {}) } -> std::same_as<IoTask<size_t> >;
+    { t.read(MutableBuffer {}) } -> IsIoAwaitable<size_t>;
 };
 
 /**
@@ -57,9 +70,9 @@ concept Readable = requires(T &t) {
  */
 template <typename T>
 concept Writable = requires(T &t) {
-    { t.write(Buffer {}) } -> std::same_as<IoTask<size_t> >;
-    { t.shutdown() }       -> std::same_as<IoTask<void> >;
-    { t.flush() }          -> std::same_as<IoTask<void> >;
+    { t.write(Buffer {}) } -> IsIoAwaitable<size_t>;
+    { t.shutdown() }       -> IsIoAwaitable<void>;
+    { t.flush() }          -> IsIoAwaitable<void>;
 };
 
 /**
@@ -69,7 +82,7 @@ concept Writable = requires(T &t) {
  */
 template <typename T>
 concept Seekable = requires(T &t) {
-    { t.seek(int64_t {}, SeekOrigin {}) } -> std::same_as<IoTask<uint64_t> >;  
+    { t.seek(int64_t {}, SeekOrigin {}) } -> IsIoAwaitable<uint64_t>;  
 };
 
 /**
@@ -79,7 +92,7 @@ concept Seekable = requires(T &t) {
  */
 template <typename T>
 concept BufReadable = Readable<T> && requires(T &t) {
-    { t.fill(FillPolicy {}) } -> std::same_as<IoTask<Buffer> >;
+    { t.fill(FillPolicy {}) } -> IsIoAwaitable<Buffer>;
     { t.consume(size_t {}) } -> std::same_as<void>;
 };
 
@@ -90,7 +103,7 @@ concept BufReadable = Readable<T> && requires(T &t) {
  */
 template <typename T>
 concept ScatterReadable = Readable<T> && requires(T &t) {
-    { t.readv(std::span<const MutableIoVec> {}) } -> std::same_as<IoTask<size_t> >;
+    { t.readv(std::span<const MutableIoVec> {}) } -> IsIoAwaitable<size_t>;
 };
 
 /**
@@ -100,7 +113,7 @@ concept ScatterReadable = Readable<T> && requires(T &t) {
  */
 template <typename T>
 concept GatherWritable = Writable<T> && requires(T &t) {
-    { t.writev(std::span<const IoVec> {}) } -> std::same_as<IoTask<size_t> >;
+    { t.writev(std::span<const IoVec> {}) } -> IsIoAwaitable<size_t>;
 };
 
 /**
@@ -121,18 +134,8 @@ concept Layer = requires (T &t) {
  * @tparam T 
  */
 template <typename T>
-concept IntoFileDescriptor = requires(T &t) {
+concept BorrowFileDescriptor = requires(T &t) {
     static_cast<fd_t>(t);
-};
-
-/**
- * @brief Concept for types that can be cast into a Generator.
- * 
- * @tparam T 
- */
-template <typename T>
-concept IntoGenerator = requires(T &&t) {
-    toGenerator(std::forward<T>(t));
 };
 
 /**

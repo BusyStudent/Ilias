@@ -49,6 +49,7 @@ auto testTask() -> Task<void> {
     EXPECT_EQ(co_await returnInput(42), 42);
     EXPECT_EQ(co_await testOk(), 42);
     EXPECT_EQ(co_await testErr(), Err(114514));
+    EXPECT_EQ(co_await just(0), 0);
 
     // Test the debug set name
 #if defined(ILIAS_CORO_TRACE)

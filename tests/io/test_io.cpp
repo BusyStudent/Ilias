@@ -289,6 +289,14 @@ ILIAS_TEST(Io, Writable) {
         co_await writeOne(writer);
         EXPECT_EQ(content, "H");
     }
+    {
+        // Test operator ==
+        auto content = std::string {};
+        auto writer = StringWriter{content};
+        auto view = WritableView{writer};
+        EXPECT_TRUE(view != nullptr);
+        EXPECT_TRUE(view == &writer);
+    }
     { // from Stream concept
         auto [a, b] = DuplexStream::make(10);
 
@@ -309,6 +317,20 @@ ILIAS_TEST(Io, Writable) {
         co_await writeOne(writer);
         EXPECT_EQ(content, "H");
     }
+}
+
+ILIAS_TEST(Io, Stream) {
+    // Test Stream concept
+    auto [a, b] = DuplexStream::make(10);
+    auto viewA = StreamView {a};
+    auto viewB = StreamView {b};
+    EXPECT_TRUE(viewA != nullptr);
+    EXPECT_TRUE(viewB != nullptr);
+    EXPECT_TRUE(viewA == &a);
+    EXPECT_TRUE(viewB == &b);
+    EXPECT_TRUE(viewA != viewB);
+    EXPECT_TRUE(viewA != DynStream {});
+    co_return;
 }
 
 ILIAS_TEST(Io, MemStream) {

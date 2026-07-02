@@ -44,38 +44,27 @@ template <StdioKind Kind>
 class StdioWrapper final : public StreamExt<StdioWrapper<Kind> > {
 public:
     StdioWrapper(StdioWrapper &&) = default;
-    StdioWrapper() {
-        fd_t fd {};
-        switch (Kind) {
-            case StdioKind::In:  fd = ILIAS_STDIN_FILENO;  break;
-            case StdioKind::Out: fd = ILIAS_STDOUT_FILENO; break;
-            case StdioKind::Err: fd = ILIAS_STDERR_FILENO; break;
-        }
-        if (fd == fd_t(-1)) { // Invalid file descriptor
-            return;
-        }
-        if (auto res = IoHandle<fd_t>::make(fd, IoDescriptor::Tty); res) {
-            mHandle = std::move(*res);
-        }
-    }
+    StdioWrapper() = default;
 
     // Readable
     auto read(MutableBuffer buffer) -> IoTask<size_t> requires(Kind == StdioKind::In) {
-        if (!mHandle) {
-            co_return Err(IoError::BadFileDescriptor);
+        auto &h = handle();
+        if (!h) {
+            co_return Err(h.error());
         }
-        co_return co_await mHandle.read(buffer, std::nullopt);
+        co_return co_await h->read(buffer, std::nullopt);
     }
 
     // Writable
     auto write(Buffer buffer) -> IoTask<size_t> requires(Kind != StdioKind::In) {
-        if (!mHandle) {
-            co_return Err(IoError::BadFileDescriptor);
+        auto &h = handle();
+        if (!h) {
+            co_return Err(h.error());
         }
-        co_return co_await mHandle.write(buffer, std::nullopt);
+        co_return co_await h->write(buffer, std::nullopt);
     }
 
-    auto shutdown() -> IoTask<void> requires(Kind != StdioKind::In) {
+    auto shutdown() requires(Kind != StdioKind::In) {
         co_return {}; // No-op
     }
 
@@ -83,9 +72,13 @@ public:
 
 #if defined(_WIN32)
         // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers
-        if (!::FlushFileBuffers(mHandle.fd())) {
+        auto &h = handle();
+        if (!h) {
+            co_return Err(h.error());
+        }
+        if (!::FlushFileBuffers(h->fd())) {
             auto err = ::GetLastError();
-            if (err == ERROR_INVALID_HANDLE && ::GetFileType(mHandle.fd()) == FILE_TYPE_CHAR) {
+            if (err == ERROR_INVALID_HANDLE && ::GetFileType(h->fd()) == FILE_TYPE_CHAR) {
                 // We can't flush a 'real' console handle, so we treat it as success
                 co_return {};
             }
@@ -99,15 +92,35 @@ public:
     auto operator <=>(const StdioWrapper &) const noexcept = default;
     auto operator =(StdioWrapper &&) -> StdioWrapper & = default;
 
-    explicit operator bool() const noexcept {
-        return bool(mHandle);
+    // Check if the stream is valid
+    explicit operator bool() const {
+        return bool(handle());
     }
 
     static auto make() -> StdioWrapper {
         return {};
     }
 private:
-    IoHandle<fd_t> mHandle;
+    auto handle() -> IoResult<IoHandle<fd_t> > & { // Lazy initialization
+        if (mHandle == Err(IoError::Ok)) {
+            fd_t fd {};
+            switch (Kind) {
+                case StdioKind::In:  fd = ILIAS_STDIN_FILENO;  break;
+                case StdioKind::Out: fd = ILIAS_STDOUT_FILENO; break;
+                case StdioKind::Err: fd = ILIAS_STDERR_FILENO; break;
+            }
+            if (fd == fd_t(-1)) { // Invalid file descriptor
+                mHandle = Err(IoError::BadFileDescriptor);   
+            }
+            else {
+                mHandle = IoHandle<fd_t>::make(fd, IoDescriptor::Tty);
+            }
+        }
+        return mHandle;
+    }
+
+    // IoHandle<fd_t> mHandle;
+    mutable IoResult<IoHandle<fd_t> > mHandle = Err(IoError::Ok); // Using Ok to mark not initialized
 };
 
 

@@ -22,6 +22,7 @@
 
 ILIAS_NS_BEGIN
 
+// Forward declarations
 class MsgHdr;
 class IoContext;
 class EndpointView;
@@ -209,8 +210,8 @@ struct IoDescriptor::Deleter {
  * 
  * @param T The fd type, like HANDLE, int, SOCKET, Socket
  */
-template <IntoFileDescriptor T>
-class IoHandle {
+template <BorrowFileDescriptor T>
+class IoHandle final {
 public:
     explicit IoHandle(T fd, IoDescriptor::Ptr desc) : mFd(std::move(fd)), mDesc(std::move(desc)) {}
     IoHandle(IoHandle &&other) = default;
@@ -295,6 +296,7 @@ public:
     auto operator <=>(const IoHandle &other) const noexcept = default;
     auto operator =(IoHandle &&other) noexcept -> IoHandle & = default;
 
+    // Check the IoHandle is valid
     explicit operator bool() const noexcept {
         return bool(mDesc);
     }

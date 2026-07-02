@@ -164,11 +164,47 @@ using AwaitableResult = typename AwaitableResultImpl<T>::type;
 template <AwaitableSequence T>
 using AwaitableSequenceValue = AwaitableResult<std::ranges::range_value_t<T> >;
 
+/**
+ * @brief A Simpile awaiter that return the value directly
+ * 
+ * @tparam T 
+ */
+template <typename T>
+struct JustAwaiter {
+    using SkipTracing = void;
+    auto await_ready() { return true; }
+    auto await_suspend(auto any) {}
+    auto await_resume() { return std::move(value); }
+
+    T value;
+};
+
+template <>
+struct JustAwaiter<void> : std::suspend_never {};
+
+/**
+ * @brief Create a awaitable of result T
+ * 
+ * @tparam T 
+ * @param value 
+ * @return JustAwaiter<T> 
+ */
+template <typename T>
+[[nodiscard]]
+inline auto just(T value) -> JustAwaiter<T> {
+    return { std::move(value) };
+}
+
+inline auto just() -> JustAwaiter<void> {
+    return {};
+}
+
 } // namespace runtime
 
 using runtime::AwaitableSequenceValue;
 using runtime::AwaitableSequence;
 using runtime::AwaitableResult;
 using runtime::Awaitable;
+using runtime::just;
 
 ILIAS_NS_END

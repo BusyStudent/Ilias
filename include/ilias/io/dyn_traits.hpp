@@ -4,6 +4,7 @@
 #include <ilias/io/ext.hpp>
 #include <compare>
 #include <utility>
+#include <memory>
 
 ILIAS_NS_BEGIN
 
@@ -30,26 +31,26 @@ struct StreamVtbl : public WritableVtbl {
 
 template <Readable T>
 inline auto readProxy(void *object, MutableBuffer buffer) -> IoTask<size_t> {
-    return static_cast<T *>(object)->read(buffer);
+    return static_cast<T *>(object)->read(buffer)  | toTask;
 }
 
 template <Writable T>
 inline auto writeProxy(void *object, Buffer buffer) -> IoTask<size_t> {
-    return static_cast<T *>(object)->write(buffer);
+    return static_cast<T *>(object)->write(buffer) | toTask;
 }
 
 template <Writable T>
 inline auto shutdownProxy(void *object) -> IoTask<void> {
-    return static_cast<T *>(object)->shutdown();
+    return static_cast<T *>(object)->shutdown() | toTask;
 }
 
 template <Writable T>
 inline auto flushProxy(void *object) -> IoTask<void> {
-    return static_cast<T *>(object)->flush();
+    return static_cast<T *>(object)->flush() | toTask;
 }
 
 template <typename T>
-inline auto deleteProxy(void *object) -> void {
+inline auto deleteProxy(void *object) noexcept -> void {
     delete static_cast<T *>(object);
 }
 
@@ -96,12 +97,15 @@ inline constexpr bool isDynType<WritableView> = true;
 template <typename T>
 concept Dyn = isDynType<std::remove_cvref_t<T> >;
 
+// No-except handler for delete (mostly delete is noexcept, and also, we can't throw in dtor)
+using DeleteHandler = void (*)(void *object) noexcept;
+
 } // namespace dyn_traits
 
 
 // MARK: Stream
 /**
- * @brief The view of the Stream concept, it does not own the object
+ * @brief The view of the Stream concept, it `BORROW` object reference
  * 
  */
 class StreamView : public StreamExt<StreamView> {
@@ -114,10 +118,19 @@ public:
      * @brief Construct a new Stream View object
      * 
      * @tparam T Type of the Stream concept
+     * @param t The pointer of the Stream concept object
+     */
+    template <Stream T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
+    constexpr StreamView(T *t) noexcept : mVtbl(&dyn_traits::streamVtbl<T>), mObject(t) {}
+
+    /**
+     * @brief Construct a new Stream View object
+     * 
+     * @tparam T The type of the Stream concept
      * @param t The reference of the Stream concept object
      */
     template <Stream T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
-    constexpr StreamView(T &t) noexcept : mVtbl(&dyn_traits::streamVtbl<T>), mObject(&t) { }
+    constexpr StreamView(T &t) noexcept : StreamView(&t) {}
 
     /**
      * @brief Read data from the stream
@@ -162,7 +175,9 @@ public:
     }
 
     // operator
-    auto operator ==(const StreamView &other) const noexcept -> bool = default;
+    auto operator ==(const StreamView &other) const noexcept -> bool {
+        return mObject == other.mObject;
+    }
 
     /**
      * @brief Check is empty?
@@ -185,7 +200,7 @@ friend class DynWritable;
 
 
 /**
- * @brief To type erase the Stream concept, using fat pointer
+ * @brief To type erase the Stream concept, using fat pointer, it `OWN` the object
  * 
  */
 class DynStream final : public StreamView {
@@ -209,14 +224,23 @@ public:
      * @brief Construct a new DynStream object by Stream concept 
      * 
      * @tparam T The type of the Stream concept
-     * @param t 
+     * @param t The unique_ptr of the Stream
      */
     template <Stream T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
-    DynStream(T t) {
+    DynStream(std::unique_ptr<T> t) {
         mVtbl = &dyn_traits::streamVtbl<T>;
-        mObject = new T {std::move(t)};
+        mObject = t.release();
         mDelete = &dyn_traits::deleteProxy<T>;
     }
+
+    /**
+     * @brief Construct a new DynStream object by Readable concept
+     * 
+     * @tparam T 
+     * @param t The Stream object
+     */
+    template <Readable T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
+    DynStream(T t) : DynStream(std::make_unique<T>(std::move(t))) {}
 
     /**
      * @brief Destroy the DynStream object
@@ -238,7 +262,7 @@ public:
     }
 
     // Operator
-    auto operator ==(const DynStream &other) const noexcept -> bool = default;
+    using StreamView::operator ==;
 
     /**
      * @brief Move assignment operator 
@@ -267,7 +291,7 @@ public:
         return *this;
     }
 private:
-    void (*mDelete)(void *object) = nullptr; //< For deleting the object
+    dyn_traits::DeleteHandler mDelete = nullptr; //< For deleting the object
 friend class DynReadable;
 friend class DynWritable;
 };
@@ -287,10 +311,19 @@ public:
      * @brief Create a new ReadableView object by Readable concept
      * 
      * @tparam T 
-     * @param t
+     * @param t The pointer
      */
     template <Readable T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
-    constexpr ReadableView(T &t) noexcept : mRead(&dyn_traits::readProxy<T>), mObject(&t) {}
+    constexpr ReadableView(T *t) noexcept : mRead(&dyn_traits::readProxy<T>), mObject(t) {}
+
+    /**
+     * @brief Create a new ReadableView object by Readable concept
+     * 
+     * @tparam T 
+     * @param t The reference
+     */
+    template <Readable T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
+    constexpr ReadableView(T &t) noexcept : ReadableView(&t) {}
 
     /**
      * @brief Create a new ReadableView object by StreamView, upcasting
@@ -310,7 +343,9 @@ public:
     }
 
     // operator
-    auto operator ==(const ReadableView &other) const noexcept -> bool = default;
+    auto operator ==(const ReadableView &other) const noexcept -> bool {
+        return mObject == other.mObject;
+    }
 
     /**
      * @brief Check is empty?
@@ -341,10 +376,19 @@ public:
      * @brief Create a new WritableView object by Writeable concept
      * 
      * @tparam T 
-     * @param t
+     * @param t The pointer of the Writeable
      */
     template <Writable T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
-    constexpr WritableView(T &t) noexcept : mVtbl(&dyn_traits::writableVtbl<T>), mObject(&t) {}
+    constexpr WritableView(T *t) noexcept : mVtbl(&dyn_traits::writableVtbl<T>), mObject(t) {}
+
+    /**
+     * @brief Create a new WritableView object by Writeable concept
+     * 
+     * @tparam T 
+     * @param t The reference
+     */
+    template <Writable T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
+    constexpr WritableView(T &t) noexcept : WritableView(&t) {}
 
     /**
      * @brief Create a new WritableView object by StreamView, upcasting
@@ -384,7 +428,9 @@ public:
     }
 
     // operator
-    auto operator ==(const WritableView &other) const noexcept -> bool = default;
+    auto operator ==(const WritableView &other) const noexcept -> bool {
+        return mObject == other.mObject;
+    }
 
     /**
      * @brief Check is empty?
@@ -424,14 +470,22 @@ public:
      * @brief Construct a new Dyn Readable object
      * 
      * @tparam T 
-     * @param t The readable object
+     * @param t The unique pointer of the Readable object
      */
     template <Readable T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
-    DynReadable(T t) {
+    DynReadable(std::unique_ptr<T> t) {
         mRead = &dyn_traits::readProxy<T>;
-        mObject = new T {std::move(t)};
+        mObject = t.release();
         mDelete = &dyn_traits::deleteProxy<T>;
     }
+
+    /**
+     * @brief Construct a new Dyn Readable object
+     * 
+     * @tparam T The Readable object
+     */
+    template <Readable T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
+    DynReadable(T t) : DynReadable(std::make_unique<T>(std::move(t))) {}
 
     /**
      * @brief Construct a new Dyn Readable object by DynStream, upcasting
@@ -455,7 +509,7 @@ public:
      * @brief Close the readable object
      * 
      */
-    auto close() -> void {
+    auto close() noexcept -> void {
         if (mDelete) {
             mDelete(mObject);
             mDelete = nullptr;
@@ -465,7 +519,7 @@ public:
     }
 
     // Operator
-    auto operator ==(const DynReadable &other) const noexcept -> bool = default;
+    using ReadableView::operator =;
 
     /**
      * @brief Move assignment operator 
@@ -494,7 +548,7 @@ public:
         return *this;
     }
 private:
-    void (*mDelete)(void *object) = nullptr; //< For deleting the object
+    dyn_traits::DeleteHandler mDelete = nullptr; //< For deleting the object
 };
 
 // MARK: DynWritable
@@ -517,14 +571,23 @@ public:
     /**
      * @brief Construct a new Dyn Writable object
      * @tparam T 
+     * @param t The unique pointer of the writable object
+     */
+    template <Writable T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
+    DynWritable(std::unique_ptr<T> t) {
+        mVtbl = &dyn_traits::writableVtbl<T>;
+        mObject = t.release();
+        mDelete = &dyn_traits::deleteProxy<T>;
+    }
+
+    /**
+     * @brief Construct a new Dyn Writable object
+     * 
+     * @tparam T 
      * @param t The writable object
      */
     template <Writable T> requires (!dyn_traits::Dyn<T>) // Avoid recursion
-    DynWritable(T t) {
-        mVtbl = &dyn_traits::writableVtbl<T>;
-        mObject = new T {std::move(t)};
-        mDelete = &dyn_traits::deleteProxy<T>;
-    }
+    DynWritable(T t) : DynWritable(std::make_unique<T>(std::move(t))) {}
 
     /**
      * @brief Construct a new Dyn Writable object, upcasting the stream
@@ -547,7 +610,7 @@ public:
      * @brief Close the writable object
      * 
      */
-    auto close() -> void {
+    auto close() noexcept -> void {
         if (mDelete) {
             mDelete(mObject);
             mDelete = nullptr;
@@ -557,7 +620,7 @@ public:
     }
 
     // Operator
-    auto operator ==(const DynWritable &other) const noexcept -> bool = default;
+    using WritableView::operator =;
 
     /**
      * @brief Move assignment operator
@@ -583,7 +646,7 @@ public:
         return *this;
     }
 private:
-    void (*mDelete)(void *object) = nullptr; //< For deleting the object
+    dyn_traits::DeleteHandler mDelete = nullptr; //< For deleting the object
 };
 
 // For compatible with old code
