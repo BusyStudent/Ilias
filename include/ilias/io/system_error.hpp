@@ -22,8 +22,6 @@
     #include <ilias/detail/win32defs.hpp>
     #define ILIAS_MAP(x) WSA##x
 #elif defined(__unix__)
-    #include <cstring>
-    #include <cerrno>
     #define ILIAS_MAP(x) x
 #endif
 

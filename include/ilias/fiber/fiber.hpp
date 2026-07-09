@@ -178,13 +178,14 @@ public:
     auto operator ()(T awaitable, runtime::CaptureSource source = {}) const -> AwaitableResult<T> {
         return operator ()(toTask(std::move(awaitable)), source);
     }
-};
+
 
 // For chain, doSomething() | await
-template <Awaitable T>
-inline auto operator |(T awaitable, Await tags) -> AwaitableResult<T> {
-    return tags(std::move(awaitable));
-}
+    template <Awaitable T>
+    friend auto operator |(T awaitable, Await tags) -> AwaitableResult<T> {
+        return tags(std::move(awaitable));
+    }
+};
 
 /**
  * @brief Await given awaitable in current fiber
@@ -239,7 +240,7 @@ public:
     }
 
     // Swap the fiber with another fiber
-    auto swap(Fiber &other) -> void {
+    auto swap(Fiber &other) noexcept -> void {
         mHandle.swap(other.mHandle);
     }
 

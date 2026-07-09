@@ -85,7 +85,7 @@ public:
     constexpr MutableMsgHdr(const msghdr_t &v) : MsgHdr(v) { }
     constexpr MutableMsgHdr(const MutableMsgHdr &) = default;
     constexpr MutableMsgHdr(const MsgHdr &) = delete; // Doesn't allow from const to mutable
-    constexpr MutableMsgHdr() : MsgHdr{} { }
+    constexpr MutableMsgHdr() = default;
 
     auto setEndpoint(::sockaddr *addr, ::socklen_t len) noexcept -> void {
         msg_name = addr;

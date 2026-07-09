@@ -47,7 +47,7 @@ public:
     // Extract the promise from the frame
     template <typename T>
     auto promise() noexcept -> T & {
-        auto ptr = reinterpret_cast<std::byte *>(this) + sizeof(FrameABI);
+        auto *ptr = reinterpret_cast<std::byte *>(this) + sizeof(FrameABI);
         return *reinterpret_cast<T *>(ptr);
     }
 
@@ -276,7 +276,7 @@ public:
         return Awaiter {*this};
     }
 
-    auto unhandled_exception() noexcept { 
+    auto unhandled_exception() noexcept -> void { 
         mException = ExceptionPtr::currentException();
     }
 
@@ -317,11 +317,11 @@ public:
     }
 
     // Our runtime interface
-    auto takeException() noexcept {
+    auto takeException() noexcept -> ExceptionPtr {
         return std::exchange(mException, nullptr);
     }
 
-    auto rethrowIfAny() {
+    auto rethrowIfAny() -> void {
         return takeException().rethrowIfAny();
     }
 
@@ -383,16 +383,16 @@ public:
     CoroHandle() noexcept = default;
 
     // std coroutine interface
-    auto done() const noexcept {
+    auto done() const noexcept -> bool {
         return mHandle.done();
     }
 
-    auto resume() const noexcept {
+    auto resume() const noexcept -> void {
         ILIAS_ASSERT(!context().isStopped(), "Cannot resume a stopped coroutine");
         return mHandle.resume();
     }
 
-    auto destroy() const noexcept {
+    auto destroy() const noexcept -> void {
         return mHandle.destroy();
     }
 
@@ -401,7 +401,7 @@ public:
     auto promise() const noexcept -> T & {
         ILIAS_ASSERT(mHandle, "Can't get promise from null handle");
 #if defined(ILIAS_USE_CORO_ABI)
-        auto frame = FrameABI::from(mHandle);
+        auto *frame = FrameABI::from(mHandle);
         return frame->promise<T>();
 #else
         return static_cast<T &>(*mPromise);
@@ -420,7 +420,7 @@ public:
     }
 
     // Set the context of the coroutine
-    auto setContext(CoroContext &ctxt) const noexcept {
+    auto setContext(CoroContext &ctxt) const noexcept -> void {
         promise().mContext = &ctxt;
     }
 
@@ -428,7 +428,7 @@ public:
     // This may only be called once, after a stop request has been observed by a
     // suspended coroutine. The stopped handler owns the follow-up action, such
     // as notifying a parent awaiter or releasing a spawned task.
-    auto setStopped() const noexcept {
+    auto setStopped() const noexcept -> void {
         auto &ctxt = context();
         ILIAS_ASSERT(ctxt.mStoppedHandler, "Stopped handler must be set, double call on CoroHandle::setStopped() ?");
         ILIAS_ASSERT(ctxt.mStopSource.stop_possible(), "Stop source must be possible to stop, invalid state ?");
@@ -438,36 +438,36 @@ public:
     }
 
     // Set the completion handler, it will be called when coroutine is completed, stopped is not completed
-    auto setCompletionHandler(void (*handler)(CoroContext &)) const noexcept {
+    auto setCompletionHandler(void (*handler)(CoroContext &)) const noexcept -> void {
         promise().mCompletionHandler = handler;
     }
 
     // Set the previous awaiting coroutine, when the coroutine is completed, it will resume the previous awaiting coroutine
-    auto setPrevAwaiting(CoroHandle h) const noexcept {
+    auto setPrevAwaiting(CoroHandle h) const noexcept -> void {
         promise().mPrevAwaiting = h.mHandle;
     }
 
     // Resume in the executor
-    auto schedule() const noexcept {
+    auto schedule() const noexcept -> void {
         ILIAS_ASSERT(!context().isStopped(), "Cannot schedule a stopped coroutine");
         return executor().schedule(mHandle);
     }
 
     // Get the stop source from the environment
-    auto stopToken() const noexcept {
+    auto stopToken() const noexcept -> StopToken {
         return context().mStopSource.get_token();
     }
 
-    auto takeException() const noexcept {
+    auto takeException() const noexcept -> ExceptionPtr {
         return promise().takeException();
     }
 
-    auto isStopRequested() const noexcept {
+    auto isStopRequested() const noexcept -> bool {
         return context().mStopSource.stop_requested();
     }
 
     // Get the std coroutine handle
-    auto toStd() const noexcept {
+    auto toStd() const noexcept -> std::coroutine_handle<> {
         return mHandle;
     }
 
@@ -617,7 +617,7 @@ inline auto stopped() noexcept {
                 mStopped = source.stop_requested(); 
             }
         }
-        auto await_ready() noexcept { // If stop requested, enter the stopped state (never resume)
+        auto await_ready() const noexcept { // If stop requested, enter the stopped state (never resume)
             return !mStopped;
         }
         auto await_suspend(CoroHandle h) noexcept {

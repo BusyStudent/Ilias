@@ -108,7 +108,7 @@ class MutableIoVec final : public IoVec {
 public:
     using Base = IoVec;
 
-    constexpr MutableIoVec() : Base{} {}
+    constexpr MutableIoVec() = default;
     constexpr MutableIoVec(const MutableIoVec &) = default;
     constexpr MutableIoVec(const IoVec &) = delete; // Not allow to convert from const to mutable
     constexpr MutableIoVec(void *buf, size_t len) : Base{buf, len} {}

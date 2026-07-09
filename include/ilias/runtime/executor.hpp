@@ -69,18 +69,11 @@ public:
     auto uninstall() -> void;
 
     /**
-     * @brief Get the current thread's executor
-     * 
-     * @return Executor * (nullptr on no executor installed)
-     */
-    static auto currentThread() -> Executor *;
-
-    /**
      * @brief Schedule a coroutine to the executor (thread safe)
      * 
      * @param h The coroutine handle (can not be null)
      */
-    inline auto schedule(std::coroutine_handle<> h) -> void {
+    auto schedule(std::coroutine_handle<> h) -> void {
         post(scheduleImpl, h.address());
     }
 
@@ -92,7 +85,7 @@ public:
      */
     template <std::invocable Fn>
         requires (!std::convertible_to<Fn, std::coroutine_handle<> >) // Avoid conflict with coroutine_handle
-    inline auto schedule(Fn fn) -> void {
+    auto schedule(Fn fn) -> void {
         if constexpr (SmallCallable<Fn>) {
             // We can store the function in the void *;
             // Delegate to it
@@ -103,6 +96,13 @@ public:
             post(scheduleAlloc<Fn>, new Fn(std::move(fn)));
         }
     }
+
+    /**
+     * @brief Get the current thread's executor
+     * 
+     * @return Executor * (nullptr on no executor installed)
+     */
+    static auto currentThread() noexcept -> Executor *;
 private:
     // Corutine proxy
     static auto scheduleImpl(void *h) -> void {

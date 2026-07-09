@@ -156,8 +156,13 @@ public:
         return mTask.done();
     }
 
-    auto await_suspend(CoroHandle caller) noexcept {
+    auto await_suspend(CoroHandle caller) noexcept -> void {
         mTask.setPrevAwaiting(caller);
+    }
+
+    // Get the inner task handle from the awaiter (you just borrow it)
+    auto task() const noexcept -> TaskHandle<> {
+        return mTask;
     }
 protected:
     TaskAwaiterBase(TaskHandle<> task) noexcept : mTask(task) { }
@@ -220,10 +225,14 @@ public:
         mTask = newTask;
     }
 
-    // Get the task in it
+    // Get the inner task handle from the awaiter (you just borrow it)
     auto task() const noexcept {
         return mTask;
     }
+
+    // Operator
+    auto operator =(const TaskContext &) = delete;
+    auto operator =(TaskContext &&) = delete;
 protected:
     TaskHandle<> mTask; // The task we use to wait for (take ownership)
 };
@@ -232,7 +241,7 @@ protected:
 class TaskBlockingContext final : private CoroContext {
 public:
     TaskBlockingContext(TaskHandle<> task, CaptureSource source) : CoroContext(std::nostopstate), mTask(task), mSource(source) {
-        auto executor = runtime::Executor::currentThread();
+        auto *executor = runtime::Executor::currentThread();
         ILIAS_ASSERT(executor, "The current thread has no executor");
 
         mTask.setCompletionHandler(TaskBlockingContext::onComplete);
@@ -426,7 +435,7 @@ public:
     }
 
     // Swap with other task
-    auto swap(Task<T> &other) -> void {
+    auto swap(Task<T> &other) noexcept -> void {
         return std::swap(mHandle, other.mHandle);
     }
 

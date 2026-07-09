@@ -138,8 +138,8 @@ auto WaitQueue::blockingWait(Fn pred) -> void {
             if (mFn()) { // Fast path, check the predicate
                 return;
             }
-            else {
-                auto locker = std::lock_guard {mQueue};
+            {
+                std::lock_guard locker {mQueue};
                 if (mFn()) { // Atomic check and suspend
                     return;
                 }

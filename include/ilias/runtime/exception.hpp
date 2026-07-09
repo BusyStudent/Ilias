@@ -20,8 +20,7 @@ public:
     ExceptionPtr() = default;
     ExceptionPtr(std::nullptr_t) {}
     ExceptionPtr(const ExceptionPtr &) = default;
-    ExceptionPtr(ExceptionPtr &&other) = default;
-    ExceptionPtr(std::exception_ptr ptr) : mPtr(std::move(ptr)) {}
+    ExceptionPtr(const std::exception_ptr &ptr) : mPtr(ptr) {} // Emm? exception ptr is copy only?
 
     // Rethrow the exception if the pointer is valid
     auto rethrowIfAny() -> void {

@@ -493,7 +493,7 @@ public:
      * @param stream 
      */
     DynReadable(DynStream stream) {
-        auto vtbl = std::exchange(stream.mVtbl, nullptr);
+        const auto *vtbl = std::exchange(stream.mVtbl, nullptr);
         mRead = vtbl ? vtbl->read : nullptr;
         mObject = std::exchange(stream.mObject, nullptr);
         mDelete = std::exchange(stream.mDelete, nullptr);

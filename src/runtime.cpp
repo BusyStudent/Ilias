@@ -29,7 +29,7 @@ Executor::~Executor() {
     uninstall();
 }
 
-auto Executor::currentThread() -> Executor * {
+auto Executor::currentThread() noexcept -> Executor * {
     return gCurrentExecutor;
 }
 
@@ -146,7 +146,7 @@ auto threadpool::submit(CallableRef &callable) -> void {
             if (token.stop_requested()) {
                 return;
             }
-            auto callable = pool->queue.front();
+            auto *callable = pool->queue.front();
             pool->queue.pop();
             pool->lastPeek = std::chrono::steady_clock::now();
             locker.unlock();
@@ -174,7 +174,7 @@ auto threadpool::submit(CallableRef &callable) -> void {
     auto init = [&]() {
         pool = new ThreadPool; 
         pool->idle += 1;
-        pool->threads.push_back(std::thread(worker, pool->stopSource.get_token()));
+        pool->threads.emplace_back(std::thread(worker, pool->stopSource.get_token()));
         ::atexit(cleanup);
     };
 
@@ -183,7 +183,7 @@ auto threadpool::submit(CallableRef &callable) -> void {
     if (pool->idle == 0) {
         auto hw = std::thread::hardware_concurrency() * 2;
         if (pool->threads.size() < hw && hw != 0) { // We can create more threads
-            pool->threads.push_back(std::thread(worker, pool->stopSource.get_token()));
+            pool->threads.emplace_back(std::thread(worker, pool->stopSource.get_token()));
             pool->idle += 1;
         }
     }

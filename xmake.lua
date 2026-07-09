@@ -57,8 +57,10 @@ if has_config("spdlog") and has_config("log") then
     add_requires("spdlog")
 end
 
-if has_config("dev") then
-    if is_plat("linux") then 
+if has_config("dev") and is_plat("linux") then
+    -- Add asan and ubsan in Linux CI
+    if not is_plat("android") and not os.getenv("TERMUX_VERSION") then
+        add_syslinks("anl") 
         set_policy("build.sanitizer.address", true)
         set_policy("build.sanitizer.undefined", true)
     end

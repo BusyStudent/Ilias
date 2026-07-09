@@ -698,10 +698,9 @@ inline auto QPollAwaiter::doConnect() -> void {
 #if defined(_WIN32)
 inline auto QOverlapped::await_suspend(runtime::CoroHandle caller) -> void {
     mCaller = caller;
-    mRegistration.register_(caller.stopToken(), [](void *_self) {
-        auto self = static_cast<QOverlapped *>(_self);
-        ::CancelIoEx(self->mHandle, &self->mOverlapped);
-    }, this);
+    mRegistration.register_(caller.stopToken(), [this]() {
+        ::CancelIoEx(mHandle, &mOverlapped);
+    });
     QObject::connect(&mNotifier, &QWinEventNotifier::activated, [this](::HANDLE event) {
         mNotifier.setEnabled(false);
         mCaller.schedule();

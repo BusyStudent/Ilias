@@ -68,7 +68,7 @@ class ILIAS_API AddressInfo {
 public:
     struct iterator {
         auto operator ++() noexcept -> iterator & { ptr = ptr->ai_next; return *this; }
-        auto operator *() -> IPEndpoint { return IPEndpoint::fromRaw(ptr->ai_addr, ptr->ai_addrlen).value(); }
+        auto operator *() const -> IPEndpoint { return IPEndpoint::fromRaw(ptr->ai_addr, ptr->ai_addrlen).value(); }
         auto operator <=>(const iterator &other) const noexcept = default;
         addrinfo_t *ptr = nullptr;
     };
@@ -100,7 +100,9 @@ public:
     auto get() const -> addrinfo_t *;
     auto end() const -> iterator;
     auto begin() const -> iterator;
-    auto operator  =(AddressInfo &&info) -> AddressInfo &;
+
+    // Operator
+    auto operator =(AddressInfo &&info) -> AddressInfo & = default;
 
     /**
      * @brief Check if the info is valid
@@ -153,7 +155,6 @@ private:
 
 // --- AddressInfo Impl
 inline AddressInfo::operator bool() const noexcept { return mInfo != nullptr; }
-inline auto AddressInfo::operator =(AddressInfo &&info) -> AddressInfo & = default;
 inline auto AddressInfo::get() const -> addrinfo_t * { return mInfo.get(); }
 inline auto AddressInfo::begin() const -> iterator { return {mInfo.get()}; }
 inline auto AddressInfo::end() const -> iterator { return {nullptr}; }

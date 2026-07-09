@@ -75,11 +75,12 @@ public:
     }
 
     auto toRaw() const noexcept {
-        return std::pair(mFn, mUser);
+        return std::pair{mFn, mUser};
     }
 
     // Invoke this function, UB on empty function
     auto operator ()(Args ...args) const -> R {
+        ILIAS_ASSERT(mFn, "The function can't be call with empty state");
         return mFn(std::forward<Args>(args)..., mUser);
     }
 

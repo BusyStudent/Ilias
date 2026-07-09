@@ -309,7 +309,7 @@ public:
      * @return IoResult<IoHandle<T> > 
      */
     static auto make(T fd, IoDescriptor::Type type = IoDescriptor::Unknown) -> IoResult<IoHandle<T> > {
-        auto ctxt = IoContext::currentThread();
+        auto *ctxt = IoContext::currentThread();
         if (!ctxt) {
             return Err(IoError::InvalidArgument);
         }

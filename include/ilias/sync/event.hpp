@@ -103,9 +103,7 @@ public:
      * @return sync::EventAwaiter 
      */
     [[nodiscard]]
-    auto wait() noexcept { 
-        return sync::EventAwaiter {*this}; 
-    }
+    auto wait() noexcept -> sync::EventAwaiter { return {*this}; }
 
     /**
      * @brief Try wait the event to be set
@@ -140,8 +138,8 @@ public:
      * 
      * @return co_await 
      */
-    auto operator co_await() noexcept {
-        return sync::EventAwaiter {*this};
+    auto operator co_await() noexcept -> sync::EventAwaiter {
+        return {*this};
     }
 private:
     sync::WaitQueue   mQueue;

@@ -1,6 +1,7 @@
 // INTERNAL !!!
 #pragma once
 
+#include <ilias/runtime/functional.hpp> // SmallFunction
 #include <ilias/defines.hpp>
 #include <stop_token>
 #include <memory>
@@ -27,11 +28,11 @@ public:
 
     StopCallbackEx() = default; // Runtime check ensures that only the empty state can be moved, make compiler happy :(
     StopCallbackEx(const StopCallbackEx &other) = delete;
-    StopCallbackEx(StopCallbackEx &&other) { ILIAS_ASSERT(!other.mHasValue); }
+    StopCallbackEx(StopCallbackEx &&other) noexcept { ILIAS_ASSERT(!other.mHasValue); }
     ~StopCallbackEx() { reset(); }
 
     auto operator =(const StopCallbackEx &other) -> StopCallbackEx & = delete;
-    auto operator =(StopCallbackEx &&other) -> StopCallbackEx & { ILIAS_ASSERT(!other.mHasValue); return *this; }
+    auto operator =(StopCallbackEx &&other) noexcept -> StopCallbackEx & { ILIAS_ASSERT(!other.mHasValue); return *this; }
 
     auto reset() -> void {
         if (mHasValue) {
@@ -58,43 +59,28 @@ public:
     StopRegistration(StopRegistration &&) = default;
     StopRegistration() = default;
 
-    StopRegistration &operator=(const StopRegistration &) = delete;
-    StopRegistration &operator=(StopRegistration &&) = default;
+    auto operator =(const StopRegistration &) -> StopRegistration & = delete;
+    auto operator =(StopRegistration &&) -> StopRegistration & = default;
 
-    // Do the registration
-    auto register_(const StopToken &token, void (*fn)(void *), void *args) -> void {
-        mCallback.emplace(token, Callback{fn, args});
-    }
-    auto register_(StopToken &&token, void (*fn)(void *), void *args) -> void {
-        mCallback.emplace(std::move(token), Callback{fn, args});
+    // NOLINTBEGIN
+    // Do the registration with fn
+    template <typename Token>
+    auto register_(Token &&token, SmallFunction<void()> fn) -> void {
+        mCallback.emplace(std::forward<Token>(token), fn);
     }
 
     // Do the registration with a member function
-    template <auto Method, typename Object>
-    auto register_(const StopToken &token, Object *self) -> void {
-        mCallback.emplace(token, Callback{methodProxy<Method, Object>, self});
-    }
-    template <auto Method, typename Object>
-    auto register_(StopToken &&token, Object *self) -> void {
-        mCallback.emplace(std::move(token), Callback{methodProxy<Method, Object>, self});
+    template <auto Method, typename Object, typename Token>
+    auto register_(Token &&token, Object *self) -> void {
+        register_(std::forward<Token>(token), [self]() -> void {
+            (self->*Method)(); // Call the method
+        });
     }
 
+    // NOLINTEND
     auto reset() -> void { mCallback.reset(); }
 private:
-    struct Callback {
-        void (*fn)(void *);
-        void *args;
-
-        void operator()() const { fn(args); }
-    };
-
-    template <auto Method, typename Object>
-    static auto methodProxy(void *_self) -> void {
-        auto self = static_cast<Object *>(_self);
-        (self->*Method)();
-    }
-
-    StopCallbackEx<Callback> mCallback;
+    StopCallbackEx<SmallFunction<void()> > mCallback;
 };
 
 } // namespace runtime

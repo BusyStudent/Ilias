@@ -22,7 +22,7 @@ WaitQueue::~WaitQueue() {
 }
 
 auto WaitQueue::wakeupOne() -> void {
-    auto locker = std::unique_lock {*this};
+    std::unique_lock locker {*this};
     for (auto it = mWaiters.begin(); it != mWaiters.end(); ++it) {
         auto &waiter = *it;
         if (waiter.onWakeupRaw()) { // Got one
@@ -37,9 +37,9 @@ auto WaitQueue::wakeupOne() -> void {
 }
 
 auto WaitQueue::wakeupAll() -> void {
-    auto ready = intrusive::List<WaiterBase> {};
+    intrusive::List<WaiterBase> ready {};
     {
-        auto locker = std::lock_guard {*this};
+        std::lock_guard locker {*this};
         for (auto it = mWaiters.begin(); it != mWaiters.end(); ) {
             auto &waiter = *it;
             if (waiter.onWakeupRaw()) {
@@ -81,7 +81,7 @@ auto WaiterBase::onWakeupRaw() -> bool {
 
 inline
 auto WaiterBase::resume() -> void {
-    auto blocking = std::atomic_ref {mBlocking}; // Is someone blocking wait on it?
+    std::atomic_ref blocking {mBlocking}; // Is someone blocking wait on it?
     if (blocking.exchange(false)) { // A caller is use blockingWait on it
         blocking.notify_one();
     }
@@ -94,7 +94,7 @@ auto WaiterBase::resume() -> void {
 auto AwaiterBase::await_suspend(runtime::CoroHandle caller) -> bool {
     mCaller = caller;
     {
-        auto locker = std::lock_guard {mQueue};
+        std::lock_guard locker {mQueue};
         if (mOnWakeup(*this)) { // Check condition
             return false; // Condition is true, don't wait
         }
@@ -112,8 +112,8 @@ auto AwaiterBase::onStopRequested() -> void {
     if (!ref.load()) { // We already got the wakeup, ignore it
         return;
     }
-    else {
-        auto locker = std::lock_guard {mQueue};
+    {
+        std::lock_guard locker {mQueue};
         if (!isLinked()) { // Already wakeup
             return;
         }

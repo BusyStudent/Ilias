@@ -15,12 +15,13 @@ namespace task {
 template <typename T>
 class [[ILIAS_CORO_AWAIT_ELIDABLE]] UnstoppableAwaiter final {
 public:
-    UnstoppableAwaiter(TaskHandle<T> handle) : mHandle(handle), mAwaiter(handle) {}
+    UnstoppableAwaiter(TaskHandle<T> handle) : mAwaiter(handle) {}
     UnstoppableAwaiter(UnstoppableAwaiter &&) = default;
 
     auto await_ready() -> bool {
+        auto handle = mAwaiter.task();
         mCtxt.tracingSpawn(mSource);
-        mHandle.setContext(mCtxt); // Use the unstoppable context
+        handle.setContext(mCtxt); // Use the unstoppable context
         return mAwaiter.await_ready();
     }
 
@@ -50,7 +51,6 @@ private:
     [[ILIAS_NO_UNIQUE_ADDRESS]]
     runtime::CaptureSource mSource; // Await point source location
     runtime::CoroContext mCtxt {std::nostopstate};
-    TaskHandle<T>  mHandle;
     TaskAwaiter<T> mAwaiter;
 };
 
@@ -219,7 +219,7 @@ private:
             mValue = makeOption([&]() { return handle.value(); });
             break;
         }
-        while (0);
+        while (false);
 
         // Prepare the cleanup task
         return makeCleanup(mCleanup);
@@ -239,7 +239,7 @@ private:
 class StopTokenAwaiter final {
 public:
     StopTokenAwaiter(runtime::StopToken token) : mToken(std::move(token)) {}
-    StopTokenAwaiter(StopTokenAwaiter &&) = default;
+    StopTokenAwaiter(StopTokenAwaiter &&) noexcept = default;
     ~StopTokenAwaiter() = default;
 
     auto await_ready() -> bool { return mToken.stop_requested(); }

@@ -57,43 +57,86 @@ using ::setcontext;
 
 inline namespace {
 
+// NOLINTBEGIN
+// Offsets
+template <size_t N>
+inline constexpr size_t REG_OFFSET = offsetof(ucontext_t, uc_mcontext.regs[N]);
+
+inline constexpr size_t SP_OFFSET = offsetof(ucontext_t, uc_mcontext.sp);
+
+inline constexpr size_t PC_OFFSET = offsetof(ucontext_t, uc_mcontext.pc);
+
+inline constexpr size_t PSTATE_OFFSET = offsetof(ucontext_t, uc_mcontext.pstate);
+
+inline constexpr size_t RESERVED_OFFSET = offsetof(ucontext_t, uc_mcontext.__reserved);
+
+template <size_t N>
+inline constexpr size_t FPSIMD_VREG = offsetof(fpsimd_context, vregs[N]);
+
+// Assertion for ABI
+static_assert(REG_OFFSET<0> == 184);
+static_assert(REG_OFFSET<30> == 424);
+static_assert(SP_OFFSET == 432);
+static_assert(PC_OFFSET == 440);
+static_assert(PSTATE_OFFSET == 448);
+
 extern "C" // For swapcontext call this
 [[using gnu: naked, visibility("hidden")]]
 inline auto _ilias_asm_setcontext(ucontext_t *uc) noexcept -> int {
-	asm(
-		// x0 = ucp
+    asm(
+        // x0 = ucp
 
-		/* restore GPRs */
-		"ldp    x18, x19, [x0, #328]\n\t"   // REG_OFFSET(18)
-		"ldp    x20, x21, [x0, #344]\n\t"   // REG_OFFSET(20)
-		"ldp    x22, x23, [x0, #360]\n\t"   // REG_OFFSET(22)
-		"ldp    x24, x25, [x0, #376]\n\t"   // REG_OFFSET(24)
-		"ldp    x26, x27, [x0, #392]\n\t"   // REG_OFFSET(26)
-		"ldp    x28, x29, [x0, #408]\n\t"   // REG_OFFSET(28)
-		"ldr    x30,      [x0, #424]\n\t"   // REG_OFFSET(30)
+        // restore callee-saved / platform-ish GPRs
+        "ldp    x18, x19, [x0, #%c[reg18]]\n\t"
+        "ldp    x20, x21, [x0, #%c[reg20]]\n\t"
+        "ldp    x22, x23, [x0, #%c[reg22]]\n\t"
+        "ldp    x24, x25, [x0, #%c[reg24]]\n\t"
+        "ldp    x26, x27, [x0, #%c[reg26]]\n\t"
+        "ldp    x28, x29, [x0, #%c[reg28]]\n\t"
+        "ldr    x30,      [x0, #%c[reg30]]\n\t"
 
-		/* save current stack pointer */
-		"ldr    x2, [x0, #432]\n\t"          // SP_OFFSET
-		"mov    sp, x2\n\t"
+        // restore stack pointer
+        "ldr    x2, [x0, #%c[sp]]\n\t"
+        "mov    sp, x2\n\t"
 
-		"add    x2, x0, #464\n\t"            // FPSIMD_CONTEXT_OFFSET
-		"ldp    q8, q9,   [x2, #144]\n\t"
-		"ldp    q10, q11, [x2, #176]\n\t"
-		"ldp    q12, q13, [x2, #208]\n\t"
-		"ldp    q14, q15, [x2, #240]\n\t"
+        // restore FP/SIMD callee-saved q8-q15
+        "add    x2, x0, #%c[reserved]\n\t"
+        "ldp    q8,  q9,  [x2, #%c[v8]]\n\t"
+        "ldp    q10, q11, [x2, #%c[v10]]\n\t"
+        "ldp    q12, q13, [x2, #%c[v12]]\n\t"
+        "ldp    q14, q15, [x2, #%c[v14]]\n\t"
 
-		/* save current program counter in link register */
-		"ldr    x16, [x0, #440]\n\t"         // PC_OFFSET
+        // target PC
+        "ldr    x16, [x0, #%c[pc]]\n\t"
 
-		/* restore args */
-		"ldp    x2, x3,   [x0, #200]\n\t"   // REG_OFFSET(2)
-		"ldp    x4, x5,   [x0, #216]\n\t"   // REG_OFFSET(4)
-		"ldp    x6, x7,   [x0, #232]\n\t"   // REG_OFFSET(6)
-		"ldp    x0, x1,   [x0, #184]\n\t"   // REG_OFFSET(0)
+        // restore arguments / return value registers
+        "ldp    x2, x3, [x0, #%c[reg2]]\n\t"
+        "ldp    x4, x5, [x0, #%c[reg4]]\n\t"
+        "ldp    x6, x7, [x0, #%c[reg6]]\n\t"
+        "ldp    x0, x1, [x0, #%c[reg0]]\n\t"
 
-		/* jump to new PC */
-		"br     x16\n"
-	);
+        "br     x16\n\t"
+        :
+        : [reg0] "i"(REG_OFFSET<0>),
+          [reg2] "i"(REG_OFFSET<2>),
+          [reg4] "i"(REG_OFFSET<4>),
+          [reg6] "i"(REG_OFFSET<6>),
+          [reg18] "i"(REG_OFFSET<18>),
+          [reg20] "i"(REG_OFFSET<20>),
+          [reg22] "i"(REG_OFFSET<22>),
+          [reg24] "i"(REG_OFFSET<24>),
+          [reg26] "i"(REG_OFFSET<26>),
+          [reg28] "i"(REG_OFFSET<28>),
+          [reg30] "i"(REG_OFFSET<30>),
+          [sp] "i"(SP_OFFSET),
+          [pc] "i"(PC_OFFSET),
+          [reserved] "i"(RESERVED_OFFSET),
+          [v8] "i"(FPSIMD_VREG<8>),
+          [v10] "i"(FPSIMD_VREG<10>),
+          [v12] "i"(FPSIMD_VREG<12>),
+          [v14] "i"(FPSIMD_VREG<14>)
+        : "memory"
+    );
 }
 
 inline auto setcontext(ucontext_t *uctxt) noexcept -> int {
@@ -115,50 +158,76 @@ inline auto trampoline() noexcept -> void {
 
 [[using gnu: naked, visibility("hidden")]]
 inline auto getcontext(ucontext_t *uc) noexcept -> int {
-	asm(
-		"str    xzr, [x0, #184]\n\t"        // REG_OFFSET(0)
+    asm(
+        "str    xzr, [x0, #%c[reg0]]\n\t"
 
 		/* save x2 and x3 for reuse */
-		"stp    x2, x3,   [x0, #200]\n\t"   // REG_OFFSET(2)
+        "stp    x2, x3, [x0, #%c[reg2]]\n\t"
 
 		/* save current program counter in link register */
-		"str    x30, [x0, #440]\n\t"         // PC_OFFSET
+        "str    x30, [x0, #%c[pc]]\n\t"
 
 		/* save current stack pointer */
-		"mov    x2, sp\n\t"
-		"str    x2, [x0, #432]\n\t"          // SP_OFFSET
+        "mov    x2, sp\n\t"
+        "str    x2, [x0, #%c[sp]]\n\t"
 
 		/* save pstate */
-		"str    xzr, [x0, #448]\n\t"         // PSTATE_OFFSET
+        "str    xzr, [x0, #%c[pstate]]\n\t"
 
-		"add    x2, x0, #464\n\t"            // FPSIMD_CONTEXT_OFFSET
-		"stp    q8, q9,   [x2, #144]\n\t"
-		"stp    q10, q11, [x2, #176]\n\t"
-		"stp    q12, q13, [x2, #208]\n\t"
-		"stp    q14, q15, [x2, #240]\n\t"
+        "add    x2, x0, #%c[reserved]\n\t"
+        "stp    q8,  q9,  [x2, #%c[v8]]\n\t"
+        "stp    q10, q11, [x2, #%c[v10]]\n\t"
+        "stp    q12, q13, [x2, #%c[v12]]\n\t"
+        "stp    q14, q15, [x2, #%c[v14]]\n\t"
 
 		/* save GPRs and return value 0 */
-		"mov    x2, x0\n\t"
-		"mov    x0, #0\n\t"
+        "mov    x2, x0\n\t"
+        "mov    x0, #0\n\t"
 
-		"stp    x0, x1,   [x2, #184]\n\t"   // REG_OFFSET(0)  — x0=0
-		"stp    x4, x5,   [x2, #216]\n\t"   // REG_OFFSET(4)
-		"stp    x6, x7,   [x2, #232]\n\t"   // REG_OFFSET(6)
-		"stp    x8, x9,   [x2, #248]\n\t"   // REG_OFFSET(8)
-		"stp    x10, x11, [x2, #264]\n\t"   // REG_OFFSET(10)
-		"stp    x12, x13, [x2, #280]\n\t"   // REG_OFFSET(12)
-		"stp    x14, x15, [x2, #296]\n\t"   // REG_OFFSET(14)
-		"stp    x16, x17, [x2, #312]\n\t"   // REG_OFFSET(16)
-		"stp    x18, x19, [x2, #328]\n\t"   // REG_OFFSET(18)
-		"stp    x20, x21, [x2, #344]\n\t"   // REG_OFFSET(20)
-		"stp    x22, x23, [x2, #360]\n\t"   // REG_OFFSET(22)
-		"stp    x24, x25, [x2, #376]\n\t"   // REG_OFFSET(24)
-		"stp    x26, x27, [x2, #392]\n\t"   // REG_OFFSET(26)
-		"stp    x28, x29, [x2, #408]\n\t"   // REG_OFFSET(28)
-		"str    x30,      [x2, #424]\n\t"   // REG_OFFSET(30)
+        "stp    x0, x1,   [x2, #%c[reg0]]\n\t"
+        "stp    x4, x5,   [x2, #%c[reg4]]\n\t"
+        "stp    x6, x7,   [x2, #%c[reg6]]\n\t"
+        "stp    x8, x9,   [x2, #%c[reg8]]\n\t"
+        "stp    x10, x11, [x2, #%c[reg10]]\n\t"
+        "stp    x12, x13, [x2, #%c[reg12]]\n\t"
+        "stp    x14, x15, [x2, #%c[reg14]]\n\t"
+        "stp    x16, x17, [x2, #%c[reg16]]\n\t"
+        "stp    x18, x19, [x2, #%c[reg18]]\n\t"
+        "stp    x20, x21, [x2, #%c[reg20]]\n\t"
+        "stp    x22, x23, [x2, #%c[reg22]]\n\t"
+        "stp    x24, x25, [x2, #%c[reg24]]\n\t"
+        "stp    x26, x27, [x2, #%c[reg26]]\n\t"
+        "stp    x28, x29, [x2, #%c[reg28]]\n\t"
+        "str    x30,      [x2, #%c[reg30]]\n\t"
 
-		"ret\n"
-	);
+        "ret\n\t"
+        :
+        : [reg0] "i"(REG_OFFSET<0>),
+          [reg2] "i"(REG_OFFSET<2>),
+          [reg4] "i"(REG_OFFSET<4>),
+          [reg6] "i"(REG_OFFSET<6>),
+          [reg8] "i"(REG_OFFSET<8>),
+          [reg10] "i"(REG_OFFSET<10>),
+          [reg12] "i"(REG_OFFSET<12>),
+          [reg14] "i"(REG_OFFSET<14>),
+          [reg16] "i"(REG_OFFSET<16>),
+          [reg18] "i"(REG_OFFSET<18>),
+          [reg20] "i"(REG_OFFSET<20>),
+          [reg22] "i"(REG_OFFSET<22>),
+          [reg24] "i"(REG_OFFSET<24>),
+          [reg26] "i"(REG_OFFSET<26>),
+          [reg28] "i"(REG_OFFSET<28>),
+          [reg30] "i"(REG_OFFSET<30>),
+          [sp] "i"(SP_OFFSET),
+          [pc] "i"(PC_OFFSET),
+          [pstate] "i"(PSTATE_OFFSET),
+          [reserved] "i"(RESERVED_OFFSET),
+          [v8] "i"(FPSIMD_VREG<8>),
+          [v10] "i"(FPSIMD_VREG<10>),
+          [v12] "i"(FPSIMD_VREG<12>),
+          [v14] "i"(FPSIMD_VREG<14>)
+        : "memory"
+    );
 }
 
 [[using gnu: visibility("hidden")]]
@@ -191,40 +260,40 @@ inline auto swapcontext(ucontext_t *oucp, ucontext_t *ucp) noexcept -> int {
 		// x0 = oucp
 		// x1 = ucp
 
-		"str    xzr, [x0, #184]\n\t"        // REG_OFFSET(0)
+        "str    xzr, [x0, #%c[reg0]]\n\t"         // REG_OFFSET(0)
 
 		/* save GPRs */
-		"stp    x2, x3,   [x0, #200]\n\t"   // REG_OFFSET(2)
-		"stp    x4, x5,   [x0, #216]\n\t"   // REG_OFFSET(4)
-		"stp    x6, x7,   [x0, #232]\n\t"   // REG_OFFSET(6)
-		"stp    x8, x9,   [x0, #248]\n\t"   // REG_OFFSET(8)
-		"stp    x10, x11, [x0, #264]\n\t"   // REG_OFFSET(10)
-		"stp    x12, x13, [x0, #280]\n\t"   // REG_OFFSET(12)
-		"stp    x14, x15, [x0, #296]\n\t"   // REG_OFFSET(14)
-		"stp    x16, x17, [x0, #312]\n\t"   // REG_OFFSET(16)
-		"stp    x18, x19, [x0, #328]\n\t"   // REG_OFFSET(18)
-		"stp    x20, x21, [x0, #344]\n\t"   // REG_OFFSET(20)
-		"stp    x22, x23, [x0, #360]\n\t"   // REG_OFFSET(22)
-		"stp    x24, x25, [x0, #376]\n\t"   // REG_OFFSET(24)
-		"stp    x26, x27, [x0, #392]\n\t"   // REG_OFFSET(26)
-		"stp    x28, x29, [x0, #408]\n\t"   // REG_OFFSET(28)
-		"str    x30,      [x0, #424]\n\t"   // REG_OFFSET(30)
+		"stp    x2, x3,   [x0, #%c[reg2]]\n\t"    // REG_OFFSET(2)
+		"stp    x4, x5,   [x0, #%c[reg4]]\n\t"    // REG_OFFSET(4)
+		"stp    x6, x7,   [x0, #%c[reg6]]\n\t"    // REG_OFFSET(6)
+		"stp    x8, x9,   [x0, #%c[reg8]]\n\t"    // REG_OFFSET(8)
+		"stp    x10, x11, [x0, #%c[reg10]]\n\t"   // REG_OFFSET(10)
+		"stp    x12, x13, [x0, #%c[reg12]]\n\t"   // REG_OFFSET(12)
+		"stp    x14, x15, [x0, #%c[reg14]]\n\t"   // REG_OFFSET(14)
+		"stp    x16, x17, [x0, #%c[reg16]]\n\t"   // REG_OFFSET(16)
+		"stp    x18, x19, [x0, #%c[reg18]]\n\t"   // REG_OFFSET(18)
+		"stp    x20, x21, [x0, #%c[reg20]]\n\t"   // REG_OFFSET(20)
+		"stp    x22, x23, [x0, #%c[reg22]]\n\t"   // REG_OFFSET(22)
+		"stp    x24, x25, [x0, #%c[reg24]]\n\t"   // REG_OFFSET(24)
+		"stp    x26, x27, [x0, #%c[reg26]]\n\t"   // REG_OFFSET(26)
+		"stp    x28, x29, [x0, #%c[reg28]]\n\t"   // REG_OFFSET(28)
+		"str    x30,      [x0, #%c[reg30]]\n\t"   // REG_OFFSET(30)
 
 		/* save current program counter in link register */
-		"str    x30, [x0, #440]\n\t"         // PC_OFFSET
+		"str    x30, [x0, #%c[pc]]\n\t"         // PC_OFFSET
 
 		/* save current stack pointer */
 		"mov    x2, sp\n\t"
-		"str    x2, [x0, #432]\n\t"          // SP_OFFSET
+		"str    x2, [x0, #%c[sp]]\n\t"          // SP_OFFSET
 
 		/* save pstate */
-		"str    xzr, [x0, #448]\n\t"         // PSTATE_OFFSET
+		"str    xzr, [x0, #%c[pstate]]\n\t"         // PSTATE_OFFSET
 
-		"add    x2, x0, #464\n\t"            // FPSIMD_CONTEXT_OFFSET
-		"stp    q8, q9,   [x2, #144]\n\t"
-		"stp    q10, q11, [x2, #176]\n\t"
-		"stp    q12, q13, [x2, #208]\n\t"
-		"stp    q14, q15, [x2, #240]\n\t"
+		"add    x2, x0, #%c[reserved]\n\t"          // FPSIMD_CONTEXT_OFFSET
+		"stp    q8, q9,   [x2, #%c[v8]]\n\t"
+		"stp    q10, q11, [x2, #%c[v10]]\n\t"
+		"stp    q12, q13, [x2, #%c[v12]]\n\t"
+		"stp    q14, q15, [x2, #%c[v14]]\n\t"
 
 		/* context to swap to is in x1 so... we move to x0 and call setcontext */
 		/* store our link register in x28 */
@@ -237,8 +306,36 @@ inline auto swapcontext(ucontext_t *oucp, ucontext_t *ucp) noexcept -> int {
 		/* hmm, we came back here try to return */
 		"mov    x30, x28\n\t"
 		"ret\n"
+        :
+        : [reg0] "i"(REG_OFFSET<0>),
+          [reg2] "i"(REG_OFFSET<2>),
+          [reg4] "i"(REG_OFFSET<4>),
+          [reg6] "i"(REG_OFFSET<6>),
+          [reg8] "i"(REG_OFFSET<8>),
+          [reg10] "i"(REG_OFFSET<10>),
+          [reg12] "i"(REG_OFFSET<12>),
+          [reg14] "i"(REG_OFFSET<14>),
+          [reg16] "i"(REG_OFFSET<16>),
+          [reg18] "i"(REG_OFFSET<18>),
+          [reg20] "i"(REG_OFFSET<20>),
+          [reg22] "i"(REG_OFFSET<22>),
+          [reg24] "i"(REG_OFFSET<24>),
+          [reg26] "i"(REG_OFFSET<26>),
+          [reg28] "i"(REG_OFFSET<28>),
+          [reg30] "i"(REG_OFFSET<30>),
+          [sp] "i"(SP_OFFSET),
+          [pc] "i"(PC_OFFSET),
+          [pstate] "i"(PSTATE_OFFSET),
+          [reserved] "i"(RESERVED_OFFSET),
+          [v8] "i"(FPSIMD_VREG<8>),
+          [v10] "i"(FPSIMD_VREG<10>),
+          [v12] "i"(FPSIMD_VREG<12>),
+          [v14] "i"(FPSIMD_VREG<14>)
+        : "memory"
 	);
 }
+
+// NOLINTEND
 
 } // namespace
 

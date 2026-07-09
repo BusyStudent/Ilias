@@ -30,7 +30,7 @@ ILIAS_NS_BEGIN
 class SocketView {
 public:
     SocketView() = default;
-    SocketView(socket_t fd) : mFd(fd) { }
+    SocketView(socket_t fd) : mFd(fd) {}
     SocketView(const SocketView &) = default;
 
     /**
