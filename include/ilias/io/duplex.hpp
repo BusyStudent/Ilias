@@ -44,19 +44,16 @@ ILIAS_NS_BEGIN
  */
 class ILIAS_API DuplexStream final : public StreamExt<DuplexStream> {
 public:
-    struct Impl;
-
     DuplexStream(DuplexStream &&) noexcept = default;
     DuplexStream() = default;
-    ~DuplexStream() = default;
 
     // Readable
     auto read(MutableBuffer buffer) -> IoTask<size_t>;
 
     // Writable
     auto write(Buffer buffer) -> IoTask<size_t>;
-    auto shutdown() -> IoTask<void>;
-    auto flush() -> IoTask<void>;
+    auto shutdown(); // IoTask<void>
+    auto flush(); // IoTask<void>
 
     // Cleanup
     auto close() -> void { d.reset(); }
@@ -75,7 +72,11 @@ public:
     // Check the stream is valid
     explicit operator bool() const noexcept { return bool(d); }
 private:
+    // Implementation
+    struct Impl;
+    static auto shutdownImpl(Impl *d, bool flip) -> void;
     static auto closeImpl(Impl *d, bool flip) -> void;
+    
     struct Deleter {
         bool flip; // Use bool flip, to make aother stream write on read buffer and read on write buffer
         auto operator ()(Impl *d) const -> void { closeImpl(d, flip); }
@@ -84,5 +85,24 @@ private:
     DuplexStream(Impl *i, bool flip) : d(i, Deleter {flip}) {}
     std::unique_ptr<Impl, Deleter> d;
 };
+
+// Implementation
+inline auto DuplexStream::shutdown() {
+    struct [[nodiscard]] Awaiter {
+        auto await_ready() -> bool { return true; }
+        auto await_suspend(std::coroutine_handle<> h) -> void {}
+        auto await_resume() -> IoResult<void> {
+            shutdownImpl(self.d.get(), self.d.get_deleter().flip);
+            return {};
+        }
+
+        DuplexStream &self;
+    };
+    return Awaiter {*this};
+}
+
+inline auto DuplexStream::flush() {
+    return just(IoResult<void>{}); // No-op
+}
 
 ILIAS_NS_END

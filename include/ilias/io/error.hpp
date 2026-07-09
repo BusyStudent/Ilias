@@ -58,6 +58,7 @@ public:
         HostDown,                    //< Host is down
         HostUnreachable,             //< Host is unreachable
         InProgress,                  //< Operation is in progress
+        Interrupted,                 //< Operation was interrupted
         InvalidArgument,             //< Invalid argument
         MessageTooLarge,             //< Message is too large
         NetworkDown,                 //< Network is down
@@ -69,6 +70,7 @@ public:
         ProtocolFamilyNotSupported,  //< Protocol family is not supported
         ProtocolNotSupported,        //< Protocol is not supported
         ProtocolOptionNotSupported,  //< Protocol option is not supported
+        ProtocolWrongTypeForSocket,  //< Protocol is not supported by the socket type
         SocketIsConnected,           //< Socket is connected
         SocketIsNotConnected,        //< Socket is not connected
         SocketShutdown,              //< Socket is shutdown

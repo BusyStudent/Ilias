@@ -466,7 +466,7 @@ public:
      * @return IoTask<uint64_t>
      */
     template <char = 0>
-    auto rewind() -> IoTask<uint64_t> requires Seekable<T> {
+    auto rewind() requires Seekable<T> {
         return static_cast<T &>(*this).seek(0, SeekOrigin::Begin);
     }
 
@@ -477,7 +477,7 @@ public:
      * @return IoTask<uint64_t> The position of the stream cursor
      */
     template <char = 0>
-    auto tell() -> IoTask<uint64_t> requires Seekable<T> {
+    auto tell() requires Seekable<T> {
         return static_cast<T &>(*this).seek(0, SeekOrigin::Current);
     }
 

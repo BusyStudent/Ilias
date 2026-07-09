@@ -242,7 +242,7 @@ ILIAS_TEST(Io, Duplex) {
     }
 
     // Try broken
-    a.close();
+    EXPECT_TRUE(co_await a.shutdown());
     std::byte tmp[10];
     EXPECT_EQ(co_await b.write("Hello, world!"_bin), 0);
     EXPECT_EQ(co_await b.read(makeBuffer(tmp)), 0);
@@ -361,6 +361,7 @@ ILIAS_TEST(Io, MemStream) {
         auto writer = MemWriter {std::ref(buffer)};
 
         EXPECT_TRUE(co_await writer.writeString("Hello"));
+        EXPECT_TRUE(co_await writer.flush());
         EXPECT_EQ(buffer, "Hello");
 
         EXPECT_TRUE(co_await writer.rewind());

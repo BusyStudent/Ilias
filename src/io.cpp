@@ -122,6 +122,7 @@ auto IoError::toStd() const -> std::errc {
         case IoError::HostDown                  : return std::errc::host_unreachable;
         case IoError::HostUnreachable           : return std::errc::host_unreachable;
         case IoError::InProgress                : return std::errc::operation_in_progress;
+        case IoError::Interrupted               : return std::errc::interrupted;
         case IoError::InvalidArgument           : return std::errc::invalid_argument;
         case IoError::SocketIsConnected         : return std::errc::already_connected;
         case IoError::TooManyOpenFiles          : return std::errc::too_many_files_open;
@@ -131,6 +132,7 @@ auto IoError::toStd() const -> std::errc {
         case IoError::NetworkUnreachable        : return std::errc::network_unreachable;
         case IoError::NoBufferSpaceAvailable    : return std::errc::no_buffer_space;
         case IoError::ProtocolOptionNotSupported: return std::errc::no_protocol_option;
+        case IoError::ProtocolWrongTypeForSocket: return std::errc::wrong_protocol_type;
         case IoError::SocketIsNotConnected      : return std::errc::not_connected;
         case IoError::NotASocket                : return std::errc::not_a_socket;
         case IoError::OperationNotSupported     : return std::errc::operation_not_supported;
@@ -218,6 +220,7 @@ auto SystemError::toIoError() const -> IoError {
         case SystemError::HostDown                  : return IoError::HostDown;
         case SystemError::HostUnreachable           : return IoError::HostUnreachable;
         case SystemError::InProgress                : return IoError::InProgress;
+        case SystemError::Interrupted               : return IoError::Interrupted;
         case SystemError::InvalidArgument           : return IoError::InvalidArgument;
         case SystemError::SocketIsConnected         : return IoError::SocketIsConnected;
         case SystemError::TooManyOpenFiles          : return IoError::TooManyOpenFiles;
@@ -227,6 +230,7 @@ auto SystemError::toIoError() const -> IoError {
         case SystemError::NetworkUnreachable        : return IoError::NetworkUnreachable;
         case SystemError::NoBufferSpaceAvailable    : return IoError::NoBufferSpaceAvailable;
         case SystemError::ProtocolOptionNotSupported: return IoError::ProtocolOptionNotSupported;
+        case SystemError::ProtocolWrongTypeForSocket: return IoError::ProtocolWrongTypeForSocket;
         case SystemError::SocketIsNotConnected      : return IoError::SocketIsNotConnected;
         case SystemError::NotASocket                : return IoError::NotASocket;
         case SystemError::OperationNotSupported     : return IoError::OperationNotSupported;
@@ -258,27 +262,15 @@ struct DuplexStream::Impl {
     ByteChannel read;
     ByteChannel write;
     std::atomic<uint8_t> ref {2}; // 2 because we have two streams
-};
 
-namespace {
-    auto wakeupIf(runtime::CoroHandle &handle) -> void {
-        if (handle) {
-            handle.schedule();
-            handle = nullptr;
+    // Utils
+    static auto wakeupIf(runtime::CoroHandle &handle) -> void {
+        auto prev = std::exchange(handle, nullptr);
+        if (prev) {
+            prev.schedule();
         }
     }
-
-    auto shutdownImpl(DuplexStream::Impl *d, bool flip) -> void {
-        auto &readChan = flip ? d->write : d->read;
-        auto &writeChan = flip ? d->read : d->write;
-        std::scoped_lock locker {readChan.mtx, writeChan.mtx};
-
-        readChan.readerClose = true;
-        writeChan.writerClose = true;
-        wakeupIf(readChan.writer);
-        wakeupIf(writeChan.reader);
-    }
-}
+};
 
 auto DuplexStream::make(size_t size) -> std::pair<DuplexStream, DuplexStream> {
     if (size == 0) {
@@ -320,7 +312,7 @@ auto DuplexStream::read(MutableBuffer buffer) -> IoTask<size_t> {
             chan.buffer.consume(left);
 
             // Wakeup writer if exists
-            wakeupIf(chan.writer);
+            Impl::wakeupIf(chan.writer);
             return left;
         }
         auto onStopRequested() -> void {
@@ -376,7 +368,7 @@ auto DuplexStream::write(Buffer buffer) -> IoTask<size_t> {
             chan.buffer.commit(left);
 
             // Wakeup reader if exists
-            wakeupIf(chan.reader);
+            Impl::wakeupIf(chan.reader);
             return left;
         }
 
@@ -407,13 +399,15 @@ auto DuplexStream::write(Buffer buffer) -> IoTask<size_t> {
     };
 }
 
-auto DuplexStream::shutdown() -> IoTask<void> {
-    shutdownImpl(d.get(), d.get_deleter().flip);
-    co_return {};
-}
+auto DuplexStream::shutdownImpl(Impl *d, bool flip) -> void {
+    auto &readChan = flip ? d->write : d->read;
+    auto &writeChan = flip ? d->read : d->write;
+    std::scoped_lock locker {readChan.mtx, writeChan.mtx};
 
-auto DuplexStream::flush() -> IoTask<void> {
-    co_return {}; // no-op
+    readChan.readerClose = true;
+    writeChan.writerClose = true;
+    Impl::wakeupIf(readChan.writer);
+    Impl::wakeupIf(writeChan.reader);
 }
 
 auto DuplexStream::closeImpl(Impl *d, bool flip) -> void {

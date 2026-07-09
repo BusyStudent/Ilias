@@ -23,20 +23,88 @@ public:
     constexpr MemStream(MemStream &&) = default;
 
     // Readable
-    auto read(MutableBuffer buffer) -> IoTask<size_t> requires(MemReadable<T>) {
+    auto read(MutableBuffer buffer) requires(MemReadable<T>) {
+        struct Awaiter {
+            auto await_ready() -> bool { return true; }
+            auto await_suspend(std::coroutine_handle<> handle) -> void {}
+            auto await_resume() -> IoResult<size_t> { return stream.doRead(buffer); }
+
+            MemStream &stream;
+            MutableBuffer buffer;
+        };
+        return Awaiter {
+            .stream = *this,
+            .buffer = buffer
+        };
+    }
+
+    // Writable
+    auto write(Buffer buffer) requires(MemWritable<T>) {
+        struct Awaiter {
+            auto await_ready() -> bool { return true; }
+            auto await_suspend(std::coroutine_handle<> handle) -> void {}
+            auto await_resume() -> IoResult<size_t> { return stream.doWrite(buffer); }
+
+            MemStream &stream;
+            Buffer buffer;
+        };
+        return Awaiter {
+            .stream = *this,
+            .buffer = buffer
+        };
+    }
+
+    auto shutdown() requires(MemWritable<T>) { 
+        IoResult<void> value{};
+        return just(value); // No-op
+    }
+
+    auto flush() requires(MemWritable<T>) { 
+        IoResult<void> value{};
+        return just(value); // No-op
+    }
+
+    // Seekable
+    auto seek(int64_t offset, SeekOrigin origin) {
+        struct Awaiter {
+            auto await_ready() -> bool { return true; }
+            auto await_suspend(std::coroutine_handle<> handle) -> void {}
+            auto await_resume() -> IoResult<uint64_t> { return stream.doSeek(offset, origin); }
+
+            MemStream &stream;
+            int64_t    offset;
+            SeekOrigin origin;
+        };
+        return Awaiter {
+            .stream = *this,
+            .offset = offset,
+            .origin = origin
+        };
+    }
+
+    // Get the memory buffer reference
+    auto buffer() -> T & { return mBuffer; }
+    auto buffer() const -> const T & { return mBuffer; }
+
+    // Check if we can append on this stream
+    static constexpr auto expendable() -> bool {
+        using Element = decltype(*std::begin(std::declval<T>())); // Check is bytes container
+        return MemWritable<T> && MemExpendable<T> && sizeof(Element) == 1;
+    }
+private:
+    auto doRead(MutableBuffer buffer) -> size_t {
         auto self = makeBuffer(mBuffer).subspan(mPos);
         auto bytes = std::min(buffer.size(), self.size());
         if (bytes > 0) {
             ::memcpy(buffer.data(), self.data(), bytes);
         }
         mPos += bytes;
-        co_return bytes;
+        return bytes;
     }
 
-    // Writable
-    auto write(Buffer buffer) -> IoTask<size_t> requires(MemWritable<T>) {
+    auto doWrite(Buffer buffer) -> size_t {
         if (buffer.empty()) {
-            co_return 0;
+            return 0;
         }
         while (true) {
             auto self = makeBuffer(mBuffer);
@@ -46,7 +114,7 @@ public:
                     continue;
                 }
                 else {
-                    co_return 0; // No space left
+                    return 0; // No space left
                 }
             }
             // Move to its position
@@ -56,20 +124,11 @@ public:
                 ::memcpy(self.data(), buffer.data(), bytes);
             }
             mPos += bytes;
-            co_return bytes;
+            return bytes;
         }
     }
 
-    auto shutdown() -> IoTask<void> requires(MemWritable<T>) { 
-        co_return {}; // No-op
-    }
-
-    auto flush() -> IoTask<void> requires(MemWritable<T>) { 
-        co_return {}; // No-op
-    }
-
-    // Seekable
-    auto seek(int64_t offset, SeekOrigin origin) -> IoTask<uint64_t> {
+    auto doSeek(int64_t offset, SeekOrigin origin) -> uint64_t {
         auto self = makeBuffer(mBuffer);
         auto size = static_cast<int64_t>(self.size());
         auto pos = static_cast<int64_t>(mPos);
@@ -85,19 +144,9 @@ public:
             pos = size;
         }
         mPos = pos;
-        co_return mPos;
+        return mPos;
     }
 
-    // Get the memory buffer reference
-    auto buffer() -> T & { return mBuffer; }
-    auto buffer() const -> const T & { return mBuffer; }
-
-    // Check if we can append on this stream
-    static constexpr auto expendable() -> bool {
-        using Element = decltype(*std::begin(std::declval<T>())); // Check is bytes container
-        return MemWritable<T> && MemExpendable<T> && sizeof(Element) == 1;
-    }
-private:
     T      mBuffer;    // The buffer to read from
     size_t mPos {};    // How many bytes have been read
 };

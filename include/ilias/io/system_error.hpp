@@ -20,11 +20,11 @@
 
 #if   defined(_WIN32)
     #include <ilias/detail/win32defs.hpp>
-    #define MAP(x) WSA##x
+    #define ILIAS_MAP(x) WSA##x
 #elif defined(__unix__)
-    #include <errno.h>
-    #include <string.h>
-    #define MAP(x) x
+    #include <cstring>
+    #include <cerrno>
+    #define ILIAS_MAP(x) x
 #endif
 
 ILIAS_NS_BEGIN
@@ -45,7 +45,6 @@ public:
 private:
     constexpr SystemCategory() noexcept {}
 };
-
 /**
  * @brief System Error class, wrapping the system error (Win32 or POSIX)
  * 
@@ -58,47 +57,49 @@ public:
      */
     enum Code : error_t {
         Ok                            = 0,
-        AccessDenied                  = MAP(EACCES),
-        AddressInUse                  = MAP(EADDRINUSE),
-        AddressNotAvailable           = MAP(EADDRNOTAVAIL),
-        AddressFamilyNotSupported     = MAP(EAFNOSUPPORT),
-        AlreadyInProgress             = MAP(EALREADY),
-        BadFileDescriptor             = MAP(EBADF),
-        ConnectionAborted             = MAP(ECONNABORTED),
-        ConnectionRefused             = MAP(ECONNREFUSED),
-        ConnectionReset               = MAP(ECONNRESET),
-        DestinationAddressRequired    = MAP(EDESTADDRREQ),
-        BadAddress                    = MAP(EFAULT),
-        HostDown                      = MAP(EHOSTDOWN),
-        HostUnreachable               = MAP(EHOSTUNREACH),
-        InProgress                    = MAP(EINPROGRESS),
-        InvalidArgument               = MAP(EINVAL),
-        SocketIsConnected             = MAP(EISCONN),
-        TooManyOpenFiles              = MAP(EMFILE),
-        MessageTooLarge               = MAP(EMSGSIZE),
-        NetworkDown                   = MAP(ENETDOWN),
-        NetworkReset                  = MAP(ENETRESET),
-        NetworkUnreachable            = MAP(ENETUNREACH),
-        NoBufferSpaceAvailable        = MAP(ENOBUFS),
-        ProtocolOptionNotSupported    = MAP(ENOPROTOOPT),
-        SocketIsNotConnected          = MAP(ENOTCONN),
-        NotASocket                    = MAP(ENOTSOCK),
-        OperationNotSupported         = MAP(EOPNOTSUPP),
-        ProtocolFamilyNotSupported    = MAP(EPFNOSUPPORT),
-        ProtocolNotSupported          = MAP(EPROTONOSUPPORT),
-        SocketShutdown                = MAP(ESHUTDOWN),
-        SocketTypeNotSupported        = MAP(ESOCKTNOSUPPORT),
-        TimedOut                      = MAP(ETIMEDOUT),
-        WouldBlock                    = MAP(EWOULDBLOCK),
+        AccessDenied                  = ILIAS_MAP(EACCES),
+        AddressInUse                  = ILIAS_MAP(EADDRINUSE),
+        AddressNotAvailable           = ILIAS_MAP(EADDRNOTAVAIL),
+        AddressFamilyNotSupported     = ILIAS_MAP(EAFNOSUPPORT),
+        AlreadyInProgress             = ILIAS_MAP(EALREADY),
+        BadFileDescriptor             = ILIAS_MAP(EBADF),
+        ConnectionAborted             = ILIAS_MAP(ECONNABORTED),
+        ConnectionRefused             = ILIAS_MAP(ECONNREFUSED),
+        ConnectionReset               = ILIAS_MAP(ECONNRESET),
+        DestinationAddressRequired    = ILIAS_MAP(EDESTADDRREQ),
+        BadAddress                    = ILIAS_MAP(EFAULT),
+        HostDown                      = ILIAS_MAP(EHOSTDOWN),
+        HostUnreachable               = ILIAS_MAP(EHOSTUNREACH),
+        InProgress                    = ILIAS_MAP(EINPROGRESS),
+        Interrupted                   = ILIAS_MAP(EINTR),
+        InvalidArgument               = ILIAS_MAP(EINVAL),
+        SocketIsConnected             = ILIAS_MAP(EISCONN),
+        TooManyOpenFiles              = ILIAS_MAP(EMFILE),
+        MessageTooLarge               = ILIAS_MAP(EMSGSIZE),
+        NetworkDown                   = ILIAS_MAP(ENETDOWN),
+        NetworkReset                  = ILIAS_MAP(ENETRESET),
+        NetworkUnreachable            = ILIAS_MAP(ENETUNREACH),
+        NoBufferSpaceAvailable        = ILIAS_MAP(ENOBUFS),
+        ProtocolOptionNotSupported    = ILIAS_MAP(ENOPROTOOPT),
+        ProtocolWrongTypeForSocket    = ILIAS_MAP(EPROTOTYPE),
+        SocketIsNotConnected          = ILIAS_MAP(ENOTCONN),
+        NotASocket                    = ILIAS_MAP(ENOTSOCK),
+        OperationNotSupported         = ILIAS_MAP(EOPNOTSUPP),
+        ProtocolFamilyNotSupported    = ILIAS_MAP(EPFNOSUPPORT),
+        ProtocolNotSupported          = ILIAS_MAP(EPROTONOSUPPORT),
+        SocketShutdown                = ILIAS_MAP(ESHUTDOWN),
+        SocketTypeNotSupported        = ILIAS_MAP(ESOCKTNOSUPPORT),
+        TimedOut                      = ILIAS_MAP(ETIMEDOUT),
+        WouldBlock                    = ILIAS_MAP(EWOULDBLOCK),
 #if   defined(ERROR_OPERATION_ABORTED) // For windows cancellation
         Canceled                      = ERROR_OPERATION_ABORTED,
-#elif defined(ECANCELED) // For linux cancellation
+#elif defined(ECANCELED)               // For linux cancellation
         Canceled                      = ECANCELED,
 #endif
     };
 
-    constexpr explicit SystemError(error_t err) : mErr(err) { }
-    constexpr SystemError(Code err) : mErr(err) { }
+    constexpr explicit SystemError(error_t err) : mErr(err) {}
+    constexpr SystemError(Code err) : mErr(err) {}
     constexpr SystemError() = default;
 
     /**
@@ -181,4 +182,4 @@ struct std::is_error_code_enum<ilias::SystemError::Code> : std::true_type {};
 template <>
 struct std::is_error_code_enum<ilias::SystemError> : std::true_type {};
 
-#undef MAP
+#undef ILIAS_MAP

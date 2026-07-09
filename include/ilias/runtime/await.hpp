@@ -170,7 +170,7 @@ using AwaitableSequenceValue = AwaitableResult<std::ranges::range_value_t<T> >;
  * @tparam T 
  */
 template <typename T>
-struct JustAwaiter {
+struct [[nodiscard]] JustAwaiter {
     using SkipTracing = void;
     auto await_ready() { return true; }
     auto await_suspend(auto any) {}
@@ -180,7 +180,7 @@ struct JustAwaiter {
 };
 
 template <>
-struct JustAwaiter<void> : std::suspend_never {};
+struct [[nodiscard]] JustAwaiter<void> : std::suspend_never {};
 
 /**
  * @brief Create a awaitable of result T
@@ -190,7 +190,6 @@ struct JustAwaiter<void> : std::suspend_never {};
  * @return JustAwaiter<T> 
  */
 template <typename T>
-[[nodiscard]]
 inline auto just(T value) -> JustAwaiter<T> {
     return { std::move(value) };
 }
