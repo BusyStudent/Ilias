@@ -180,7 +180,7 @@ public:
     }
 
 
-// For chain, doSomething() | await
+    // For chain, doSomething() | await
     template <Awaitable T>
     friend auto operator |(T awaitable, Await tags) -> AwaitableResult<T> {
         return tags(std::move(awaitable));

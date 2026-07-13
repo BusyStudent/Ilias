@@ -102,21 +102,35 @@ ILIAS_TEST(Task, TaskGroup) {
 }
 
 ILIAS_TEST(Task, WhenAllSequence) {
-    auto vec = std::vector<Task<int> > {};
-    for (auto i : views::iota(0, 10)) {
-        vec.emplace_back(returnAfterSleep(i));
+    {
+        auto vec = std::vector<Task<int> > {};
+        for (auto i : views::iota(0, 10)) {
+            vec.emplace_back(returnAfterSleep(i));
+        }
+        auto result = co_await whenAll(std::move(vec));
+        EXPECT_EQ(result.size(), 10);
+        for (auto i : result) {
+            EXPECT_TRUE(i < 10 && i >= 0);
+        }
+    } // Test empty vector
+    {
+        auto result = co_await whenAll(std::vector<Task<void> > {});
+        EXPECT_EQ(result.size(), 0);
     }
-    auto result = co_await whenAll(std::move(vec));
-    EXPECT_EQ(result.size(), 10);
 }
 
 ILIAS_TEST(Task, WhenAnySequence) {
-    auto vec = std::vector<Task<int> > {};
-    for (auto i : views::iota(0, 10)) {
-        vec.emplace_back(returnAfterSleep(i));
+    {
+        auto vec = std::vector<Task<int> > {};
+        for (auto i : views::iota(0, 10)) {
+            vec.emplace_back(returnAfterSleep(i));
+        }
+        auto result = co_await whenAny(std::move(vec));
+        EXPECT_TRUE(result < 10 && result >= 0);
+    } // Test empty vector
+    {
+        EXPECT_THROW(co_await whenAny(std::vector<Task<void> > {}), std::invalid_argument);
     }
-    auto result = co_await whenAny(std::move(vec));
-    EXPECT_TRUE(result < 10 && result >= 0);
 }
 
 ILIAS_TEST(Task, Unstoppable) {

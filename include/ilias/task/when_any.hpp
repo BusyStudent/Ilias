@@ -17,6 +17,8 @@
 #include <ilias/task/task.hpp>
 #include <ilias/log.hpp>
 #include <variant> // std::monostate
+#include <vector> // std::vector
+#include <ranges> // std::range
 #include <array> // std::array
 #include <tuple> // std::tuple
 #include <span> // std::span
@@ -45,6 +47,27 @@ struct [[ILIAS_CORO_AWAIT_ELIDABLE]] WhenAnyTuple final {
     CaptureSource mSource; // The source location of the await point
 
     // Set the context of the task, call on await_transform
+    auto setContext(CoroContext &context, CaptureSource source) noexcept {
+        mContext = &context;
+        mSource = source;
+    }
+};
+
+
+/**
+ * @brief tags for when all on sequence
+ * 
+ * @tparam T 
+ */
+template <typename T>
+struct [[ILIAS_CORO_AWAIT_ELIDABLE]] WhenAnySequence final {
+    // As same as tuple version
+    std::vector<TaskContext> mTasks;
+    CoroContext  *mContext = nullptr;
+
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
+    CaptureSource mSource;
+
     auto setContext(CoroContext &context, CaptureSource source) noexcept {
         mContext = &context;
         mSource = source;
@@ -176,9 +199,26 @@ private:
     }
 };
 
+// The typed part
+template <typename T>
+class WhenAnySequenceAwaiter final : public WhenAnyAwaiterBase {
+public:
+    using WhenAnyAwaiterBase::WhenAnyAwaiterBase; // Inherit the constructor
+
+    auto await_resume() {
+        ILIAS_ASSERT(mGot, "No value produced, but await_resume called?, ??? INTERNAL BUG");
+        return TaskHandle<T>::cast(mGot->task()).value();
+    }
+};
+
 template <typename ...Ts>
 inline auto operator co_await(WhenAnyTuple<Ts...> &&tuple) noexcept {
     return WhenAnyAwaiter<Ts...> {tuple.mTasks, *tuple.mContext, tuple.mSource};
+}
+
+template <typename T>
+inline auto operator co_await(WhenAnySequence<T> &&seq) noexcept {
+    return WhenAnySequenceAwaiter<T> {seq.mTasks, *seq.mContext, seq.mSource};
 }
 
 } // namespace task
@@ -195,10 +235,36 @@ inline auto operator co_await(WhenAnyTuple<Ts...> &&tuple) noexcept {
  */
 template <Awaitable ...Ts> requires(sizeof...(Ts) > 0)
 [[nodiscard]]
-inline auto whenAny([[ILIAS_CORO_ELIDABLE_ARGUMENT]] Ts && ...args) noexcept {
+inline auto whenAny([[ILIAS_CORO_ELIDABLE_ARGUMENT]] Ts && ...args) {
     return task::WhenAnyTuple<AwaitableResult<Ts>... > { // Construct the task for the given awaitable
         .mTasks = { task::TaskContext {toTask(std::forward<Ts>(args))._leak()}... },
         .mContext = nullptr // The context will be set in await_transform
+    };
+}
+
+/**
+ * @brief When any of the tasks in the sequence is completed, return the result of the task.
+ * 
+ * @tparam T 
+ * @param seq The sequence of tasks. (can't be empty)
+ * @return The value of the task that has been completed first.
+ */
+template <AwaitableSequence T>
+[[nodiscard]]
+inline auto whenAny([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T seq) {
+    std::vector<task::TaskContext> tasks{};
+    if constexpr (std::ranges::sized_range<T>) {
+        tasks.reserve(std::ranges::size(seq));
+    }
+    for (auto &awaitable : seq) { // Construct the task for the given awaitable to an vector
+        tasks.emplace_back(toTask(std::move(awaitable))._leak());
+    }
+    if (tasks.empty()) { // Contract violation
+        ILIAS_THROW(std::invalid_argument{"Can't whenAny on empty sequence"});
+    }
+    return task::WhenAnySequence<AwaitableSequenceValue<T> > {
+        .mTasks = std::move(tasks),
+        .mContext = nullptr,
     };
 }
 
@@ -206,7 +272,7 @@ template <Awaitable T1, Awaitable T2>
 [[nodiscard]]
 inline auto operator ||(
     [[ILIAS_CORO_ELIDABLE_ARGUMENT]] T1 &&a,
-    [[ILIAS_CORO_ELIDABLE_ARGUMENT]] T2 &&b) noexcept 
+    [[ILIAS_CORO_ELIDABLE_ARGUMENT]] T2 &&b) 
 {
     return whenAny(std::forward<T1>(a), std::forward<T2>(b));
 }

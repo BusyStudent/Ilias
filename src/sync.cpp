@@ -108,7 +108,7 @@ auto AwaiterBase::await_suspend(runtime::CoroHandle caller) -> bool {
 
 inline
 auto AwaiterBase::onStopRequested() -> void {
-    auto ref = std::atomic_ref {mWaiting};
+    std::atomic_ref ref {mWaiting};
     if (!ref.load()) { // We already got the wakeup, ignore it
         return;
     }

@@ -2,6 +2,7 @@
 #pragma once
 
 #include <ilias/defines.hpp>
+#include <stdexcept>
 #include <exception>
 #include <utility>
 
@@ -42,7 +43,7 @@ public:
         return bool(mPtr);
     }
 
-    // Get the current exception
+    // Get the current exception, only can be called from within a catch block
     [[nodiscard]]
     static auto currentException() -> ExceptionPtr {
         return std::current_exception();
@@ -75,7 +76,7 @@ public:
 
     [[nodiscard]]
     static auto currentException() -> ExceptionPtr {
-        return {};
+        std::terminate(); // No exceptions when build, but still call this?, so terminate
     }
 };
 
