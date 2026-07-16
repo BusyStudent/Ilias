@@ -1,11 +1,11 @@
 /**
- * @file mpsc.hpp
+ * @file mpmc.hpp
  * @author BusyStudent (fyw90mc@gmail.com)
- * @brief The multi producer single consumer channel.
+ * @brief The multi producer multi consumer channel.
  * @version 0.1
- * @date 2024-10-30
+ * @date 2026-07-16
  * 
- * @copyright Copyright (c) 2024
+ * @copyright Copyright (c) 2026
  * 
  */
 #pragma once
@@ -20,9 +20,11 @@
 #include <atomic> // std::atomic
 #include <deque>
 
+// TODO: Duplicated code with mpmc.hpp, maye we can refactor it?
+
 ILIAS_NS_BEGIN
 
-namespace mpsc {
+namespace mpmc {
 
 // Forward declaration
 template <typename T>
@@ -37,7 +39,7 @@ namespace detail {
 template <Sendable T>
 class Channel final {
 public:
-    Channel(size_t c) : capacity(c) { }
+    Channel(size_t c) : capacity(c) {}
     Channel(Channel &&) = delete;
     ~Channel() { // Check state
         ILIAS_ASSERT(receiverClosed);
@@ -98,13 +100,13 @@ public:
     // States
     const size_t          capacity       {0};     // The capacity of the channel. read only.
     bool                  senderClosed   {false}; // If all the sender is closed.
-    bool                  receiverClosed {false};
-    std::atomic<uint8_t>  refcount       {2};     // for sender & receiver, on 0 destroy self
+    bool                  receiverClosed {false}; // If all the receiver is closed.
+    std::atomic<uint8_t>  refcount       {2};     // for sender & receiver sides, on 0 destroy self
 
     // Sync, all queue's wakeup must call without lock the mutex, we may lock the mutex in the onWakeup. it will deadlock.
-    sync::FutexMutex      mutex; // Protect the queue, reserved, senderCount, and receiverClosed.
+    sync::FutexMutex      mutex; // Protect the queue, reserved, and closed flags.
     sync::WaitQueue       senders;
-    sync::WaitQueue       receiver;
+    sync::WaitQueue       receivers;
     std::deque<T>         queue; // For storing the items.
     size_t                reserved {0}; // The num of reserved items
 };
@@ -119,8 +121,8 @@ public:
             chan->senderClosed = true; // All sender is closed.
             notify = !chan->receiverClosed; // If the receiver is closed, not need to notify.
         }
-        if (notify) { // Receiver is not closed, we should wakeup the receiver.
-            chan->receiver.wakeupOne();
+        if (notify) { // Wake all receivers so they can observe the closed state.
+            chan->receivers.wakeupAll();
         }
         chan->deref();
     }
@@ -137,7 +139,7 @@ public:
             notify = !chan->senderClosed; // If the sender is all closed, not need to notify.
         }
         if (notify) {
-            chan->senders.wakeupAll(); // Because it is multi producer, use wakeupAll
+            chan->senders.wakeupAll(); // Multi producer, use wakeupAll
         }
         chan->deref();
     }
@@ -163,12 +165,12 @@ public:
 template <Sendable T>
 class SendAwaiter final : public sync::WaitAwaiter<SendAwaiter<T> > {
 public:
-    SendAwaiter(Channel<T> *c, T value) : sync::WaitAwaiter<SendAwaiter<T> >(c->senders), mChan(c), mResult(Err(std::move(value))) {};
+    SendAwaiter(Channel<T> *c, T value) : sync::WaitAwaiter<SendAwaiter<T> >(c->senders), mChan(c), mResult(Err(std::move(value))) {}
     SendAwaiter(SendAwaiter &&) = default;
 
     auto await_resume() -> Result<void, T> {
         if (mResult) { // Is sended
-            mChan->receiver.wakeupOne();
+            mChan->receivers.wakeupOne();
         }
         return std::move(mResult);
     }
@@ -184,7 +186,7 @@ private:
 template <Sendable T>
 class ReceiveAwaiter final : public sync::WaitAwaiter<ReceiveAwaiter<T> > {
 public:
-    ReceiveAwaiter(Channel<T> *c) : sync::WaitAwaiter<ReceiveAwaiter<T> >(c->receiver), mChan(c) {}
+    ReceiveAwaiter(Channel<T> *c) : sync::WaitAwaiter<ReceiveAwaiter<T> >(c->receivers), mChan(c) {}
     ReceiveAwaiter(ReceiveAwaiter &&) = default;
 
     auto await_resume() -> std::optional<T> {
@@ -223,6 +225,8 @@ private:
     bool        mGot = false;
 };
 
+// Sender side and receiver side own independent shared_ptr control blocks on the same Channel*.
+// Last side destruction runs its custom deleter then Channel::deref.
 template <Sendable T>
 using ChanSender     = std::shared_ptr<Channel<T> >;
 
@@ -230,10 +234,13 @@ template <Sendable T>
 using ChanWeakSender = std::weak_ptr<Channel<T> >;
 
 template <Sendable T>
-using ChanPermit     = std::unique_ptr<Channel<T>, ChanPermitDeleter>;
+using ChanReceiver   = std::shared_ptr<Channel<T> >;
 
 template <Sendable T>
-using ChanReceiver   = std::unique_ptr<Channel<T>, ChanReceiverDeleter>;
+using ChanWeakReceiver = std::weak_ptr<Channel<T> >;
+
+template <Sendable T>
+using ChanPermit     = std::unique_ptr<Channel<T>, ChanPermitDeleter>;
 
 } // namespace detail
 
@@ -266,7 +273,7 @@ struct TrySendErrorResult {
 };
 
 /**
- * @brief The mpsc permit class, this class is used to reserve a item slot for the channel.
+ * @brief The mpmc permit class, this class is used to reserve a item slot for the channel.
  * 
  * @tparam T 
  */
@@ -289,7 +296,7 @@ public:
             ptr->queue.emplace_back(std::move(item));
             ptr->reserved -= 1;
         }
-        ptr->receiver.wakeupOne();
+        ptr->receivers.wakeupOne();
         ptr.release(); // Don't decrease the reserved count, we already do it
     }
 
@@ -316,7 +323,7 @@ friend class detail::ReserveAwaiter;
 };
 
 /**
- * @brief The mpsc sender class. This class is used to send data to the channel. (copy & move able)
+ * @brief The mpmc sender class. This class is used to send data to the channel. (copy & move able)
  * 
  * @tparam T The item type to be sent.
  */
@@ -393,8 +400,8 @@ public:
         mChan->queue.emplace_back(std::move(item));
         locker.unlock();
 
-        // Success to send, wakeup the receiver.
-        mChan->receiver.wakeupOne();
+        // Success to send, wakeup one receiver.
+        mChan->receivers.wakeupOne();
         return {};
     }
 
@@ -409,8 +416,8 @@ public:
     auto blockingSend(T item) const -> Result<void, T> {
         Result<void, T> result {Err(std::move(item))}; // First put it to error as unsended.
         mChan->senders.blockingWait([&]() { return mChan->trySendInternal(result); });
-        if (result) { // Success to send, wakeup the receiver.
-            mChan->receiver.wakeupOne();
+        if (result) { // Success to send, wakeup one receiver.
+            mChan->receivers.wakeupOne();
         }
         return result;
     }
@@ -498,7 +505,7 @@ private:
 };
 
 /**
- * @brief The mpsc receiver class. This class is used to receive data from the channel. (only moveable)
+ * @brief The mpmc receiver class. This class is used to receive data from the channel. (copy & move able)
  * 
  * @tparam T The item type to be received.
  */
@@ -506,7 +513,7 @@ template <Sendable T>
 class Receiver final {
 public:
     Receiver() = default;
-    Receiver(const Receiver &) = delete;
+    Receiver(const Receiver &) = default;
     Receiver(Receiver &&) = default;
     ~Receiver() = default;
 
@@ -531,8 +538,17 @@ public:
     }
 
     /**
+     * @brief Get the capacity of the channel.
+     * 
+     * @return size_t 
+     */
+    auto capacity() const noexcept -> size_t {
+        return mChan ? mChan->capacity : 0;
+    }
+
+    /**
      * @brief Receive a item from the channel.
-     * @note Don't use the recv or blockingRecv method concurrently, only one task can use it at a time.
+     * @note Concurrent recv on multiple receivers is supported.
      * 
      * @return std::optional<T>, nullopt on the channel is closed
      */
@@ -559,7 +575,7 @@ public:
         mChan->queue.pop_front();
         locker.unlock();
 
-        // Success to recv, wakeup the sender.
+        // Success to recv, wakeup one sender.
         mChan->senders.wakeupOne();
         return std::move(value);
     }
@@ -567,7 +583,7 @@ public:
     /**
      * @brief Blocking Receive a item from the channel.
      * @note 
-     *  - Don't use the recv or blockingRecv method concurrently, only one thread can use it at a time.
+     *  - Concurrent blockingRecv on multiple receivers is supported.
      * 
      *  - It will ```BLOCK``` the thread, so it is not recommended to use it in the async context, use it in sync code
      * 
@@ -576,14 +592,24 @@ public:
     [[nodiscard]]
     auto blockingRecv() noexcept(std::is_nothrow_move_constructible_v<T>) -> std::optional<T> {
         std::optional<T> value {};
-        mChan->receiver.blockingWait([&]() { return mChan->tryRecvInternal(value); });
-        if (value) { // Success to recv, wakeup the sender.
+        mChan->receivers.blockingWait([&]() { return mChan->tryRecvInternal(value); });
+        if (value) { // Success to recv, wakeup one sender.
             mChan->senders.wakeupOne();
         }
         return value;
     }
 
-    auto operator =(const Receiver &other) = delete;
+    /**
+     * @brief Get the refcount of all the receivers.
+     * 
+     * @return size_t 
+     */
+    [[nodiscard]]
+    auto useCount() const noexcept -> size_t {
+        return mChan ? mChan.use_count() : 0;
+    }
+
+    auto operator =(const Receiver &other) -> Receiver & = default;
     auto operator =(Receiver &&other) -> Receiver & = default;
 
     // Check the receiver is valid
@@ -591,15 +617,42 @@ public:
         return bool(mChan);   
     }
 private:
-    explicit Receiver(detail::Channel<T> *chan) : mChan(chan) {}
+    explicit Receiver(detail::ChanReceiver<T> chan) : mChan(std::move(chan)) {}
 
     detail::ChanReceiver<T> mChan;
 template <Sendable U>
 friend auto channel(size_t capacity) -> Pair<U>;
+template <Sendable U>
+friend class WeakReceiver;
 };
 
 /**
- * @brief Make a channel for multi producer and single consumer.
+ * @brief The weak receiver, it doesn't prevent the channel from being closed.
+ * 
+ * @tparam T The item type to be received.
+ */
+template <Sendable T>
+class WeakReceiver final {
+public:
+    WeakReceiver() = default;
+    WeakReceiver(const WeakReceiver &) = default;
+    WeakReceiver(WeakReceiver &&) = default;
+    ~WeakReceiver() = default;
+
+    auto close() noexcept -> void {
+        mChan.reset();
+    }
+
+    // Try upgrade the weak to strong
+    auto lock() -> Receiver<T> {
+        return Receiver<T> {mChan.lock()};
+    }
+private:
+    detail::ChanWeakReceiver<T> mChan;
+};
+
+/**
+ * @brief Make a channel for multi producer and multi consumer.
  * 
  * @tparam T The item type to be sent and received. (must be moveable)
  * @param capacity The capacity of the channel. (abort on 0), default on SIZET_MAX (no limit)
@@ -615,10 +668,14 @@ inline auto channel(size_t capacity = std::numeric_limits<size_t>::max()) -> Pai
                 ptr, detail::ChanSenderDeleter {}
             }
         },
-        .receiver = Receiver<T> {ptr}
+        .receiver = Receiver<T> {
+            detail::ChanReceiver<T> {
+                ptr, detail::ChanReceiverDeleter {}
+            }
+        }
     };
 }
 
-} // namespace mpsc
+} // namespace mpmc
 
 ILIAS_NS_END

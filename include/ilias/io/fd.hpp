@@ -1,7 +1,6 @@
 #pragma once
 
 #include <ilias/io/system_error.hpp>
-#include <ilias/io/fd_utils.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/io/error.hpp>
 #include <memory>
@@ -63,7 +62,7 @@ public:
     auto operator <=>(const FileDescriptor &other) const noexcept = default;
     auto operator =(FileDescriptor &&other) noexcept -> FileDescriptor & { swap(other); return *this; }
 
-    // Get the fd_t value, impl IntoFileDescriptor concept
+    // Get the fd_t value, impl BorrowFileDescriptor concept
     explicit operator fd_t() const noexcept { return mFd; }
 
     // Check the fd is valid

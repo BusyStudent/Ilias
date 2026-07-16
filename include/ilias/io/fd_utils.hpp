@@ -12,6 +12,7 @@
 
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/context.hpp> // For IoDescriptor::Type
+#include <ilias/io/fd.hpp> // For FileDescriptor
 #include <string>
 
 #if defined(_WIN32)
@@ -33,8 +34,8 @@ namespace fd_utils {
  * 
  */
 struct PipePair {
-    fd_t writer;
-    fd_t reader;
+    FileDescriptor writer;
+    FileDescriptor reader;
 };
 
 /**
@@ -49,16 +50,19 @@ inline auto pipe() -> IoResult<PipePair> {
     if (!win32::pipe(&reader, &writer)) {
         return Err(SystemError::fromErrno());
     }
-    return PipePair {writer, reader};
 #else
     int fds[2];
-    if (::pipe(fds) == 0) {
-        return PipePair {fds[1], fds[0]};
+    if (::pipe2(fds, O_CLOEXEC | O_NONBLOCK) != 0) {
+        return Err(SystemError::fromErrno());
     }
-
-    return Err(SystemError::fromErrno());
+    int reader = fds[0];
+    int writer = fds[1];
 #endif // defined(_WIN32)
 
+    return PipePair {
+        .writer = FileDescriptor{writer},
+        .reader = FileDescriptor{reader}
+    };
 }
 
 /**

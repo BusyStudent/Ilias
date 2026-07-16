@@ -16,3 +16,4 @@
 #include <ilias/sync/mutex.hpp>
 #include <ilias/sync/event.hpp>
 #include <ilias/sync/mpsc.hpp>
+#include <ilias/sync/mpmc.hpp>

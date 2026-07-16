@@ -112,8 +112,8 @@ public:
      */
     static auto make() -> IoResult<PipePair> {
         ILIAS_TRY(auto pair, fd_utils::pipe());
-        ILIAS_TRY(auto writer, IoHandle<FileDescriptor>::make(FileDescriptor {pair.writer}, IoDescriptor::Pipe));
-        ILIAS_TRY(auto reader, IoHandle<FileDescriptor>::make(FileDescriptor {pair.reader}, IoDescriptor::Pipe));
+        ILIAS_TRY(auto writer, IoHandle<FileDescriptor>::make(std::move(pair.writer), IoDescriptor::Pipe));
+        ILIAS_TRY(auto reader, IoHandle<FileDescriptor>::make(std::move(pair.reader), IoDescriptor::Pipe));
         return PipePair {
             .writer = PipeWriter {std::move(writer)},
             .reader = PipeReader {std::move(reader)}
