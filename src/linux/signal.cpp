@@ -4,6 +4,7 @@
 #include <ilias/io/fd.hpp> // FileDescriptor
 #include <ilias/signal.hpp>
 #include <unistd.h>
+#include <fcntl.h> // O_NONBLOCK, O_CLOEXEC
 #include <csignal>
 #include <atomic>
 #include <mutex> // std::call_once

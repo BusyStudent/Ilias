@@ -109,6 +109,9 @@ public:
         mManager = TaskSpawnContext::manager;
     }
 
+    // Virtual delete
+    using TaskSpawnContextBase::operator delete;
+
     // Get the value of the task, nullopt if the task is stopped
     auto value() -> Option<T> {
         ILIAS_ASSERT(mCompleted, "??? INTERNAL BUG");
@@ -116,9 +119,13 @@ public:
         return std::move(mValue);
     }
 
-    // Allocate the spawn task context
+    // Allocate / free the spawn task context.
     auto operator new(size_t size) -> void * {
         return runtime::allocate(size);
+    }
+
+    auto operator delete(void *ptr, size_t size) noexcept -> void {
+        return runtime::deallocate(ptr, size);
     }
 protected:
     static auto manager(TaskSpawnContextBase &_self, Ops op) -> void {

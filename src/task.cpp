@@ -396,7 +396,9 @@ auto FinallyAwaiterBase::onTaskCompletion() -> void {
 
         // Store the context info
         auto &executor = mContext->executor();
+#if defined(ILIAS_CORO_TRACE)
         auto parent = mContext->parent();
+#endif // ILIAS_CORO_TRACE
         mStopped = mContext->isStopped();
         mReg.reset();
 
