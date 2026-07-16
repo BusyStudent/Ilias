@@ -146,6 +146,7 @@ template <typename U>
 friend class List;
 };
 
+// MARK: List
 // The instrusive list, it doesn't take the ownship of the nodes
 template <typename T>
 class List final : protected ListBase {
@@ -228,6 +229,7 @@ public:
     }
 };
 
+// MARK: RefCounted
 // The refcounted object, note that it's not thread safe
 template <typename T>
 class RefCounted {
@@ -267,6 +269,7 @@ concept RefCountedLike = requires(T &t) {
     { t.use_count() } -> std::same_as<size_t>;
 };
 
+// MARK: Rc
 // The smart pointer of the refcounted object
 template <RefCountedLike T>
 class Rc final {

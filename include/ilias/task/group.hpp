@@ -118,21 +118,22 @@ public:
     /**
      * @brief Spawn a task and to the group, 
      * 
-     * @param task The task to spawn. (can't be empty)
+     * @param awaitable The task to spawn. construct from the awaitable
      * @return StopHandle
      */
-    auto spawn(Task<T> task, runtime::CaptureSource source = {}) -> StopHandle {
-        return insert(::ilias::spawn(std::move(task), source));
+    template <Awaitable U> requires (std::is_same_v<AwaitableResult<U>, T>)
+    auto spawn(U awaitable, runtime::CaptureSource source = {}) -> StopHandle {
+        return insert(::ilias::spawn(std::move(awaitable), source));
     }
 
     /**
      * @brief Spawn a task and to the group,
      * 
      * @tparam Fn 
-     * @param fn the function that creates the task.
+     * @param fn the function that creates the awaitable.
      * @return StopHandle
      */
-    template <std::invocable Fn> requires (std::is_same_v<std::invoke_result_t<Fn>, Task<T> >)
+    template <std::invocable Fn> requires (std::is_same_v<AwaitableResult<std::invoke_result_t<Fn> >, T>)
     auto spawn(Fn fn, runtime::CaptureSource source = {}) -> StopHandle {
         return insert(::ilias::spawn(std::move(fn), source));
     }
@@ -165,6 +166,7 @@ public:
      * @return true 
      * @return false 
      */
+    [[nodiscard]]
     auto empty() const noexcept -> bool {
         return mGroup.size() == 0;
     }

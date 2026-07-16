@@ -209,15 +209,6 @@ public:
     // Other operator
     auto operator =(CoroContext &&) -> CoroContext & = default;
 
-    // Memory pool for coroutines (maybe.)
-    auto operator new(size_t n) -> void * {
-        return allocate(n);
-    }
-
-    auto operator delete(void *ptr, size_t n) noexcept -> void {
-        return deallocate(ptr, n);
-    }
-
     ILIAS_API
     static auto fromId(TaskId id) noexcept -> CoroContext *;
 private:

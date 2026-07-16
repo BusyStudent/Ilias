@@ -19,9 +19,8 @@ ILIAS_NS_BEGIN
  */
 class ILIAS_API TaskScope final {
 public:
-    TaskScope();
     TaskScope(const TaskScope &) = delete;
-    TaskScope(TaskScope &&) = delete;
+    TaskScope();
     ~TaskScope();
 
     /**
@@ -72,9 +71,9 @@ public:
     }
 
     // Spawn
-    template <typename T>
-    auto spawn(Task<T> task, runtime::CaptureSource source = {}) -> StopHandle {
-        return insert(::ilias::spawn(std::move(task), source));
+    template <Awaitable T>
+    auto spawn(T awaitable, runtime::CaptureSource source = {}) -> StopHandle {
+        return insert(::ilias::spawn(std::move(awaitable), source));
     }
 
     template <std::invocable Fn>

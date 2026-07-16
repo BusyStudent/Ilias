@@ -47,7 +47,7 @@ ILIAS_TEST(Fiber, Spawn) {
     auto fiber = Fiber([]() {
         return 42;
     });
-    auto handle = spawn(toTask(std::move(fiber)));
+    auto handle = spawn(std::move(fiber));
     EXPECT_EQ(co_await std::move(handle), 42);
 
     // With stop
@@ -61,7 +61,7 @@ ILIAS_TEST(Fiber, Spawn) {
         // Never reached
         ILIAS_TRAP();
     });
-    auto handle2 = spawn(toTask(std::move(fiber2)));
+    auto handle2 = spawn(std::move(fiber2));
     handle2.stop();
     EXPECT_FALSE(co_await std::move(handle2));
     EXPECT_TRUE(reached);
