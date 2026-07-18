@@ -18,21 +18,21 @@ public:
 
 #if !defined(NDEBUG)
     ~FutexMutex() {
-        ILIAS_ASSERT(mState.load() == Unlocked);
+        ILIAS_ASSERT(mState.load() == Unlocked, "Destroyed locked mutex, this is a bug!");
     }
 #endif // defined(NDEBUG)
 
     auto lock() noexcept -> void {
-        auto expected = Unlocked;
+        State expected = Unlocked;
 
         // Fast path, try to acquire the lock
-        if (mState.compare_exchange_weak(expected, Locked, std::memory_order_acquire)) {
+        if (mState.compare_exchange_weak(expected, Locked, std::memory_order_acquire, std::memory_order_relaxed)) { // If failed, use the relaxed memory order
             return;
         }
 
         while(true) {
             if (expected == Locked) { // Lock, try to add waiting mark
-                if (mState.compare_exchange_weak(expected, LockedWithWaiters, std::memory_order_acquire)) {
+                if (mState.compare_exchange_weak(expected, LockedWithWaiters, std::memory_order_acquire, std::memory_order_relaxed)) {
                     expected = LockedWithWaiters; // Successfully update the mark
                 }
             }
@@ -44,7 +44,7 @@ public:
             // Try again
             expected = Unlocked;
 
-            if (mState.compare_exchange_weak(expected, Locked, std::memory_order_acquire)) {
+            if (mState.compare_exchange_weak(expected, Locked, std::memory_order_acquire, std::memory_order_relaxed)) {
                 // Got it
                 return;
             }
@@ -53,7 +53,7 @@ public:
 
     auto unlock() noexcept -> void {
         auto prev = mState.exchange(Unlocked, std::memory_order_release);
-        ILIAS_ASSERT(prev != Unlocked); // Unlock an unlocked mutex is Prohhibited
+        ILIAS_ASSERT(prev != Unlocked, "Unlock an unlocked mutex is Prohhibited");
         if (prev == LockedWithWaiters) {
             // Must use notify_all(). With notify_one(), a woken thread (T2) can acquire the lock,
             // and then unlock without notifying anyone, leaving other waiting threads (T3) abandoned.

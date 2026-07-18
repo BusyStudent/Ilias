@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/sync/detail/channel_core.hpp> // ChannelBase
 #include <ilias/sync/detail/futex.hpp> // FutexMutex
 #include <ilias/runtime/coro.hpp>
 #include <ilias/task/task.hpp>
@@ -36,7 +37,7 @@ namespace detail {
  * @tparam T 
  */
 template <typename T>
-class Channel {
+class Channel final : public sync::ChannelBase {
 public:
     auto notify() -> void {
         if (receiver) {
@@ -55,6 +56,17 @@ public:
         mutex.unlock();
     }
 
+    auto onSenderClose() -> void {
+        std::lock_guard locker {*this};
+        senderClose = true;
+        notify(); // Notify the receiver we are closed
+    }
+
+    auto onReceiverClose() -> void {
+        std::lock_guard locker {*this};
+        receiverClose = true;
+    }
+
     runtime::CoroHandle receiver; // The caller that is suspended on the recv operation
     std::optional<T>    value;
     sync::FutexMutex    mutex;
@@ -66,46 +78,11 @@ public:
     bool                receiverClose {false};
 };
 
-class ChanSenderDeleter {
-public:
-    template <typename T>
-    auto operator()(Channel<T> *chan) -> void {
-        bool delete_ = false;
-        {
-            auto locker = std::lock_guard {*chan};
-            chan->senderClose = true;
-            chan->notify(); // Notify the receiver we are closed
-            delete_ = chan->receiverClose; // Reciever already closed, no-one own the data block, delete!
-        }
-
-        if (delete_) {
-            delete chan;
-        }
-    }
-};
-
-class ChanReceiverDeleter {
-public:
-    template <typename T>
-    auto operator()(Channel<T> *chan) -> void {
-        bool delete_ = false;
-        {
-            auto locker = std::lock_guard {*chan};
-            chan->receiverClose = true;
-            delete_ = chan->senderClose; // Sender already closed, no-one own the data block, delete!
-        }
-
-        if (delete_) {
-            delete chan;
-        }
-    }
-};
+template <typename T>
+using ChanSender = std::unique_ptr<Channel<T>, sync::ChanSenderDeleter>;
 
 template <typename T>
-using ChanSender = std::unique_ptr<Channel<T>, ChanSenderDeleter>;
-
-template <typename T>
-using ChanReceiver = std::unique_ptr<Channel<T>, ChanReceiverDeleter>;
+using ChanReceiver = std::unique_ptr<Channel<T>, sync::ChanReceiverDeleter>;
 
 /**
  * @brief Do the recv operation
@@ -162,9 +139,8 @@ private:
 
 } // namespace detail
 
-
-template <typename T>
-concept Sendable = std::is_move_constructible_v<T> && (!std::is_reference_v<T>);
+// Re-import helpers type
+using sync::Sendable;
 
 template <Sendable T>
 class Sender;
@@ -211,7 +187,7 @@ public:
         if (!mChan) {
             return true;
         }
-        auto locker = std::lock_guard {*mChan};
+        std::lock_guard locker {*mChan};
         return mChan->senderClose;
     }
 
@@ -220,7 +196,7 @@ public:
         if (!mChan) {
             return true;
         }
-        auto locker = std::lock_guard {*mChan};
+        std::lock_guard locker {*mChan};
         return !mChan->value.has_value();
     }
 
@@ -230,8 +206,8 @@ public:
      * @return std::optional<T>, nullopt on closed
      */
     [[nodiscard]]
-    auto recv() {
-        return detail::RecvAwaiter<T> {std::move(mChan)};
+    auto recv() -> detail::RecvAwaiter<T> {
+        return {std::exchange(mChan, nullptr)};
     }
 
     /**
@@ -241,7 +217,7 @@ public:
      */
     [[nodiscard]]
     auto tryRecv() -> Result<T, TryRecvError> {
-        auto locker = std::unique_lock {*mChan};
+        std::unique_lock locker {*mChan};
 
         // Check value
         if (!mChan->value && mChan->senderClose) {

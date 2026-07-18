@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <ilias/sync/detail/channel_core.hpp> // ChannelBase
 #include <ilias/sync/detail/futex.hpp> // FutexMutex
 #include <ilias/sync/detail/queue.hpp> // WaitQueue
 #include <ilias/task/task.hpp>
@@ -26,10 +27,10 @@ ILIAS_NS_BEGIN
 
 namespace mpmc {
 
-// Forward declaration
-template <typename T>
-concept Sendable = std::is_move_constructible_v<T> && (!std::is_reference_v<T>);
+// Re-import types
+using sync::Sendable;
 
+// Forward declaration
 template <Sendable T>
 class Permit;
 
@@ -37,7 +38,7 @@ class Permit;
 namespace detail {
 
 template <Sendable T>
-class Channel final {
+class Channel final : public sync::ChannelBase {
 public:
     Channel(size_t c) : capacity(c) {}
     Channel(Channel &&) = delete;
@@ -75,6 +76,18 @@ public:
         return true; // Reserved
     }
 
+    auto onSenderClose() -> void {
+        bool notify = false;
+        {
+            std::lock_guard locker {mutex};
+            senderClosed = true; // All sender is closed.
+            notify = !receiverClosed; // If the receiver is closed, not need to notify.
+        }
+        if (notify) { // Wake all receivers so they can observe the closed state.
+            receivers.wakeupAll();
+        }
+    }
+
     // For receiver
     auto tryRecvInternal(std::optional<T> &value) -> bool {
         std::lock_guard locker {mutex};
@@ -89,11 +102,15 @@ public:
         return false;
     }
 
-    auto deref() -> void {
-        auto prev = refcount.fetch_sub(1, std::memory_order_acq_rel);
-        ILIAS_ASSERT(prev != 0, "Can't deref a channel that is already destroyed");
-        if (prev == 1) { // Last one
-            delete this;
+    auto onReceiverClose() -> void {
+        bool notify = false;
+        {
+            std::lock_guard locker {mutex};
+            receiverClosed = true; // All receiver is closed.
+            notify = !senderClosed; // If the sender is all closed, not need to notify.
+        }
+        if (notify) {
+            senders.wakeupAll(); // Multi producer, use wakeupAll
         }
     }
 
@@ -101,7 +118,6 @@ public:
     const size_t          capacity       {0};     // The capacity of the channel. read only.
     bool                  senderClosed   {false}; // If all the sender is closed.
     bool                  receiverClosed {false}; // If all the receiver is closed.
-    std::atomic<uint8_t>  refcount       {2};     // for sender & receiver sides, on 0 destroy self
 
     // Sync, all queue's wakeup must call without lock the mutex, we may lock the mutex in the onWakeup. it will deadlock.
     sync::FutexMutex      mutex; // Protect the queue, reserved, and closed flags.
@@ -109,40 +125,6 @@ public:
     sync::WaitQueue       receivers;
     std::deque<T>         queue; // For storing the items.
     size_t                reserved {0}; // The num of reserved items
-};
-
-class ChanSenderDeleter final {
-public:
-    template <Sendable T>
-    auto operator ()(Channel<T> *chan) {
-        bool notify = false;
-        {
-            std::lock_guard locker {chan->mutex};
-            chan->senderClosed = true; // All sender is closed.
-            notify = !chan->receiverClosed; // If the receiver is closed, not need to notify.
-        }
-        if (notify) { // Wake all receivers so they can observe the closed state.
-            chan->receivers.wakeupAll();
-        }
-        chan->deref();
-    }
-};
-
-class ChanReceiverDeleter final {
-public:
-    template <Sendable T>
-    auto operator ()(Channel<T> *chan) {
-        bool notify = false;
-        {
-            std::lock_guard locker {chan->mutex};
-            chan->receiverClosed = true; // All receiver is closed.
-            notify = !chan->senderClosed; // If the sender is all closed, not need to notify.
-        }
-        if (notify) {
-            chan->senders.wakeupAll(); // Multi producer, use wakeupAll
-        }
-        chan->deref();
-    }
 };
 
 // Used for Permit<T>
@@ -226,7 +208,7 @@ private:
 };
 
 // Sender side and receiver side own independent shared_ptr control blocks on the same Channel*.
-// Last side destruction runs its custom deleter then Channel::deref.
+// Last side destruction runs its custom deleter then Channel::onDeref.
 template <Sendable T>
 using ChanSender     = std::shared_ptr<Channel<T> >;
 
@@ -665,12 +647,12 @@ inline auto channel(size_t capacity = std::numeric_limits<size_t>::max()) -> Pai
     return {
         .sender = Sender<T> {
             detail::ChanSender<T> {
-                ptr, detail::ChanSenderDeleter {}
+                ptr, sync::ChanSenderDeleter {}
             }
         },
         .receiver = Receiver<T> {
             detail::ChanReceiver<T> {
-                ptr, detail::ChanReceiverDeleter {}
+                ptr, sync::ChanReceiverDeleter {}
             }
         }
     };
