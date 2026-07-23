@@ -60,6 +60,7 @@ English | [中文](README_zh.md)
       - [C++ Standard](#c-standard)
       - [Build System](#build-system)
     - [Known Limitations](#known-limitations)
+  - [Credits](#credits)
   - [Contributing](#contributing)
   - [License](#license)
 
@@ -568,7 +569,7 @@ auto fn() -> ilias::Task<void> {
 #### Compiler Support
 
 - GCC: 11+
-- Clang: 15+ (requires CTAD for alias)
+- Clang: 19+ (requires CTAD for alias)
 - MSVC: (Visual Studio 2022)
 
 #### C++ Standard
@@ -584,6 +585,15 @@ auto fn() -> ilias::Task<void> {
 
 - Currently only supports Linux and Windows.
 - macOS support is planned (but I don't have a macOS device).
+
+## Credits
+
+- [asio](https://github.com/chriskohlhoff/asio)
+- [tokio](https://github.com/tokio-rs/tokio)
+- [cppcoro](https://github.com/lewissbaker/cppcoro)
+- [wepoll](https://github.com/piscisaureus/wepoll)
+- [stdexection](https://github.com/nvidia/stdexec)
+- [QCoro](https://github.com/qcoro/qcoro)
 
 ## Contributing
 

@@ -118,118 +118,26 @@ public:
         mUser = user;
     }
 
-    // MARK: Tracing
-#if defined(ILIAS_CORO_TRACE)
-    // TRACING: Set the parent of the ctxt
-    auto setParent(CoroContext &parent) noexcept -> void {
-        if (!parent.mParent) { // The parent is the root
-            mRoot = &parent;
-        }
-        else {
-            mRoot = parent.mRoot; // Has parent, used the cache
-        }
-        mParent = &parent;
+    // TRACING: Get the trace context
+    auto tracing() const noexcept -> const TraceContext & {
+        return mTraceContext;
     }
 
-    // TRACING: Set the name of the ctxt
-    ILIAS_API
-    auto setName(std::string_view name) noexcept -> void;
-
-    // TRACING: Push the frame to the stack, return the index of the frame
-    template <typename ...Args>
-    auto pushFrame(Args &&...args) noexcept {
-        mFrames.emplace_back(std::forward<Args>(args)...);
-        return mFrames.size() - 1;
+    auto tracing() noexcept -> TraceContext & {
+        return mTraceContext;
     }
-
-    // TRACING: Pop the frame from the stack
-    auto popFrame() noexcept -> void {
-        ILIAS_ASSERT(!mFrames.empty());
-        mFrames.pop_back();
-    }
-
-    // TRACING: Get the top frame of the ctxt (return pointer, nullptr on empty)
-    auto topFrame() noexcept {
-        return mFrames.empty() ? nullptr : &mFrames.back();
-    }
-
-    auto topFrame() const noexcept {
-        return mFrames.empty() ? nullptr : &mFrames.back();
-    }
-
-    // TRACING: Get the stacktrace of the ctxt
-    auto stacktrace() const noexcept {
-        auto vec = std::vector<StackFrame> {};
-        for (auto cur = this; cur != nullptr; cur = cur->mParent) {
-            vec.insert(vec.end(), cur->mFrames.rbegin(), cur->mFrames.rend());
-        }
-        return Stacktrace { std::move(vec) };
-    }
-
-    // TRACING: Get the parent of the ctxt
-    auto parent() const noexcept {
-        return mParent;
-    }
-
-    // TRACING: Get the debug name of the ctxt
-    auto name() const noexcept {
-        return std::string_view {mName};
-    }
-
-    // TRACING: 
-    ILIAS_API
-    auto id() noexcept -> TaskId.
-
-    ILIAS_API
-    auto tracingSpawn(CaptureSource source = {}) noexcept -> void;
-
-    ILIAS_API
-    auto tracingComplete() noexcept -> void;
-    
-    ILIAS_API
-    auto tracingResume() noexcept -> void;
-
-    ILIAS_API
-    auto tracingSuspend() noexcept -> void;
-#else // Disabled
-    auto setParent(CoroContext &) noexcept {}
-    auto setName(std::string_view) noexcept {}
-    auto pushFrame(auto ...) noexcept { return 0; }
-    auto popFrame() noexcept {}
-    auto stacktrace() const noexcept { return Stacktrace {}; }
-    auto parent() const noexcept { return static_cast<CoroContext *>(nullptr); }
-    auto name() const noexcept { return std::string_view {}; }
-    auto id() const noexcept { return static_cast<TaskId>(reinterpret_cast<intptr_t>(this)); }
-    auto tracingSpawn(CaptureSource source = {}) noexcept {}
-    auto tracingComplete(CaptureSource source = {}) noexcept {}
-    auto tracingResume(CaptureSource source = {}) noexcept {}
-    auto tracingSuspend(CaptureSource source = {}) noexcept {}
-#endif // defined(ILIAS_CORO_TRACE)
 
     // Other operator
     auto operator =(CoroContext &&) -> CoroContext & = default;
-
-    ILIAS_API
-    static auto fromId(TaskId id) noexcept -> CoroContext *;
+    auto operator =(const CoroContext &) -> CoroContext & = delete;
 private:
-    auto meta() noexcept -> TraceMeta &;                     // Lazy initialization of the meta data
-
     StopSource    mStopSource;                               // Used to request cooperative cancellation
     Executor     *mExecutor = nullptr;
     void        (*mStoppedHandler)(CoroContext &) = nullptr; // Called when coroutine is stopped
     void         *mUser = nullptr;                           // The user data, useful in the callback
     bool          mStopped = false;                          // The coroutine is actually stopped
-#if defined(ILIAS_CORO_TRACE)
-    bool          mStarted = false;                          // The coroutine is started
-    bool          mSuspended = true;                         // The coroutine is suspended
-    CoroContext  *mParent = nullptr;                         // Use for stacktrace to dump the whole stack
-    CoroContext  *mRoot = nullptr;                           // The root context of the coroutine (spawn or blocking wait), used for tracing
-    TraceMeta     mMeta;                                     // The meta data of the coroutine, used for tracing
-    std::string   mName;                                     // The name of the coroutine, used for tracing
-    std::vector<StackFrame> mFrames;                         // The frames of the coroutine,
-#endif // defined(ILIAS_CORO_TRACE)
-template <typename T, bool Forward>
-friend class TracingAwaitable;
+    [[ILIAS_NO_UNIQUE_ADDRESS]]
+    TraceContext  mTraceContext;                             // The context used for tracing
 friend class CoroPromise;
 friend class CoroHandle;
 };
@@ -278,7 +186,7 @@ public:
         // TRACING: Update the current await point's line number
         // Our frame should be the top frame of the context
         // co_await sth; 
-        auto frame = mContext->topFrame();
+        auto frame = mContext->tracing().topFrame();
         ILIAS_ASSERT(frame); // Already push on init
         frame->setLine(source.toLocation().line());
         frame->setMessage({}); // Clear it
@@ -295,7 +203,7 @@ public:
         }
         else {
             static_assert(Forward || std::move_constructible<std::decay_t<T> >, "Awaitable must be move_constructible, it will be moved to the awaiter");
-            return TracingAwaitable<T, Forward> { std::forward<T>(awaitable), mContext}; // Wrap it with tracing
+            return TracingAwaitable<T, Forward> { std::forward<T>(awaitable), mContext->tracing()}; // Wrap it with tracing
         }
 #else
         return std::forward<T>(awaitable);
@@ -323,8 +231,8 @@ public:
         ILIAS_ASSERT(mContext, "Coroutine context must be set before coroutine starts");
 #if defined(ILIAS_CORO_TRACE)
         // TRACING: Push the frame, we are start now
-        mContext->tracingResume();
-        mContext->pushFrame(mCreation);
+        mContext->tracing().resume();
+        mContext->tracing().pushFrame(mCreation);
 #endif // defined(ILIAS_CORO_TRACE)
     }
 
@@ -335,7 +243,7 @@ public:
         }
 #if defined(ILIAS_CORO_TRACE)
         // TRACING: Cleanup the frame belong to us
-        mContext->popFrame();
+        mContext->tracing().popFrame();
 #endif // defined(ILIAS_CORO_TRACE)
         return mPrevAwaiting;
     }
@@ -478,70 +386,6 @@ private:
 #endif // defined(ILIAS_USE_CORO_ABI)
 };
 
-#if defined(ILIAS_CORO_TRACE)
-// MARK: TracingAwaitable
-// Add hooks to an awaitable, used for tracing
-template <typename T, bool Forward>
-class TracingAwaitable {
-public:
-    template <typename U>
-    using DecayIf     = std::conditional_t<Forward, U, std::decay_t<U> >;
-    using Awaitable   = DecayIf<T>;
-    using Awaiter     = DecayIf<decltype(toAwaiter(std::declval<T>()))>;
-
-    // Move version, store it by value
-    TracingAwaitable(T awaitable, CoroContext *ctxt) requires(!Forward) : 
-        mAwaitable(std::move(awaitable)), 
-        mAwaiter(toAwaiter(std::move(mAwaitable))),
-        mCtxt(*ctxt) {}
-
-    // Forward version, just store the reference
-    TracingAwaitable(T awaitable, CoroContext *ctxt) requires(Forward) :
-        mAwaitable(std::forward<T>(awaitable)),
-        mAwaiter(toAwaiter(std::forward<T>(mAwaitable))),
-        mCtxt(*ctxt) {}
-
-    // MUST NRVO, Pin the awaitable, avoid the awaiter implementation need an stable awaitable address, it will cause dangling if move
-    TracingAwaitable(const TracingAwaitable &) = delete;
-
-    // Hooks
-    auto await_ready() noexcept(noexcept(mAwaiter.await_ready())) { 
-        return mAwaiter.await_ready(); 
-    }
-
-    template <typename U>
-    auto await_suspend(std::coroutine_handle<U> handle) noexcept(noexcept(mAwaiter.await_suspend(handle))) {
-        using Ret = decltype(mAwaiter.await_suspend(handle));
-        if constexpr (std::is_same_v<Ret, void>) {
-            mAwaiter.await_suspend(handle);
-            mCtxt.tracingSuspend();
-            return;
-        }
-        else if constexpr (std::convertible_to<Ret, bool>) { // Return bool
-            auto ret = mAwaiter.await_suspend(handle);
-            if (ret) { // true on actually suspend
-                mCtxt.tracingSuspend();
-            }
-            return ret;
-        }
-        else { // std::coroutine_handle<>
-            auto ret = mAwaiter.await_suspend(handle);
-            mCtxt.tracingSuspend();
-            return ret;
-        }
-    }
-
-    auto await_resume() noexcept(noexcept(mAwaiter.await_resume())) -> decltype(auto) { 
-        mCtxt.tracingResume();
-        return mAwaiter.await_resume();
-    }
-private:
-    Awaitable mAwaitable;
-    Awaiter   mAwaiter;
-    CoroContext &mCtxt;
-};
-#endif // defined(ILIAS_CORO_TRACE)
-
 } // namespace runtime
 
 // MARK: This Coro
@@ -644,7 +488,7 @@ inline auto yield() noexcept {
 inline auto stacktrace() noexcept {
     struct Awaiter : AwaiterBase {
         auto await_resume() noexcept {
-            return mCtxt->stacktrace();
+            return mCtxt->tracing().stacktrace();
         }
     };
 
@@ -656,7 +500,7 @@ inline auto stacktrace() noexcept {
 inline auto name() noexcept {
     struct Awaiter : AwaiterBase {
         auto await_resume() noexcept {
-            return mCtxt->name();
+            return mCtxt->tracing().name();
         }
     };
 
@@ -667,7 +511,7 @@ inline auto name() noexcept {
 inline auto setName(std::string_view name) noexcept {
     struct Awaiter : AwaiterBase {
         auto await_resume() noexcept {
-            mCtxt->setName(name);
+            mCtxt->tracing().setName(name);
         }
 
         std::string_view name;

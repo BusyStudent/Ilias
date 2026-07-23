@@ -83,20 +83,20 @@ public:
         // Start all first
 #if defined(ILIAS_CORO_TRACE)
         // TRACING: mark the current await point we are on whenAny
-        if (auto frame = mContext.topFrame(); frame) {
+        if (auto frame = mContext.tracing().topFrame(); frame) {
             frame->setMessage("whenAny");
         }
 #endif // defined(ILIAS_CORO_TRACE)
         mLeft = 0;
         for (auto &ctxt: mTasks) {
             ctxt.setUserdata(this);
-            ctxt.setParent(mContext);
             ctxt.setExecutor(mContext.executor());
             ctxt.setStoppedHandler(&onTaskCompleted);
             ctxt.task().setCompletionHandler(&onTaskCompleted);
 
             // TRACING: a subtask is started
-            ctxt.tracingSpawn(mSource);
+            ctxt.tracing().setParent(mContext.tracing());
+            ctxt.tracing().spawn(mSource);
             mLeft += 1;
             mStarted += 1;
             ctxt.task().resume();
@@ -129,7 +129,7 @@ protected:
         auto &self = *static_cast<WhenAnyAwaiterBase *>(ctxt.userdata());
 
         // TRACING: a subtask is completed
-        ctxt.tracingComplete();
+        ctxt.tracing().complete();
         if (!ctxt.isStopped()) { // Only not stopped task can be got (value produced)
             if (self.mGot == nullptr) {
                 self.mGot = &ctxt; // The first completed task

@@ -70,20 +70,20 @@ public:
         // Start all first
 #if defined(ILIAS_CORO_TRACE)
         // TRACING: mark the current await point we are on whenAll
-        if (auto frame = mContext.topFrame(); frame) {
+        if (auto frame = mContext.tracing().topFrame(); frame) {
             frame->setMessage("whenAll");
         }
 #endif // defined(ILIAS_CORO_TRACE)
         mLeft = mTasks.size();
         for (auto &ctxt: mTasks) {
             ctxt.setUserdata(this);
-            ctxt.setParent(mContext);
             ctxt.setExecutor(mContext.executor());
             ctxt.setStoppedHandler(&onTaskCompleted);
             ctxt.task().setCompletionHandler(&onTaskCompleted);
 
             // TRACING: a subtask is started
-            ctxt.tracingSpawn(mSource);
+            ctxt.tracing().setParent(mContext.tracing());
+            ctxt.tracing().spawn(mSource);
             ctxt.task().resume();
         }
         return mLeft == 0;
@@ -107,7 +107,7 @@ protected:
         self.mLeft -= 1;
 
         // TRACING: a subtask is completed
-        ctxt.tracingComplete();
+        ctxt.tracing().complete();
         if (self.mLeft != 0) {
             return; // Still has some imcomplete tasks
         }

@@ -20,7 +20,7 @@ public:
 
     auto await_ready() -> bool {
         auto handle = mAwaiter.task();
-        mCtxt.tracingSpawn(mSource);
+        mCtxt.tracing().spawn(mSource);
         handle.setContext(mCtxt); // Use the unstoppable context
         return mAwaiter.await_ready();
     }
@@ -30,7 +30,7 @@ public:
     }
 
     auto await_resume() -> T {
-        mCtxt.tracingComplete();
+        mCtxt.tracing().complete();
         return mAwaiter.await_resume();
     }
 
@@ -38,12 +38,12 @@ public:
     auto setContext(runtime::CoroContext &ctxt, runtime::CaptureSource sorce) {
 #if defined(ILIAS_CORO_TRACE)
         // TRACING: mark the current await point is unstoppable
-        if (auto frame = mCtxt.topFrame(); frame) {
+        if (auto frame = mCtxt.tracing().topFrame(); frame) {
             frame->setMessage("unstoppable");
         }
+        mCtxt.tracing().setParent(ctxt.tracing());
 #endif // defined(ILIAS_CORO_TRACE)
         // We just need the executor info from the context
-        mCtxt.setParent(ctxt);
         mCtxt.setExecutor(ctxt.executor());
         mSource = sorce;
     }
@@ -105,10 +105,10 @@ public:
     // TRACING: mark the await point is scheduleOn
 #if defined(ILIAS_CORO_TRACE)
     auto setContext(runtime::CoroContext &ctxt) {
-        if (auto frame = ctxt.topFrame(); frame) {
+        if (auto frame = ctxt.tracing().topFrame(); frame) {
             frame->setMessage("scheduleOn");
         }
-        this->setParent(ctxt);
+        this->tracing().setParent(ctxt.tracing());
     }
 #endif // defined(ILIAS_CORO_TRACE)
 
@@ -158,12 +158,12 @@ public:
     auto setContext(runtime::CoroContext &ctxt, runtime::CaptureSource source) noexcept {
 #if defined(ILIAS_CORO_TRACE)
         // TRACING: mark the current await point is finally
-        if (auto frame = ctxt.topFrame(); frame) {
+        if (auto frame = ctxt.tracing().topFrame(); frame) {
             frame->setMessage("finally");
         }
+        mContext->tracing().setParent(ctxt.tracing());
 #endif // defined(ILIAS_CORO_TRACE)
         mSource = source;
-        mContext->setParent(ctxt);
         mContext->setExecutor(ctxt.executor());
     }
 protected:

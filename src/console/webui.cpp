@@ -16,7 +16,7 @@
 #include <vector>
 #include <set>
 
-#if !defined(ILIAS_NO_TRACING_WEBUI)
+#if defined(ILIAS_CORO_TRACE)
 
 // Resource by build system
 extern "C" {
@@ -48,8 +48,8 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
         Spawned, Running, Suspended, Completed, Stopped
     };
     struct TaskRecord {
-        runtime::TaskId id {};
-        runtime::TaskId parentId {};
+        runtime::SpanId id {};
+        runtime::SpanId parentId {};
         TaskState state = TaskState::Spawned;
         Clock::time_point createdAt {};
         Clock::time_point lastSeenAt {};
@@ -60,7 +60,7 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
         bool stopped = false;
         std::pmr::string name;
         std::pmr::string location; // The source location (file:line) of where the task was spawned
-        std::pmr::set<runtime::TaskId> children; // The children of this task
+        std::pmr::set<runtime::SpanId> children; // The children of this task
     };
 
     // ── TracingSubscriber ───────────────────────────────────────────
@@ -69,7 +69,7 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
     // ── Tracing core ────────────────────────────────────────────────
     auto snapshotJson() -> std::pmr::string;
     auto snapshotTask(std::pmr::string &out) -> void;
-    auto snapshotStacktrace(intptr_t taskId) -> std::pmr::string;
+    auto snapshotStacktrace(intptr_t spanId) -> std::pmr::string;
 
     // ── HTTP server ─────────────────────────────────────────────────
     auto handleConnection(BufStream<TcpStream> stream) -> Task<void>;
@@ -81,7 +81,7 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
     std::string       mBind;
     WaitHandle<void>  mServeHandle;
     std::pmr::unsynchronized_pool_resource mPool;
-    std::pmr::unordered_map<runtime::TaskId, TaskRecord> mIdMaps {&mPool}; // Mapping id to TaskRecord, used for snapshot
+    std::pmr::unordered_map<runtime::SpanId, TaskRecord> mIdMaps {&mPool}; // Mapping id to TaskRecord, used for snapshot
 };
 
 TracingWebUi::Impl::Impl() {
@@ -251,47 +251,47 @@ auto TracingWebUi::Impl::onEvent(const runtime::TraceEvent &event) noexcept -> v
             fmtlib::format_to(std::back_inserter(location), "{}:{}", event.location.file_name(), event.location.line());
             std::ranges::replace(location, '\\', '/');
 
-            name = event.meta.name;
+            name = event.span.name;
 
             // Add it to map
-            mIdMaps.emplace(event.meta.id, TaskRecord {
-                .id = event.meta.id,
-                .parentId = event.meta.parentId,
+            mIdMaps.emplace(event.span.id, TaskRecord {
+                .id = event.span.id,
+                .parentId = event.span.parentId,
                 .createdAt = Clock::now(),
                 .name = std::move(name),
                 .location = std::move(location),
-                .children = std::pmr::set<runtime::TaskId> {&mPool}
+                .children = std::pmr::set<runtime::SpanId> {&mPool}
             });
             // Register parent if exist
-            if (auto it = mIdMaps.find(event.meta.parentId); it != mIdMaps.end()) {
-                it->second.children.insert(event.meta.id);
+            if (auto it = mIdMaps.find(event.span.parentId); it != mIdMaps.end()) {
+                it->second.children.insert(event.span.id);
             }
             break;
         }
         case runtime::TraceEvent::Complete: { // Task complete
-            if (auto it = mIdMaps.find(event.meta.parentId); it != mIdMaps.end()) { // Remove child
+            if (auto it = mIdMaps.find(event.span.parentId); it != mIdMaps.end()) { // Remove child
                 auto &[_, record] = *it;
-                record.children.erase(event.meta.id);
+                record.children.erase(event.span.id);
             }
-            mIdMaps.erase(event.meta.id);
+            mIdMaps.erase(event.span.id);
             break;
         }
         case runtime::TraceEvent::Resume: {
-            auto it = mIdMaps.find(event.meta.id);
+            auto it = mIdMaps.find(event.span.id);
             if (it != mIdMaps.end()) {
                 auto &record = it->second;
-                record.totalBusy = event.meta.totalBusy;
-                record.resumes = event.meta.resumes;
+                record.totalBusy = event.span.totalBusy;
+                record.resumes = event.span.resumes;
             }
             break;
         }
         case runtime::TraceEvent::NameChange: {
-            auto it = mIdMaps.find(event.meta.id);
+            auto it = mIdMaps.find(event.span.id);
             if (it == mIdMaps.end()) {
                 break;
             }
             auto record = &it->second;
-            record->name.assign(event.meta.name);
+            record->name.assign(event.span.name);
             break;
         }
         default: break;
@@ -361,7 +361,7 @@ auto TracingWebUi::Impl::snapshotStacktrace(intptr_t id) -> std::pmr::string {
     std::pmr::string json {&mPool};
     json += "[";
 
-    auto ctxt = runtime::CoroContext::fromId(static_cast<runtime::TaskId>(id));
+    auto ctxt = runtime::TraceContext::fromId(static_cast<runtime::SpanId>(id));
     if (!ctxt) {
         json.assign("[]");
         return json;

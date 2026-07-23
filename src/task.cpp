@@ -26,8 +26,8 @@ TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task, CaptureSource sour
     this->setExecutor(*executor);
 
     // TRACING: trace the spawn point
-    this->pushFrame("spawn", source);
-    this->tracingSpawn(source);
+    this->tracing().pushFrame("spawn", source);
+    this->tracing().spawn(source);
 
     this->ref(); // Ref it, we will deref it when it completed
     mTask.schedule(); // Schedule the task in the executor
@@ -45,7 +45,7 @@ auto TaskSpawnContextBase::onComplete() -> void {
         mCompletionHandler = nullptr;
     }
     // TRACING: trace the completion point
-    this->tracingComplete();
+    this->tracing().complete();
 
     if (this->use_count() == 1) { // We are the last one, only can be deref in the event loop
         executor().schedule([this]() { 
@@ -384,7 +384,7 @@ auto FinallyAwaiterBase::await_suspend(CoroHandle caller) -> std::coroutine_hand
     mContext->setStoppedHandler(mainCallback);
     mainHandle.setContext(*mContext);
     mainHandle.setCompletionHandler(mainCallback);
-    mContext->tracingSpawn(mSource);
+    mContext->tracing().spawn(mSource);
     return mainHandle.toStd(); // Switch into it, caller -> task -> finally -> (caller or caller.setStopped())
 }
 
@@ -397,13 +397,13 @@ auto FinallyAwaiterBase::onTaskCompletion() -> void {
         // Store the context info
         auto &executor = mContext->executor();
 #if defined(ILIAS_CORO_TRACE)
-        auto parent = mContext->parent();
+        auto parent = mContext->tracing().parent();
 #endif // ILIAS_CORO_TRACE
         mStopped = mContext->isStopped();
         mReg.reset();
 
         // Call the child to store the result
-        mContext->tracingComplete();
+        mContext->tracing().complete();
         auto handle = mOnTaskCompletion(*this);
         mContext.reset(); // Destroy the task， quit the scope
         
@@ -411,19 +411,19 @@ auto FinallyAwaiterBase::onTaskCompletion() -> void {
         mContext.emplace(handle, std::nostopstate);
         mContext->setUserdata(this);
         mContext->setExecutor(executor);
-#if defined(ILIAS_CORO_TRACE)
-        mContext->setParent(*parent); // This field only used for trace, think a better way?
-#endif // ILIAS_CORO_TRACE
         handle.setContext(*mContext);
         handle.setCompletionHandler(finallyCallback);
 
-        mContext->tracingSpawn(mSource);
+#if defined(ILIAS_CORO_TRACE)
+        mContext->tracing().setParent(*parent);
+        mContext->tracing().spawn(mSource);
+#endif // ILIAS_CORO_TRACE
         handle.resume();
     });
 }
 
 auto FinallyAwaiterBase::onFinallyCompletion() -> void {
-    mContext->tracingComplete();
+    mContext->tracing().complete();
     if (mStopped) { // Forward the stop completion to the caller
         mCaller.setStopped();
     }

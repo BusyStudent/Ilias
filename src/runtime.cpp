@@ -207,7 +207,7 @@ auto CoroContext::setStopped() noexcept -> void {
 #if defined(ILIAS_CORO_TRACE)
 namespace {
     struct ContextsMap {
-        std::unordered_map<TaskId, CoroContext *> map;
+        std::unordered_map<SpanId, TraceContext *> map;
 
         ContextsMap() {
             map.reserve(2048);
@@ -219,9 +219,9 @@ namespace {
         }
     };
 
-    // Use negative values for child tasks
-    thread_local constinit std::atomic<intptr_t> gChildTaskId {-1};
-    thread_local constinit std::atomic<intptr_t> gTaskId {1};
+    // Use negative values for child spans, positive values for root spans
+    thread_local constinit std::atomic<intptr_t> gChildSpanId {-1};
+    thread_local constinit std::atomic<intptr_t> gTraceId {1};
     thread_local constinit TracingSubscriber *gSubscriber {};
     thread_local ContextsMap gContextsMap {};
 }
@@ -242,45 +242,45 @@ auto TracingSubscriber::currentThread() noexcept -> TracingSubscriber * {
 }
 
 // TRACING in the context
-auto CoroContext::meta() noexcept -> TraceMeta & {
-    if (mMeta.id != TaskId::Invalid) { // Initialized
-        return mMeta;
+auto TraceContext::span() noexcept -> TraceSpan & {
+    if (mSpan.id != SpanId::Invalid) { // Initialized
+        return mSpan;
     }
 
     // Alloc self id
-    if (mParent) { // Child task
-        mMeta.id = static_cast<TaskId>(gChildTaskId.fetch_sub(1));
+    if (mParent) { // Child span
+        mSpan.id = static_cast<SpanId>(gChildSpanId.fetch_sub(1));
     }
     else {
-        mMeta.id = static_cast<TaskId>(gTaskId.fetch_add(1));
+        mSpan.id = static_cast<SpanId>(gTraceId.fetch_add(1));
     }
 
     // Set parent it
-    mMeta.parentId = mParent ? mParent->id() : TaskId::Invalid;
-    mMeta.rootId = mParent ? mRoot->id() : TaskId::Invalid;
+    mSpan.parentId = mParent ? mParent->id() : SpanId::Invalid;
+    mSpan.rootId = mParent ? mRoot->id() : SpanId::Invalid;
 
     // Set name
-    mMeta.name = mName;
-    return mMeta;
+    mSpan.name = mName;
+    return mSpan;
 }
 
-auto CoroContext::id() noexcept -> TaskId {
-    return meta().id;
+auto TraceContext::id() noexcept -> SpanId {
+    return span().id;
 }
 
-auto CoroContext::setName(std::string_view name) noexcept -> void {
+auto TraceContext::setName(std::string_view name) noexcept -> void {
     mName = name;
-    meta().name = mName;
+    span().name = mName;
     if (gSubscriber) {
         gSubscriber->onEvent(TraceEvent {
             .type = TraceEvent::NameChange,
-            .meta = meta()
+            .span = span()
         });
     }
 }
 
 // TODO: Too much code duplication here
-auto CoroContext::tracingSpawn(CaptureSource source) noexcept -> void {
+auto TraceContext::spawn(CaptureSource source) noexcept -> void {
     if (!gSubscriber) {
         return;
     }
@@ -290,26 +290,26 @@ auto CoroContext::tracingSpawn(CaptureSource source) noexcept -> void {
     // Notify the subscriber
     gSubscriber->onEvent(TraceEvent {
         .type = TraceEvent::Spawn,
-        .meta = meta(),
+        .span = span(),
         .location = source
     });
 }
 
-auto CoroContext::tracingComplete() noexcept -> void {
+auto TraceContext::complete() noexcept -> void {
     if (!gSubscriber) {
         return;
     }
-    ILIAS_ASSERT(mMeta.id != TaskId::Invalid, "TaskId is invalid, did you call it before spawning?");
+    ILIAS_ASSERT(mSpan.id != SpanId::Invalid, "TaskId is invalid, did you call it before spawning?");
 
     // Notify the subscriber
     gSubscriber->onEvent(TraceEvent {
         .type = TraceEvent::Complete,
-        .meta = meta()
+        .span = span()
     });
     gContextsMap.map.erase(id());
 }
 
-auto CoroContext::tracingResume() noexcept -> void {
+auto TraceContext::resume() noexcept -> void {
     if (!gSubscriber) {
         return;
     }
@@ -319,20 +319,20 @@ auto CoroContext::tracingResume() noexcept -> void {
     mSuspended = false;
     
     // Calc the time
-    mMeta.lastResumeAt = std::chrono::steady_clock::now();
+    mSpan.lastResumeAt = std::chrono::steady_clock::now();
     // Increase the resumes count to all parent
     for (auto cur = this; cur != nullptr; cur = cur->parent()) {
-        cur->mMeta.resumes += 1;
+        cur->mSpan.resumes += 1;
     }
 
     // Notify the subscriber
     gSubscriber->onEvent(TraceEvent {
         .type = TraceEvent::Resume,
-        .meta = meta()
+        .span = span()
     });
 }
 
-auto CoroContext::tracingSuspend() noexcept -> void {
+auto TraceContext::suspend() noexcept -> void {
     if (!gSubscriber) {
         return;
     }
@@ -343,20 +343,20 @@ auto CoroContext::tracingSuspend() noexcept -> void {
 
     // Calc the time
     auto now = std::chrono::steady_clock::now();
-    auto busyTime = now - mMeta.lastResumeAt;
+    auto busyTime = now - mSpan.lastResumeAt;
     // Increase the busy time to all parent
     for (auto cur = this; cur != nullptr; cur = cur->parent()) {
-        cur->mMeta.totalBusy += busyTime;
+        cur->mSpan.totalBusy += busyTime;
     }
 
     // Notify the subscriber
     gSubscriber->onEvent(TraceEvent {
         .type = TraceEvent::Suspend,
-        .meta = meta()
+        .span = span()
     });
 }
 
-auto CoroContext::fromId(TaskId id) noexcept -> CoroContext * {
+auto TraceContext::fromId(SpanId id) noexcept -> TraceContext * {
     auto it = gContextsMap.map.find(id);
     if (it == gContextsMap.map.end()) {
         return nullptr;

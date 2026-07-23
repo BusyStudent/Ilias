@@ -1,15 +1,8 @@
 #pragma once
 
 #include <ilias/runtime/tracing.hpp>
-#include <ilias/io/error.hpp>
-#include <ilias/result.hpp>
-
-#if !defined(ILIAS_CORO_TRACE) || defined(ILIAS_NO_FORMAT)
-    #define ILIAS_NO_TRACING_WEBUI
-    #define ILIAS_WEBUI_API
-#else
-    #define ILIAS_WEBUI_API ILIAS_API
-#endif
+#include <string>
+#include <memory>
 
 ILIAS_NS_BEGIN
 
@@ -17,7 +10,7 @@ ILIAS_NS_BEGIN
  * @brief The webui for the console
  * 
  */
-class ILIAS_WEBUI_API TracingWebUi {
+class ILIAS_TRACING_API TracingWebUi {
 public:
     TracingWebUi(std::string_view bind = "127.0.0.1:8066");
     TracingWebUi(const TracingWebUi &) = delete;
@@ -45,7 +38,7 @@ private:
 };
 
 // Disable
-#if defined(ILIAS_NO_TRACING_WEBUI)
+#if !defined(ILIAS_CORO_TRACE)
 struct TracingWebUi::Impl {};
 inline TracingWebUi::TracingWebUi(std::string_view) {}
 inline TracingWebUi::~TracingWebUi() {}

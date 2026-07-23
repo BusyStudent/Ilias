@@ -247,12 +247,12 @@ public:
         mTask.setCompletionHandler(TaskBlockingContext::onComplete);
         mTask.setContext(*this);
         this->setExecutor(*executor);
-        this->pushFrame("wait", source); // TRACING: trace the blocking point
+        this->tracing().pushFrame("wait", source); // TRACING: trace the blocking point
     }
     TaskBlockingContext(const TaskBlockingContext &) = delete;
 
     auto enter() -> void {
-        this->tracingSpawn(mSource); // TRACING: blocking wait is also spawn
+        this->tracing().spawn(mSource); // TRACING: blocking wait is also spawn
         mTask.resume();
         if (!mTask.done()) {
             executor().run(mStopExecutor.get_token());            
@@ -266,7 +266,7 @@ public:
     }
 private:
     static auto onComplete(CoroContext &_self) -> void { // Break the event loop
-        _self.tracingComplete(); // TRACING: completion
+        _self.tracing().complete(); // TRACING: completion
         static_cast<TaskBlockingContext &>(_self).mStopExecutor.request_stop();
     }
     
