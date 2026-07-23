@@ -235,6 +235,7 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoRes
 #if   defined(_WIN32)
         case IoDescriptor::Pipe:
         case IoDescriptor::File:
+        case IoDescriptor::Tty:
             break;
 #elif defined(__linux__)
         case IoDescriptor::Pollable:
@@ -363,11 +364,14 @@ inline auto QIoContext::read(IoDescriptor *fd, MutableBuffer buffer, std::option
         }
     }
 
-    if (nfd->type == IoDescriptor::Tty || nfd->type == IoDescriptor::File) {
+    if (nfd->type == IoDescriptor::File) {
         co_return co_await runtime::threadpool::read(nfd->fd, buffer, offset);
     }
 #endif // defined(__linux__)
 
+    if (nfd->type == IoDescriptor::Tty) {
+        co_return co_await runtime::threadpool::read(nfd->fd, buffer, offset);
+    }
     if (nfd->type == IoDescriptor::Socket) {
         co_return co_await recvfrom(fd, buffer, 0, nullptr);
     }
@@ -417,11 +421,14 @@ inline auto QIoContext::write(IoDescriptor *fd, Buffer buffer, std::optional<siz
             }
         }
     }
-    if (nfd->type == IoDescriptor::Tty || nfd->type == IoDescriptor::File) {
+    if (nfd->type == IoDescriptor::File) {
         co_return co_await runtime::threadpool::write(nfd->fd, buffer, offset);
     }
 #endif // defined(__linux__)
 
+    if (nfd->type == IoDescriptor::Tty) {
+        co_return co_await runtime::threadpool::write(nfd->fd, buffer, offset);
+    }
     if (nfd->type == IoDescriptor::Socket) {
         co_return co_await sendto(fd, buffer, 0, nullptr);
     }
@@ -511,7 +518,7 @@ inline auto QIoContext::sendmsg(IoDescriptor *fd, const MsgHdr &msg, int flags) 
     auto sendmsg = [&]() -> IoResult<size_t> {
 #if defined(_WIN32)
         ::DWORD sent = 0;
-        auto copy = WSAMSG(msg); // The WSASENDMSG the msg argument is not const, so copy it
+        ::WSAMSG copy{msg}; // The WSASENDMSG the msg argument is not const, so copy it
         if (nfd->sock.sendmsg(nfd->sockfd, &copy, flags, &sent, nullptr, nullptr) != SOCKET_ERROR) {
             return sent;
         }

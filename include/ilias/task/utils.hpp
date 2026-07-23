@@ -429,8 +429,8 @@ public:
 } // namespace task
 
 // impl co_await source.get_token()
-template <typename T> requires(std::is_same_v<std::remove_cvref_t<T>, runtime::StopToken>)
-struct runtime::IntoRawAwaitableTraits<T> {
+template <typename T> requires(std::same_as<std::remove_cvref_t<T>, runtime::StopToken>)
+struct runtime::IntoRawAwaitableTrait<T> {
     static auto into(T &&token) -> task::StopTokenAwaiter { return {std::forward<T>(token)}; }
 };
 

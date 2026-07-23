@@ -447,6 +447,13 @@ ILIAS_TEST(Io, Win32Handle) {
 }
 #endif // _WIN32
 
+ILIAS_TEST(Io, Stdout) {
+    Stdout out{};
+    Stderr err{};
+    EXPECT_TRUE(co_await out.writeAll("Hello, world!\n"_bin));
+    EXPECT_TRUE(co_await err.writeAll("Error, world!\n"_bin));
+}
+
 ILIAS_TEST_MAIN() {
 
 }

@@ -143,4 +143,15 @@ void Testing::testStream() {
     QVERIFY(fn3().wait());
 }
 
+void Testing::testStdio() {
+    auto fn = []() -> IoTask<void> {
+        Stdout out{};
+        Stderr err{};
+        ILIAS_CO_TRYV(co_await out.writeAll("Hello, world!\n"_bin));
+        ILIAS_CO_TRYV(co_await err.writeAll("Error, world!\n"_bin));
+        co_return {};
+    };
+    QVERIFY(fn().wait());
+}
+
 QTEST_MAIN(Testing)

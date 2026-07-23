@@ -50,34 +50,12 @@ template <typename T>
 concept RawAwaitable = Awaiter<T> || HasCoAwait<T> || HasMemberCoAwait<T>;
 
 /**
- * @brief Types that can be cast into an awaitable using ADL
+ * @brief Convert the type to an awaitable, used for specialization
  * 
  * @tparam T 
  */
 template <typename T>
-concept IntoRawAwaitableADL = requires(T t) {
-    { toAwaitable(std::forward<T>(t)) } -> RawAwaitable;
-};
-
-/**
- * @brief Type that can be cast into an awaitable
- * 
- * @tparam T 
- */
-template <typename T>
-struct IntoRawAwaitableTraits;
-
-/**
- * @brief Auto Implementation of IntoRawAwaitableTraits by ADL
- * 
- * @tparam T 
- */
-template <IntoRawAwaitableADL T>
-struct IntoRawAwaitableTraits<T> {
-    static auto into(T &&t) {
-        return toAwaitable(std::forward<T>(t));
-    }
-};
+struct IntoRawAwaitableTrait;
 
 /**
  * @brief Type that can be cast into an awaitable
@@ -86,7 +64,7 @@ struct IntoRawAwaitableTraits<T> {
  */
 template <typename T>
 concept IntoRawAwaitable = requires(T t) {
-    { IntoRawAwaitableTraits<T>::into(std::forward<T>(t)) } -> RawAwaitable;
+    { IntoRawAwaitableTrait<T>::into(std::forward<T>(t)) } -> RawAwaitable;
 };
 
 /**
@@ -131,7 +109,7 @@ auto toAwaiter(T &&val) noexcept -> decltype(auto) {
         return std::forward<T>(val).operator co_await();
     }
     else if constexpr (IntoRawAwaitable<T>) {
-        return toAwaiter(IntoRawAwaitableTraits<T>::into(std::forward<T>(val)));
+        return toAwaiter(IntoRawAwaitableTrait<T>::into(std::forward<T>(val)));
     }
     else {
         static_assert(std::is_same_v<T, void>, "Emm?, impossible");

@@ -65,7 +65,8 @@ public:
     }
 
     auto shutdown() requires(Kind != StdioKind::In) {
-        co_return {}; // No-op
+        IoResult<void> value{};
+        return just(value); // No-op
     }
 
     auto flush() -> IoTask<void> requires(Kind != StdioKind::In) {
@@ -101,7 +102,7 @@ public:
         return {};
     }
 private:
-    auto handle() -> IoResult<IoHandle<fd_t> > & { // Lazy initialization
+    auto handle() const -> IoResult<IoHandle<fd_t> > & { // Lazy initialization
         if (mHandle == Err(IoError::Ok)) {
             fd_t fd {};
             switch (Kind) {

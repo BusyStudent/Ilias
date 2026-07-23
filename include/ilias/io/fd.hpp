@@ -118,8 +118,11 @@ private:
     std::unique_ptr<void, Deleter> mHandle;
 };
 
-// ADL, impl the co_await handle;
-inline auto toAwaitable(Win32Handle &h) -> IoTask<void> { return h.wait(); }
+// impl the co_await handle;
+template <>
+struct runtime::IntoRawAwaitableTrait<Win32Handle &> {
+    static auto into(Win32Handle &h) -> IoTask<void> { return h.wait(); }
+};
 #endif // _WIN32
 
 ILIAS_NS_END

@@ -271,6 +271,7 @@ public:
         mException = ExceptionPtr::currentException();
     }
 
+    // co_await for raw awaitable (like std::suspend_never, Task<T>, etc)
     template <RawAwaitable T, bool Forward = true>
     auto await_transform(T &&awaitable, [[maybe_unused]] CaptureSource source = {}) -> decltype(auto) { // We apply the environment on here
 #if defined(ILIAS_CORO_TRACE)
@@ -301,9 +302,10 @@ public:
 #endif // defined(ILIAS_CORO_TRACE)
     }
 
+    // co_await for can be converted to raw awaitable
     template <IntoRawAwaitable T>
     auto await_transform(T &&object, CaptureSource source = {}) {
-        auto awaitable = IntoRawAwaitableTraits<T>::into(std::forward<T>(object));
+        auto awaitable = IntoRawAwaitableTrait<T>::into(std::forward<T>(object));
         return await_transform<decltype(awaitable), false>(std::move(awaitable), source); // Move into inner if necessary
     }
 
@@ -542,6 +544,7 @@ private:
 
 } // namespace runtime
 
+// MARK: This Coro
 // Some builtin function for access the environment
 namespace this_coro {
 

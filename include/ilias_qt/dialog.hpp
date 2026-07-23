@@ -18,12 +18,10 @@ inline auto execDialog(QDialog &dialog) -> ilias::Task<int> {
     co_return result;
 }
 
-// for impl auto val = co_await dialog;
-inline auto toAwaitable(QDialog &dialog) -> ilias::Task<int> {
-    return execDialog(dialog);
-}
-
 } // namespace ilias_qt
 
-// for ADL
-using ilias_qt::toAwaitable;
+// for impl auto val = co_await dialog;
+template <typename T> requires(std::is_base_of_v<QDialog, T>)
+struct ilias::runtime::IntoRawAwaitableTrait<T &> {
+    static auto into(QDialog &dialog) { return ilias_qt::execDialog(dialog); }
+};
