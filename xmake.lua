@@ -9,11 +9,10 @@ set_languages(stdcxx())
 set_encodings("utf-8")
 
 add_rules("mode.release", "mode.debug", "mode.releasedbg", "mode.coverage")
-add_rules("plugin.compile_commands.autoupdate", {lsp = "clangd", outputdir = ".vscode"})
+add_rules("plugin.compile_commands.autoupdate", {lsp = "clangd", outputdir = "./build"})
 set_policy("package.include_external_headers", false)
 
 -- Options
-option("dev",        {default = false,     description = "Enable dev mode, we are debugging"})
 option("fmt",        {default = false,     description = "Use fmt replace std::format"})
 option("log",        {default = false,     description = "Enable logging"})
 option("openssl",    {default = false,     description = "Always use openssl instead of native tls"})
@@ -29,6 +28,10 @@ option("io",         {default = true,      description = "Enable io support"})
 
 -- Qt
 option("qt_interop", {default = false,     description = "Enable qt test and example"})
+
+-- Debug Option
+option("dev",        {default = false,     description = "Enable dev mode, we are debugging"})
+option("sanitizer",  {default = false,     description = "Enable asan and ubsan"})
 
 includes("lua/check")
 check_macros("has_std_expected",    "__cpp_lib_expected",   {languages = stdcxx(), includes = "version"})
@@ -57,13 +60,9 @@ if has_config("spdlog") and has_config("log") then
     add_requires("spdlog")
 end
 
-if has_config("dev") and is_plat("linux") then
-    -- Add asan and ubsan in Linux CI
-    if not is_plat("android") and not os.getenv("TERMUX_VERSION") then
-        add_syslinks("anl") 
-        set_policy("build.sanitizer.address", true)
-        set_policy("build.sanitizer.undefined", true)
-    end
+if has_config("sanitizer") then
+    set_policy("build.sanitizer.address", true)
+    set_policy("build.sanitizer.undefined", true)
 end
 
 -- Another target

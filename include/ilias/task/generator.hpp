@@ -13,51 +13,11 @@
 #include <ilias/runtime/executor.hpp>
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp>
+#include <ilias/macros.hpp>
 #include <ilias/log.hpp>
 #include <coroutine>
 #include <optional> // std::optional
 #include <vector> // std::vector
-
-// Because for(xxx; xxx; co_await(++it)) compile failed in gcc, so we have to use it instead
-#define ILIAS_FOR_AWAIT_FALLBACK(var, generator)                                       \
-    if (auto &&_gen_ = (generator); false) {}                                          \
-    else if (bool _first_ = true; false) {}                                            \
-    else                                                                               \
-        for (auto _it_ = co_await _gen_.begin(); ; _first_ = false)                    \
-            if (!_first_ ? (co_await (++_it_), 0) : 0; _it_ == _gen_.end()) {          \
-                break;                                                                 \
-            }                                                                          \
-            else                                                                       \
-                if (var = *_it_; false) {}                                             \
-                else 
-
-// Common version
-#define ILIAS_FOR_AWAIT_GENERIC(var, generator)                                           \
-    if (auto &&_gen_ = (generator); false) {}                                             \
-    else                                                                                  \
-        for (auto _it_ = co_await _gen_.begin(); _it_ != _gen_.end(); co_await (++_it_))  \
-            if (var = *_it_; false) {}
-
-/**
- * @brief The range for for the Generator<T>
- * 
- * @code {.cpp}
- * ilias_for_await(const auto &val, generator()) {
- *  useVal(val);
- * }
- * @endcode
- * 
- * 
- * This macro allows for easy iteration over a generator object.
- * It uses co_await to asynchronously iterate through the generator.
- * 
- * @param var The variable to hold each value from the generator.
- * @param generator The generator object to iterate over.
- */
-#define ILIAS_FOR_AWAIT(var, generator) ILIAS_FOR_AWAIT_FALLBACK(var, generator)
-
-/// @copydoc ILIAS_FOR_AWAIT
-#define ilias_for_await(var, generator) ILIAS_FOR_AWAIT(var, generator)
 
 ILIAS_NS_BEGIN
 
