@@ -16,6 +16,22 @@
 #include <span>
 
 #if defined(_WIN32) // Redirect the names to the windows ones
+    #pragma push_macro("msg_name")
+    #pragma push_macro("msg_namelen")
+    #pragma push_macro("msg_iov")
+    #pragma push_macro("msg_iovlen")
+    #pragma push_macro("msg_control")
+    #pragma push_macro("msg_controllen")
+    #pragma push_macro("msg_flags")
+    
+    #undef msg_name
+    #undef msg_namelen
+    #undef msg_iov
+    #undef msg_iovlen
+    #undef msg_control
+    #undef msg_controllen
+    #undef msg_flags
+
     #define msg_name name
     #define msg_namelen namelen
     #define msg_iov lpBuffers
@@ -116,6 +132,13 @@ ILIAS_NS_END
     #undef msg_iovlen
     #undef msg_control
     #undef msg_controllen
-    #undef iov_base
-    #undef iov_len
+    #undef msg_flags
+    
+    #pragma pop_macro("msg_flags")
+    #pragma pop_macro("msg_controllen")
+    #pragma pop_macro("msg_control")
+    #pragma pop_macro("msg_iovlen")
+    #pragma pop_macro("msg_iov")
+    #pragma pop_macro("msg_namelen")
+    #pragma pop_macro("msg_name")
 #endif // _WIN32

@@ -59,6 +59,9 @@ TEST(Endpoint, Parse4) {
     IPEndpoint endpoint12(":"); // Only :
     EXPECT_FALSE(endpoint12.isValid());
     std::cout << endpoint12.toString() << std::endl;
+
+    IPEndpoint endpoint13("127.0.0.1:8080char"); // Char after port
+    EXPECT_FALSE(endpoint13.isValid());
 }
 
 TEST(Endpoint, Parse6) {

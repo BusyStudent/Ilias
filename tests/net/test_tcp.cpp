@@ -5,26 +5,6 @@ using namespace ilias;
 using namespace ilias::literals;
 using namespace std::literals;
 
-ILIAS_TEST(Net, AddressInfo) {
-    {
-        auto info = co_await AddressInfo::fromHostname("www.baidu.com");
-        EXPECT_TRUE(info);
-    }
-    {
-        auto info = co_await AddressInfo::fromHostname("impossiblehostname.unknown");
-        EXPECT_FALSE(info);
-        EXPECT_EQ(info.error(), GaiError::NotFound);
-        std::cout << info.error().message() << std::endl;
-    }
-    {
-        auto info = co_await AddressInfo::lookup("www.baidu.com:80");
-        EXPECT_TRUE(info);
-        for (auto endpoint : info.value()) {
-            std::cout << endpoint.toString() << std::endl;
-        }
-    }
-}
-
 ILIAS_TEST(Net, Tcp) {
     {
         auto listener = (co_await TcpListener::bind("127.0.0.1:0")).value();

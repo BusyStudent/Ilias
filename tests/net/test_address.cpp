@@ -43,9 +43,9 @@ TEST(Address4, ToString) {
 #endif
 }
 
-TEST(Address4, Span) {
+TEST(Address4, Bytes) {
     auto addr = IPAddress4::none();
-    auto span = addr.span();
+    auto span = addr.bytes();
     EXPECT_EQ(span[0], std::byte {255});
     EXPECT_EQ(span[1], std::byte {255});
     EXPECT_EQ(span[2], std::byte {255});

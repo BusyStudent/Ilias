@@ -54,26 +54,24 @@ public:
      * 
      * @param addr The network-format unix endpoint address
      */
-    constexpr UnixEndpoint(::sockaddr_un addr) : ::sockaddr_un {addr} { }
+    constexpr UnixEndpoint(::sockaddr_un addr) : ::sockaddr_un{addr} { }
 
     /**
      * @brief Construct a new Unix Endpoint object based on path
      * 
      * @param path The path of the unix endpoint (must be shorter than sizeof(sun_path) - 1)
      */
-    UnixEndpoint(std::string_view path) {
+    UnixEndpoint(std::string_view path) : ::sockaddr_un{} {
         auto maxlen = sizeof(sun_path) - 1;
         auto len = path.size() >= maxlen ? maxlen : path.size();
-        ::memset(this, 0, sizeof(::sockaddr_un));
         ::memcpy(sun_path, path.data(), len);
         sun_path[len] = '\0';
         sun_family = AF_UNIX;
     }
 
     template <size_t N>
-    UnixEndpoint(const char (&path)[N]) {
+    UnixEndpoint(const char (&path)[N]) : ::sockaddr_un{} {
         static_assert(N < sizeof(sun_path), "The path is too long!");
-        ::memset(this, 0, sizeof(::sockaddr_un));
         ::memcpy(sun_path, path, N - 1);
         sun_path[N] = '\0';
         sun_family = AF_UNIX;
@@ -216,7 +214,7 @@ public:
      * @param str The endpoint in string format (address4:port) or ([address6]:port)
      */
     template <typename T> requires (std::convertible_to<T, std::string_view>)
-    IPEndpoint(const T &str) : IPEndpoint{fromString(str).value_or(IPEndpoint {})} {}
+    IPEndpoint(const T &str) : IPEndpoint{fromString(str).value_or(IPEndpoint{})} {}
 
     /**
      * @brief Construct a new IPEndpoint object by address and port
@@ -447,16 +445,19 @@ public:
      */
     static auto fromString(std::string_view buffer) -> Result<IPEndpoint, std::errc> {
         // Split to addr and port
-        auto pos = buffer.find_last_of(':');
-        if (pos == buffer.npos || pos < 4) { // 4 is the minimum length of [::]:port
+        auto pos = buffer.rfind(':');
+        if (pos == std::string_view::npos || pos < 4) { // 4 is the minimum length of [::]:port
             return Err(std::errc::invalid_argument);
         }
 
         // Parse the port
         auto portStr = buffer.substr(pos + 1);
         uint16_t port = 0;
-        if (auto ec = std::from_chars(portStr.data(), portStr.data() + portStr.size(), port).ec; ec != std::errc()) {
+        if (auto [ptr, ec] = std::from_chars(portStr.data(), portStr.data() + portStr.size(), port); ec != std::errc{}) {
             return Err(ec);
+        }
+        else if (ptr != portStr.data() + portStr.size()) { // The port may contain non-numeric characters like [::]:20char
+            return Err(std::errc::invalid_argument);
         }
 
         // Parse the address
@@ -465,24 +466,28 @@ public:
             // IPV6
             addrStr = addrStr.substr(1, pos - 2);
         }
-        auto addr = IPAddress::fromString(addrStr);
-        if (!addr) {
-            return Err(addr.error());
-        }
-        return IPEndpoint {*addr, port};
+        ILIAS_TRY(auto addr, IPAddress::fromString(addrStr));
+        return IPEndpoint{addr, port};
     }
 
     /**
      * @brief Copy endpoint from network-format data
      * 
-     * @param data The pointer to the data
-     * @param size The size of the data, must be sizeof(::sockaddr_in) or sizeof(::sockaddr_in6)
+     * @param buf network-format data, must be at least sizeof(::sockaddr_in) or sizeof(::sockaddr_in6)
      * @return IPEndpoint 
      */
-    static auto fromRaw(const void *mem, size_t n) -> Result<IPEndpoint, std::errc> {
-        switch (n) {
-            case sizeof(::sockaddr_in): return *reinterpret_cast<const ::sockaddr_in *>(mem);
-            case sizeof(::sockaddr_in6): return *reinterpret_cast<const ::sockaddr_in6 *>(mem);
+    static auto fromBytes(Buffer buf) -> Result<IPEndpoint, std::errc> {
+        switch (buf.size()) {
+            case sizeof(::sockaddr_in): {
+                ::sockaddr_in addr;
+                ::memcpy(&addr, buf.data(), sizeof(addr));
+                return addr;
+            }
+            case sizeof(::sockaddr_in6): {
+                ::sockaddr_in6 addr;
+                ::memcpy(&addr, buf.data(), sizeof(addr));
+                return addr;
+            }
             default: return Err(std::errc::invalid_argument);
         }
     }
@@ -587,7 +592,8 @@ public:
             return "EndpointView(null)";
         }
         if (auto family = mAddr->sa_family; family == AF_INET || family == AF_INET6) {
-            return "EndpointView(" + IPEndpoint::fromRaw(mAddr, mLength).value().toString() + ")";
+            auto buf = makeBuffer(mAddr, mLength);
+            return "EndpointView(" + IPEndpoint::fromBytes(buf).value().toString() + ")";
         }
         char buffer[256] {0};
         ::snprintf(buffer, sizeof(buffer), "EndpointView(.family = %d, .len = %d)", int(mAddr->sa_family), int(mLength));

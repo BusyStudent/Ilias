@@ -289,7 +289,7 @@ public:
 #if defined(_WIN32)
         ::WSAPROTOCOL_INFOW info;
         ::socklen_t len = sizeof(info);
-        if (::getsockopt(mFd, SOL_SOCKET, SO_PROTOCOL_INFOW, (char*) &info, &len) != 0) {
+        if (::getsockopt(mFd, SOL_SOCKET, SO_PROTOCOL_INFOW, reinterpret_cast<char *>(&info), &len) != 0) {
             return Err(SystemError::fromErrno());
         }
         return info.iAddressFamily;
@@ -314,7 +314,7 @@ public:
 #if defined(_WIN32)
         ::WSAPROTOCOL_INFOW info;
         ::socklen_t len = sizeof(info);
-        if (::getsockopt(mFd, SOL_SOCKET, SO_PROTOCOL_INFOW, (char*) &info, &len) != 0) {
+        if (::getsockopt(mFd, SOL_SOCKET, SO_PROTOCOL_INFOW, reinterpret_cast<char *>(&info), &len) != 0) {
             return Err(SystemError::fromErrno());
         }
         return info.iSocketType;
@@ -337,9 +337,7 @@ public:
     auto error() const -> IoResult<SystemError> {
         error_t err = 0;
         socklen_t len = sizeof(err);
-        if (auto val = getOption(SOL_SOCKET, SO_ERROR, &err, &len); !val) {
-            return Err(val.error());
-        }
+        ILIAS_TRYV(getOption(SOL_SOCKET, SO_ERROR, &err, &len));
         return SystemError(err);
     }
 
@@ -358,7 +356,7 @@ public:
         if (fd == Invalid) {
             return Err(SystemError::fromErrno());
         }
-        return T(fd);
+        return T{fd};
     }
 
     /**
@@ -371,11 +369,8 @@ public:
     template <typename T, MutableEndpoint Endpoint = IPEndpoint>
     auto accept() const -> IoResult<std::pair<T, Endpoint> > {
         Endpoint endpoint;
-        auto fd = accept<T>(&endpoint);
-        if (!fd) {
-            return Err(fd.error());
-        }
-        return std::make_pair(T(std::move(*fd)), endpoint);
+        ILIAS_TRY(auto fd, accept<T>(endpoint));
+        return std::make_pair(T{std::move(fd)}, endpoint);
     }
 
     /**
@@ -598,13 +593,13 @@ public:
      */
     static auto make(int family, int type, int protocol) -> IoResult<Socket> {
 
-#if defined(SOCK_CLOEXEC) // Avoid leak after execve
-        type |= SOCK_CLOEXEC;
-#endif // defined(SOCK_CLOEXEC)
-
-        auto sockfd = ::socket(family, type, protocol);
+#if defined(_WIN32)
+        auto sockfd = ::WSASocketW(family, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
+#else // POSIX
+        auto sockfd = ::socket(family, type | SOCK_CLOEXEC, protocol);
+#endif
         if (sockfd != Invalid) {
-            return Socket(sockfd);
+            return Socket{sockfd};
         }
         return Err(SystemError::fromErrno());
     }

@@ -16,7 +16,7 @@ ILIAS_TEST(Net, GetAddrInfo) {
     {
         auto info = co_await AddressInfo::lookup("www.baidu.com:80");
         EXPECT_TRUE(info);
-        for (auto endpoint : info.value()) {
+        for (auto endpoint : info.value().endpoints()) {
             std::cout << endpoint.toString() << std::endl;
         }
     }

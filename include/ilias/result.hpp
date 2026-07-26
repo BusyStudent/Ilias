@@ -56,19 +56,23 @@ concept IsResult = detail::IsResult<std::remove_cv_t<T> >::value;
 
 // Utils function to make error, used in TRY macro
 template <typename T, typename E>
-inline auto makeErr(Result<T, E> result) -> Err<E> {
-    ILIAS_ASSUME(!result, "The result should contains a error");
+constexpr auto makeErr(Result<T, E> result) -> Err<E> {
+    if (!std::is_constant_evaluated()) {
+        ILIAS_ASSUME(!result, "The result should contains a error");
+    }
     return Err(std::move(result.error()));
 }
 
 template <typename T>
-inline auto makeErr(std::optional<T> option) -> std::nullopt_t {
-    ILIAS_ASSUME(!option, "The option should be empty");
+constexpr auto makeErr(std::optional<T> option) -> std::nullopt_t {
+    if (!std::is_constant_evaluated()) {
+        ILIAS_ASSUME(!option, "The option should be empty");        
+    }
     return std::nullopt;
 }
 
 // Did you forget to use co_await ?
 template <typename T>
-inline auto makeErr(Task<T> task) -> T = delete;
+constexpr auto makeErr(Task<T> task) -> T = delete;
 
 ILIAS_NS_END
