@@ -72,6 +72,9 @@ class ILIAS_TRACING_API TraceContext {
 public:
     TraceContext() = default;
     TraceContext(TraceContext &&) = default;
+    
+    // Operator
+    auto operator =(TraceContext &&) -> TraceContext & = default;
 
 #if !defined(ILIAS_CORO_TRACE) // Disabled
     auto setParent(TraceContext &) noexcept {}

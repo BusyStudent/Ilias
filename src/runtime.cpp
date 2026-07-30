@@ -6,6 +6,7 @@
 #include <condition_variable> // std::condition_variable
 #include <memory_resource> // std::pmr::memory_resource
 #include <system_error> // std::system_error
+#include <atomic> // std::atomic
 #include <thread> // std::thread
 #include <queue> // std::queue
 #include <mutex> // std::mutex
@@ -126,69 +127,65 @@ auto threadpool::submit(CallableRef &callable) -> void {
     }
 #else // Use our own thread pool
     struct ThreadPool {
+        ThreadPool() : idle(1) {
+            threads.emplace_back(&ThreadPool::worker, this, stopSource.get_token());
+        }
+
+        ~ThreadPool() {
+            stopSource.request_stop();
+            cond.notify_all();
+            for (auto &thread : threads) {
+                thread.join();
+            }
+        }
+        // TODO: Maybe we need add worker quit, if it is idle too much
+        auto dispatch(StopToken &token) -> void {
+            while (true) {
+                std::unique_lock locker{mutex};
+                cond.wait(locker, [&]() {
+                    return !queue.empty() || token.stop_requested();
+                });
+                if (token.stop_requested()) {
+                    return;
+                }
+                auto *callable = queue.front();
+                queue.pop();
+                locker.unlock();
+                
+                // Execute the callable
+                idle.fetch_sub(1, std::memory_order_relaxed); // -= 1
+                callable->invoke();
+                idle.fetch_add(1, std::memory_order_relaxed); // += 1
+            }
+        };
+
+        auto worker(StopToken token) -> void {
+            ILIAS_TRACE("Runtime", "Threadpool worker started");
+            ::pthread_setname_np(::pthread_self(), "ilias::worker");
+            dispatch(token);
+            idle.fetch_sub(1, std::memory_order_relaxed); // The worker thread is exiting, so -= 1
+            ILIAS_TRACE("Runtime", "Threadpool worker exiting");
+        }
+
         StopSource stopSource; // for notifying the threads to stop
         std::queue<CallableRef *> queue;
         std::condition_variable cond;
         std::mutex mutex;
         std::vector<std::thread> threads;
         std::atomic<size_t> idle {0}; // number of idle threads
-        std::atomic<std::chrono::steady_clock::time_point> lastPeek; // last time the worker peeked the queue
+        std::size_t hw = std::thread::hardware_concurrency(); // number of machine's cpu
     };
-    static constinit ThreadPool *pool = nullptr;
-    static constinit std::once_flag once;
+    static ThreadPool pool;
 
-    auto dispatch = [](StopToken &token) {
-        while (true) {
-            std::unique_lock locker(pool->mutex);
-            pool->cond.wait(locker, [&]() {
-                return !pool->queue.empty() || token.stop_requested();
-            });
-            if (token.stop_requested()) {
-                return;
-            }
-            auto *callable = pool->queue.front();
-            pool->queue.pop();
-            pool->lastPeek = std::chrono::steady_clock::now();
-            locker.unlock();
-            
-            pool->idle -= 1;
-            callable->invoke();
-            pool->idle += 1;
-        }
-    };
-    auto worker = [&](StopToken token) {
-        ::pthread_setname_np(::pthread_self(), "ilias::worker");
-        dispatch(token);
-        pool->idle -= 1; // The worker thread is exiting, so -= 1
-    };
-
-    auto cleanup = []() {
-        pool->stopSource.request_stop();
-        pool->cond.notify_all();
-        for (auto &thread : pool->threads) {
-            thread.join();
-        }
-        delete pool;
-    };
-
-    auto init = [&]() {
-        pool = new ThreadPool; 
-        pool->idle += 1;
-        pool->threads.emplace_back(std::thread(worker, pool->stopSource.get_token()));
-        ::atexit(cleanup);
-    };
-
-    std::call_once(once, init);
-    std::lock_guard locker(pool->mutex);
-    if (pool->idle == 0) {
-        auto hw = std::thread::hardware_concurrency() * 2;
-        if (pool->threads.size() < hw && hw != 0) { // We can create more threads
-            pool->threads.emplace_back(std::thread(worker, pool->stopSource.get_token()));
-            pool->idle += 1;
+    std::lock_guard locker{pool.mutex};
+    if (pool.idle.load(std::memory_order_relaxed) == 0) {
+        if (pool.threads.size() < pool.hw && pool.hw != 0) { // We can create more threads
+            pool.threads.emplace_back(&ThreadPool::worker, &pool, pool.stopSource.get_token());
+            pool.idle += 1;
         }
     }
-    pool->queue.emplace(&callable);
-    pool->cond.notify_one();
+    pool.queue.emplace(&callable);
+    pool.cond.notify_one();
 #endif
 }
 
