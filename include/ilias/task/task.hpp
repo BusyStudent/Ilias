@@ -287,6 +287,10 @@ public:
 
     auto await_ready() const noexcept { return false; }
     auto await_suspend(CoroHandle caller) {
+        if (caller.isStopRequested()) {
+            caller.setStopped();
+            return;
+        }
         mHandle = caller;
         runtime::threadpool::submit(*this);
     }
@@ -397,7 +401,7 @@ public:
     auto wait(runtime::CaptureSource source = {}) -> T {
         ILIAS_ASSERT(mHandle, "Task is null");
         ILIAS_ASSERT(!mHandle.done(), "Task is done, can't wait again");
-        auto context = task::TaskBlockingContext {mHandle, source};
+        task::TaskBlockingContext context{mHandle, source};
         context.enter();
         return context.value<T>();
     }
@@ -430,7 +434,7 @@ public:
      */
     auto setContext(runtime::CoroContext &context) noexcept -> void {
         ILIAS_ASSERT(mHandle, "Task is null");
-        auto handle = task::TaskHandle<T> {mHandle};
+        task::TaskHandle<T> handle{mHandle};
         handle.setContext(context);
     }
 

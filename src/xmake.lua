@@ -11,6 +11,8 @@ target("ilias")
     add_defines("_ILIAS_SOURCE")
     
     -- Add source code
+    add_files("runtime/*.cpp")
+    add_files("task/*.cpp")
     add_files("net/*.cpp")
     add_files("*.cpp")
 

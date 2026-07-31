@@ -1,7 +1,8 @@
 set_project("ilias")
-set_version("0.4.1", {soname = true})
+set_version("0.5.0", {soname = true})
 set_xmakever("3.0.0")
 
+-- Cpp version
 option("stdcxx", {showmenu = true, default = 23, values = {26, 23, 20}})
 function stdcxx() return "c++" .. tostring(get_config("stdcxx")) end
 
@@ -33,7 +34,8 @@ option("qt_interop", {default = false,     description = "Enable qt test and exa
 option("dev",        {default = false,     description = "Enable dev mode, we are debugging"})
 option("sanitizer",  {default = false,     description = "Enable asan and ubsan"})
 
-includes("lua/check")
+-- Checking std
+includes("scripts/lua/check")
 check_macros("has_std_expected",    "__cpp_lib_expected",   {languages = stdcxx(), includes = "version"})
 
 -- Add packages if 
