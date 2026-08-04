@@ -376,6 +376,7 @@ auto this_fiber::awaitImpl(runtime::CoroHandle handle, runtime::CaptureSource so
     handle.setContext(ctxt);
 
     // Execute it
+    ctxt.tracing().spawn(source);
     handle.resume();
     if (!handle.done()) {
         ctxt.setUserdata(fiber);
@@ -387,6 +388,7 @@ auto this_fiber::awaitImpl(runtime::CoroHandle handle, runtime::CaptureSource so
     ILIAS_ASSERT(handle.done() || ctxt.isStopped(), "The coroutine should be stopped or done");
 
     // Ok check the stop, if it is stopped, forward the stop to the caller
+    ctxt.tracing().complete();
     if (ctxt.isStopped()) {
         throw FiberCancellation {};
     }

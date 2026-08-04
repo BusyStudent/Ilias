@@ -7,14 +7,18 @@
 ILIAS_NS_BEGIN
 
 /**
- * @brief The webui for the console
+ * @brief The webui for the console, used for debugging, profiling and tracing, no-op on ILIAS_CORO_TRACE is not defined
  * 
  */
 class ILIAS_TRACING_API TracingWebUi {
 public:
+    /**
+     * @brief Construct a new Tracing Web Ui object
+     * @note environment variable `ILIAS_TRACING_WEBUI_BIND` can be used to override the bind endpoint
+     * 
+     * @param bind The bind endpoint of the webui (default: 127.0.0.1:8066)
+     */
     TracingWebUi(std::string_view bind = "127.0.0.1:8066");
-    TracingWebUi(const TracingWebUi &) = delete;
-    TracingWebUi(TracingWebUi &&) = default;
     ~TracingWebUi();
 
     /**

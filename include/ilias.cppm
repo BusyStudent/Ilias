@@ -93,7 +93,7 @@ module;
 // MARK: ilias
 export module ilias;
 
-#define ILIAS_MODULE
+#define ILIAS_BUILD_MODULE
 extern "C++" {
     #include <ilias.hpp>
 }

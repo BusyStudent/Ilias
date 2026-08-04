@@ -11,6 +11,12 @@
 
 #pragma once
 
+#include <ilias/detail/config.hpp>
+
+// Utils used by public macros
+#define ILIAS_CONCAT_IMPL(a, b) a##b
+#define ILIAS_CONCAT(a, b) ILIAS_CONCAT_IMPL(a, b)
+
 // result.hpp
 // MARK: Try API
 // Impl TRY...
