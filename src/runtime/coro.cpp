@@ -28,12 +28,6 @@ static_assert(std::is_standard_layout_v<TraceRegistery>);
 
 // TRACING
 #if defined(ILIAS_CORO_TRACE)
-namespace runtime {
-    extern "C" {
-        constinit thread_local const TraceRegistery *_ilias_trace_registry_v1 = nullptr;
-    }
-} // namespace runtime
-
 namespace {
     struct Registery {
         // ABI export to outside
@@ -55,12 +49,9 @@ namespace {
             map.reserve(2048);
             spansIdx.reserve(2048);
             spans.reserve(2048);
-
-            _ilias_trace_registry_v1 = &registery;
         }
 
         ~Registery() {
-            _ilias_trace_registry_v1 = nullptr;
             if (!map.empty()) {
                 ILIAS_WARN("Runtime", "There are still {} coroutines running", map.size());
             }
@@ -312,6 +303,15 @@ auto TraceContext::fromId(SpanId id) noexcept -> TraceContext * {
 auto TraceRegistery::currentThread() -> const TraceRegistery * {
     return &gRegistery->registery;
 }
+
+extern "C" {
+    auto runtime::_ilias_trace_registry_v1() -> const TraceRegistery * {
+        if (!gRegistery.val) { // Avoid side effect
+            return nullptr;
+        }
+        return &gRegistery->registery;
+    }
+} // extern "C"
 
 #endif // ILIAS_CORO_TRACE
 

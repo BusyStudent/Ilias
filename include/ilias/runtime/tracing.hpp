@@ -31,7 +31,7 @@ enum class SpanId : intptr_t {
  * 
  */
 enum class TraceState : uint8_t {
-    Created,
+    Created = 0,
     Running,
     Suspended,
     Completed,
@@ -314,7 +314,7 @@ public:
 };
 
 extern "C" {
-    extern thread_local const TraceRegistery *_ilias_trace_registry_v1;
+    extern ILIAS_TRACING_API auto _ilias_trace_registry_v1() -> const TraceRegistery *;
 } // extern "C"
 
 #if !defined(ILIAS_CORO_TRACE)
