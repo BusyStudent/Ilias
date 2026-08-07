@@ -144,7 +144,7 @@ auto Process::Builder::spawn() -> IoResult<Process> {
     proc.mHandle.reset(pi.hProcess);
     proc.mPid = pi.dwProcessId;
     return proc;
-#else // Posix platform, use posix_spawn
+#else // Posix platform, use fork + exec
     // Allocate argv array with space for program name + args + nullptr
     std::vector<char *> args {};
     std::vector<char *> envs {};
@@ -208,7 +208,7 @@ auto Process::Builder::spawn() -> IoResult<Process> {
             }
             ::execvp(mExec.c_str(), args.data());
         }
-        while (0);
+        while (false);
 
         // Error happened
         int err = errno;
@@ -304,11 +304,8 @@ auto Process::wait() const -> IoTask<int32_t> {
     co_return static_cast<int32_t>(code);
 #else // Pidfd
     while (true) {
-        auto events = co_await mHandle.poll(POLLIN);
-        if (!events) {
-            co_return Err(events.error());
-        }
-        if (*events & POLLIN) {
+        ILIAS_CO_TRY(auto events, co_await mHandle.poll(POLLIN));
+        if (events & POLLIN) {
             break;
         }
     }

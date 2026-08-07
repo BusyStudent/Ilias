@@ -27,23 +27,49 @@ enum class SpanId : intptr_t {
 };
 
 /**
+ * @brief The state of the span
+ * 
+ */
+enum class TraceState : uint8_t {
+    Created = 0,
+    Running,
+    Suspended,
+    Completed,
+};
+
+/**
  * @brief The span of the trace event, an record of the context
+ * @note This struct should be keep in standard layout
  * 
  */
 class TraceSpan {
 public:
+    // ABI
+    const size_t size = sizeof(TraceSpan);
+
     // Tree
     SpanId id {};
     SpanId parentId {};
     SpanId rootId {};
 
+    // State
+    TraceState state {};
+
     // Name
-    std::string_view name;
+    const char *name {};
+
+    // Location when spawned (file:line)
+    const char *location {};
+
+    // Children (unordered)
+    const SpanId *child {};
+    size_t        childCount {};
 
     // Resume / Suspend
-    std::chrono::steady_clock::time_point lastResumeAt {};
-    std::chrono::steady_clock::duration   totalBusy {};
-    size_t                                resumes {}; // The number of resumes counted
+    int64_t lastResumeAt {}; // The last resume time (in nanoseconds)
+    int64_t totalBusy {}; // The busy duration (in nanoseconds)
+    time_t  createdAt {}; // The create time (in system time)
+    size_t  resumes {}; // The number of resumes counted
 };
 
 /**
@@ -72,6 +98,9 @@ class ILIAS_TRACING_API TraceContext {
 public:
     TraceContext() = default;
     TraceContext(TraceContext &&) = default;
+    
+    // Operator
+    auto operator =(TraceContext &&) -> TraceContext & = default;
 
 #if !defined(ILIAS_CORO_TRACE) // Disabled
     auto setParent(TraceContext &) noexcept {}
@@ -158,18 +187,20 @@ public:
     // Notify we are suspended the coroutine (It is safe to call suspend() multiple times, we will ignore the duplicate calls)
     auto suspend() noexcept -> void;
 
+    // Lazy init the span
+    auto span() noexcept -> TraceSpan &;
+
     // Get the context pointer from the id, if not found, return nullptr
     static auto fromId(SpanId id) noexcept -> TraceContext *;
 private:
-    auto span() noexcept -> TraceSpan &; // Lazy init the span
-
     bool          mStarted = false;      // The coroutine is started
     bool          mSuspended = true;     // The coroutine is suspended
     TraceContext *mParent = nullptr;     // Use for stacktrace to dump the whole stack
-    TraceContext *mRoot = nullptr;       // The root context of the coroutine (spawn or blocking wait), used for tracing
-    std::string   mName;                 // The name of the coroutine, used for tracing
+    TraceContext *mRoot = nullptr;       // The root context of the coroutine (spawn or blocking wait)
+    std::string   mName;                 // The name of the coroutine
+    std::string   mLocation;             // The location of the spawn (file:line)
     TraceSpan     mSpan;
-    std::vector<StackFrame> mFrames;     // The virtual frames of the coroutine,
+    std::vector<StackFrame> mFrames;     // The virtual frames of the coroutine
 #endif // defined(ILIAS_CORO_TRACE)
 };
 
@@ -228,7 +259,7 @@ public:
         mAwaiter(toAwaiter(std::forward<T>(mAwaitable))),
         mCtxt(ctxt) {}
 
-    // MUST NRVO, Pin the awaitable, avoid the awaiter implementation need an stable awaitable address, it will cause dangling if move
+    // MUST RVO, Pin the awaitable, avoid the awaiter implementation need an stable awaitable address, it will cause dangling if move
     TracingAwaitable(const TracingAwaitable &) = delete;
 
     // Hooks
@@ -268,10 +299,29 @@ private:
     TraceContext &mCtxt;
 };
 
+// MARK: Registery
+class TraceRegistery {
+public:
+    // ABI
+    const size_t size = sizeof(TraceRegistery);
+
+    // All spans (unordered)
+    const TraceSpan *const *spans {};
+    size_t                  spanCount {};
+
+    ILIAS_TRACING_API
+    static auto currentThread() -> const TraceRegistery *;
+};
+
+extern "C" {
+    extern ILIAS_TRACING_API auto _ilias_trace_registry_v1() -> const TraceRegistery *;
+} // extern "C"
+
 #if !defined(ILIAS_CORO_TRACE)
 inline TracingSubscriber::~TracingSubscriber() {}
 inline auto TracingSubscriber::install() noexcept -> bool { ILIAS_WARN("Runtime", "Tracing feature is not enabled"); return false; }
 inline auto TracingSubscriber::currentThread() noexcept -> TracingSubscriber * { ILIAS_WARN("Runtime", "Tracing feature is not enabled"); return nullptr; }
+inline auto TraceRegistery::currentThread() -> const TraceRegistery * { return nullptr; }
 #endif // !defined(ILIAS_CORO_TRACE)
 
 // Formatting
@@ -291,8 +341,19 @@ inline auto toString(TraceEvent::Type type) -> std::string_view {
     }
 }
 
+inline auto toString(TraceState state) -> std::string_view {
+    switch (state) {
+        case TraceState::Created: return "Created";
+        case TraceState::Running: return "Running";
+        case TraceState::Suspended: return "Suspended";
+        case TraceState::Completed: return "Completed";
+        default: return "Unknown";
+    }
+}
+
 // Mark it
 ILIAS_FORMATTABLE(SpanId);
+ILIAS_FORMATTABLE(TraceState);
 ILIAS_FORMATTABLE(TraceEvent::Type);
 
 } // namespace runtime

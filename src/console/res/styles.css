@@ -301,11 +301,11 @@ tr.expanded > td {
     font-weight: bold;
 }
 
-.state-Idle {
+.state-Suspended {
     color: #9e9e9e;
 }
 
-.state-Yielded {
+.state-CurrentlyUnused {
     color: var(--yellow);
 }
 

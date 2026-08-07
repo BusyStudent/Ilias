@@ -44,7 +44,7 @@
 
 // Assertion
 #if defined(NDEBUG)
-    #define ILIAS_ASSERT(x, ...) do { } while (0)
+    #define ILIAS_ASSERT(x, ...) do { } while (false)
 #else
     #define ILIAS_ASSERT(x, ...) do {            \
         if (!(x)) [[unlikely]] {                 \
@@ -54,7 +54,7 @@
                 ##__VA_ARGS__                    \
             );                                   \
         }                                        \
-    } while (0)
+    } while (false)
     #if defined(__cpp_lib_stacktrace)
         #include <stacktrace>
     #endif
@@ -111,7 +111,7 @@
 #endif // ILIAS_STATIC
 
 // Module
-#if   defined(ILIAS_MODULE)
+#if   defined(ILIAS_BUILD_MODULE)
     #define ILIAS_EXPORT_BEGIN export {
     #define ILIAS_EXPORT_END }
     #define ILIAS_EXPORT export
@@ -122,8 +122,6 @@
 #endif // ILIAS_MODULE
 
 // Utils macro
-#define ILIAS_CONCAT_IMPL(a, b) a##b
-#define ILIAS_CONCAT(a, b) ILIAS_CONCAT_IMPL(a, b)
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT(x, msg) // For old code
 #define ILIAS_STRINGIFY_(x) #x
 #define ILIAS_STRINGIFY(x) ILIAS_STRINGIFY_(x)
@@ -146,7 +144,7 @@
         if (!(cond)) {                      \
             ILIAS_UNREACHABLE();            \
         }                                   \
-    } while (0)
+    } while (false)
 
 // Formatter macro
 #define ILIAS_FORMATTER(type)                              \

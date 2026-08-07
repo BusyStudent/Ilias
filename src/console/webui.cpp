@@ -42,33 +42,11 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
     Impl();
     ~Impl();
 
-    using Clock = std::chrono::steady_clock;
-
-    enum class TaskState : uint8_t {
-        Spawned, Running, Suspended, Completed, Stopped
-    };
-    struct TaskRecord {
-        runtime::SpanId id {};
-        runtime::SpanId parentId {};
-        TaskState state = TaskState::Spawned;
-        Clock::time_point createdAt {};
-        Clock::time_point lastSeenAt {};
-        Clock::time_point lastResumeAt {};
-        Clock::duration   totalBusy {};
-        size_t resumes = 0;
-        bool stopRequested = false;
-        bool stopped = false;
-        std::pmr::string name;
-        std::pmr::string location; // The source location (file:line) of where the task was spawned
-        std::pmr::set<runtime::SpanId> children; // The children of this task
-    };
-
     // ── TracingSubscriber ───────────────────────────────────────────
     auto onEvent(const runtime::TraceEvent &event) noexcept -> void override;
 
     // ── Tracing core ────────────────────────────────────────────────
     auto snapshotJson() -> std::pmr::string;
-    auto snapshotTask(std::pmr::string &out) -> void;
     auto snapshotStacktrace(intptr_t spanId) -> std::pmr::string;
 
     // ── HTTP server ─────────────────────────────────────────────────
@@ -77,15 +55,13 @@ struct TracingWebUi::Impl : public runtime::TracingSubscriber {
     auto sendReply(BufStream<TcpStream> &stream, int status, std::string_view contentType, std::string_view body) -> IoTask<void>;
     auto serve() -> Task<void>;
 
-    Clock::time_point mEpoch = Clock::now();
     std::string       mBind;
     WaitHandle<void>  mServeHandle;
     std::pmr::unsynchronized_pool_resource mPool;
-    std::pmr::unordered_map<runtime::SpanId, TaskRecord> mIdMaps {&mPool}; // Mapping id to TaskRecord, used for snapshot
 };
 
 TracingWebUi::Impl::Impl() {
-    mIdMaps.reserve(1024);
+
 }
 
 TracingWebUi::Impl::~Impl() {
@@ -242,60 +218,7 @@ auto TracingWebUi::Impl::sendReply(BufStream<TcpStream> &stream, int status, std
 
 // ─── TracingSubscriber callbacks ─────────────────────────────────────
 auto TracingWebUi::Impl::onEvent(const runtime::TraceEvent &event) noexcept -> void {
-    switch (event.type) {
-        case runtime::TraceEvent::Spawn: { // New task spawn
-            // Add Parent
-            std::pmr::string location {&mPool};
-            std::pmr::string name {&mPool};
-
-            fmtlib::format_to(std::back_inserter(location), "{}:{}", event.location.file_name(), event.location.line());
-            std::ranges::replace(location, '\\', '/');
-
-            name = event.span.name;
-
-            // Add it to map
-            mIdMaps.emplace(event.span.id, TaskRecord {
-                .id = event.span.id,
-                .parentId = event.span.parentId,
-                .createdAt = Clock::now(),
-                .name = std::move(name),
-                .location = std::move(location),
-                .children = std::pmr::set<runtime::SpanId> {&mPool}
-            });
-            // Register parent if exist
-            if (auto it = mIdMaps.find(event.span.parentId); it != mIdMaps.end()) {
-                it->second.children.insert(event.span.id);
-            }
-            break;
-        }
-        case runtime::TraceEvent::Complete: { // Task complete
-            if (auto it = mIdMaps.find(event.span.parentId); it != mIdMaps.end()) { // Remove child
-                auto &[_, record] = *it;
-                record.children.erase(event.span.id);
-            }
-            mIdMaps.erase(event.span.id);
-            break;
-        }
-        case runtime::TraceEvent::Resume: {
-            auto it = mIdMaps.find(event.span.id);
-            if (it != mIdMaps.end()) {
-                auto &record = it->second;
-                record.totalBusy = event.span.totalBusy;
-                record.resumes = event.span.resumes;
-            }
-            break;
-        }
-        case runtime::TraceEvent::NameChange: {
-            auto it = mIdMaps.find(event.span.id);
-            if (it == mIdMaps.end()) {
-                break;
-            }
-            auto record = &it->second;
-            record->name.assign(event.span.name);
-            break;
-        }
-        default: break;
-    }
+    
 }
 
 auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
@@ -304,7 +227,7 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
     //         "id": 0,
     //         "name": "Task 1",
     //         "parent_id": 0,
-    //         "state": "Running or Idle or Yielded or Completed",
+    //         "state": "Running or Suspended or Completed",
     //         "total_time": 1234,
     //         "busy_time": 1000,
     //         "resumes": 5,
@@ -313,12 +236,33 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
     //     },
     // ]
     std::pmr::string json {&mPool};
+    std::pmr::string children {&mPool};
     json += "[";
-    for (const auto &[id, record] : mIdMaps) {
+    auto registery = []() -> std::span<const runtime::TraceSpan *const> {
+        auto reg = runtime::TraceRegistery::currentThread();
+        if (!reg) {
+            return {};
+        }
+        return std::span{reg->spans, reg->spanCount};
+    }();
+    for (auto span : registery) {
         auto totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(
-            Clock::now() - record.createdAt
+            std::chrono::system_clock::now() - std::chrono::system_clock::from_time_t(span->createdAt)
         );
-        auto totalBusy = std::chrono::duration_cast<std::chrono::milliseconds>(record.totalBusy);
+        auto totalBusy = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::nanoseconds{span->totalBusy});
+
+        // Format children ids list
+        for (auto id : std::span{span->child, span->childCount}) {
+            fmtlib::format_to(
+                std::back_inserter(children),
+                "{},",
+                static_cast<intptr_t>(id)
+            );
+        }
+        if (!children.empty()) {
+            children.pop_back(); // Remove trailing comma
+        }
+
         fmtlib::format_to(
             std::back_inserter(json),
             R"JSON({{
@@ -330,20 +274,21 @@ auto TracingWebUi::Impl::snapshotJson() -> std::pmr::string {
                 "busy_time": {},
                 "resumes": {},
                 "location": "{}",
-                "children": [{:n}]
+                "children": [{}]
             }},)JSON",
-            static_cast<intptr_t>(id),
-            static_cast<intptr_t>(record.parentId),
-            record.name,
-            "Idle",
+            static_cast<intptr_t>(span->id),
+            static_cast<intptr_t>(span->parentId),
+            span->name,
+            span->state,
             totalTime.count(),
             totalBusy.count(),
-            record.resumes,
-            record.location,
-            record.children
+            span->resumes,
+            span->location,
+            children
         );
+        children.clear();
     }
-    if (!mIdMaps.empty()) {
+    if (!registery.empty()) {
         json.pop_back(); // Remove trailing comma
     }
     json += "]";
@@ -392,7 +337,12 @@ auto TracingWebUi::Impl::snapshotStacktrace(intptr_t id) -> std::pmr::string {
 
 // MARK: TracingWebUi
 TracingWebUi::TracingWebUi(std::string_view bind) : d(std::make_unique<Impl>()) {
-    d->mBind.assign(bind);
+    if (auto env = ::getenv("ILIAS_TRACING_WEBUI_BIND"); env) {
+        d->mBind.assign(env);
+    }
+    else {
+        d->mBind.assign(bind);
+    }
 }
 TracingWebUi::~TracingWebUi() = default;
 

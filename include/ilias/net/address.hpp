@@ -14,6 +14,7 @@
 #include <ilias/detail/overloads.hpp>
 #include <ilias/net/system.hpp>
 #include <ilias/result.hpp>
+#include <ilias/buffer.hpp>
 #include <charconv>
 #include <compare>
 #include <variant>
@@ -33,11 +34,21 @@ public:
     constexpr IPAddress4(const IPAddress4 &other) = default;
 
     /**
+     * @brief Cast self to a byte span
+     * 
+     * @return Buffer
+     */
+    auto bytes() const -> Buffer {
+        return makeBuffer(this, sizeof(*this));
+    }
+
+    /**
      * @brief Convert the address to string
      * 
      * @return std::string 
      */
     auto toString() const -> std::string {
+        // "xxx.xxx.xxx.xxx"
         char buf[INET_ADDRSTRLEN] {0};
         return ::inet_ntop(AF_INET, this, buf, sizeof(buf));
     }
@@ -67,15 +78,6 @@ public:
      */
     auto toUint8Array() const -> std::array<uint8_t, sizeof(::in_addr)> {
         return std::bit_cast<std::array<uint8_t, sizeof(::in_addr)> >(*this);
-    }
-
-    /**
-     * @brief Cast self to a byte span
-     * 
-     * @return std::span<const std::byte> 
-     */
-    auto span() const -> std::span<const std::byte> {
-        return std::as_bytes(std::span(this, 1));
     }
 
     /**
@@ -192,13 +194,16 @@ public:
     /**
      * @brief Copy data from buffer to create ipv4 address
      * 
-     * @param mem pointer to network-format ipv4 address
-     * @param n must be sizeof(::in_addr)
+     * @param buf network-format ipv4 address
      * @return IPAddress4 
      */
-    static auto fromRaw(const void *mem, size_t n) -> IPAddress4 {
-        ILIAS_ASSERT(n == sizeof(::in_addr));
-        return IPAddress4(*reinterpret_cast<const ::in_addr *>(mem));
+    static auto fromBytes(Buffer buf) -> Result<IPAddress4, std::errc> {
+        if (buf.size() != sizeof(::in_addr)) {
+            return Err(std::errc::invalid_argument);
+        }
+        ::in_addr addr;
+        ::memcpy(&addr, buf.data(), buf.size());
+        return addr;
     }
 
     /**
@@ -324,10 +329,10 @@ public:
     /**
      * @brief Cast self to a byte span
      * 
-     * @return std::span<const std::byte> 
+     * @return Buffer
      */
-    auto span() const -> std::span<const std::byte> {
-        return std::as_bytes(std::span {this, 1});
+    auto bytes() const -> Buffer {
+        return makeBuffer(this, sizeof(*this));
     }
 
     /**
@@ -448,12 +453,16 @@ public:
     /**
      * @brief Copy data from buffer to create ipv6 address
      * 
-     * @param mem pointer to network-format ipv6 address
-     * @param n must be sizeof(::in6_addr)
+     * @param buf network-format ipv6 address
      * @return IPAddress6 
      */
-    static auto fromRaw(const void *mem, [[maybe_unused]] size_t n) -> IPAddress6 {
-        return *reinterpret_cast<const ::in6_addr *>(mem);
+    static auto fromBytes(Buffer buf) -> Result<IPAddress6, std::errc> {
+        if (buf.size() != 16) {
+            return Err(std::errc::invalid_argument);
+        }
+        ::in6_addr addr;
+        ::memcpy(&addr, buf.data(), buf.size());
+        return addr;
     }
 
     /**
@@ -507,7 +516,7 @@ public:
      * @param str The IPV4 or IPV6 address string, if failed, the family will be AF_UNSPEC
      */
     template <typename T> requires (std::convertible_to<T, std::string_view>)
-    IPAddress(const T &str) : IPAddress{fromString(str).value_or(IPAddress {})} {}
+    IPAddress(const T &str) : IPAddress{fromString(str).value_or(IPAddress{})} {}
 
     /**
      * @brief Convert the address to string
@@ -516,7 +525,7 @@ public:
      */
     auto toString() const -> std::string {
         constexpr auto visitor = Overloads {
-            [](std::monostate) { return std::string {}; },
+            [](std::monostate) { return std::string{}; },
             [](const IPAddress4 &addr) { return addr.toString(); },
             [](const IPAddress6 &addr) { return addr.toString(); },
         };
@@ -526,13 +535,13 @@ public:
     /**
      * @brief Cast self to a byte span 
      * 
-     * @return std::span<const std::byte> 
+     * @return Buffer
      */
-    auto span() const -> std::span<const std::byte> {
+    auto bytes() const -> Buffer {
         constexpr auto visitor = Overloads {
-            [](std::monostate) { return std::span<const std::byte> {}; },
-            [](const IPAddress4 &addr) { return addr.span(); },
-            [](const IPAddress6 &addr) { return addr.span(); },
+            [](std::monostate) { return Buffer{}; },
+            [](const IPAddress4 &addr) { return addr.bytes(); },
+            [](const IPAddress6 &addr) { return addr.bytes(); },
         };
         return std::visit(visitor, mData);
     }
@@ -601,6 +610,7 @@ public:
      * 
      */
     auto operator <=>(const IPAddress &other) const noexcept = default;
+    auto operator ==(const IPAddress &other) const noexcept -> bool = default;
 
     /**
      * @brief Try parse the IP address from string
@@ -614,32 +624,25 @@ public:
         }
 
         if (str.find(':') != std::string_view::npos) {
-            auto res = IPAddress6::fromString(str);
-            if (!res) {
-                return Err(res.error());
-            }
-            return *res;
+            ILIAS_TRY(auto res, IPAddress6::fromString(str));
+            return IPAddress{res};
         }
         else {
-            auto res = IPAddress4::fromString(str);
-            if (!res) {
-                return Err(res.error());
-            }
-            return *res;
+            ILIAS_TRY(auto res, IPAddress4::fromString(str));
+            return IPAddress{res};
         }
     }
 
     /**
      * @brief Try get the IP address from raw data
      * 
-     * @param data 
-     * @param length 
+     * @param buf The network order data
      * @return Result<IPAddress> 
      */
-    static auto fromRaw(const void *data, size_t length) -> Result<IPAddress, std::errc> {
-        switch (length) {
-            case sizeof(::in_addr): return *reinterpret_cast<const ::in_addr *>(data);
-            case sizeof(::in6_addr): return *reinterpret_cast<const ::in6_addr *>(data);
+    static auto fromBytes(Buffer buf) -> Result<IPAddress, std::errc> {
+        switch (buf.size()) {
+            case sizeof(::in_addr): return IPAddress4::fromBytes(buf);
+            case sizeof(::in6_addr): return IPAddress6::fromBytes(buf);
             default: return Err(std::errc::invalid_argument);
         }
     }
@@ -679,7 +682,7 @@ struct std::hash<ilias::IPAddress4> {
 template <>
 struct std::hash<ilias::IPAddress6> {
     auto operator()(const ilias::IPAddress6 &addr) const noexcept -> size_t {
-        auto span = addr.span();
+        auto span = addr.bytes();
         auto view = std::string_view {reinterpret_cast<const char*>(span.data()), span.size()};
         return std::hash<std::string_view>{}(view);
     }
@@ -688,7 +691,7 @@ struct std::hash<ilias::IPAddress6> {
 template <>
 struct std::hash<ilias::IPAddress> {
     auto operator()(const ilias::IPAddress &addr) const noexcept -> size_t {
-        auto span = addr.span();
+        auto span = addr.bytes();
         auto view = std::string_view {reinterpret_cast<const char*>(span.data()), span.size()};
         return std::hash<std::string_view>{}(view);
     }

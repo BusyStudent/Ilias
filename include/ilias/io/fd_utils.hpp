@@ -127,13 +127,13 @@ inline auto type(fd_t fd) -> IoResult<IoDescriptor::Type> {
         if (S_ISCHR(st.st_mode) && ::isatty(fd)) {
             return IoDescriptor::Tty;
         }
-        else if (S_ISREG(st.st_mode)) {
+        if (S_ISREG(st.st_mode)) {
             return IoDescriptor::File;
         }
-        else if (S_ISFIFO(st.st_mode)) {
+        if (S_ISFIFO(st.st_mode)) {
             return IoDescriptor::Pipe;
         }
-        else if (S_ISSOCK(st.st_mode)) {
+        if (S_ISSOCK(st.st_mode)) {
             return IoDescriptor::Socket;
         }
         return IoDescriptor::Unknown;

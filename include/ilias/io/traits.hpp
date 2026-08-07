@@ -48,10 +48,9 @@ enum class FillPolicy : int {
  * @tparam U
  */
 template <typename T, typename U>
-concept IsIoAwaitable = requires {
-    requires Awaitable<T>; // T is awaitable
-    requires std::same_as<AwaitableResult<T>, IoResult<U> >; // T's await result is same as IoResult<U>
-};
+concept IsIoAwaitable = 
+    Awaitable<T> && // T is awaitable
+    std::same_as<AwaitableResult<T>, IoResult<U> >; // T's await result is same as IoResult<U>
 
 /**
  * @brief Concept for types that can be read to a a byte span.

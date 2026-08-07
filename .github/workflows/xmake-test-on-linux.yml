@@ -67,7 +67,7 @@ jobs:
         
         echo "Configuring with: -m ${{ matrix.mode }} -k ${{ matrix.kind }} --toolchain=${{ matrix.toolchain }} $CONFIG_ARGS"
         
-        xmake f -m ${{ matrix.mode }} -k ${{ matrix.kind }} --toolchain=${{ matrix.toolchain }} $CONFIG_ARGS --dev=y -y
+        xmake f -m ${{ matrix.mode }} -k ${{ matrix.kind }} --toolchain=${{ matrix.toolchain }} $CONFIG_ARGS --dev=y --sanitizer=y -y
 
     - name: Build
       run: xmake -y

@@ -135,7 +135,7 @@ private:
         switch (origin) {
             case SeekOrigin::Begin: pos = offset; break;
             case SeekOrigin::Current: pos += offset; break;
-            case SeekOrigin::End: pos = static_cast<int64_t>(size) + offset; break;
+            case SeekOrigin::End: pos = size + offset; break;
         }
         if (pos < 0) {
             pos = 0;

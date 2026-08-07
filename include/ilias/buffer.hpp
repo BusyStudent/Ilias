@@ -13,6 +13,7 @@
 #include <ilias/defines.hpp>
 #include <cstdint> // std::uint16_t
 #include <utility> // std::swap
+#include <ranges> // std::ranges::range
 #include <array> // std::array
 #include <span> // std::span
 #include <bit> // std::bit_cast
@@ -109,18 +110,14 @@ concept MemContainer = MemExpendable<T> && MemWritable<T> && MemReadable<T>;
  * @tparam T 
  */
 template <typename T>
-concept BufferSequence = requires(T &t) {
-    { *std::begin(t) } -> std::convertible_to<Buffer>;
-    { *std::end(t)  } -> std::convertible_to<Buffer>;
-    {  std::size(t) } -> std::convertible_to<size_t>;
-};
+concept BufferSequence = 
+    std::ranges::range<T> && 
+    std::convertible_to<std::ranges::range_value_t<T>, Buffer>;
 
 template <typename T>
-concept MutableBufferSequence = requires(T &t) {
-    { *std::begin(t) } -> std::convertible_to<MutableBuffer>;
-    { *std::end(t)  } -> std::convertible_to<MutableBuffer>;
-    {  std::size(t) } -> std::convertible_to<size_t>;
-};
+concept MutableBufferSequence = 
+    std::ranges::range<T> && 
+    std::convertible_to<std::ranges::range_value_t<T>, MutableBuffer>;
 
 // --- Utils for Buffer(std::span<const std::byte>) & MutableBuffer(std::span<std::byte>)
 /**

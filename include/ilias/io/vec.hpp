@@ -17,6 +17,7 @@
 #include <cstdlib> // malloc
 #include <limits> // std::numeric_limits
 #include <vector> // std::vector
+#include <ranges> // std::ranges::sized_range
 #include <span> // std::span
 
 #if defined(_WIN32)
@@ -173,8 +174,8 @@ inline auto makeIoSequence(const T &seq) {
     }
     else {
         std::vector<IoVec> vec;
-        if constexpr (requires { std::size(seq); }) {
-            vec.reserve(std::size(seq));
+        if constexpr (std::ranges::sized_range<T>) {
+            vec.reserve(std::ranges::size(seq));
         }
         for (Buffer buf : seq) {
             vec.emplace_back(buf);
@@ -191,8 +192,8 @@ inline auto makeMutableIoSequence(const T &seq) {
     }
     else {
         std::vector<MutableIoVec> vec;
-        if constexpr (requires { std::size(seq); }) {
-            vec.reserve(std::size(seq));
+        if constexpr (std::ranges::sized_range<T>) {
+            vec.reserve(std::ranges::size(seq));
         }
         for (MutableBuffer buf : seq) {
             vec.emplace_back(buf);

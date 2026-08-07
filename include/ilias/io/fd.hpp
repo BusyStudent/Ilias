@@ -5,6 +5,12 @@
 #include <ilias/io/error.hpp>
 #include <memory>
 
+#if defined(_WIN32)
+    #include <ilias/detail/win32defs.hpp> // CloseHandle
+#else
+    #include <unistd.h> // close
+#endif
+
 ILIAS_NS_BEGIN
 
 // MARK: File Descriptor

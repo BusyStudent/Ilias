@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(ilias 
-    VERSION 0.4.0
+    VERSION 0.5.0
     DESCRIPTION "Modern C++ Async I/O Library"
     LANGUAGES CXX
 )
@@ -30,26 +30,24 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(FindDependencies)
 
 # Add source code
-set(SRCS
-    src/io.cpp
-    src/log.cpp
-    src/runtime.cpp
-    src/process.cpp
-    src/sync.cpp
-    src/task.cpp
-    src/fiber/fiber.cpp
-    src/net/addrinfo.cpp
+file(GLOB SRCS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/task/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/net/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/fiber/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/*.cpp"
 )
 
 set(LIBS)
 
 if(WIN32)
-    list(APPEND SRCS 
-        src/win32/io_context.cpp
-        src/win32/ntdll.cpp
-        src/win32/signal.cpp
-        src/win32/win32.cpp
+    file(GLOB PLATFORM_SRCS CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/win32/*.cpp"
     )
+    list(APPEND SRCS
+        ${PLATFORM_SRCS}
+    )
+
     list(APPEND LIBS ws2_32 mswsock kernel32)
     
     if(ILIAS_TLS)
@@ -58,15 +56,14 @@ if(WIN32)
     endif()
 
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND SRCS 
-        src/linux/epoll.cpp
-        src/linux/signal.cpp
+    file(GLOB PLATFORM_SRCS CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/linux/*.cpp"
     )
-    list(APPEND LIBS pthread dl anl rt)
+    list(APPEND SRCS
+        ${PLATFORM_SRCS}
+    )
 
-    if(ILIAS_USE_IO_URING)
-        list(APPEND SRCS src/linux/uring.cpp)
-    endif()
+    list(APPEND LIBS pthread dl anl rt)
     
     if(ILIAS_TLS)
         list(APPEND SRCS src/tls/openssl.cpp)

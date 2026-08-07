@@ -66,13 +66,6 @@ private:
  */
 class ILIAS_API AddressInfo {
 public:
-    struct iterator {
-        auto operator ++() noexcept -> iterator & { ptr = ptr->ai_next; return *this; }
-        auto operator *() const -> IPEndpoint { return IPEndpoint::fromRaw(ptr->ai_addr, ptr->ai_addrlen).value(); }
-        auto operator <=>(const iterator &other) const noexcept = default;
-        addrinfo_t *ptr = nullptr;
-    };
-
     explicit AddressInfo(addrinfo_t *info) noexcept : mInfo(info) { }
     AddressInfo() = default;
     AddressInfo(const AddressInfo &) = delete;
@@ -97,9 +90,7 @@ public:
      * 
      * @return addrinfo_t* 
      */
-    auto get() const -> addrinfo_t *;
-    auto end() const -> iterator;
-    auto begin() const -> iterator;
+    auto get() const -> addrinfo_t * { return mInfo.get(); }
 
     // Operator
     auto operator =(AddressInfo &&info) -> AddressInfo & = default;
@@ -110,7 +101,9 @@ public:
      * @return true 
      * @return false 
      */
-    explicit operator bool() const noexcept;
+    explicit operator bool() const noexcept {
+        return bool(mInfo);
+    }
 
     /**
      * @brief Async lookup the address info by given host
@@ -154,17 +147,13 @@ private:
 };
 
 // --- AddressInfo Impl
-inline AddressInfo::operator bool() const noexcept { return mInfo != nullptr; }
-inline auto AddressInfo::get() const -> addrinfo_t * { return mInfo.get(); }
-inline auto AddressInfo::begin() const -> iterator { return {mInfo.get()}; }
-inline auto AddressInfo::end() const -> iterator { return {nullptr}; }
-
 inline auto AddressInfo::endpoints() const -> std::vector<IPEndpoint> {
     std::vector<IPEndpoint> vec;
     for (auto cur = mInfo.get(); cur != nullptr; cur = cur->ai_next) {
-        auto ep = IPEndpoint::fromRaw(cur->ai_addr, cur->ai_addrlen);
+        auto buf = makeBuffer(cur->ai_addr, cur->ai_addrlen);
+        auto ep = IPEndpoint::fromBytes(buf);
         if (ep) {
-            vec.emplace_back(ep.value());
+            vec.emplace_back(*ep);
         }
     }
     return vec;

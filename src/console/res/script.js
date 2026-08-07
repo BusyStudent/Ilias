@@ -118,7 +118,7 @@ async function fetchTasks() {
         //     {
         //         "id": 0,
         //         "name": "Task 1",
-        //         "state": "Running or Idle or Yielded or Completed",
+        //         "state": "Running or Suspended or Completed",
         //         "total_time": 1234,
         //         "busy_time": 1000,
         //         "resumes": 5,

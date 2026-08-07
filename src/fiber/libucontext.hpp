@@ -17,17 +17,22 @@
 #include <cstring>
 #include <cstdarg>
 #include <cstdint>
-#include <ucontext.h>
+
+#if __has_include(<ucontext.h>)
+    #include <ucontext.h>
+#endif // __has_include(<ucontext.h>)
 
 ILIAS_NS_BEGIN
 
 // Pollyfill of the ucontext on some platform (like android)
 namespace sys {
 
+#if __has_include(<ucontext.h>)
 // On android, the system header provide it
 using ::ucontext_t;
+#endif // __has_include(<ucontext.h>)
 
-#if  !defined(__ANDROID__)
+#if __has_include(<ucontext.h>) && !defined(__ANDROID__)
 using ::makecontext;
 using ::swapcontext;
 using ::getcontext;
