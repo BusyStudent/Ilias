@@ -4,7 +4,7 @@ if has_config("modules") then
         set_kind("binary")
         
         add_deps("ilias_modules")
-        add_files("test_modules.cpp")
+        add_files("*.cpp")
         add_tests("signal", {run_timeout = 10000})
     target_end()
 end

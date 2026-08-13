@@ -12,6 +12,7 @@
 
 #include <ilias/platform.hpp>
 #include <ilias/process.hpp>
+#include <ilias/console.hpp>
 #include <ilias/buffer.hpp>
 #include <ilias/signal.hpp>
 #include <ilias/fiber.hpp>

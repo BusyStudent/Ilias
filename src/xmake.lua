@@ -110,6 +110,12 @@ if has_config("modules") then
     target("ilias_modules")
         set_kind("moduleonly")
         add_deps("ilias", {public = true})
-        add_files("../include/ilias.cppm", {install = true})
+
+        -- The C++ modules rule does not track headers textually included by a
+        -- module interface. Make changes to the generated configuration part
+        -- of the compile command so that its BMI and object are rebuilt.
+        local configfile = path.join(os.projectdir(), "include", "ilias", "detail", "config.hpp")
+        local configdefine = os.isfile(configfile) and "ILIAS_MODULE_CONFIG_" .. hash.sha256(configfile):sub(1, 16) or nil
+        add_files("../include/ilias.cppm", {install = true, defines = configdefine})
     target_end()
 end
