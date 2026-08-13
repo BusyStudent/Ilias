@@ -43,7 +43,7 @@ public:
 	}
 };
 
-class TlsStateImpl : public TlsState {
+class TlsStateImpl final : public TlsState {
 public:
 	// OpenSSL State
 	BIO *mBio = nullptr;
@@ -185,6 +185,7 @@ public:
 				co_return Err(res.error());
 			}
 		}
+		ILIAS_DEBUG("OpenSSL", "Tls handshake success, version: {}", SSL_get_version(mSsl));
 		co_return {};
 	}
 
@@ -286,6 +287,17 @@ auto unregisterBioMethod() -> void {
 	bioMethod = nullptr;
 }
 
+auto versionOf(std::optional<TlsVersion> v) -> int {
+	if (!v) {
+		return 0; // Unspec
+	}
+	switch (*v) {
+		case TlsVersion::Tlsv1_2: return TLS1_2_VERSION;
+		case TlsVersion::Tlsv1_3: return TLS1_3_VERSION;
+		default: return 0;
+	}
+}
+
 } // namespace
 } // namespace openssl
 
@@ -309,7 +321,7 @@ auto context::make(uint32_t flags) -> void * {
 	// Configue
 	// Enable verify
 	if (!(flags & TlsContext::NoVerify)) {
-		context::setVerify(ctxt, true);
+		context::setVerify(ctxt, TlsVerify::Peer);
 	}
 	if (!(flags & TlsContext::NoDefaultRootCerts)) {
 		if (!context::loadDefaultRootCerts(ctxt)) {
@@ -327,10 +339,25 @@ auto context::backend() -> TlsBackend {
 	return TlsBackend::OpenSSL;
 }
 
-auto context::setVerify(void *ptr, bool verify) -> void {
+auto context::setVerify(void *ptr, TlsVerify verify) -> void {
 	auto ctxt = static_cast<SSL_CTX*>(ptr);
-	auto flags = verify ? SSL_VERIFY_PEER : SSL_VERIFY_NONE;
+	auto flags = [&]() -> int {
+		switch (verify) {
+			case TlsVerify::None: return SSL_VERIFY_NONE;
+			case TlsVerify::Peer: return SSL_VERIFY_PEER;
+			case TlsVerify::Mutual: return SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+			default: ILIAS_THROW(std::invalid_argument{"Invalid verify flag"});
+		}
+	}();
 	SSL_CTX_set_verify(ctxt, flags, nullptr);
+}
+
+auto context::setMinVersion(void *ptr, std::optional<TlsVersion> version) -> void {
+	SSL_CTX_set_min_proto_version(static_cast<SSL_CTX*>(ptr), versionOf(version));
+}
+
+auto context::setMaxVersion(void *ptr, std::optional<TlsVersion> version) -> void {
+	SSL_CTX_set_max_proto_version(static_cast<SSL_CTX*>(ptr), versionOf(version));
 }
 
 auto context::loadDefaultRootCerts(void *ptr) -> bool {
@@ -348,7 +375,7 @@ auto context::loadDefaultRootCerts(void *ptr) -> bool {
 	// Begin enumerate
 	::PCCERT_CONTEXT cert = nullptr;
 	::X509 *x509 = nullptr;
-	auto _ = ScopeExit([=] {
+	ScopeExit _([=] {
 		::CertCloseStore(certStore, 0);
 	});
 	while (cert = ::CertEnumCertificatesInStore(certStore, cert)) {

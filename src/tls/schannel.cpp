@@ -35,10 +35,26 @@ namespace {
 
 // Context Here
 #define WIN32_IMPORT(fn, dll) decltype(::fn) *fn = reinterpret_cast<decltype(::fn) *>(::GetProcAddress(dll, #fn))
-#define SECUR_IMPORT(fn) WIN32_IMPORT(fn, mSecurDll)
-#define CRYPT_IMPORT(fn) WIN32_IMPORT(fn, mCryptDll)
-#define NCRYPT_IMPORT(fn) WIN32_IMPORT(fn, mNCryptDll)
-#define ADVAPI_IMPORT(fn) WIN32_IMPORT(fn, mAdvapiDll)
+#define SECUR_IMPORT(fn) WIN32_IMPORT(fn, mSecurDll.mHandle)
+#define CRYPT_IMPORT(fn) WIN32_IMPORT(fn, mCryptDll.mHandle)
+#define NCRYPT_IMPORT(fn) WIN32_IMPORT(fn, mNCryptDll.mHandle)
+#define ADVAPI_IMPORT(fn) WIN32_IMPORT(fn, mAdvapiDll.mHandle)
+
+struct Dll {
+    Dll(const wchar_t *mod) : mHandle(::LoadLibraryW(mod)) {
+        if (!mHandle) {
+            ILIAS_ERROR("Schannel", "Failed to load crypto library {}", win32::toUtf8(mod));
+            ILIAS_THROW(std::system_error{SystemError::fromErrno()});
+        }
+    }
+    ~Dll() {
+        if (mHandle) {
+            ::FreeLibrary(mHandle);
+        }
+    }
+
+    ::HMODULE mHandle;
+};
 
 struct TlsContextImpl {
     TlsContextImpl(uint32_t flags) {
@@ -66,7 +82,7 @@ struct TlsContextImpl {
             loadDefaultRootCerts();
         }
         if (!(flags & TlsContext::NoVerify)) {
-            setVerify(true);
+            setVerify(TlsVerify::Peer);
         }
     }
 
@@ -98,20 +114,11 @@ struct TlsContextImpl {
         if (mCertKeyProvider) {
             NCryptFreeObject(mCertKeyProvider);
         }
-        if (mSecurDll) {
-            ::FreeLibrary(mSecurDll);
-        }
-        if (mCryptDll) {
-            ::FreeLibrary(mCryptDll);
-        }
-        if (mNCryptDll) {
-            ::FreeLibrary(mNCryptDll);
-        }
     }
 
     // MARK: Public API
-    auto setVerify(bool verify) -> void {
-        mVerifyPeer = verify;
+    auto setVerify(TlsVerify verify) -> void {
+        mVerify = verify;
     }
 
     auto loadDefaultRootCerts() -> bool {
@@ -388,15 +395,15 @@ struct TlsContextImpl {
 
     // MARK: Context Member
     // Basic State
-    ::HMODULE mSecurDll = ::LoadLibraryW(L"secur32.dll");
-    ::HMODULE mCryptDll = ::LoadLibraryW(L"crypt32.dll");
-    ::HMODULE mNCryptDll = ::LoadLibraryW(L"ncrypt.dll");
+    Dll mSecurDll {L"secur32.dll"};
+    Dll mCryptDll {L"crypt32.dll"};
+    Dll mNCryptDll {L"ncrypt.dll"};
     ::PSecurityFunctionTableW mTable = nullptr;
     bool mHasAlpn = win32::ntdll().IsWindows8Point1OrGreater(); // ALPN is on the Windows 8.1 and later
 
     // Configure
     bool mDefaultRootCertsLoaded = false;
-    bool mVerifyPeer = false;
+    TlsVerify mVerify = TlsVerify::None;
 
     // Credentials
     ::CredHandle mClientCred {}; // Use for client SECPKG_CRED_OUTBOUND
@@ -455,7 +462,7 @@ public:
     bool mIsExpired = false;
     bool mIsClient = false;  // is TlsRole::Client ?
     bool mIsTls13 = false; // is TLS 1.3 ?
-    bool mVerifyPeer = false;
+    TlsVerify mVerify = TlsVerify::None;
 
     // Tls Configure
     std::vector<std::byte> mAlpn;
@@ -467,7 +474,7 @@ public:
     FixedStreamBuffer<16384 + 100> mReadBuffer;  //< The incoming buffer 2 ** 14 (MAX TLS SIZE) + header + trailer
     FixedStreamBuffer<16384 + 100> mWriteBuffer;
 
-    TlsStateImpl(TlsContextImpl &ctxt) : mCtxt(ctxt), mTable(ctxt.mTable), mVerifyPeer(ctxt.mVerifyPeer) {
+    TlsStateImpl(TlsContextImpl &ctxt) : mCtxt(ctxt), mTable(ctxt.mTable), mVerify(ctxt.mVerify) {
         // Mark as not initialized
         SecInvalidateHandle(&mCredHandle);
         SecInvalidateHandle(&mTls);
@@ -512,8 +519,9 @@ public:
 
             ::DWORD flags = ISC_REQ_USE_SUPPLIED_CREDS | ISC_REQ_ALLOCATE_MEMORY | 
                         ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
-            if (!mVerifyPeer) { // Skip peer verification if set
-                flags |= ISC_REQ_MANUAL_CRED_VALIDATION;
+            switch (mVerify) {
+                case TlsVerify::None: flags |= ISC_REQ_MANUAL_CRED_VALIDATION; break; // Skip peer verification if set
+                case TlsVerify::Mutual: flags |= ISC_REQ_MUTUAL_AUTH; break;
             }
             auto host = mHostname.empty() ? nullptr : mHostname.data();
             auto status = mTable->InitializeSecurityContextW(
@@ -806,7 +814,7 @@ public:
         if (buffer.empty() || mIsExpired) {
             co_return 0;
         }
-        SECURITY_STATUS status;
+        SECURITY_STATUS status{};
         while (true) {
             if (!mDecryptedBuffer.empty()) { // Oh, already have some decrypted data left
                 auto n = std::min(buffer.size(), mDecryptedBuffer.size());
@@ -824,7 +832,7 @@ public:
                 co_return n;
             }
             if (!mReadBuffer.empty()) { // Oh, has data, try to decrypt it
-                ::SecBuffer buffers[4] { };
+                ::SecBuffer buffers[4] {};
 
                 buffers[0].BufferType = SECBUFFER_DATA;
                 buffers[0].pvBuffer = mReadBuffer.data().data();
@@ -864,25 +872,32 @@ public:
                     co_return 0;
                 }
                 else if (status == SEC_I_RENEGOTIATE) {
-                    // TODO: Fully Handle SEC_I_RENEGOTIATE
-                    // https://stackoverflow.com/questions/77204959/how-to-handle-a-sec-i-renegotiate-from-schannel-received-during-tls-1-3-negotiat
-                    // Renegotiate
-                    // StackOverflow says the extra buffer is the token
-                    ILIAS_TRACE("Schannel", "Peer requested renegotiation");
-                    if (buffers[3].BufferType != SECBUFFER_EXTRA || !mIsTls13) { // We currently only support Tls1.3 renegotiation
-                        ILIAS_WARN("Schannel", "Renegotiation failed, no extra buffer or not Tls1.3, we only support SEC_I_RENEGOTIATE in Tls1.3");
-                        co_return Err(SystemError(status));
-                    }
+                    // Peer wants to renegotiate
+                    // TLS1.3 (NewSessionTicket and KeyUpdate) as SEC_I_RENEGOTIATE.
+                    ILIAS_TRACE("Schannel", "Peer sent a post-handshake message, maybe ");
                     if (mIsClient) { // Client
                         ::DWORD flags = ISC_REQ_USE_SUPPLIED_CREDS | ISC_REQ_ALLOCATE_MEMORY | 
                             ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
+                        switch (mVerify) {
+                            case TlsVerify::None: flags |= ISC_REQ_MANUAL_CRED_VALIDATION; break; // Skip peer verification if set
+                            case TlsVerify::Mutual: flags |= ISC_REQ_MUTUAL_AUTH; break;
+                        }
                         ::SecBuffer outbuffers[1] {};
                         outbuffers[0].BufferType = SECBUFFER_TOKEN;
 
-                        ::SecBuffer inbuffers[1] {};
+                        // Put the extra part to InitializeSecurityContext
+                        ::SecBuffer inbuffers[2] {};
                         inbuffers[0].BufferType = SECBUFFER_TOKEN;
-                        inbuffers[0].pvBuffer = buffers[3].pvBuffer;
-                        inbuffers[0].cbBuffer = buffers[3].cbBuffer;
+                        inbuffers[1].BufferType = SECBUFFER_EMPTY;
+
+                        if (buffers[3].BufferType == SECBUFFER_EXTRA) {
+                            inbuffers[0].pvBuffer = buffers[3].pvBuffer;
+                            inbuffers[0].cbBuffer = buffers[3].cbBuffer;
+                        }
+                        else {
+                            inbuffers[0].pvBuffer = mReadBuffer.data().data();
+                            inbuffers[0].cbBuffer = mReadBuffer.size();
+                        }
 
                         ::SecBufferDesc indesc { SECBUFFER_VERSION, ARRAYSIZE(inbuffers), inbuffers };
                         ::SecBufferDesc outdesc { SECBUFFER_VERSION, ARRAYSIZE(outbuffers), outbuffers };
@@ -902,17 +917,19 @@ public:
                             nullptr
                         );
                         if (status != SEC_E_OK) {
-                            ILIAS_WARN("Schannel", "Failed to renegotiate {}", status);
+                            ILIAS_WARN("Schannel", "Failed to process post-handshake message {}", status);
                             co_return Err(SystemError(status));
                         }
+
+                        // Calc how many bytes did we use
+                        auto remaining = inbuffers[1].BufferType == SECBUFFER_EXTRA ? inbuffers[1].cbBuffer : 0;
+                        mReadBuffer.consume(mReadBuffer.size() - remaining);
                     }
                     else {
                         // TODO: Server...
-                        ILIAS_WARN("Schannel", "Renegotiation failed, server not supported");
+                        ILIAS_WARN("Schannel", "Renegotiation failed, server not supported yet");
                         co_return Err(SystemError(status));
                     }
-                    mReadBuffer.consume(mReadBuffer.size() - buffers[3].cbBuffer); // Consume the message (DecryptMessage)
-                    mReadBuffer.consume(buffers[3].cbBuffer); // Consume the token (InitializeSecurityContextW)
                     continue;
                 }
                 else if (status != SEC_E_INCOMPLETE_MESSAGE) {
@@ -1088,7 +1105,7 @@ auto context::backend() -> TlsBackend {
     return TlsBackend::Schannel;
 }
 
-auto context::setVerify(void *ctxt, bool verify) -> void {
+auto context::setVerify(void *ctxt, TlsVerify verify) -> void {
     return static_cast<TlsContextImpl *>(ctxt)->setVerify(verify);
 }
 

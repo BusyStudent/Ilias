@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ilias/detail/scope_exit.hpp>
 #include <ilias/io/dyn_traits.hpp>
 #include <ilias/io/traits.hpp>
 #include <ilias/io/error.hpp>
@@ -14,6 +15,8 @@ ILIAS_NS_BEGIN
 // Forward declarations
 enum class TlsRole;
 enum class TlsBackend;
+enum class TlsVersion;
+enum class TlsVerify;
 
 #if defined(_WIN32)
 namespace win32 {
@@ -47,6 +50,9 @@ public:
     auto setAlpnProtocols(std::span<const std::string_view> protocols) -> bool;
     auto alpnSelected() const -> std::string_view;
 
+    // Native
+    auto nativeHandle() const -> void *;
+
     static auto make(void *ctxt) -> TlsState *;
 protected:
     TlsState() = default;
@@ -59,7 +65,9 @@ namespace context {
     extern auto ILIAS_API destroy(void *ctxt) -> void;
     extern auto ILIAS_API backend() -> TlsBackend;
 
-    extern auto ILIAS_API setVerify(void *ctxt, bool verify) -> void;
+    extern auto ILIAS_API setVerify(void *ctxt, TlsVerify verify) -> void;
+    extern auto ILIAS_API setMinVersion(void *ctxt, std::optional<TlsVersion> version) -> void;
+    extern auto ILIAS_API setMaxVersion(void *ctxt, std::optional<TlsVersion> version) -> void;
     extern auto ILIAS_API loadDefaultRootCerts(void *ctxt) -> bool;
     extern auto ILIAS_API loadRootCerts(void *ctxt, Buffer buffer) -> bool;
     extern auto ILIAS_API usePrivateKey(void *ctxt, Buffer key, std::string_view password) -> bool;
@@ -94,8 +102,27 @@ enum class TlsBackend {
 };
 
 /**
+ * @brief The version of the tls
+ * 
+ */
+enum class TlsVersion {
+    Tlsv1_2,
+    Tlsv1_3
+};
+
+/**
+ * @brief The verify mode for tls
+ * 
+ */
+enum class TlsVerify {
+    None,  // No verification
+    Peer,  // Verify the peer certificate
+    Mutual // Verify the peer certificate and the client certificate
+};
+
+/**
  * @brief The TlsContext
- * @note By the implementation limitation (if schannel), configure the context before creating the TlsStream
+ * @note By the implementation limitation (if schannel), please configure the context before creating the TlsStream
  * 
  */
 class TlsContext final {
@@ -106,14 +133,37 @@ public:
         NoDefaultRootCerts = 1 << 11, // Tell the context to don't load the system CA when constructed
     };
 
-    TlsContext(uint32_t flags = None) : d(tls::context::make(flags)) {}
-    TlsContext(const TlsContext &) = delete;
+    explicit TlsContext(uint32_t flags = None) : d(tls::context::make(flags)) {}
     TlsContext(TlsContext &&) = default;
-    ~TlsContext() = default;
 
     // Verify
-    auto setVerify(bool verify) -> void {
+    /**
+     * @brief Set the Verify mode
+     * @note default in TlsVerify::Peer
+     * 
+     * @param verify The verify mode
+     */
+    auto setVerify(TlsVerify verify) -> void {
         return tls::context::setVerify(d.get(), verify);
+    }
+
+    // Version
+    /**
+     * @brief Set the minimum allowed protocol version 
+     * 
+     * @param version The version (nullopt on unspec)
+     */
+    auto setMinVersion(std::optional<TlsVersion> version) -> void {
+        return tls::context::setMinVersion(d.get(), version);
+    }
+
+    /**
+     * @brief Set the maximum allowed protocol version 
+     * 
+     * @param version The version (nullopt on unspec)
+     */
+    auto setMaxVersion(std::optional<TlsVersion> version) -> void {
+        return tls::context::setMaxVersion(d.get(), version);
     }
 
     // Roots certificates
@@ -174,18 +224,23 @@ private:
         if (!fp) {
             return false;
         }
+        ScopeExit _([fp]() {
+            ::fclose(fp);
+        });
+
         ::fseek(fp, 0, SEEK_END);
         auto size = ::ftell(fp);
+        if (size <=0) {
+            return false;
+        }
         ::fseek(fp, 0, SEEK_SET);
 
         auto ptr = std::make_unique<std::byte []>(size);
         auto n = ::fread(ptr.get(), 1, size, fp);
-        ::fclose(fp);
-
         if (n != size) {
             return false;
         }
-        return fn(std::span(ptr.get(), size));
+        return fn(std::span{ptr.get(), static_cast<size_t>(n)});
     }
 
     tls::TlsContextHandle d;
@@ -201,10 +256,9 @@ friend class TlsStream;
 template <Stream T>
 class TlsStream final : public StreamExt<TlsStream<T> > {    
 public:
-    TlsStream() = default;
+    explicit TlsStream(TlsContext &ctxt, T stream) : mHandle(tls::TlsState::make(ctxt.d.get())), mStream(std::move(stream)) {}
     TlsStream(TlsStream &&other) = default;
-    TlsStream(TlsContext &ctxt, T stream) : mHandle(tls::TlsState::make(ctxt.d.get())), mStream(std::move(stream)) {}
-    ~TlsStream() = default;
+    TlsStream() = default;
 
     // Readable
     auto read(MutableBuffer buffer) -> IoTask<size_t> {
@@ -247,7 +301,7 @@ public:
     // Wrapper specific
     auto nextLayer() -> T & { return mStream; }
 
-    // Detach the stream in it, all data will lost
+    // Detach the stream in it, all pending data will lost
     auto detach() -> T {
         mHandle.reset();
         return std::move(mStream);
@@ -256,6 +310,7 @@ public:
     auto operator =(const TlsStream &other) -> TlsStream & = delete;
     auto operator =(TlsStream &&other) -> TlsStream & = default;
 
+    // Check the stream is valid
     explicit operator bool() const noexcept {
         return bool(mHandle);
     }
@@ -263,5 +318,25 @@ private:
     tls::TlsHandle mHandle;
     T              mStream;
 };
+
+// Formatter to enum
+inline auto toString(TlsBackend backend) -> std::string_view {
+    switch (backend) {
+        case TlsBackend::OpenSSL: return "OpenSSL";
+        case TlsBackend::Schannel: return "Schannel";
+        default: return "Unknown";
+    }
+}
+
+inline auto toString(TlsVersion version) -> std::string_view {
+    switch (version) {
+        case TlsVersion::Tlsv1_2: return "Tlsv1.2";
+        case TlsVersion::Tlsv1_3: return "Tlsv1.3";
+    }   return "Unknown";
+}
+
+// Mark it
+ILIAS_FORMATTABLE(TlsBackend);
+ILIAS_FORMATTABLE(TlsVersion);
 
 ILIAS_NS_END
