@@ -9,8 +9,6 @@
  * 
  */
 
-#include <version>
-
 // Config from build system
 ${define ILIAS_CORO_TRACE}
 ${define ILIAS_TLS}

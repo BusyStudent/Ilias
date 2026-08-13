@@ -11,8 +11,6 @@
 
 #pragma once
 
-#include <version>
-
 // Config from build system
 #cmakedefine ILIAS_CORO_TRACE
 #cmakedefine ILIAS_TLS

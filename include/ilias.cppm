@@ -4,12 +4,12 @@
  */
 module;
 
-// MARK: C++ std
+// C
 #include <cassert>
 #include <cerrno>
 #include <climits>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -17,83 +17,112 @@ module;
 #include <ctime>
 #include <cmath>
 
+// Core
+#include <algorithm>
+#include <atomic>
+#include <bit>
+#include <charconv>
+#include <compare>
+#include <concepts>
+#include <coroutine>
+#include <exception>
+#include <functional>
+#include <initializer_list>
+#include <iterator>
+#include <limits>
+#include <memory>
+#include <new>
+#include <ranges>
+#include <source_location>
+#include <stdexcept>
+#include <system_error>
+#include <thread>
+#include <tuple>
 #include <type_traits>
 #include <utility>
-#include <limits>
-#include <compare>
 #include <version>
 
+// Container
+#include <array>
+#include <deque>
+#include <map>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
-#include <vector>
-#include <array>
-#include <span>
-#include <optional>
 #include <variant>
+#include <vector>
 
-#include <memory>
-#include <system_error>
-#include <stdexcept>
-#include <exception>
-
-#include <functional>
-#include <algorithm>
-#include <iterator>
-#include <ranges>
-#include <concepts>
-
-#include <iosfwd>
-#include <ostream>
-#include <istream>
-#include <sstream>
-#include <filesystem>
+// Io Fs Time
 #include <chrono>
+#include <filesystem>
+#include <iosfwd>
+#include <istream>
+#include <ostream>
+#include <sstream>
 
-#include <source_location>
-#include <bit>
-#include <numbers>
-#include <coroutine>
+// Sync
+#include <latch>
+#include <mutex>
 #include <stop_token>
 
-// Some old C++20 doesn't have this
+// std::format
 #if __has_include(<format>)
     #include <format>
 #endif
 
-// C++23
+// std::expected
 #if __has_include(<expected>)
     #include <expected>
 #endif
 
-#if __has_include(<print>)
-    #include <print>
-#endif
-
+// std::stacktrace
 #if __has_include(<stacktrace>)
     #include <stacktrace>
-#endif
-
-#if __has_include(<spanstream>)
-    #include <spanstream>
-#endif
-
-#if __has_include(<mdspan>)
-    #include <mdspan>
 #endif
 
 // Win32
 #if defined(_WIN32)
     #define WIN32_LEAN_AND_MEAN 1
     #define NOMINMAX 1
-    #include <winsock2.h>
-    #include <windows.h>
+    #include <WinSock2.h>
+    #include <WS2tcpip.h>
+    #include <Windows.h>
 #endif // _WIN32
 
+// Linux
+#if defined(__linux__)
+    #include <unistd.h>
+    #include <fcntl.h>
+
+    #include <sys/stat.h>
+    #include <sys/uio.h>
+
+    #include <sys/socket.h>
+    #include <sys/poll.h>
+    #include <sys/un.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
+    #include <netdb.h>
+
+    #include <sys/epoll.h>
+#endif
 
 // MARK: ilias
 export module ilias;
+
+#if defined(_MSC_VER)
+    #pragma warning(push)
+    #pragma warning(disable: 4251) // Shut up!!!
+    #pragma warning(disable: 5244)
+    // We already pre-include all external dependencies in the global module fragment
+#endif // _MSC_VER
 
 #define ILIAS_BUILD_MODULE
 extern "C++" {
     #include <ilias.hpp>
 }
+
+#if defined(_MSC_VER)
+    #pragma warning(pop)
+#endif // _MSC_VER

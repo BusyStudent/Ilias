@@ -183,8 +183,6 @@
 // MARK: Testing API
 // Utf8 setup for Windows
 #if defined(_WIN32)
-    #include <ilias/detail/win32defs.hpp>
-    
     #define ILIAS_TEST_SETUP_UTF8()           \
         do {                                  \
             ::SetConsoleCP(65001);            \

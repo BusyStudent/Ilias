@@ -72,7 +72,7 @@ jobs:
         if: matrix.toolchain != 'mingw'
         shell: pwsh
         run: |
-          xmake f -c -m ${{ matrix.mode }} -k ${{ matrix.kind }} --toolchain=${{ matrix.toolchain }} --dev=y -y
+          xmake f -c -m ${{ matrix.mode }} -k ${{ matrix.kind }} --toolchain=${{ matrix.toolchain }} --dev=y --modules=y -y
 
       - name: Build MinGW
         if: matrix.toolchain == 'mingw'
