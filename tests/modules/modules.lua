@@ -5,6 +5,11 @@ if has_config("modules") then
         
         add_deps("ilias_modules")
         add_files("*.cpp")
-        add_tests("signal", {run_timeout = 10000})
+        add_tests("modules", {run_timeout = 10000})
+
+        if is_plat("mingw") then
+            -- For std::print
+            add_syslinks("stdc++exp")
+        end
     target_end()
 end

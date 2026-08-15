@@ -148,7 +148,7 @@ using AwaitableSequenceValue = AwaitableResult<std::ranges::range_value_t<T> >;
  * @tparam T 
  */
 template <typename T>
-struct [[nodiscard]] JustAwaiter {
+struct [[nodiscard]] Just {
     using SkipTracing = void;
     auto await_ready() { return true; }
     auto await_suspend(auto any) {}
@@ -158,21 +158,21 @@ struct [[nodiscard]] JustAwaiter {
 };
 
 template <>
-struct [[nodiscard]] JustAwaiter<void> : std::suspend_never {};
+struct [[nodiscard]] Just<void> : std::suspend_never {};
 
 /**
  * @brief Create a awaitable of result T
  * 
  * @tparam T 
  * @param value 
- * @return JustAwaiter<T> 
+ * @return Just<T> 
  */
 template <typename T>
-inline auto just(T value) -> JustAwaiter<T> {
+inline auto just(T value) -> Just<T> {
     return { std::move(value) };
 }
 
-inline auto just() -> JustAwaiter<void> {
+inline auto just() -> Just<void> {
     return {};
 }
 
@@ -182,6 +182,7 @@ using runtime::AwaitableSequenceValue;
 using runtime::AwaitableSequence;
 using runtime::AwaitableResult;
 using runtime::Awaitable;
+using runtime::Just;
 using runtime::just;
 
 ILIAS_NS_END

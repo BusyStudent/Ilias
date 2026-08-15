@@ -14,8 +14,20 @@
 #include <ilias/detail/config.hpp>
 
 // Utils used by public macros
-#define ILIAS_CONCAT_IMPL(a, b) a##b
-#define ILIAS_CONCAT(a, b) ILIAS_CONCAT_IMPL(a, b)
+#define ILIAS_CONCAT_(a, b) a##b
+#define ILIAS_CONCAT(a, b) ILIAS_CONCAT_(a, b)
+#define ILIAS_STRINGIFY_(x) #x
+#define ILIAS_STRINGIFY(x) ILIAS_STRINGIFY_(x)
+
+// Version helper
+#define ILIAS_VERSION_AT_LEAST(major, minor, patch)                  \
+    (ILIAS_VERSION_MAJOR > major ||                                  \
+    (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR > minor) || \
+    (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR == minor && ILIAS_VERSION_PATCH >= patch))
+#define ILIAS_VERSION_STRING                                         \
+    ILIAS_STRINGIFY(ILIAS_VERSION_MAJOR) "."                         \
+    ILIAS_STRINGIFY(ILIAS_VERSION_MINOR) "."                         \
+    ILIAS_STRINGIFY(ILIAS_VERSION_PATCH)
 
 // result.hpp
 // MARK: Try API

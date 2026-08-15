@@ -59,7 +59,7 @@ public:
      * 
      * @return IoTask<UdpSocket> 
      */
-    auto bind(IPEndpoint endpoint) -> IoTask<UdpSocket>;
+    auto bind(IPEndpoint endpoint) -> Just<IoResult<UdpSocket>>;
 private:
     IoResult<Socket> mFd;
 };
@@ -184,7 +184,7 @@ public:
      * @param endpoint 
      * @return IoTask<UdpSocket> 
      */
-    static auto bind(IPEndpoint endpoint) -> IoTask<UdpSocket> {
+    static auto bind(IPEndpoint endpoint) -> Just<IoResult<UdpSocket> > {
         return UdpBuilder {endpoint.family()}.bind(endpoint);
     }
 
@@ -214,14 +214,14 @@ private:
 };
 
 // Impl
-inline auto UdpBuilder::bind(IPEndpoint endpoint) -> IoTask<UdpSocket> {
-    auto fn = [](UdpBuilder self, IPEndpoint endpoint) -> IoTask<UdpSocket> {
-        ILIAS_CO_TRY(auto sockfd, std::move(self.mFd));
-        ILIAS_CO_TRYV(sockfd.bind(endpoint));
-        ILIAS_CO_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
-        co_return UdpSocket {std::move(handle)};
-    };
-    return fn(std::move(*this), endpoint);
+inline auto UdpBuilder::bind(IPEndpoint endpoint) -> Just<IoResult<UdpSocket> > {
+    auto sock = [&]() -> IoResult<UdpSocket> {
+        ILIAS_TRY(auto sockfd, std::move(mFd));
+        ILIAS_TRYV(sockfd.bind(endpoint));
+        ILIAS_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
+        return UdpSocket{std::move(handle)};
+    }();
+    return just(std::move(sock));
 }
 
 // For compatibility with the old API

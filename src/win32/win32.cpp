@@ -1,4 +1,6 @@
 #include <ilias/detail/win32defs.hpp>
+#include <cinttypes>  // PRIuPTR
+#include <string> // std::string
 #include <atomic> // std::atomic
 #include <mutex> // std::once_flag
 
@@ -28,13 +30,13 @@ auto win32::toUtf8(std::wstring_view s) -> std::string {
 
 auto win32::pipe(HANDLE *read, HANDLE *write, SECURITY_ATTRIBUTES *attr) -> bool {
     // MSDN says anymous pipe does not support overlapped I/O, so we have to create a named pipe.
-    static constinit std::atomic<int> counter{0};
+    static constinit std::atomic<uintptr_t> counter{0};
     wchar_t name[256] {0};
     ::swprintf(
         name, 
         sizeof(name), 
-        L"\\\\.\\Pipe\\IliasPipe_%d_%d_%d",
-        counter.fetch_add(1),
+        L"\\\\.\\Pipe\\IliasPipe_%" PRIuPTR "_%d_%d",
+        counter.fetch_add(1, std::memory_order_relaxed),
         int(::time(nullptr)),
         int(::GetCurrentThreadId())
     );
