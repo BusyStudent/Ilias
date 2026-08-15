@@ -10,7 +10,6 @@
  */
 #pragma once
 
-#include <ilias/task/generator.hpp>
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/sockfd.hpp>
 #include <ilias/net/msghdr.hpp> // MsgHdr
@@ -77,11 +76,14 @@ public:
      * @param backlog 
      * @return IoTask<TcpListener> 
      */
-    auto bind(IPEndpoint endpoint, int backlog = SOMAXCONN) -> IoTask<TcpListener>;
+    auto bind(IPEndpoint endpoint, int backlog = SOMAXCONN) -> Just<IoResult<TcpListener> >;
 
     // Operator
     auto operator =(TcpBuilder &&) -> TcpBuilder & = default;
 private:
+    // Avoid gcc module bug, so use static method instead lambda.
+    static auto impl(TcpBuilder self, IPEndpoint endpoint) -> IoTask<TcpStream>;
+
     IoResult<Socket> mFd;
 };
 
@@ -362,7 +364,7 @@ public:
      * @param backlog The backlog for the socket.
      * @return IoTask<TcpListener> 
      */
-    static auto bind(IPEndpoint endpoint, int backlog = SOMAXCONN) -> IoTask<TcpListener> {
+    static auto bind(IPEndpoint endpoint, int backlog = SOMAXCONN) -> Just<IoResult<TcpListener> > {
         return TcpBuilder {endpoint.family()}.bind(endpoint, backlog);
     }
 
@@ -393,25 +395,26 @@ private:
 
 // Impl
 inline auto TcpBuilder::connect(IPEndpoint endpoint) -> IoTask<TcpStream> {
-    auto fn = [](TcpBuilder self, IPEndpoint endpoint) -> IoTask<TcpStream> {
-        ILIAS_CO_TRY(auto sockfd, std::move(self.mFd));
-        ILIAS_CO_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
-        ILIAS_CO_TRYV(co_await handle.connect(endpoint));
-        co_return TcpStream {std::move(handle)};
-    };
-    return fn(std::move(*this), endpoint);
+    return impl(std::move(*this), endpoint);
 }
 
-inline auto TcpBuilder::bind(IPEndpoint endpoint, int backlog) -> IoTask<TcpListener> {
-    auto fn = [](TcpBuilder self, IPEndpoint endpoint, int backlog) -> IoTask<TcpListener> {
-        ILIAS_CO_TRY(auto sockfd, std::move(self.mFd));
-        ILIAS_CO_TRYV(sockfd.bind(endpoint));
-        ILIAS_CO_TRYV(sockfd.listen(backlog));
-        ILIAS_CO_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
-        co_return TcpListener {std::move(handle)};
-    };
-    return fn(std::move(*this), endpoint, backlog);
-};
+inline auto TcpBuilder::bind(IPEndpoint endpoint, int backlog) -> Just<IoResult<TcpListener> > {
+    auto listener = [&]() -> IoResult<TcpListener> {
+        ILIAS_TRY(auto sockfd, std::move(mFd));
+        ILIAS_TRYV(sockfd.bind(endpoint));
+        ILIAS_TRYV(sockfd.listen(backlog));
+        ILIAS_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
+        return TcpListener {std::move(handle)};
+    }();
+    return just(std::move(listener));
+}
+
+inline auto TcpBuilder::impl(TcpBuilder self, IPEndpoint endpoint) -> IoTask<TcpStream> {
+    ILIAS_CO_TRY(auto sockfd, std::move(self.mFd));
+    ILIAS_CO_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
+    ILIAS_CO_TRYV(co_await handle.connect(endpoint));
+    co_return TcpStream {std::move(handle)};
+}
 
 // For compatible with old version.
 using TcpClient [[deprecated("Use TcpStream instead")]] = TcpStream;

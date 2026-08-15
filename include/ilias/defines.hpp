@@ -12,60 +12,13 @@
  */
 
 #include <ilias/detail/config.hpp>
-#include <source_location>
-#include <concepts>
-#include <version>
-#include <cstdlib>
-#include <cstdio>
-#include <string>
-
-// Format check
-#if   defined(ILIAS_USE_FMT)
-    #define ILIAS_FMT_NAMESPACE ::fmt
-    #include <fmt/format.h>
-    #include <fmt/chrono.h>
-#elif defined(__cpp_lib_format)
-    #define ILIAS_FMT_NAMESPACE ::std
-    #include <format>
-#else
-    #define ILIAS_NO_FORMAT
-#endif
-
-// Exception check
-#if !defined(__cpp_exceptions)
-    #define ILIAS_TRY_EXCEPTION if constexpr(true)
-    #define ILIAS_THROW(...) ::abort()
-    #define ILIAS_CATCH(...) if constexpr(false)
-#else
-    #define ILIAS_TRY_EXCEPTION try
-    #define ILIAS_THROW(...) throw(__VA_ARGS__)
-    #define ILIAS_CATCH(...) catch(__VA_ARGS__)
-#endif
-
-// Assertion
-#if defined(NDEBUG)
-    #define ILIAS_ASSERT(x, ...) do { } while (false)
-#else
-    #define ILIAS_ASSERT(x, ...) do {            \
-        if (!(x)) [[unlikely]] {                 \
-            ::ilias::assertion::handler(         \
-                ILIAS_STRINGIFY(x),              \
-                std::source_location::current(), \
-                ##__VA_ARGS__                    \
-            );                                   \
-        }                                        \
-    } while (false)
-    #if defined(__cpp_lib_stacktrace)
-        #include <stacktrace>
-    #endif
-#endif
 
 // Platform detection
 #if   defined(_WIN32)
     #define ILIAS_DLL_EXPORT ILIAS_ATTRIBUTE(dllexport)
     #define ILIAS_DLL_IMPORT ILIAS_ATTRIBUTE(dllimport)
-    #define ILIAS_ERROR_T    ::uint32_t
-    #define ILIAS_SOCKET_T   ::uintptr_t
+    #define ILIAS_ERROR_T    std::uint32_t
+    #define ILIAS_SOCKET_T   std::uintptr_t
     #define ILIAS_FD_T       void *
 #elif defined(__linux__)
     #define ILIAS_DLL_EXPORT ILIAS_ATTRIBUTE(visibility("default"))
@@ -111,7 +64,7 @@
 #endif // ILIAS_STATIC
 
 // Module
-#if   defined(ILIAS_BUILD_MODULE)
+#if   defined(ILIAS_MODULE)
     #define ILIAS_EXPORT_BEGIN export {
     #define ILIAS_EXPORT_END }
     #define ILIAS_EXPORT export
@@ -121,22 +74,21 @@
     #define ILIAS_EXPORT
 #endif // ILIAS_MODULE
 
+// Exception check
+#if !defined(__cpp_exceptions)
+    #define ILIAS_TRY_EXCEPTION if constexpr(true)
+    #define ILIAS_THROW(...) ::abort()
+    #define ILIAS_CATCH(...) if constexpr(false)
+#else
+    #define ILIAS_TRY_EXCEPTION try
+    #define ILIAS_THROW(...) throw(__VA_ARGS__)
+    #define ILIAS_CATCH(...) catch(__VA_ARGS__)
+#endif // __cpp_exceptions
+
 // Utils macro
-#define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT(x, msg) // For old code
-#define ILIAS_STRINGIFY_(x) #x
-#define ILIAS_STRINGIFY(x) ILIAS_STRINGIFY_(x)
 #define ILIAS_NS_BEGIN ILIAS_EXPORT_BEGIN namespace ilias {
 #define ILIAS_NS_END } ILIAS_EXPORT_END
-
-// Version helper
-#define ILIAS_VERSION_AT_LEAST(major, minor, patch)                  \
-    (ILIAS_VERSION_MAJOR > major ||                                  \
-    (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR > minor) || \
-    (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR == minor && ILIAS_VERSION_PATCH >= patch))
-#define ILIAS_VERSION_STRING                                         \
-    ILIAS_STRINGIFY(ILIAS_VERSION_MAJOR) "."                         \
-    ILIAS_STRINGIFY(ILIAS_VERSION_MINOR) "."                         \
-    ILIAS_STRINGIFY(ILIAS_VERSION_PATCH)
+#define _ILIAS_DEFINES_H_
 
 // Assume macro
 #define ILIAS_ASSUME(cond, ...) do {        \
@@ -146,36 +98,14 @@
         }                                   \
     } while (false)
 
-// Formatter macro
-#define ILIAS_FORMATTER(type)                              \
-    template <>                                            \
-    struct ilias::fmtlib::formatter<type> :                \
-        ::ilias::detail::DefaultFormatter
+// Import subpart
+#include <ilias/detail/assert.hpp>
+#include <ilias/detail/format.hpp>
 
-// Mark a type is formattable, generate the fmtlib bridge and ostream operator<<
-#define ILIAS_FORMATTABLE(type)                                       \
-    template <char = 0>                                               \
-    inline auto _ilias_detail_adl_to_string(const type &t) {          \
-        auto wrapper = [](const auto &t) {                            \
-            if constexpr (requires { t.toString(); }) {               \
-                return t.toString();                                  \
-            }                                                         \
-            else if constexpr (requires { toString(t); }) {           \
-                return toString(t);                                   \
-            }                                                         \
-            else {                                                    \
-                static_assert(std::is_same_v<decltype(t), void>, "The type is not formattable"); \
-            }                                                                      \
-        };                                                                         \
-        return wrapper(t);                                                         \
-    }                                                                              \
-                                                                                   \
-    template <typename Stream> requires(                                           \
-        requires(Stream &stream) { stream << std::string_view{}; }                 \
-    )                                                                              \
-    inline auto operator <<(Stream &stream, const type &t) -> decltype(auto) {     \
-        return stream << _ilias_detail_adl_to_string(t);                           \
-    }
+// Import std headers
+#if !defined(ILIAS_MODULE)
+#include <cstdint>
+#endif // ILIAS_MODULE
 
 ILIAS_NS_BEGIN
 
@@ -194,117 +124,4 @@ class Fiber;
 template <typename T>
 class Generator;
 
-// MARK: Formatting
-#if defined(ILIAS_FMT_NAMESPACE)
-namespace fmtlib = ILIAS_FMT_NAMESPACE;
-
-// Formatter with default parse and redirect some formatting function to the fmtlib namespace
-namespace detail {
-
-// The Helper class for formatting (compatible with fmtlib::formatter and std::formatter)
-struct DefaultFormatter {
-    using format_parse_context = fmtlib::format_parse_context;
-    using format_context = fmtlib::format_context;
-
-    constexpr auto parse(auto &ctxt) const noexcept {
-        return ctxt.begin();
-    }
-
-    // Redirect the format_to
-    template <typename It, typename ...Args>
-    static auto format_to(It &&it, fmtlib::format_string<Args...> fmt, Args &&...args) {
-        return fmtlib::format_to(it, fmt, std::forward<Args>(args)...);
-    }
-
-    // Redirect the format
-    template <typename ...Args>
-    static auto format(fmtlib::format_string<Args...> fmt, Args &&...args) {
-        return fmtlib::format(fmt, std::forward<Args>(args)...);
-    }
-};
-
-} // namespace detail
-#endif // ILIAS_FMT_NAMESPACE
-
-// LCOV_EXCL_START
-// MARK: Assertion
-namespace assertion {
-
-[[noreturn]]
-inline auto handlerImpl(std::string_view expr, std::source_location where, std::string_view msg = {}) {
-    std::fprintf(stderr, "\033[1;31m[!!! ASSERTION FAILED !!!]\033[0m\n");
-    std::fprintf(stderr, "  at: %s:%d:%d\n", where.file_name(), where.line(), where.column());
-    std::fprintf(stderr, "  func: %s\n", where.function_name());
-    std::fprintf(stderr, "  expr: %s\n", expr.data());
-    if (!msg.empty()) {
-        std::fprintf(stderr, "  msg: %s\n", msg.data());
-    }
-
-#if defined(__cpp_lib_stacktrace) && defined(_MSC_VER) && !defined(NDEBUG) // Because the stacktrace require link additional library on libstdc++, so temporarily enable only on MSVC
-    std::fprintf(stderr, "  stacktrace:\n");
-    auto stacktrace = std::stacktrace::current();
-    auto idx = 0;
-    for (auto &frame : stacktrace) {
-        std::fprintf(stderr, "    #%d  %s\n", idx, frame.description().c_str());
-        if (frame.source_line() != 0) {
-            std::fprintf(stderr, "      at %s:%d\n", frame.source_file().c_str(), frame.source_line());
-        }
-        idx += 1;
-    }
-#endif // __cpp_lib_stacktrace
-    
-    // Raise the debugger first
-    ILIAS_TRAP();
-    std::abort();
-}
-
-// Impl the assert(cond)
-[[noreturn]]
-inline auto handler(std::string_view cond, std::source_location where) {
-    handlerImpl(cond, where);
-}
-
-// Impl the assert(cond, fmt, ...)
-#if defined(ILIAS_FMT_NAMESPACE)
-template <typename ...Args>
-[[noreturn]]
-inline auto handler(std::string_view cond, std::source_location where, fmtlib::format_string<Args...> fmt, Args &&...args) {
-    handlerImpl(cond, where, fmtlib::format(fmt, std::forward<Args>(args)...));
-}
-#else // No format support
-template <typename ...Args>
-[[noreturn]]
-inline auto handler(std::string_view cond, std::source_location where, Args &&...) {
-    handlerImpl(cond, where);
-}
-#endif // ILIAS_FMT_NAMESPACE
-
-} // namespace assertion
-// LCOV_EXCL_STOP
-
-// MARK: ToString
-// Common Concepts
-template <typename T>
-concept IntoString = requires (const T &t) {
-    { _ilias_detail_adl_to_string(t) } -> std::convertible_to<std::string_view>;
-};
-
 ILIAS_NS_END
-
-// Make formatter for all type with InfoString concept
-#if !defined(ILIAS_NO_FORMAT)
-template <ilias::IntoString T>
-class ilias::fmtlib::formatter<T> {
-public:
-    constexpr auto parse(auto &ctxt) {
-        return inner.parse(ctxt);
-    }
-
-    auto format(const T &value, auto &ctxt) const {
-        auto str = _ilias_detail_adl_to_string(value);
-        return inner.format(std::string_view {str}, ctxt);
-    }
-private:
-    ilias::fmtlib::formatter<std::string_view> inner;
-};
-#endif // ILIAS_NO_FORMAT

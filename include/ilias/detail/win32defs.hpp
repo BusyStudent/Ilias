@@ -21,6 +21,7 @@
 #include <ilias/defines.hpp>
 #include <WinSock2.h> // It must be included before windows.h
 #include <Windows.h>
+#include <string> // std::string
 
 ILIAS_NS_BEGIN
 

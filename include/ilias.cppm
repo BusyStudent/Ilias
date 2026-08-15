@@ -118,7 +118,7 @@ export module ilias;
     // We already pre-include all external dependencies in the global module fragment
 #endif // _MSC_VER
 
-#define ILIAS_BUILD_MODULE
+#define ILIAS_MODULE
 extern "C++" {
     #include <ilias.hpp>
 }
