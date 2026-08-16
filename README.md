@@ -594,6 +594,7 @@ auto fn() -> ilias::Task<void> {
 - [wepoll](https://github.com/piscisaureus/wepoll)
 - [stdexection](https://github.com/nvidia/stdexec)
 - [QCoro](https://github.com/qcoro/qcoro)
+- [zeus_expected](https://github.com/zeus-cpp/expected)
 
 ## Contributing
 

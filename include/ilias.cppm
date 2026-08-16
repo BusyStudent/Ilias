@@ -4,6 +4,8 @@
  */
 module;
 
+#include <version>
+
 // C
 #include <cassert>
 #include <cerrno>

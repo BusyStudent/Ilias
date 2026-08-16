@@ -19,7 +19,6 @@
 #if defined(_WIN32)
     #define ILIAS_INVALID_SOCKET   INVALID_SOCKET
     #define ILIAS_CLOSE_SOCKET(fd) ::closesocket(fd)
-    #define ILIAS_CLOSE(fd)        ::CloseHandle(fd)
     #define ILIAS_POLL             ::WSAPoll
     #define ILIAS_SHUT_RD          SD_RECEIVE
     #define ILIAS_SHUT_WR          SD_SEND
@@ -41,7 +40,6 @@
 #else
     #define ILIAS_INVALID_SOCKET   -1
     #define ILIAS_CLOSE_SOCKET(fd) ::close(fd)
-    #define ILIAS_CLOSE(fd)        ::close(fd)
     #define ILIAS_POLL             ::poll
     #define ILIAS_SHUT_RD          SHUT_RD
     #define ILIAS_SHUT_WR          SHUT_WR

@@ -7,11 +7,11 @@
 ILIAS_NS_BEGIN
 
 // Result for doing io operations
-template <typename T>
+template <typename T = void>
 using IoResult = Result<T, std::error_code>;
 
 // Async Result for doing io operations
-template <typename T>
+template <typename T = void>
 using IoTask = Task<IoResult<T> >;
 
 // Async Generator for doing io operations

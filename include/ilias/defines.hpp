@@ -115,10 +115,10 @@ using error_t  = ILIAS_ERROR_T;
 using socket_t = ILIAS_SOCKET_T;
 
 // Forward declaration
-template <typename T>
+template <typename T = void>
 class Task;
 
-template <typename T>
+template <typename T = void>
 class Fiber;
 
 template <typename T>

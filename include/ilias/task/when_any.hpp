@@ -15,7 +15,6 @@
 #include <ilias/runtime/await.hpp>
 #include <ilias/runtime/coro.hpp>
 #include <ilias/task/task.hpp>
-#include <ilias/log.hpp>
 #include <variant> // std::monostate
 #include <vector> // std::vector
 #include <ranges> // std::range
@@ -79,80 +78,14 @@ class WhenAnyAwaiterBase {
 public:
     WhenAnyAwaiterBase(std::span<TaskContext> tasks, CoroContext &context, CaptureSource source) : mTasks(tasks), mContext(context), mSource(source) {}
 
-    auto await_ready() -> bool {
-        // Start all first
-#if defined(ILIAS_CORO_TRACE)
-        // TRACING: mark the current await point we are on whenAny
-        if (auto frame = mContext.tracing().topFrame(); frame) {
-            frame->setMessage("whenAny");
-        }
-#endif // defined(ILIAS_CORO_TRACE)
-        mLeft = 0;
-        for (auto &ctxt: mTasks) {
-            ctxt.setUserdata(this);
-            ctxt.setExecutor(mContext.executor());
-            ctxt.setStoppedHandler(&onTaskCompleted);
-            ctxt.task().setCompletionHandler(&onTaskCompleted);
+    ILIAS_API
+    auto await_ready() -> bool;
 
-            // TRACING: a subtask is started
-            ctxt.tracing().setParent(mContext.tracing());
-            ctxt.tracing().spawn(mSource);
-            mLeft += 1;
-            mStarted += 1;
-            ctxt.task().resume();
-
-            if (mGot) {
-                break;
-            }
-        }
-        return mGot && mLeft == 0; // All completed and one of them is got
-    }
-
-    auto await_suspend(CoroHandle caller) {
-        mSuspended = true;
-        mCaller = caller;
-        mReg.register_<&WhenAnyAwaiterBase::onStopRequested>(caller.stopToken(), this); // Forward the stop if needed
-    }
+    ILIAS_API
+    auto await_suspend(CoroHandle caller) -> void;
 protected:
-    auto stopAll() -> void {
-        for (size_t idx = 0; idx < mStarted; ++idx) { // Stop the started tasks
-            mTasks[idx].stop();
-        }
-    }
-    auto onStopRequested() -> void {
-        mStopRequested = true;
-        stopAll();
-    }
-
-    static auto onTaskCompleted(CoroContext &_ctxt) -> void {
-        auto &ctxt = static_cast<TaskContext &>(_ctxt);
-        auto &self = *static_cast<WhenAnyAwaiterBase *>(ctxt.userdata());
-
-        // TRACING: a subtask is completed
-        ctxt.tracing().complete();
-        if (!ctxt.isStopped()) { // Only not stopped task can be got (value produced)
-            if (self.mGot == nullptr) {
-                self.mGot = &ctxt; // The first completed task
-                self.stopAll(); // Stop all other tasks
-            }
-        }
-
-        self.mLeft -= 1;
-        if (!self.mSuspended) { // Still in await_ready
-            return;
-        }
-        if (self.mLeft != 0) {
-            return; // Still has some imcomplete tasks
-        }
-        if (self.mStopRequested && !self.mGot) { // The stop was requested, and all tasks are completed, no value produced, we enter the stopped state
-            self.mCaller.setStopped();
-            return;
-        }
-        if (self.mCaller) {
-            self.mCaller.schedule();
-            self.mCaller = nullptr;
-        }
-    }
+    auto stopAll() -> void; // Stop all the tasks
+    static auto onTaskCompleted(CoroContext &_ctxt) -> void;
 
     std::span<TaskContext> mTasks;
     TaskContext *mGot = nullptr;
