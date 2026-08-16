@@ -12,6 +12,7 @@
  */
 
 #include <ilias/detail/config.hpp>
+#define _ILIAS_DEFINES_H_
 
 // Platform detection
 #if   defined(_WIN32)
@@ -88,7 +89,6 @@
 // Utils macro
 #define ILIAS_NS_BEGIN ILIAS_EXPORT_BEGIN namespace ilias {
 #define ILIAS_NS_END } ILIAS_EXPORT_END
-#define _ILIAS_DEFINES_H_
 
 // Assume macro
 #define ILIAS_ASSUME(cond, ...) do {        \
@@ -99,8 +99,8 @@
     } while (false)
 
 // Import subpart
-#include <ilias/detail/assert.hpp>
 #include <ilias/detail/format.hpp>
+#include <ilias/detail/assert.hpp>
 
 // Import std headers
 #if !defined(ILIAS_MODULE)

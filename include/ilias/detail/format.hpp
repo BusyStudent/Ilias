@@ -10,6 +10,10 @@
  */
 #pragma once
 
+// Get the std
+#include <version>
+#include <concepts>
+
 // Format check
 #if   defined(ILIAS_USE_FMT)
     #define ILIAS_FMT_NAMESPACE ::fmt
@@ -73,6 +77,13 @@ struct DefaultFormatter {
     }
 };
 
+} // namespace detail
+
+#endif // ILIAS_NO_FORMAT
+
+// MARK: ToString
+namespace detail {
+
 // Generic toString implementation, used by macros
 template <typename T>
 inline auto toStringImpl(const T &t) {
@@ -89,9 +100,6 @@ inline auto toStringImpl(const T &t) {
 
 } // namespace detail
 
-#endif // ILIAS_NO_FORMAT
-
-// MARK: ToString
 // Common Concepts
 template <typename T>
 concept IntoString = requires (const T &t) {
@@ -99,7 +107,6 @@ concept IntoString = requires (const T &t) {
 };
 
 ILIAS_NS_END
-
 
 #if !defined(ILIAS_NO_FORMAT)
 // Make formatter for all type with InfoString concept

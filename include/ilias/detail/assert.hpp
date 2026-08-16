@@ -1,3 +1,13 @@
+/**
+ * @file assert.hpp
+ * @author BusyStudent (fyw90mc@gmail.com)
+ * @brief Internal used assertion
+ * @version 0.1
+ * @date 2026-08-15
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
 // INTERNAL !!!
 #pragma once
 
@@ -5,6 +15,9 @@
 #include <string_view>
 #include <cstdlib>
 #include <cstdio>
+
+// Take format
+#include "format.hpp"
 
 // Assertion
 #if defined(NDEBUG)
@@ -68,7 +81,7 @@ inline auto handler(std::string_view cond, std::source_location where) {
 }
 
 // Impl the assert(cond, fmt, ...)
-#if defined(ILIAS_FMT_NAMESPACE)
+#if !defined(ILIAS_NO_FORMAT)
 template <typename ...Args>
 [[noreturn]]
 inline auto handler(std::string_view cond, std::source_location where, fmtlib::format_string<Args...> fmt, Args &&...args) {
