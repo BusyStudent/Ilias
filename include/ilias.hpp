@@ -22,3 +22,8 @@
 #include <ilias/tls.hpp>
 #include <ilias/fs.hpp>
 #include <ilias/io.hpp>
+
+// Platform extra headers
+#if defined(_WIN32)
+    #include <ilias/platform/winmsg.hpp>
+#endif // _WIN32

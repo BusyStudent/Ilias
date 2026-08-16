@@ -14,9 +14,9 @@
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/sockopt.hpp>
 #include <ilias/net/system.hpp>
-#include <ilias/io/context.hpp>
+#include <ilias/io/error.hpp> // IoResult
+#include <ilias/buffer.hpp> // Buffer
 #include <ilias/log.hpp>
-#include <span>
 
 ILIAS_NS_BEGIN
 
@@ -29,9 +29,8 @@ ILIAS_NS_BEGIN
  */
 class SocketView {
 public:
-    SocketView() = default;
-    SocketView(socket_t fd) : mFd(fd) {}
-    SocketView(const SocketView &) = default;
+    constexpr SocketView() = default;
+    constexpr SocketView(socket_t fd) : mFd(fd) {}
 
     /**
      * @brief Recv num of bytes
@@ -276,7 +275,7 @@ public:
      * @return bool 
      */
     auto isValid() const -> bool {
-        return mFd != Invalid;
+        return mFd != invalid();
     }
 
     /**
@@ -353,7 +352,7 @@ public:
         ::sockaddr *addr = endpoint.data();
         ::socklen_t len = endpoint.bufsize();
         auto fd = ::accept(mFd, addr, &len);
-        if (fd == Invalid) {
+        if (fd == invalid()) {
             return Err(SystemError::fromErrno());
         }
         return T{fd};
@@ -392,10 +391,10 @@ public:
         auto fd = ::dup(mFd);
 #endif // _WIN32
 
-        if (fd == Invalid) {
+        if (fd == invalid()) {
             return Err(SystemError::fromErrno());
         }
-        return T(fd);
+        return T{fd};
     }
 
     /**
@@ -454,7 +453,7 @@ public:
      * @return false 
      */
     explicit operator bool() const noexcept {
-        return mFd != Invalid;
+        return mFd != invalid();
     }
 
     /**
@@ -465,10 +464,17 @@ public:
     explicit operator fd_t() const noexcept {
         return fd_t(mFd);
     }
-    
-    static constexpr socket_t Invalid = ILIAS_INVALID_SOCKET;
+
+    /**
+     * @brief Get invalid socket sentinel on the current platform
+     * 
+     * @return socket_t 
+     */
+    static constexpr auto invalid() noexcept -> socket_t {
+        return ILIAS_INVALID_SOCKET;
+    }    
 protected:
-    socket_t mFd = Invalid;
+    socket_t mFd = invalid();
 };
 
 /**
@@ -494,7 +500,7 @@ public:
      * 
      * @param other 
      */
-    Socket(Socket &&other) : SocketView(std::exchange(other.mFd, Invalid)) { }
+    Socket(Socket &&other) : SocketView(std::exchange(other.mFd, invalid())) { }
 
     /**
      * @brief Destroy the Socket object
@@ -522,13 +528,10 @@ public:
     /**
      * @brief Release the ownership of the socket
      * 
-     * @param newSocket (default = InvalidSocket)
      * @return socket_t 
      */
-    auto release(socket_t newSocket = Invalid) -> socket_t {
-        auto old = mFd;
-        mFd = newSocket;
-        return old;
+    auto release() -> socket_t {
+        return std::exchange(mFd, invalid());
     }
 
     /**
@@ -536,8 +539,8 @@ public:
      * 
      * @param newSocket (default = InvalidSocket)
      */
-    auto reset(socket_t newSocket = Invalid) -> void {
-        if (mFd != Invalid) {
+    auto reset(socket_t newSocket = invalid()) -> void {
+        if (mFd != invalid()) {
             if (ILIAS_CLOSE_SOCKET(mFd) != 0) {
                 ILIAS_WARN("SocketView", "Failed to close socket {}", mFd);
             }
@@ -579,7 +582,7 @@ public:
      */
     auto operator =(Socket &&other) -> Socket & {
         close();
-        mFd = std::exchange(other.mFd, Invalid);
+        mFd = std::exchange(other.mFd, invalid());
         return *this;
     }
 
@@ -598,7 +601,7 @@ public:
 #else // POSIX
         auto sockfd = ::socket(family, type | SOCK_CLOEXEC, protocol);
 #endif
-        if (sockfd != Invalid) {
+        if (sockfd != invalid()) {
             return Socket{sockfd};
         }
         return Err(SystemError::fromErrno());
