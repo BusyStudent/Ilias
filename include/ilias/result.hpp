@@ -7,7 +7,7 @@
 #include <utility>
 
 #if defined(ILIAS_USE_ZEUS_EXPECTED)
-    #include <zeus/expected.hpp>
+    #include <ilias/detail/bundled/expected.hpp>
     #define ILIAS_EXPECTED_NAMESPACE ::zeus
 #else
     #include <expected>

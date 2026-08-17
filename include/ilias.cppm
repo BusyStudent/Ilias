@@ -4,6 +4,7 @@
  */
 module;
 
+#include <ilias/detail/config.hpp>
 #include <version>
 
 // C
@@ -109,6 +110,16 @@ module;
 
     #include <sys/epoll.h>
 #endif
+
+// MARK: Thirdparty
+#if defined(ILIAS_USE_ZEUS_EXPECTED)
+    #include <ilias/detail/bundled/expected.hpp>
+#endif // ILIAS_USE_ZEUS_EXPECTED
+
+#if defined(ILIAS_USE_FMT)
+    #include <fmt/format.h>
+    #include <fmt/chrono.h>
+#endif // ILIAS_USE_FMT
 
 // MARK: ilias
 export module ilias;

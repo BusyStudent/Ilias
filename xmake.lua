@@ -43,10 +43,6 @@ if has_config("fmt") then
     add_requires("fmt")
 end
 
-if not has_config("has_std_expected") then
-    add_requires("zeus_expected")
-end
-
 if has_config("io_uring") then
     add_requires("liburing")
 end

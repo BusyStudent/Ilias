@@ -35,6 +35,8 @@ auto mainTask() -> Task<int> {
     for (int i = 0; i < 10; ++i) {
         tasks.emplace_back(sleep(std::chrono::milliseconds{i}));
     }
+
+    co_await TcpListener::bind("127.0.0.1:0");
     co_return 0;
 }
 
