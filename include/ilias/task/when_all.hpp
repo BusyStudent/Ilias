@@ -72,7 +72,7 @@ public:
     ILIAS_API
     auto await_suspend(CoroHandle caller) -> void;
 protected:
-    static auto onTaskCompleted(CoroContext &_ctxt) -> void;
+    static auto onTaskCompleted(CoroContext &_ctxt) noexcept -> void;
 
     std::span<TaskContext> mTasks;
     StopRegistration mReg;

@@ -355,7 +355,7 @@ auto this_fiber::stopToken() -> runtime::StopToken {
 }
 
 auto this_fiber::awaitImpl(runtime::CoroHandle handle, runtime::CaptureSource source) -> void {
-    auto handler = [](runtime::CoroContext &ctxt) {
+    auto handler = [](runtime::CoroContext &ctxt) noexcept {
         auto self = static_cast<FiberContextImpl *>(ctxt.userdata());
         if (self) {
             self->schedule();

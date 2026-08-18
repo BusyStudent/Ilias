@@ -265,7 +265,7 @@ public:
         return TaskHandle<T>::cast(mTask).value();
     }
 private:
-    static auto onComplete(CoroContext &_self) -> void { // Break the event loop
+    static auto onComplete(CoroContext &_self) noexcept -> void { // Break the event loop
         _self.tracing().complete(); // TRACING: completion
         static_cast<TaskBlockingContext &>(_self).mStopExecutor.request_stop();
     }

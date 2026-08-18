@@ -123,7 +123,7 @@ protected:
     auto onStopRequested() -> void;
     auto onStopInvoke() -> void;
     auto invoke() -> void;
-    static auto onCompletion(runtime::CoroContext &_self) -> void;
+    static auto onCompletion(runtime::CoroContext &_self) noexcept -> void;
 
     // SAFETY: Compiler pin awaiter on await start
     State mState {Running}; // We use std::atomic_ref internal, make the compiler happy:(, std::atomic<T> can't move

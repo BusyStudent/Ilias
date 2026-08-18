@@ -1,3 +1,4 @@
+// LCOV_EXCL_START
 #ifndef ZEUS_EXPECTED_HPP
 #define ZEUS_EXPECTED_HPP
 
@@ -2868,3 +2869,4 @@ constexpr void swap(expected<void, E> &lhs, expected<void, E> &rhs) noexcept(noe
 ZEUS_EXPECTED_NS_END
 
 #endif
+// LCOV_EXCL_STOP

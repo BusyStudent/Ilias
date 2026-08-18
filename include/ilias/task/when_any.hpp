@@ -85,7 +85,7 @@ public:
     auto await_suspend(CoroHandle caller) -> void;
 protected:
     auto stopAll() -> void; // Stop all the tasks
-    static auto onTaskCompleted(CoroContext &_ctxt) -> void;
+    static auto onTaskCompleted(CoroContext &_ctxt) noexcept -> void;
 
     std::span<TaskContext> mTasks;
     TaskContext *mGot = nullptr;

@@ -17,9 +17,10 @@ auto CoroContext::stop() noexcept -> bool {
 }
 
 auto CoroContext::setStopped() noexcept -> void {
-    mStopped = true;
-    mStoppedHandler(*this); // Call the stopped handler, we are stopped
-    mStoppedHandler = nullptr; // Mark it as called
+    auto handler = std::exchange(mStoppedHandler, reinterpret_cast<StoppedHandler>(-1)); // Mark we are stopped and get the handler
+    ILIAS_ASSERT(handler, "Stopped handler not set ?");
+    ILIAS_ASSERT(handler != reinterpret_cast<StoppedHandler>(-1), "We are already stopped");
+    handler(*this); // Call the stopped handler, we are stopped
 }
 
 // Check Standard layout
@@ -231,7 +232,7 @@ auto TraceContext::spawn(CaptureSource source) noexcept -> void {
     }
 }
 
-auto TraceContext::complete() noexcept -> void {
+auto TraceContext::complete(CaptureSource) noexcept -> void {
     ILIAS_ASSERT(mSpan.id != SpanId::Invalid, "TaskId is invalid, did you call complete() before spawn()?");
     span().state = TraceState::Completed;
 
@@ -245,9 +246,12 @@ auto TraceContext::complete() noexcept -> void {
     gRegistery->unregister(*this);
 }
 
-auto TraceContext::resume() noexcept -> void {
+auto TraceContext::resume(CaptureSource) noexcept -> void {
     if (!mSuspended) { // Not suspended
         return;
+    }
+    if (auto frame = topFrame(); frame) {
+        frame->setMessage({}); // Clear the message
     }
     span().state = TraceState::Running;
     mSuspended = false;
@@ -268,7 +272,7 @@ auto TraceContext::resume() noexcept -> void {
     }
 }
 
-auto TraceContext::suspend() noexcept -> void {
+auto TraceContext::suspend(CaptureSource) noexcept -> void {
     if (mSuspended) { // Already suspended
         return;
     }
