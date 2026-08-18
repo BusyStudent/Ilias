@@ -179,13 +179,13 @@ public:
     auto spawn(CaptureSource source = {}) noexcept -> void;
 
     // Notify we are completed the coroutine
-    auto complete() noexcept -> void;
+    auto complete(CaptureSource source = {}) noexcept -> void;
 
     // Notify we are resumed the coroutine (It is safe to call resume() multiple times, we will ignore the duplicate calls)
-    auto resume() noexcept -> void;
+    auto resume(CaptureSource source = {}) noexcept -> void;
 
     // Notify we are suspended the coroutine (It is safe to call suspend() multiple times, we will ignore the duplicate calls)
-    auto suspend() noexcept -> void;
+    auto suspend(CaptureSource source = {}) noexcept -> void;
 
     // Lazy init the span
     auto span() noexcept -> TraceSpan &;
@@ -248,22 +248,29 @@ public:
     using Awaiter     = DecayIf<decltype(toAwaiter(std::declval<T>()))>;
 
     // Move version, store it by value
-    TracingAwaitable(T awaitable, TraceContext &ctxt) requires(!Forward) : 
+    TracingAwaitable(T awaitable, TraceContext &ctxt, CaptureSource source) requires(!Forward) : 
         mAwaitable(std::move(awaitable)), 
         mAwaiter(toAwaiter(std::move(mAwaitable))),
-        mCtxt(ctxt) {}
+        mCtxt(ctxt),
+        mSource(source) {}
 
     // Forward version, just store the reference
-    TracingAwaitable(T awaitable, TraceContext &ctxt) requires(Forward) :
+    TracingAwaitable(T awaitable, TraceContext &ctxt, CaptureSource source) requires(Forward) :
         mAwaitable(std::forward<T>(awaitable)),
         mAwaiter(toAwaiter(std::forward<T>(mAwaitable))),
-        mCtxt(ctxt) {}
+        mCtxt(ctxt),
+        mSource(source) {}
 
     // MUST RVO, Pin the awaitable, avoid the awaiter implementation need an stable awaitable address, it will cause dangling if move
     TracingAwaitable(const TracingAwaitable &) = delete;
 
     // Hooks
-    auto await_ready() noexcept(noexcept(mAwaiter.await_ready())) { 
+    auto await_ready() noexcept(noexcept(mAwaiter.await_ready())) -> bool {
+        // Update the line number of the top frame
+        // co_await doStd();
+        if (auto frame = mCtxt.topFrame(); frame) {
+            frame->setLine(mSource.toLocation().line());
+        }
         return mAwaiter.await_ready(); 
     }
 
@@ -272,31 +279,32 @@ public:
         using Ret = decltype(mAwaiter.await_suspend(handle));
         if constexpr (std::is_same_v<Ret, void>) {
             mAwaiter.await_suspend(handle);
-            mCtxt.suspend();
+            mCtxt.suspend(mSource);
             return;
         }
         else if constexpr (std::convertible_to<Ret, bool>) { // Return bool
             auto ret = mAwaiter.await_suspend(handle);
             if (ret) { // true on actually suspend
-                mCtxt.suspend();
+                mCtxt.suspend(mSource);
             }
             return ret;
         }
         else { // std::coroutine_handle<>
             auto ret = mAwaiter.await_suspend(handle);
-            mCtxt.suspend();
+            mCtxt.suspend(mSource);
             return ret;
         }
     }
 
     auto await_resume() noexcept(noexcept(mAwaiter.await_resume())) -> decltype(auto) { 
-        mCtxt.resume();
+        mCtxt.resume(mSource);
         return mAwaiter.await_resume();
     }
 private:
     Awaitable mAwaitable;
     Awaiter   mAwaiter;
     TraceContext &mCtxt;
+    CaptureSource mSource;
 };
 
 // MARK: Registery

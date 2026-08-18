@@ -38,7 +38,7 @@ auto ScheduleAwaiterBase::onStopInvoke() -> void { // Currently in executor thre
     }
 }
 
-auto ScheduleAwaiterBase::onCompletion(runtime::CoroContext &_self) -> void  { // In the executor thread
+auto ScheduleAwaiterBase::onCompletion(runtime::CoroContext &_self) noexcept -> void  { // In the executor thread
     auto &self = static_cast<ScheduleAwaiterBase &>(_self);
     auto old = std::atomic_ref(self.mState).exchange(State::Completed);
     if (old == State::StopPending) { // Stop is pending, let the onStopInvoke handle this
@@ -66,7 +66,7 @@ auto FinallyAwaiterBase::await_suspend(CoroHandle caller) -> std::coroutine_hand
     auto mainHandle = mContext->task();
 
     // The callbacks
-    auto mainCallback = [](runtime::CoroContext &ctxt) {
+    auto mainCallback = [](runtime::CoroContext &ctxt) noexcept {
         return static_cast<FinallyAwaiterBase*>(ctxt.userdata())->onTaskCompletion();
     };
     mCaller = caller;
@@ -83,7 +83,7 @@ auto FinallyAwaiterBase::await_suspend(CoroHandle caller) -> std::coroutine_hand
 
 auto FinallyAwaiterBase::onTaskCompletion() -> void {
     mContext->executor().schedule([this]() {
-        auto finallyCallback = [](runtime::CoroContext &ctxt) {
+        auto finallyCallback = [](runtime::CoroContext &ctxt) noexcept {
             return static_cast<FinallyAwaiterBase*>(ctxt.userdata())->onFinallyCompletion();
         };
 

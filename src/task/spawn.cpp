@@ -11,7 +11,7 @@ TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task, CaptureSource sour
     ILIAS_ASSERT(executor, "The current thread has no executor");
 
     // Bind the task to self
-    auto handler = [](CoroContext &_self) -> void{
+    auto handler = [](CoroContext &_self) noexcept -> void{
         auto &self = static_cast<TaskSpawnContextBase &>(_self);
         self.executor().schedule([self = &self]() { self->onComplete(); });
     };

@@ -50,7 +50,7 @@ inline auto WhenAnyAwaiterBase::stopAll() -> void {
     }
 }
 
-inline auto WhenAnyAwaiterBase::onTaskCompleted(CoroContext &_ctxt) -> void {
+inline auto WhenAnyAwaiterBase::onTaskCompleted(CoroContext &_ctxt) noexcept -> void {
     auto &ctxt = static_cast<TaskContext &>(_ctxt);
     auto &self = *static_cast<WhenAnyAwaiterBase *>(ctxt.userdata());
 

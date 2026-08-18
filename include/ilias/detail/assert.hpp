@@ -40,9 +40,9 @@
 // For old code compatibility
 #define ILIAS_ASSERT_MSG(x, msg) ILIAS_ASSERT(x, msg) 
 
+// LCOV_EXCL_START
 ILIAS_NS_BEGIN
 
-// LCOV_EXCL_START
 // MARK: Assertion
 namespace assertion {
 
@@ -96,6 +96,7 @@ inline auto handler(std::string_view cond, std::source_location where, Args &&..
 #endif // ILIAS_FMT_NAMESPACE
 
 } // namespace assertion
-// LCOV_EXCL_STOP
 
 ILIAS_NS_END
+
+// LCOV_EXCL_STOP
