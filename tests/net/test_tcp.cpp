@@ -1,5 +1,6 @@
+#include <ilias/net/addrinfo.hpp>
+#include <ilias/net/tcp.hpp>
 #include <ilias/testing.hpp>
-#include <ilias/net.hpp>
 #include <ilias/io.hpp>
 using namespace ilias;
 using namespace ilias::literals;

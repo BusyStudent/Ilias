@@ -2,7 +2,7 @@ name: CI for linux by xmake
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "*" ]
     paths-ignore:
       - '**/*.md'
       - 'docs/*'

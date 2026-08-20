@@ -125,8 +125,8 @@ public:
      * 
      * @return IoTask<void> 
      */
-    auto flush() const -> IoTask<void> {
-        co_return {};
+    auto flush() const -> Just<IoResult<void> > {
+        return just(IoResult<void>{});
     }
 
     /**
@@ -135,8 +135,8 @@ public:
      * @param how 
      * @return IoTask<void> 
      */
-    auto shutdown(int how = Shutdown::Write) const -> IoTask<void> {
-        co_return mHandle.fd().shutdown(how);
+    auto shutdown(Shutdown how = Shutdown::Write) const -> Just<IoResult<void> > {
+        return just(mHandle.fd().shutdown(how));
     }
 
     // ScatterReadable
@@ -309,9 +309,9 @@ public:
      */
     auto accept() const -> IoTask<std::pair<TcpStream, IPEndpoint> > {
         IPEndpoint endpoint;
-        ILIAS_CO_TRY(auto client, co_await accept(&endpoint));
+        ILIAS_CO_TRY(auto stream, co_await accept(&endpoint));
         co_return std::pair {
-            TcpStream {std::move(client)},
+            std::move(stream),
             endpoint
         };
     }
@@ -399,14 +399,13 @@ inline auto TcpBuilder::connect(IPEndpoint endpoint) -> IoTask<TcpStream> {
 }
 
 inline auto TcpBuilder::bind(IPEndpoint endpoint, int backlog) -> Just<IoResult<TcpListener> > {
-    auto listener = [&]() -> IoResult<TcpListener> {
+    return just([&]() -> IoResult<TcpListener> {
         ILIAS_TRY(auto sockfd, std::move(mFd));
         ILIAS_TRYV(sockfd.bind(endpoint));
         ILIAS_TRYV(sockfd.listen(backlog));
         ILIAS_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
         return TcpListener {std::move(handle)};
-    }();
-    return just(std::move(listener));
+    }());
 }
 
 inline auto TcpBuilder::impl(TcpBuilder self, IPEndpoint endpoint) -> IoTask<TcpStream> {

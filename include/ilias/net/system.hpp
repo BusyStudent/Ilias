@@ -72,23 +72,33 @@ enum PollEvent : uint32_t {
 };
 
 /**
- * @brief The socket shutdown mode enum
+ * @brief The socket shutdown mode enum, as same as shutdown(2)
  * 
  */
-enum Shutdown : int {
+enum class Shutdown : int {
     Read  = ILIAS_SHUT_RD,
     Write = ILIAS_SHUT_WR,
     Both  = ILIAS_SHUT_RDWR,
 };
 
 /**
- * @brief The address family enum
+ * @brief The address family enum, as same as in socket.h
  * 
  */
-enum AddressFamily : int {
+enum class AddressFamily : int {
     IPv4 = AF_INET,
     IPv6 = AF_INET6,
     Unix = AF_UNIX,
+};
+
+/**
+ * @brief The socket type enum, as same as in socket.h
+ * 
+ */
+enum class SocketType : int {
+    Stream = SOCK_STREAM,
+    Dgram  = SOCK_DGRAM,
+    Raw    = SOCK_RAW,
 };
 
 /**

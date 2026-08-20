@@ -215,13 +215,12 @@ private:
 
 // Impl
 inline auto UdpBuilder::bind(IPEndpoint endpoint) -> Just<IoResult<UdpSocket> > {
-    auto sock = [&]() -> IoResult<UdpSocket> {
+    return just([&]() -> IoResult<UdpSocket> {
         ILIAS_TRY(auto sockfd, std::move(mFd));
         ILIAS_TRYV(sockfd.bind(endpoint));
         ILIAS_TRY(auto handle, IoHandle<Socket>::make(std::move(sockfd), IoDescriptor::Socket));
         return UdpSocket{std::move(handle)};
-    }();
-    return just(std::move(sock));
+    }());
 }
 
 // For compatibility with the old API

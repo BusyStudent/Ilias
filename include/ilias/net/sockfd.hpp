@@ -118,8 +118,8 @@ public:
      * @param how 
      * @return IoResult<void> 
      */
-    auto shutdown(int how = Shutdown::Both) const -> IoResult<void> {
-        auto ret = ::shutdown(mFd, how);
+    auto shutdown(Shutdown how = Shutdown::Both) const -> IoResult<void> {
+        auto ret = ::shutdown(mFd, static_cast<int>(how));
         if (ret < 0) {
             return Err(SystemError::fromErrno());
         }
