@@ -1,5 +1,5 @@
+#include <ilias/net/udp.hpp>
 #include <ilias/testing.hpp>
-#include <ilias/net.hpp>
 using namespace ilias;
 using namespace ilias::literals;
 using namespace std::literals;

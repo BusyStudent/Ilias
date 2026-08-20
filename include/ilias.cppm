@@ -90,6 +90,8 @@ module;
     #define NOMINMAX 1
     #include <WinSock2.h>
     #include <WS2tcpip.h>
+    #include <MSWSock.h>
+    #include <IcmpAPI.h>
     #include <Windows.h>
 #endif // _WIN32
 
@@ -124,11 +126,14 @@ module;
 // MARK: ilias
 export module ilias;
 
-#if defined(_MSC_VER)
+#if   defined(_MSC_VER)
     #pragma warning(push)
     #pragma warning(disable: 4251) // Shut up!!!
     #pragma warning(disable: 5244)
     // We already pre-include all external dependencies in the global module fragment
+#elif defined(__clang__)
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Winclude-angled-in-module-purview"
 #endif // _MSC_VER
 
 #define ILIAS_MODULE
@@ -136,6 +141,8 @@ extern "C++" {
     #include <ilias.hpp>
 }
 
-#if defined(_MSC_VER)
+#if   defined(_MSC_VER)
     #pragma warning(pop)
+#elif defined(__clang__)
+    #pragma clang diagnostic pop
 #endif // _MSC_VER

@@ -12,7 +12,7 @@
     #define ILIAS_TRACING_API
 #else
     #define ILIAS_TRACING_API ILIAS_API
-#endif
+#endif // ILIAS_CORO_TRACE
 
 ILIAS_NS_BEGIN
 
@@ -237,6 +237,7 @@ public:
     static auto currentThread() noexcept -> TracingSubscriber *;
 };
 
+#if defined(ILIAS_CORO_TRACE)
 // MARK: TracingAwaitable
 // Add hooks to an awaitable, used for tracing
 template <typename T, bool Forward>
@@ -306,6 +307,7 @@ private:
     TraceContext &mCtxt;
     CaptureSource mSource;
 };
+#endif // defined(ILIAS_CORO_TRACE)
 
 // MARK: Registery
 class TraceRegistery {

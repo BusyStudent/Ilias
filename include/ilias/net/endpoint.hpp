@@ -169,6 +169,11 @@ public:
         return sun_path[0] == '\0';
     }
 
+    // Operator
+    auto operator ==(const UnixEndpoint &rhs) const -> bool {
+        return path() == rhs.path();
+    }
+
     /**
      * @brief Parse a string to unix endpoint
      * 

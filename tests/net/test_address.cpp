@@ -1,5 +1,5 @@
+#include <ilias/net/address.hpp>
 #include <ilias/testing.hpp>
-#include <ilias/net.hpp>
 #include <unordered_set>
 using namespace ilias;
 

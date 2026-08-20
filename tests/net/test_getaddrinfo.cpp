@@ -1,5 +1,5 @@
+#include <ilias/net/addrinfo.hpp>
 #include <ilias/testing.hpp>
-#include <ilias/net.hpp>
 using namespace ilias;
 
 ILIAS_TEST(Net, GetAddrInfo) {
