@@ -6,8 +6,6 @@
 #include <ilias/io/context.hpp>
 #include <ilias/io/ext.hpp>
 
-#if !defined(ILIAS_NO_AF_UNIX)
-
 ILIAS_NS_BEGIN
 
 namespace detail {
@@ -24,16 +22,20 @@ public:
     ~UnixSocket() { cleanup(); }
 
     auto bind(UnixEndpoint endpoint) -> IoResult<void> {
-        ILIAS_TRYV(mFd.bind(endpoint));
 #if defined(_WIN32)
+        std::unique_ptr<wchar_t []> path2;
         if (!endpoint.isAbstract()) {
             // Convert the endpint(utf8) to wchar_t
             auto path = endpoint.path();
             auto len = ::MultiByteToWideChar(CP_UTF8, 0, path.data(), path.size(), nullptr, 0);
-            mPath = std::make_unique<wchar_t[]>(len + 1);
-            ::MultiByteToWideChar(CP_UTF8, 0, path.data(), path.size(), mPath.get(), len);
-            mPath[len] = L'\0';
+            path2 = std::make_unique<wchar_t[]>(len + 1);
+            ::MultiByteToWideChar(CP_UTF8, 0, path.data(), path.size(), path2.get(), len);
+            path2[len] = L'\0';
         }
+#endif // _WIN32
+        ILIAS_TRYV(mFd.bind(endpoint));
+#if defined(_WIN32) // Submit the path
+        mPath = std::move(path2);
 #endif // _WIN32
         return {};
     }
@@ -246,7 +248,20 @@ public:
      */
     static auto pair() -> Just<IoResult<std::pair<UnixStream, UnixStream> > > {
         return just([]() -> IoResult<std::pair<UnixStream, UnixStream> > {
+#if defined(__unix__)
+            int fds[2];
+            if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, fds) == -1) {
+                return Err(SystemError::fromErrno());
+            }
+            Socket sock1{fds[0]};
+            Socket sock2{fds[1]};
+            ILIAS_TRY(auto a, from(std::move(sock1)));
+            ILIAS_TRY(auto b, from(std::move(sock2)));
+            return std::pair{std::move(a), std::move(b)};
+#else
+            // Maybe we can create a listener and accept a connection to impl it?
             return Err(IoError::OperationNotSupported);
+#endif // __unix__
         }());
     }
 private:
@@ -371,5 +386,3 @@ inline auto UnixBuilder::bind(UnixEndpoint endpoint, int backlog) -> Just<IoResu
 }
 
 ILIAS_NS_END
-
-#endif // ILIAS_NO_AF_UNIX
