@@ -4,6 +4,7 @@
 #include <ilias/defines.hpp>
 #include <coroutine>
 #include <concepts>
+#include <utility>
 #include <ranges>
 
 ILIAS_NS_BEGIN
@@ -143,7 +144,8 @@ template <AwaitableSequence T>
 using AwaitableSequenceValue = AwaitableResult<std::ranges::range_value_t<T> >;
 
 /**
- * @brief A Simpile awaiter that return the value directly
+ * @brief A Simpile awaiter that return the value directly, impl the Awaitable concept
+ * @note You can use await or struct binding to get the value
  * 
  * @tparam T 
  */
@@ -158,7 +160,9 @@ struct [[nodiscard]] Just {
 };
 
 template <>
-struct [[nodiscard]] Just<void> : std::suspend_never {};
+struct [[nodiscard]] Just<void> : std::suspend_never {
+    using SkipTracing = void;
+};
 
 /**
  * @brief Create a awaitable of result T

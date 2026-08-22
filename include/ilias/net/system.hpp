@@ -30,13 +30,18 @@
 
     #if __has_include(<afunix.h>)
         #include <afunix.h>
-    #else // minGW :( It doesn't have afunix.h
-        #define ILIAS_NO_AF_UNIX
-    #endif
+    #else // Pollyfill for old sdk
+        #define UNIX_PATH_MAX 108
+
+        typedef struct sockaddr_un {
+            ADDRESS_FAMILY sun_family;     /* AF_UNIX */
+            char sun_path[UNIX_PATH_MAX];  /* pathname */
+        } SOCKADDR_UN, *PSOCKADDR_UN;
+    #endif // __has_include(<afunix.h>)
 
     #ifdef _MSC_VER
         #pragma comment(lib, "Ws2_32.lib")
-    #endif
+    #endif // _MSC_VER
 #else
     #define ILIAS_INVALID_SOCKET   -1
     #define ILIAS_CLOSE_SOCKET(fd) ::close(fd)
@@ -54,7 +59,7 @@
     #include <unistd.h>
     #include <netdb.h>
     #include <fcntl.h>
-#endif
+#endif // _WIN32
 
 
 ILIAS_NS_BEGIN

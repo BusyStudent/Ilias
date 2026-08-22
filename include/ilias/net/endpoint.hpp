@@ -28,18 +28,17 @@ ILIAS_NS_BEGIN
  */
 template <typename T>
 concept Endpoint = requires(T t) {
+    t.family();
     t.data();
     t.length();
 };
 
 template <typename T>
 concept MutableEndpoint = requires(T t) {
+    t.family();
     t.data();
     t.bufsize();
 };
-
-
-#if !defined(ILIAS_NO_AF_UNIX)
 
 /**
  * @brief The endpoint of a unix domain socket
@@ -107,18 +106,18 @@ public:
     /**
      * @brief Get the length of the endpoint
      * 
-     * @return size_t 
+     * @return socklen_t 
      */
-    auto length() const -> size_t {
+    auto length() const -> ::socklen_t {
         return sizeof(::sockaddr_un);
     }
 
     /**
      * @brief Get the maximum buffer size of the endpoint
      * 
-     * @return size_t 
+     * @return socklen_t 
      */
-    auto bufsize() const -> size_t {
+    auto bufsize() const -> ::socklen_t {
         return sizeof(::sockaddr_un);
     }
 
@@ -187,8 +186,6 @@ public:
         return UnixEndpoint(path);
     }
 };
-
-#endif // defined(ILIAS_NO_AF_UNIX)
 
 /**
  * @brief The endpoint of a internet socket
@@ -394,9 +391,9 @@ public:
     /**
      * @brief Get the maximum buffer size of the endpoint (the max sizeof address you can store in it)
      * 
-     * @return size_t 
+     * @return socklen_t 
      */
-    auto bufsize() const -> size_t {
+    auto bufsize() const -> socklen_t {
         static_assert(sizeof(::sockaddr_in6) >= sizeof(::sockaddr_in));
         return sizeof(::sockaddr_in6);
     }
@@ -743,8 +740,7 @@ ILIAS_NS_END
 template <>
 struct std::hash<ilias::UnixEndpoint> {
     auto operator()(const ilias::UnixEndpoint &endpoint) const noexcept -> size_t {
-        auto view = std::string_view { endpoint.sun_path, sizeof(endpoint.sun_path) };
-        return std::hash<std::string_view>{}(view);
+        return std::hash<std::string_view>{}(endpoint.path());
     }
 };
 
