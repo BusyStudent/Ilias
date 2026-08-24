@@ -142,10 +142,7 @@ public:
      * @return std::string 
      */
     auto toString() const -> std::string {
-        if (!isValid()) {
-            return {};
-        }
-        return sun_path;
+        return std::string{path()};
     }
 
     /**
@@ -183,7 +180,22 @@ public:
         if (path.size() >= sizeof(sun_path)) {
             return Err(std::errc::invalid_argument);
         }
-        return UnixEndpoint(path);
+        return UnixEndpoint{path};
+    }
+
+        /**
+     * @brief Copy endpoint from network-format data
+     * 
+     * @param buf network-format data, must be at least sizeof(::sockaddr_un)
+     * @return UnixEndpoint 
+     */
+    static auto fromBytes(Buffer buf) -> Result<UnixEndpoint, std::errc> {
+        if (buf.size() < sizeof(::sockaddr_un)) {
+            return Err(std::errc::invalid_argument);
+        }
+        ::sockaddr_un addr;
+        ::memcpy(&addr, buf.data(), sizeof(::sockaddr_un));
+        return UnixEndpoint{addr};
     }
 };
 
@@ -277,9 +289,9 @@ public:
      */
     auto address() const -> IPAddress {
         switch (family()) {
-            case AF_INET: return IPAddress(cast<::sockaddr_in>().sin_addr);
-            case AF_INET6: return IPAddress(cast<::sockaddr_in6>().sin6_addr);
-            default: return IPAddress();
+            case AF_INET: return IPAddress{cast<::sockaddr_in>().sin_addr};
+            case AF_INET6: return IPAddress{cast<::sockaddr_in6>().sin6_addr};
+            default: return IPAddress{};
         }
     }
 
@@ -585,24 +597,6 @@ public:
     }
 
     /**
-     * @brief Convert endpoint view to human readable string (for debug use)
-     * 
-     * @return std::string 
-     */
-    auto toString() const -> std::string {
-        if (!mAddr) {
-            return "EndpointView(null)";
-        }
-        if (auto family = mAddr->sa_family; family == AF_INET || family == AF_INET6) {
-            auto buf = makeBuffer(mAddr, mLength);
-            return "EndpointView(" + IPEndpoint::fromBytes(buf).value().toString() + ")";
-        }
-        char buffer[256] {0};
-        ::snprintf(buffer, sizeof(buffer), "EndpointView(.family = %d, .len = %d)", int(mAddr->sa_family), int(mLength));
-        return buffer;
-    }
-
-    /**
      * @brief Compare with another EndpointView
      * 
      */
@@ -695,20 +689,6 @@ public:
     }
 
     /**
-     * @brief Convert the endpoint to human readable string (debug use)
-     * 
-     * @return std::string 
-     */
-    auto toString() const -> std::string {
-        if (!mAddr) {
-            return "MutableEndpointView(null)";
-        }
-        char buffer[256] {0};
-        ::snprintf(buffer, sizeof(buffer), "MutableEndpointView(.ptr = %p, .bufsize = %d)", mAddr, int(mBufSize));
-        return buffer;
-    }
-
-    /**
      * @brief Compare with another MutableEndpointView
      * 
      */
@@ -731,8 +711,6 @@ private:
 // Mark all formattable
 ILIAS_FORMATTABLE(IPEndpoint);
 ILIAS_FORMATTABLE(UnixEndpoint);
-ILIAS_FORMATTABLE(EndpointView);
-ILIAS_FORMATTABLE(MutableEndpointView);
 
 ILIAS_NS_END
 
@@ -751,3 +729,49 @@ struct std::hash<ilias::IPEndpoint> {
         return std::hash<std::string_view>{}(view);
     }
 };
+
+// Formatter for endpoints... (maybe faster?) 
+#if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(ilias::UnixEndpoint) {
+    auto format(const ilias::UnixEndpoint &endpoint, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", endpoint.path());
+    }
+};
+
+ILIAS_FORMATTER(ilias::IPEndpoint) {
+    auto format(const ilias::IPEndpoint &endpoint, auto &ctxt) const {
+        auto it = ctxt.out();
+        switch (endpoint.family()) {
+            case AF_INET: return format_to(it, "{}:{}", endpoint.address4(), endpoint.port());
+            case AF_INET6: return format_to(it, "[{}]:{}", endpoint.address6(), endpoint.port());
+            default: return it; // Invalid, as empty string
+        }
+    }
+};
+
+// Debug use
+ILIAS_FORMATTER(ilias::EndpointView) {
+    auto format(const ilias::EndpointView &endpoint, auto &ctxt) const {
+        if (!endpoint) {
+            return format_to(ctxt.out(), "EndpointView(null)");
+        }
+        auto buf = ilias::makeBuffer(endpoint.data(), endpoint.length());
+        auto family = endpoint.data()->sa_family;
+        switch (family) {
+            case AF_INET6:
+            case AF_INET: return format_to(ctxt.out(), "EndpointView({})", ilias::IPEndpoint::fromBytes(buf).value());
+            case AF_UNIX: return format_to(ctxt.out(), "EndpointView({})", ilias::UnixEndpoint::fromBytes(buf).value());
+            default: return format_to(ctxt.out(), "EndpointView(.family = {}, .len = {})", family, buf.size());
+        }
+    }
+};
+
+ILIAS_FORMATTER(ilias::MutableEndpointView) {
+    auto format(const ilias::MutableEndpointView &endpoint, auto &ctxt) const {
+        if (!endpoint) {
+            return format_to(ctxt.out(), "MutableEndpointView(null)");
+        }
+        return format_to(ctxt.out(), "MutableEndpointView(.ptr = {}, .bufsize = {})", static_cast<void *>(endpoint.data()), endpoint.bufsize());
+    }
+};
+#endif // ILIAS_NO_FORMAT

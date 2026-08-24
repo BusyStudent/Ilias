@@ -264,7 +264,7 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoRes
         nfd->poll.exceptNotifier->setEnabled(false);
 
         // Set nonblock, linux pollable fd can also use this way to set nonblock
-        SocketView sockfd(nfd->sockfd);
+        SocketView sockfd{nfd->sockfd};
         if (auto ret = sockfd.setBlocking(false); !ret) {
             return Err(ret.error());
         }

@@ -28,7 +28,7 @@ auto mainTask() -> Task<int> {
         std::println("Bad !!!");
     }
     co_await sleep(1000ms);
-    std::println("Hello, world! from main Tasks!!! {}", IPAddress4::none());
+    std::println("Hello, world! from main Tasks!!! {}", IPAddress4::any());
 
     // When all
     std::vector<Task<void>> tasks;

@@ -134,7 +134,7 @@ TEST(Endpoint, ToString) {
     EXPECT_EQ(fmtlib::format("{}", endpoint), "0.0.0.0:8080");
 #endif
 
-    IPEndpoint endpoint2(IPAddress6::none(), 8080);
+    IPEndpoint endpoint2(IPAddress6::any(), 8080);
     EXPECT_EQ(endpoint2.toString(), "[::]:8080");
 
 #if !defined(ILIAS_NO_FORMAT)

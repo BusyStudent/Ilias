@@ -163,8 +163,12 @@ public:
     auto setBlocking(bool blocking) const -> IoResult<void> {
 
 #if defined(_WIN32)
-        u_long block = blocking ? 0 : 1;
-        return ioctl(FIONBIO, &block);
+        ::u_long block = blocking ? 0 : 1;
+        ::DWORD bytes = 0;
+        if (::WSAIoctl(mFd, FIONBIO, &block, sizeof(block), nullptr, 0, &bytes, nullptr, nullptr) != 0) {
+            return Err(SystemError::fromErrno());
+        }
+        return {};
 #else
         int flags = ::fcntl(mFd, F_GETFL, 0);
         if (flags < 0) {
@@ -179,8 +183,8 @@ public:
         if (::fcntl(mFd, F_SETFL, flags) < 0) {
             return Err(SystemError::fromErrno());
         }
-        return IoResult<void>();
-#endif
+        return {};
+#endif // _WIN32
 
     }
 
@@ -252,23 +256,6 @@ public:
         return T::getopt(mFd);
     }
 
-#if defined(_WIN32)
-    /**
-     * @brief Perform IO control operation on the socket
-     * 
-     * @param cmd 
-     * @param args 
-     * @return IoResult<void> 
-     */
-    auto ioctl(long cmd, u_long *args) const -> IoResult<void> {
-        auto ret = ::ioctlsocket(mFd, cmd, args);
-        if (ret < 0) {
-            return Err(SystemError::fromErrno());
-        }
-        return {};
-    }
-#endif
-
     /**
      * @brief Check if the socket is valid
      * 
@@ -299,7 +286,7 @@ public:
             return Err(SystemError::fromErrno());
         }
         return family;
-#endif
+#endif // _WIN32
 
     }
 
@@ -324,7 +311,7 @@ public:
             return Err(SystemError::fromErrno());
         }
         return type;
-#endif
+#endif // _WIN32
 
     }
     
@@ -359,20 +346,6 @@ public:
     }
 
     /**
-     * @brief Accept a connection on the socket
-     * 
-     * @tparam T 
-     * @tparam Endpoint must has MutableEndpoint concept like IPEndpoint
-     * @return IoResult<std::pair<T, IPEndpoint> > 
-     */
-    template <typename T, MutableEndpoint Endpoint = IPEndpoint>
-    auto accept() const -> IoResult<std::pair<T, Endpoint> > {
-        Endpoint endpoint;
-        ILIAS_TRY(auto fd, accept<T>(endpoint));
-        return std::make_pair(T{std::move(fd)}, endpoint);
-    }
-
-    /**
      * @brief Duplicate the socket
      * 
      * @tparam T
@@ -401,9 +374,9 @@ public:
      * @brief Get the local endpoint of the socket
      * 
      * @tparam T must has MutableEndpoint concept like IPEndpoint
-     * @return IoResult<IPEndpoint> 
+     * @return IoResult<T> 
      */
-    template <MutableEndpoint T = IPEndpoint>
+    template <MutableEndpoint T>
     auto localEndpoint() const -> IoResult<T> {
         T endpoint;
         ::sockaddr *addr = reinterpret_cast<::sockaddr*>(endpoint.data());
@@ -418,9 +391,9 @@ public:
      * @brief Get the remote endpoint of the socket
      * 
      * @tparam T must has MutableEndpoint concept like IPEndpoint
-     * @return IoResult<IPEndpoint> 
+     * @return IoResult<T> 
      */
-    template <MutableEndpoint T = IPEndpoint>
+    template <MutableEndpoint T>
     auto remoteEndpoint() const -> IoResult<T> {
         T endpoint;
         ::sockaddr *addr = reinterpret_cast<::sockaddr*>(endpoint.data());
@@ -553,11 +526,12 @@ public:
      * 
      * @tparam T 
      * @tparam Endpoint
-     * @return IoResult<std::pair<T, IPEndpoint> > 
+     * @param endpoint The endpoint of the remote peer (optional, can be nullptr)
+     * @return IoResult<T> 
      */
-    template <typename T = Socket, MutableEndpoint Endpoint = IPEndpoint>
-    auto accept() const -> IoResult<std::pair<T, Endpoint> > {
-        return SocketView::accept<T, Endpoint>();
+    template <typename T = Socket>
+    auto accept(MutableEndpointView endpoint) const -> IoResult<T> {
+        return SocketView::accept<T>(endpoint);
     }
 
     /**
@@ -571,9 +545,6 @@ public:
         return SocketView::dup<T>();
     }
 
-    // Disabled
-    auto operator =(const Socket &) = delete;
-
     /**
      * @brief Move assignment operator
      * 
@@ -585,6 +556,10 @@ public:
         mFd = std::exchange(other.mFd, invalid());
         return *this;
     }
+
+    // Operator
+    auto operator =(const Socket &) = delete;
+    auto operator <=>(const Socket &) const = default;
 
     /**
      * @brief Create a new socket
@@ -600,7 +575,7 @@ public:
         auto sockfd = ::WSASocketW(family, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
 #else // POSIX
         auto sockfd = ::socket(family, type | SOCK_CLOEXEC, protocol);
-#endif
+#endif // _WIN32
         if (sockfd != invalid()) {
             return Socket{sockfd};
         }
@@ -610,3 +585,18 @@ public:
 };
 
 ILIAS_NS_END
+
+// Formatter
+#if !defined(ILIAS_NO_FORMATTER)
+ILIAS_FORMATTER(ilias::SocketView) {
+    auto format(const auto &sock, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", sock.get());
+    }
+};
+
+ILIAS_FORMATTER(ilias::Socket) {
+    auto format(const auto &sock, auto &ctxt) const {
+        return format_to(ctxt.out(), "{}", sock.get());
+    }
+};
+#endif // ILIAS_NO_FORMATTER

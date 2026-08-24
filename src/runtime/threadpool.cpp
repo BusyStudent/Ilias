@@ -2,6 +2,7 @@
 #include <ilias/runtime/token.hpp>
 #include <ilias/log.hpp>
 #include <condition_variable> // std::condition_variable
+#include <thread> // std::thread
 #include <queue> // std::queue
 #include <mutex> // std::mutex
 
@@ -21,7 +22,7 @@ auto threadpool::submit(CallableRef &callable) -> void {
         callable->invoke();
     };
     if (!::TrySubmitThreadpoolCallback(invoke, &callable, nullptr)) {
-        ILIAS_THROW(std::system_error{std::error_code{static_cast<int>(GetLastError()), std::system_category()}, "Faliled to submit to thread pool"});
+        ILIAS_THROW(std::system_error{std::error_code{static_cast<int>(::GetLastError()), std::system_category()}, "Faliled to submit to thread pool"});
     }
 #else // Use our own thread pool
     struct ThreadPool {

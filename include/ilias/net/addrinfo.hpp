@@ -67,9 +67,8 @@ private:
 class ILIAS_API AddressInfo {
 public:
     explicit AddressInfo(addrinfo_t *info) noexcept : mInfo(info) { }
-    AddressInfo() = default;
-    AddressInfo(const AddressInfo &) = delete;
     AddressInfo(AddressInfo &&info) = default;
+    AddressInfo() = default;
 
     /**
      * @brief Get all endpoint from the info
@@ -183,6 +182,7 @@ inline auto AddressInfo::lookup(std::string_view host, std::optional<addrinfo_t>
     return AddressInfo::fromHostname(name, service, hints);
 }
 
+// ADL
 inline auto make_error_code(GaiError err) -> std::error_code {
     return {static_cast<int>(err), GaiCategory::instance()};
 }

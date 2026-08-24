@@ -91,16 +91,6 @@ public:
     }
 
     /**
-     * @brief Check current address is none
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto isNone() const -> bool {
-        return toUint32() == INADDR_NONE;
-    }
-
-    /**
      * @brief Check current address is loopback
      * 
      * @return true 
@@ -162,15 +152,6 @@ public:
      */
     static auto any() -> IPAddress4 {
         return fromUint32(INADDR_ANY);
-    }
-
-    /**
-     * @brief Get none ipv4 address
-     * 
-     * @return IPAddress4 
-     */
-    static auto none() -> IPAddress4 {
-        return fromUint32(INADDR_NONE);
     }
 
     /**
@@ -346,16 +327,6 @@ public:
     }
 
     /**
-     * @brief Check this ipv6 address is none
-     * 
-     * @return true 
-     * @return false 
-     */
-    auto isNone() const -> bool {
-        return IN6_IS_ADDR_UNSPECIFIED(this);
-    }
-
-    /**
      * @brief Check this ipv6 address is loopback
      * 
      * @return true 
@@ -415,15 +386,6 @@ public:
      * @return IPAddress6 
      */
     static auto any() -> IPAddress6 {
-        return ::in6_addr IN6ADDR_ANY_INIT;
-    }
-
-    /**
-     * @brief Get the none ipv6 address
-     * 
-     * @return IPAddress6 
-     */
-    static auto none() -> IPAddress6 {
         return ::in6_addr IN6ADDR_ANY_INIT;
     }
 
@@ -696,3 +658,30 @@ struct std::hash<ilias::IPAddress> {
         return std::hash<std::string_view>{}(view);
     }
 };
+
+// Formatter for IPAddress (maybe faster?)
+#if !defined(ILIAS_NO_FORMAT)
+ILIAS_FORMATTER(ilias::IPAddress4) {
+    auto format(const ilias::IPAddress4 &address, auto &ctxt) const {
+        auto [a, b, c, d] = address.toUint8Array();
+        return format_to(ctxt.out(), "{}.{}.{}.{}", a, b, c, d);
+    }
+};
+
+ILIAS_FORMATTER(ilias::IPAddress6) {
+    auto format(const ilias::IPAddress6 &address, auto &ctxt) const {
+        char buf[INET6_ADDRSTRLEN] {0};
+        return format_to(ctxt.out(), "{}", ::inet_ntop(AF_INET6, &address, buf, sizeof(buf)));
+    }
+};
+
+ILIAS_FORMATTER(ilias::IPAddress) {
+    auto format(const ilias::IPAddress &address, auto &ctxt) const {
+        switch (address.family()) {
+            case AF_INET: return format_to(ctxt.out(), "{}", address.cast<ilias::IPAddress4>());
+            case AF_INET6: return format_to(ctxt.out(), "{}", address.cast<ilias::IPAddress6>());
+            default: return ctxt.out(); // Invalid;
+        }
+    }
+};
+#endif // ILIAS_NO_FORMAT
