@@ -189,7 +189,7 @@ public:
             return false;
         }
         mAcceptedSock.reset(::socket(addr.ss_family, SOCK_STREAM, 0));
-        if (mAcceptedSock == INVALID_SOCKET) {
+        if (mAcceptedSock.get() == INVALID_SOCKET) {
             return false;
         }
         

@@ -65,7 +65,7 @@ private:
 
 
 int main(int argc, char** argv) {
-    // ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
+    ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
     ILIAS_TEST_SETUP_UTF8();
     IoEventLoop ctxt;
     ctxt.install();

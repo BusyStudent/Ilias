@@ -42,7 +42,8 @@
         requires(Stream &stream) { stream << std::string_view{}; }                 \
     )                                                                              \
     inline auto operator <<(Stream &stream, const type &t) -> decltype(auto) {     \
-        return stream << _ilias_implToString(t);                                   \
+        auto str = _ilias_implToString(t);                                         \
+        return stream << std::string_view{str};                                    \
     }
 
 // Impl the formatter for IntoString concept

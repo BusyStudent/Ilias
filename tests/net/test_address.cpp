@@ -6,7 +6,6 @@ using namespace ilias;
 // For V4 Address
 TEST(Address4, Parse) {
     EXPECT_EQ(IPAddress4::fromString("0.0.0.0").value(), IPAddress4::any());
-    EXPECT_EQ(IPAddress4::fromString("255.255.255.255").value(), IPAddress4::none());
     EXPECT_EQ(IPAddress4::fromString("255.255.255.255").value(), IPAddress4::broadcast());
     EXPECT_EQ(IPAddress4::fromString("127.0.0.1").value(), IPAddress4::loopback());
 
@@ -44,7 +43,7 @@ TEST(Address4, ToString) {
 }
 
 TEST(Address4, Bytes) {
-    auto addr = IPAddress4::none();
+    auto addr = IPAddress4::broadcast();
     auto span = addr.bytes();
     EXPECT_EQ(span[0], std::byte {255});
     EXPECT_EQ(span[1], std::byte {255});
@@ -53,9 +52,9 @@ TEST(Address4, Bytes) {
 }
 
 TEST(Address4, Compare) {
-    EXPECT_EQ(IPAddress4::none(), IPAddress4::none());
-    EXPECT_NE(IPAddress4::none(), IPAddress4::any());
-    EXPECT_NE(IPAddress4::none(), IPAddress4::loopback());
+    EXPECT_EQ(IPAddress4::broadcast(), IPAddress4::broadcast());
+    EXPECT_NE(IPAddress4::broadcast(), IPAddress4::any());
+    EXPECT_NE(IPAddress4::broadcast(), IPAddress4::loopback());
 }
 
 TEST(Address4, Hash) {
@@ -63,7 +62,7 @@ TEST(Address4, Hash) {
     addrs.insert(IPAddress4::loopback());
     addrs.insert(IPAddress4::fromString("192.168.0.1").value());
 
-    EXPECT_FALSE(addrs.contains(IPAddress4::none()));
+    EXPECT_FALSE(addrs.contains(IPAddress4::broadcast()));
     EXPECT_TRUE(addrs.contains(IPAddress4::loopback()));
 }
 
@@ -82,10 +81,20 @@ TEST(Address6, Parse) {
     EXPECT_FALSE(IPAddress6::fromString("::ffff:1121212121:121212:sa1212121211212121212121:12121212121:as2a1s2a1212").has_value());
 }
 
+TEST(Address6, ToString) {
+    EXPECT_EQ(IPAddress6::fromString("::").value().toString(), "::");
+    EXPECT_EQ(IPAddress6::loopback().toString(), "::1");
+
+#if !defined(ILIAS_NO_FORMAT)
+    EXPECT_EQ(fmtlib::format("{}", IPAddress6::any()), "::");
+    EXPECT_EQ(fmtlib::format("{}", IPAddress6::loopback()), "::1");
+#endif
+}
+
 TEST(Address6, Compare) {
     EXPECT_EQ(IPAddress6::loopback(), IPAddress6::loopback());
     EXPECT_NE(IPAddress6::loopback(), IPAddress6::any());
-    EXPECT_NE(IPAddress6::loopback(), IPAddress6::none());
+    EXPECT_NE(IPAddress6::loopback(), IPAddress6::fromV4Mapped(IPAddress4::broadcast()));
 }
 
 TEST(Address6, V4Mapped) {
@@ -123,16 +132,16 @@ TEST(Address, Parse) {
 
 TEST(Address, ToString) {
     EXPECT_EQ(IPAddress(IPAddress4::any()).toString(), "0.0.0.0");
-    EXPECT_EQ(IPAddress(IPAddress4::none()).toString(), "255.255.255.255");
+    EXPECT_EQ(IPAddress(IPAddress4::broadcast()).toString(), "255.255.255.255");
 }
 
 TEST(Address, Compare) {
     EXPECT_EQ(IPAddress(), IPAddress());
     EXPECT_EQ(IPAddress(IPAddress4::any()), IPAddress(IPAddress4::any()));
-    EXPECT_NE(IPAddress(IPAddress4::any()), IPAddress(IPAddress4::none()));
+    EXPECT_NE(IPAddress(IPAddress4::any()), IPAddress(IPAddress4::broadcast()));
     EXPECT_EQ(IPAddress(IPAddress6::loopback()), IPAddress(IPAddress6::loopback()));
     EXPECT_NE(IPAddress(IPAddress6::loopback()), IPAddress(IPAddress6::any()));
-    EXPECT_NE(IPAddress(IPAddress4::loopback()), IPAddress(IPAddress6::none()));
+    EXPECT_NE(IPAddress(IPAddress4::loopback()), IPAddress(IPAddress6::fromV4Mapped(IPAddress4::broadcast())));
     EXPECT_NE(IPAddress(IPAddress4::loopback()), IPAddress());
 }
 
