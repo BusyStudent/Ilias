@@ -9,7 +9,6 @@
 #include <coroutine> // std::coroutine_handle<>
 #include <concepts> // std::invocable
 #include <utility> // std::exchange
-#include <memory> // std::shared_ptr
 
 #if defined(_MSC_VER) || defined(__clang__) || defined(__GNUC__)
     #define ILIAS_USE_CORO_ABI

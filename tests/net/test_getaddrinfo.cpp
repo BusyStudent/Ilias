@@ -10,8 +10,10 @@ ILIAS_TEST(Net, GetAddrInfo) {
     {
         auto info = co_await AddressInfo::fromHostname("impossiblehostname.unknown");
         EXPECT_FALSE(info);
-        EXPECT_EQ(info.error(), GaiError::NotFound);
-        std::cout << info.error().message() << std::endl;
+        if (!info) {
+            EXPECT_EQ(info.error(), GaiError::NotFound);
+            std::cout << info.error().message() << std::endl;
+        }
     }
     {
         auto info = co_await AddressInfo::lookup("www.baidu.com:80");

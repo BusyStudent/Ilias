@@ -229,18 +229,19 @@ private:
         });
 
         ::fseek(fp, 0, SEEK_END);
-        auto size = ::ftell(fp);
-        if (size <=0) {
+        auto size1 = ::ftell(fp);
+        if (size1 <=0) {
             return false;
         }
         ::fseek(fp, 0, SEEK_SET);
 
+        auto size = static_cast<size_t>(size1);
         auto ptr = std::make_unique<std::byte []>(size);
         auto n = ::fread(ptr.get(), 1, size, fp);
         if (n != size) {
             return false;
         }
-        return fn(std::span{ptr.get(), static_cast<size_t>(n)});
+        return fn(std::span{ptr.get(), n});
     }
 
     tls::TlsContextHandle d;
