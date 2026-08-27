@@ -23,7 +23,6 @@
 #include <QTimerEvent>
 #include <QEventLoop>
 #include <QObject>
-#include <map>
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp> // Some win32 utils
@@ -41,9 +40,11 @@ class QIoContext;
  */
 class QIoDescriptor final : public IoDescriptor, public QObject {
 public:
-    QIoDescriptor(QObject *parent = nullptr) : QObject(parent) { }
+    QIoDescriptor(QObject *parent = nullptr) : QObject(parent) {}
     QIoDescriptor(const QIoDescriptor &) = delete;
-    ~QIoDescriptor() { }
+    ~QIoDescriptor() {
+        ILIAS_ASSERT(poll.numOfRead == 0 && poll.numOfWrite == 0 && poll.numOfExcept == 0, "Io operation still pending, bug");
+    }
 
     union {
         fd_t     fd;                    //< Platform's fd
@@ -77,7 +78,7 @@ public:
  */
 class QPollAwaiter {
 public:
-    QPollAwaiter(QIoDescriptor *fd, uint32_t event) : mFd(fd), mEvent(event) { }
+    QPollAwaiter(QIoDescriptor *fd, uint32_t event) : mFd(fd), mEvent(event) {}
 
     auto await_ready() -> bool { return false; }
     auto await_suspend(runtime::CoroHandle caller) -> void;
@@ -85,7 +86,6 @@ public:
 private:
     auto onNotifierActivated(QSocketDescriptor, QSocketNotifier::Type type) -> void;
     auto onStopRequested() -> void;
-    auto onFdDestroyed() -> void;
     auto doDisconnect() -> void;
     auto doConnect() -> void;
 
@@ -96,7 +96,6 @@ private:
     QMetaObject::Connection mReadCon;
     QMetaObject::Connection mWriteCon;
     QMetaObject::Connection mExceptCon;
-    QMetaObject::Connection mDestroyCon; // To observe the QIoDescriptor destroyed
     runtime::CoroHandle mCaller;
     runtime::StopRegistration mRegistration;
 };
@@ -197,7 +196,7 @@ inline QIoContext::~QIoContext() {
 #if !defined(NDEBUG)
         ILIAS_WARN("QIo", "QIoContext::~QIoContext(): dump object tree");
         dumpObjectTree();
-#endif
+#endif // NDEBUG
     }
 }
 
@@ -600,7 +599,7 @@ inline auto QPollAwaiter::await_suspend(runtime::CoroHandle caller) -> void {
 }
 
 inline auto QPollAwaiter::await_resume() -> IoResult<uint32_t> {
-    ILIAS_ASSERT(!mReadCon && !mWriteCon && !mExceptCon && !mDestroyCon);
+    ILIAS_ASSERT(!mReadCon && !mWriteCon && !mExceptCon, "We still waiting for the signal?");
     return mResult;
 }
 
@@ -610,16 +609,6 @@ inline auto QPollAwaiter::onStopRequested() -> void {
         mGot = true;
         doDisconnect();
         mCaller.setStopped();
-    }
-}
-
-inline auto QPollAwaiter::onFdDestroyed() -> void {
-    ILIAS_TRACE("QIo", "fd {} was destroyed", mFd->sockfd);
-    if (!mGot) {
-        mGot = true;
-        doDisconnect();
-        mResult = Err(IoError::Canceled);
-        mCaller.schedule();
     }
 }
 
@@ -664,9 +653,6 @@ inline auto QPollAwaiter::doDisconnect() -> void {
         mFd->poll.exceptNotifier->disconnect(mExceptCon);
         mFd->poll.numOfExcept--;
     }
-    if (mDestroyCon) {
-        mFd->disconnect(mDestroyCon);
-    }
 
     // Check the num of connections, and disable it if 0
     if (mFd->poll.numOfRead == 0) {
@@ -681,8 +667,9 @@ inline auto QPollAwaiter::doDisconnect() -> void {
 }
 
 inline auto QPollAwaiter::doConnect() -> void {
-    auto fn = std::bind(&QPollAwaiter::onNotifierActivated, this, std::placeholders::_1, std::placeholders::_2);
-    auto destroyFn = std::bind(&QPollAwaiter::onFdDestroyed, this);
+    auto fn = [this](QSocketDescriptor fd, QSocketNotifier::Type type) {
+        return onNotifierActivated(fd, type);
+    };
     if (mEvent & PollEvent::In) {
         mReadCon = QObject::connect(mFd->poll.readNotifier, &QSocketNotifier::activated, fn);
         mFd->poll.readNotifier->setEnabled(true);
@@ -697,9 +684,6 @@ inline auto QPollAwaiter::doConnect() -> void {
     mExceptCon = QObject::connect(mFd->poll.exceptNotifier, &QSocketNotifier::activated, fn);
     mFd->poll.exceptNotifier->setEnabled(true);
     mFd->poll.numOfExcept++;
-
-    // Connect the destroy notifier
-    mDestroyCon = QObject::connect(mFd, &QObject::destroyed, destroyFn);
 }
 
 #if defined(_WIN32)
@@ -726,6 +710,7 @@ inline auto QOverlapped::setOffset(size_t offset) -> void {
 
 } // namespace qt
 
+// Re-export to user
 using qt::QIoContext;
 
 ILIAS_NS_END

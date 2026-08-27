@@ -4,10 +4,20 @@
 #include <gtest/gtest.h>
 #include <iostream>
 
+namespace {
+    std::string_view SHELL = 
+#ifdef _WIN32
+        "powershell"
+#else
+        "bash"
+#endif // _WIN32
+    ;
+}
+
 using namespace ilias;
 
 ILIAS_TEST(Process, SpawnFailed) {
-    auto proc = Process::Builder {"non-existing-command"}.spawn();
+    auto proc = Process::Builder{"non-existing-command"}.spawn();
     EXPECT_FALSE(proc);
     co_return;
 }
@@ -15,11 +25,11 @@ ILIAS_TEST(Process, SpawnFailed) {
 ILIAS_TEST(Process, Spawn) {
 
 #if defined(_WIN32)
-    auto output = co_await Process::Builder {"powershell"}
+    auto output = co_await Process::Builder{"powershell"}
         .args({"-Command", "ls"})
         .output();
 #else
-    auto output = co_await Process::Builder {"ls"}
+    auto output = co_await Process::Builder{"ls"}
         .output();
 #endif
 
@@ -27,14 +37,15 @@ ILIAS_TEST(Process, Spawn) {
     std::cout << output->cout << std::endl;
 }
 
+ILIAS_TEST(Process, KillOnDestroy) {
+    auto proc = Process::Builder{SHELL}
+        .killOnDestroy(true)
+        .spawn();
+    co_return;
+}
+
 ILIAS_TEST(Process, Kill) {
-
-#if defined(_WIN32)
-    auto proc = Process::Builder {"powershell"}.spawn();
-#else
-    auto proc = Process::Builder {"bash"}.spawn();
-#endif
-
+    auto proc = Process::Builder{SHELL}.spawn();
     EXPECT_TRUE(proc);
     EXPECT_TRUE(proc->kill());
     EXPECT_TRUE(co_await proc->wait());

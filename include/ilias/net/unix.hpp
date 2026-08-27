@@ -5,52 +5,76 @@
 #include <ilias/net/msghdr.hpp> // MsgHdr
 #include <ilias/io/context.hpp>
 #include <ilias/io/ext.hpp>
+#include <memory> // std::unique_ptr
+
+#if defined(__unix__)
+    #include <unistd.h> // unlink
+#endif // __unix__
 
 ILIAS_NS_BEGIN
 
 namespace detail {
 
 /**
- * @brief Wrapper of the raw socket, for handling the sock file in windows
+ * @brief The guard to handle the unlink of the unix socket file
+ * 
+ */
+class UnixPathDeleter {
+public:
+    auto operator()(auto *str) const {
+        ILIAS_ASSERT(str, "The unix socket path is nullptr, this should never happen");
+#if defined(_WIN32)
+        ::DeleteFileW(str);
+#else
+        ::unlink(str);
+#endif // _WIN32
+        delete [] str;
+    }
+};
+
+/**
+ * @brief Wrapper of the raw socket, combine the path guard with the socket
  * 
  */
 class UnixSocket {
 public:
-    UnixSocket() = default;
-    UnixSocket(UnixSocket &&) = default;
     UnixSocket(Socket sock) : mFd(std::move(sock)) {}
-    ~UnixSocket() { cleanup(); }
+    UnixSocket(UnixSocket &&) = default;
+    UnixSocket() = default;
 
-    auto bind(UnixEndpoint endpoint) -> IoResult<void> {
 #if defined(_WIN32)
-        std::unique_ptr<wchar_t []> path2;
+    using Char = wchar_t;
+#else
+    using Char = char;
+#endif // _WIN32
+
+    /**
+     * @brief Bind to a endpoint
+     * @note If the endpoint is not abstract, we will record it and delete it in dtor
+     */
+    auto bind(UnixEndpoint endpoint) -> IoResult<void> {
+        std::unique_ptr<Char []> path2;
         if (!endpoint.isAbstract()) {
             // Convert the endpint(utf8) to wchar_t
             auto path = endpoint.path();
+#if defined(_WIN32)
             auto len = ::MultiByteToWideChar(CP_UTF8, 0, path.data(), path.size(), nullptr, 0);
             path2 = std::make_unique<wchar_t[]>(len + 1);
             ::MultiByteToWideChar(CP_UTF8, 0, path.data(), path.size(), path2.get(), len);
             path2[len] = L'\0';
+#else
+            path2 = std::make_unique<char[]>(path.size() + 1);
+            ::memcpy(path2.get(), path.data(), path.size());
+            path2[path.size()] = '\0';
+#endif // _WIN32
         }
-#endif // _WIN32
         ILIAS_TRYV(mFd.bind(endpoint));
-#if defined(_WIN32) // Submit the path
-        mPath = std::move(path2);
-#endif // _WIN32
+        mPath.reset(path2.release()); // Put the pointer to the deleter
         return {};
     }
 
     // Operator
-    auto operator =(UnixSocket &&other) -> UnixSocket & {
-        if (this != &other) {
-            cleanup();
-            mFd = std::move(other.mFd);
-#if defined(_WIN32)
-            mPath = std::move(other.mPath);
-#endif // _WIN32
-        }
-        return *this;
-    }
+    auto operator =(UnixSocket &&other) -> UnixSocket & = default;
     auto operator <=>(const UnixSocket &) const = default;
     auto operator ->() const -> const Socket * { return &mFd; }
 
@@ -62,19 +86,8 @@ public:
         return UnixSocket{std::move(sock)};
     }
 private:
-    auto cleanup() -> void {
-#if defined(_WIN32)
-        if (mPath) {
-            mFd.close();
-            ::DeleteFileW(mPath.get());
-        }
-#endif // _WIN32
-    }
-
-    Socket mFd;
-#if defined(_WIN32)
-    std::unique_ptr<wchar_t []> mPath; // If not nullptr, we need to delete the socket file in dtor
-#endif // _WIN32
+    std::unique_ptr<Char [], UnixPathDeleter> mPath; // Unlink the socket file after close the socket
+    Socket mFd; // The raw socket
 };
 
 } // namespace detail

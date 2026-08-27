@@ -41,9 +41,11 @@ public:
 
     Process(Process &&other) = default;
     Process() = default;
+    ~Process();
 
     /**
      * @brief Detch the process, just like thread detach, we will lose the control of the process
+     * @note It it will `CONSUME` it, setting process to empty
      * 
      */
     auto detach() -> void;
@@ -57,10 +59,11 @@ public:
 
     /**
      * @brief Wait for the process to be done, if canceled, we will kill the process
+     * @note You can only wait the process for once, it will `CONSUME` it
      * 
      * @return int32_t The exit status of the process
      */
-    auto wait() const -> IoTask<int32_t>;
+    auto wait() -> IoTask<int32_t>;
 
     /**
      * @brief Get the pid of the process
@@ -86,7 +89,7 @@ public:
 
     // Operators
     auto operator <=>(const Process &) const noexcept = default; 
-    auto operator =(Process &&) -> Process & = default;
+    auto operator =(Process &&) noexcept -> Process &;
 
     /**
      * @brief Check the process is not empty
@@ -95,11 +98,14 @@ public:
      * @return false 
      */
     explicit operator bool() const noexcept {
-        return mPid != 0; // The linux platform may fall back to use pid directly, so check it
+        return bool(mHandle);
     }
 private:
+    auto cleanup() -> void; // Internal cleanup
+
     detail::ProcessHandle mHandle;
     uint32_t              mPid = 0;
+    bool                  mKillOnDestroy = false;
 };
 
 /**
@@ -213,6 +219,17 @@ public:
         return *this;
     }
 
+    /**
+     * @brief Set kill the process when destroy
+     * 
+     * @param on 
+     * @return Builder & 
+     */
+    auto killOnDestroy(bool on) -> Builder & {
+        mKillOnDestroy = on;
+        return *this;
+    }
+
     // Win32 specific
 #if defined(_WIN32)
     auto creationFlags(::DWORD flags) -> Builder & {
@@ -248,6 +265,7 @@ private:
     std::optional<FileDescriptor> mStdin;
     std::optional<FileDescriptor> mStdout;
     std::optional<FileDescriptor> mStderr;
+    bool    mKillOnDestroy = false;
 
 #if defined(_WIN32)
     ::DWORD mCreationFlags = 0;
@@ -255,9 +273,31 @@ private:
 
 };
 
-inline auto Process::detach() -> void {
-    mHandle = {};
-    mPid = 0;
+inline Process::~Process() {
+    if (mHandle) {
+        cleanup();
+    }
+}
+
+inline auto Process::cleanup() -> void {
+    ILIAS_ASSERT(mHandle, "The process is invalid, but cleanup() was called?, bug?");
+    if (mKillOnDestroy) {
+        auto _ = kill();
+    }
+    detach();
+    ILIAS_ASSUME(!mHandle, "We consumed the handle...");
+}
+
+inline auto Process::operator =(Process &&other) noexcept -> Process & {
+    if (&other != this) {
+        if (mHandle) {
+            cleanup();
+        }
+        std::swap(mHandle, other.mHandle);
+        std::swap(mPid, other.mPid);
+        std::swap(mKillOnDestroy, other.mKillOnDestroy);
+    }
+    return *this;
 }
 
 ILIAS_NS_END
