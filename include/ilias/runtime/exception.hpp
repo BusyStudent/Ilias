@@ -2,9 +2,7 @@
 #pragma once
 
 #include <ilias/defines.hpp>
-#include <stdexcept>
 #include <exception>
-#include <utility>
 
 ILIAS_NS_BEGIN
 

@@ -43,7 +43,7 @@
         #pragma comment(lib, "Ws2_32.lib")
     #endif // _MSC_VER
 #else
-    #define ILIAS_INVALID_SOCKET   -1
+    #define ILIAS_INVALID_SOCKET   (-1)
     #define ILIAS_CLOSE_SOCKET(fd) ::close(fd)
     #define ILIAS_POLL             ::poll
     #define ILIAS_SHUT_RD          SHUT_RD
@@ -165,5 +165,64 @@ inline auto SockInitializer::uninitialize() -> IoResult<void> {
 #endif
     return {};
 }
+
+// Format
+inline auto toString(PollEvent event) -> std::string {
+    std::string ret;
+
+    if (event & PollEvent::In) {
+        ret += "In | ";
+    }
+    if (event & PollEvent::Out) {
+        ret += "Out | ";
+    }
+    if (event & PollEvent::Pri) {
+        ret += "Pri | ";
+    }
+    if (event & PollEvent::Hup) {
+        ret += "Hup | ";
+    }
+    if (event & PollEvent::Error) {
+        ret += "Error | ";
+    }
+    if (!ret.empty()) { // Remove last " | "
+        ret.pop_back();
+        ret.pop_back();
+    }
+    return ret;
+}
+
+inline auto toString(Shutdown mode) -> std::string_view {
+    switch (mode) {
+        case Shutdown::Read:  return "Read";
+        case Shutdown::Write: return "Write";
+        case Shutdown::Both:  return "Both";
+        default:              return "Unknown";
+    }
+}
+
+inline auto toString(AddressFamily family) -> std::string_view {
+    switch (family) {
+        case AddressFamily::IPv4: return "IPv4";
+        case AddressFamily::IPv6: return "IPv6";
+        case AddressFamily::Unix: return "Unix";
+        default:                  return "Unknown";
+    }
+}
+
+inline auto toString(SocketType type) -> std::string_view {
+    switch (type) {
+        case SocketType::Stream: return "Stream";
+        case SocketType::Dgram:  return "Dgram";
+        case SocketType::Raw:    return "Raw";
+        default:                 return "Unknown";
+    }
+}
+
+// MARK it
+ILIAS_FORMATTABLE(PollEvent);
+ILIAS_FORMATTABLE(Shutdown);
+ILIAS_FORMATTABLE(AddressFamily);
+ILIAS_FORMATTABLE(SocketType);
 
 ILIAS_NS_END

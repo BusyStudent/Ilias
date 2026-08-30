@@ -39,9 +39,10 @@ public:
     auto default_error_condition(int value) const noexcept -> std::error_condition override;
     
     ILIAS_API
+    ILIAS_GNUC([[gnu::const]]) // Make compiler happy to deduplicate calls
     static auto instance() noexcept -> const SystemCategory &;
 private:
-    constexpr SystemCategory() noexcept {}
+    constexpr SystemCategory() noexcept = default;
 };
 /**
  * @brief System Error class, wrapping the system error (Win32 or POSIX)
@@ -53,7 +54,7 @@ public:
      * @brief The known system dependent error codes
      * 
      */
-    enum Code : error_t {
+    enum Code : error_t { 
         Ok                            = 0,
         AccessDenied                  = ILIAS_MAP(EACCES),
         AddressInUse                  = ILIAS_MAP(EADDRINUSE),
@@ -163,11 +164,11 @@ inline auto SystemError::isOk() const noexcept -> bool {
 }
 
 // ADL for error code
-inline auto make_error_code(SystemError::Code err) -> std::error_code {
+inline auto make_error_code(SystemError::Code err) -> std::error_code { // NOLINT
     return {static_cast<int>(err), SystemCategory::instance()};
 }
 
-inline auto make_error_code(SystemError err) -> std::error_code {
+inline auto make_error_code(SystemError err) -> std::error_code { // NOLINT
     return {static_cast<int>(err), SystemCategory::instance()};
 }
 

@@ -457,7 +457,7 @@ auto fn() => ilias::Task<void> {
 
     // Manually set the current coroutine to the stopped state
     // This only takes effect if stop_requested() is true
-    co_await this_coro::stopped();
+    co_await this_coro::stopPoint();
 }
 ````
 

@@ -17,9 +17,10 @@ auto CoroContext::stop() noexcept -> bool {
 }
 
 auto CoroContext::setStopped() noexcept -> void {
-    auto handler = std::exchange(mStoppedHandler, reinterpret_cast<StoppedHandler>(-1)); // Mark we are stopped and get the handler
+    auto stopped = reinterpret_cast<StoppedHandler>(-1); // NOLINT
+    auto handler = std::exchange(mStoppedHandler, stopped); // Mark we are stopped and get the handler
     ILIAS_ASSERT(handler, "Stopped handler not set ?");
-    ILIAS_ASSERT(handler != reinterpret_cast<StoppedHandler>(-1), "We are already stopped");
+    ILIAS_ASSERT(handler != stopped, "We are already stopped");
     handler(*this); // Call the stopped handler, we are stopped
 }
 

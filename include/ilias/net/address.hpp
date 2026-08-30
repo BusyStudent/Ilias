@@ -12,12 +12,11 @@
 #pragma once
 
 #include <ilias/detail/overloads.hpp>
-#include <ilias/net/system.hpp>
-#include <ilias/result.hpp>
-#include <ilias/buffer.hpp>
-#include <charconv>
-#include <compare>
-#include <variant>
+#include <ilias/net/system.hpp> // in_addr
+#include <ilias/result.hpp> // Result
+#include <ilias/buffer.hpp> // Buffer
+#include <charconv> // std::from_chars
+#include <variant> // std::variant
 #include <array>
 #include <span>
 
@@ -516,8 +515,8 @@ public:
     auto family() const -> int {
         constexpr auto visitor = Overloads {
             [](std::monostate) { return AF_UNSPEC; },
-            [](const IPAddress4 &addr) { return AF_INET; },
-            [](const IPAddress6 &addr) { return AF_INET6; },
+            [](const IPAddress4 &) { return AF_INET; },
+            [](const IPAddress6 &) { return AF_INET6; },
         };
         return std::visit(visitor, mData);
     }

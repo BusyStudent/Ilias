@@ -13,12 +13,11 @@
 #include <ilias/runtime/functional.hpp> // SmallCallable
 #include <ilias/runtime/token.hpp> // StopToken
 #include <ilias/defines.hpp>
-#include <functional>
 #include <coroutine>
+#include <concepts> // std::invocable
 #include <cstring>
 #include <chrono> // nanoseconds
 #include <memory>
-#include <array>
 
 ILIAS_NS_BEGIN
 

@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include <ilias/net/endpoint.hpp>
-#include <ilias/net/system.hpp> // for System
-#include <ilias/task/task.hpp> // for Task
-#include <ilias/io/error.hpp> // for IoResult
+#include <ilias/net/endpoint.hpp> // IPEndpoint
+#include <ilias/net/system.hpp> // System headers
+#include <ilias/task/task.hpp> // Task
+#include <ilias/io/error.hpp> // IoResult
 #include <optional>
 
 #if defined(_WIN32)
@@ -23,7 +23,7 @@
 #else
     #define ILIAS_ADDRINFO ::addrinfo
     #include <csignal>
-#endif
+#endif // _WIN32
 
 ILIAS_NS_BEGIN
 
@@ -55,9 +55,10 @@ public:
     auto message(int value) const -> std::string override;
 
     ILIAS_API
+    ILIAS_GNUC([[gnu::const]])
     static auto instance() noexcept -> const GaiCategory &;
 private:
-    constexpr GaiCategory() noexcept {}
+    constexpr GaiCategory() noexcept = default;
 };
 
 /**
@@ -183,7 +184,7 @@ inline auto AddressInfo::lookup(std::string_view host, std::optional<addrinfo_t>
 }
 
 // ADL
-inline auto make_error_code(GaiError err) -> std::error_code {
+inline auto make_error_code(GaiError err) -> std::error_code { // NOLINT
     return {static_cast<int>(err), GaiCategory::instance()};
 }
 

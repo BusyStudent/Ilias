@@ -30,8 +30,8 @@ inline auto reply(QNetworkReply *ptr) {
 }
 
 // for impl auto val = co_await manager.get(QNetworkRequest)
-template <>
-struct ilias::runtime::IntoRawAwaitableTrait<QNetworkReply *> {
+template <typename T> requires(std::same_as<std::remove_cvref<T>, QNetworkReply*>)
+struct ilias::runtime::IntoRawAwaitableTrait<T> {
     static auto into(QNetworkReply *ptr) {
         return ilias_qt::reply(ptr);
     }

@@ -29,9 +29,10 @@ public:
     auto equivalent(int value, const std::error_condition &other) const noexcept -> bool override;
 
     ILIAS_API
+    ILIAS_GNUC([[gnu::const]]) // Make compiler happy to deduplicate calls
     static auto instance() noexcept -> const IoCategory &;
 private:
-    constexpr IoCategory() {}
+    constexpr IoCategory() = default;
 };
 
 /**
@@ -141,11 +142,11 @@ inline auto toKind(IoError::Code err) noexcept -> std::error_condition {
 }
 
 // ADL for error code
-inline auto make_error_code(IoError err) noexcept -> std::error_code {
+inline auto make_error_code(IoError err) noexcept -> std::error_code { // NOLINT
     return {static_cast<int>(err), IoCategory::instance()};
 }
 
-inline auto make_error_code(IoError::Code err) noexcept -> std::error_code {
+inline auto make_error_code(IoError::Code err) noexcept -> std::error_code { // NOLINT
     return {static_cast<int>(err), IoCategory::instance()};
 }
 

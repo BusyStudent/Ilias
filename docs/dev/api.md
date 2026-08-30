@@ -65,7 +65,7 @@ Common APIs:
 
 - `this_coro::stopToken()`
 - `this_coro::isStopRequested()`
-- `this_coro::stopped()`
+- `this_coro::stopPoint()`
 - `handle.stop()`
 
 ## Suggested reading order

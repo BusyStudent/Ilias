@@ -38,10 +38,11 @@ ILIAS_TEST(Process, Spawn) {
 }
 
 ILIAS_TEST(Process, KillOnDestroy) {
-    auto proc = Process::Builder{SHELL}
+    using namespace std::literals;
+    Process::Builder{SHELL}
         .killOnDestroy(true)
         .spawn();
-    co_return;
+    co_await ilias::sleep(10ms); // Give the runtime sometime to clean up
 }
 
 ILIAS_TEST(Process, Kill) {

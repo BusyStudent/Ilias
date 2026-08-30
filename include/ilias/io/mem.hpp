@@ -4,7 +4,6 @@
 #include <ilias/io/ext.hpp>
 #include <ilias/buffer.hpp>
 #include <functional> // std::reference_wrapper
-#include <variant> // std::monostate
 #include <cstring> // memcpy
 
 ILIAS_NS_BEGIN

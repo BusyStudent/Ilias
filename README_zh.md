@@ -397,7 +397,7 @@ auto fn() => ilias::Task<void> {
 
     // 手动把自己设置成 stopped
     // 只有当 stop_requested() == true 的时候才生效
-    co_await this_coro::stopped();
+    co_await this_coro::stopPoint();
 }
 ````
 
