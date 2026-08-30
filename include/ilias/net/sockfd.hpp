@@ -473,7 +473,7 @@ public:
      * 
      * @param other 
      */
-    Socket(Socket &&other) : SocketView(std::exchange(other.mFd, invalid())) { }
+    Socket(Socket &&other) noexcept : SocketView(std::exchange(other.mFd, invalid())) { }
 
     /**
      * @brief Destroy the Socket object
@@ -551,7 +551,7 @@ public:
      * @param other 
      * @return Socket& 
      */
-    auto operator =(Socket &&other) -> Socket & {
+    auto operator =(Socket &&other) noexcept -> Socket & {
         close();
         mFd = std::exchange(other.mFd, invalid());
         return *this;

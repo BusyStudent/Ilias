@@ -2,8 +2,7 @@
 #pragma once
 
 #include <ilias/defines.hpp>
-#include <functional>
-#include <concepts>
+#include <type_traits> // std::is_invocable_r_v
 #include <cstring> // memcpy
 #include <array> // std::array
 #include <bit> // std::bit_cast

@@ -233,8 +233,8 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoRes
 
 #if   defined(_WIN32)
         case IoDescriptor::Pipe:
-        case IoDescriptor::File:
-        case IoDescriptor::Tty:
+        case IoDescriptor::File: // Use overlapped io
+        case IoDescriptor::Tty: // Threadpool
             break;
 #elif defined(__linux__)
         case IoDescriptor::Pollable:
@@ -242,7 +242,7 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoRes
             nfd->pollable = true; // Linux pipe can be pollable
             break;
         case IoDescriptor::Tty:
-        case IoDescriptor::File:
+        case IoDescriptor::File: // Threadpool
             break;
 #endif // defined(_WIN32)
 
@@ -273,7 +273,7 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoRes
     // Setup option for windows specific socket
     if (nfd->type == IoDescriptor::Socket) {
         // Disable UDP NetReset and ConnReset
-        SocketView sockfd(nfd->sockfd);
+        SocketView sockfd{nfd->sockfd};
         if (auto info = sockfd.getOption<sockopt::ProtocolInfo>(); info && info->value().iSocketType == SOCK_DGRAM) {
             if (auto res = sockfd.setOption(sockopt::UdpConnReset(false)); !res) {
                 ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to disable UDP NetReset, {}", res.error().message());
@@ -340,7 +340,7 @@ inline auto QIoContext::read(IoDescriptor *fd, MutableBuffer buffer, std::option
         }
         auto err = SystemError::fromErrno();
         if (err == SystemError::Canceled) {
-            co_await this_coro::stopped(); // Try set stopped
+            co_await this_coro::stopPoint(); // Try set stopped
         }
         co_return Err(err);
     }
@@ -399,7 +399,7 @@ inline auto QIoContext::write(IoDescriptor *fd, Buffer buffer, std::optional<siz
         }
         auto err = SystemError::fromErrno();
         if (err == SystemError::Canceled) {
-            co_await this_coro::stopped(); // Try set stopped
+            co_await this_coro::stopPoint(); // Try set stopped
         }
         co_return Err(err);
     }
@@ -592,7 +592,7 @@ inline auto QIoContext::timerEvent(QTimerEvent *event) -> void {
 
 // Poll
 inline auto QPollAwaiter::await_suspend(runtime::CoroHandle caller) -> void {
-    // ILIAS_TRACE("QIo", "poll fd {} for event {}", mFd->sockfd, PollEvent(mEvent));
+    ILIAS_TRACE("QIo", "Poll fd {} for event {}", mFd->sockfd, static_cast<PollEvent>(mEvent));
     mCaller = caller;
     doConnect(); //< Connect the signal
     mRegistration.register_<&QPollAwaiter::onStopRequested>(caller.stopToken(), this);
@@ -604,7 +604,7 @@ inline auto QPollAwaiter::await_resume() -> IoResult<uint32_t> {
 }
 
 inline auto QPollAwaiter::onStopRequested() -> void {
-    ILIAS_TRACE("QIo", "poll fd {} was request to stop", mFd->sockfd);
+    ILIAS_TRACE("QIo", "Poll fd {} was request to stop", mFd->sockfd);
     if (!mGot) {
         mGot = true;
         doDisconnect();

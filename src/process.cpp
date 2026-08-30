@@ -321,7 +321,6 @@ auto Process::detach() -> void {
 #if defined(__linux__)
     ilias::spawn([](Process proc) -> Task<void> {
         auto _ = co_await proc.wait();
-        proc.mHandle = {}; // Mark as closed
     }(std::move(*this)));
 #endif // __linux__
     mHandle = {};

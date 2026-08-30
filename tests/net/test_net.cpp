@@ -1,10 +1,14 @@
-#include <ilias/platform/delegate.hpp>
 #include <ilias/platform.hpp>
 #include <ilias/buffer.hpp>
 #include <ilias/net.hpp>
 #include <ilias/io.hpp>
 #include <ilias/testing.hpp>
 #include <gtest/gtest.h>
+
+#if defined(ILIAS_TEST_USE_QT)
+    #include <ilias/platform/qt.hpp>
+    #include <QCoreApplication>
+#endif // ILIAS_TEST_USE_QT
 
 using namespace ilias;
 using namespace ilias::literals;
@@ -50,24 +54,16 @@ ILIAS_TEST(Net, Win32Handle) {
 #endif // _WIN32
 
 
-class IoEventLoop : public ProxyContext {
-public:
-    auto post(void (*fn)(void*), void* arg) -> void override {
-        mLoop.post(fn, arg);
-    }
-
-    auto run(runtime::StopToken token) -> void override {
-        mLoop.run(std::move(token));
-    }
-private:
-    EventLoop mLoop;
-};
-
-
 int main(int argc, char** argv) {
     ILIAS_LOG_SET_LEVEL(ILIAS_TRACE_LEVEL);
     ILIAS_TEST_SETUP_UTF8();
-    IoEventLoop ctxt;
+
+#if defined(ILIAS_TEST_USE_QT)
+    QCoreApplication app{argc, argv};
+    QIoContext ctxt;
+#else
+    PlatformContext ctxt;
+#endif
     ctxt.install();
 
     ::testing::InitGoogleTest(&argc, argv);

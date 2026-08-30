@@ -100,7 +100,7 @@ auto waitFor(int sig) -> IoTask<void> {
 
         int sig {};
         int pipes[2] {-1, -1};
-    } guard {sig};
+    } guard { .sig=sig };
 
     // Prepare the pipe
     if (::pipe2(guard.pipes, O_NONBLOCK | O_CLOEXEC) == -1) {

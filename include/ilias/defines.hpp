@@ -29,7 +29,7 @@
     #define ILIAS_FD_T       int
 #else
     #error "Unsupported platform"
-#endif
+#endif // _WIN32
 
 // Compiler check
 #if   defined(_MSC_VER)
@@ -45,11 +45,18 @@
     #define ILIAS_ATTRIBUTE(x)  // no-op
     #define ILIAS_UNREACHABLE() ::abort()
     #define ILIAS_TRAP()        ::abort()
-#endif
+#endif // _MSC_VER
 
 #if  !defined(ILIAS_NO_UNIQUE_ADDRESS)
     #define ILIAS_NO_UNIQUE_ADDRESS no_unique_address
-#endif
+#endif // ILIAS_NO_UNIQUE_ADDRESS
+
+// Because clang-cl may define _MSC_VER, so we check it on here
+#if  !defined(__GNUC__)
+    #define ILIAS_GNUC(...) // no-op
+#else
+    #define ILIAS_GNUC(...) __VA_ARGS__
+#endif // __GNUC__
 
 // Library mode
 #if   defined(ILIAS_STATIC)    // Static library, no-op

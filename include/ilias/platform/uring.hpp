@@ -13,7 +13,6 @@
 #include <ilias/net/sockfd.hpp>
 #include <ilias/io/context.hpp>
 #include <liburing.h>
-#include <thread>
 #include <deque>
 
 ILIAS_NS_BEGIN

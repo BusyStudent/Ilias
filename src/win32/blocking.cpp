@@ -61,7 +61,7 @@ auto runtime::threadpool::read(fd_t fd, MutableBuffer buffer, std::optional<size
         });
     });
     if (val == Err(SystemError::Canceled)) {
-        co_await this_coro::stopped(); // Try set the context to stopped
+        co_await this_coro::stopPoint(); // Try set the context to stopped
     }
     co_return val;
 }
@@ -78,7 +78,7 @@ auto runtime::threadpool::write(fd_t fd, Buffer buffer, std::optional<size_t> of
         });
     });
     if (val == Err(SystemError::Canceled)) {
-        co_await this_coro::stopped(); // Try set the context to stopped
+        co_await this_coro::stopPoint(); // Try set the context to stopped
     }
     co_return val;
 }
