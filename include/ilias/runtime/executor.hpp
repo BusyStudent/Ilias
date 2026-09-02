@@ -17,7 +17,8 @@
 #include <concepts> // std::invocable
 #include <cstring>
 #include <chrono> // nanoseconds
-#include <memory>
+#include <memory> // std::unique_ptr
+#include <array> // std::array
 
 ILIAS_NS_BEGIN
 
@@ -112,7 +113,7 @@ private:
     template <std::invocable Fn>
     static auto scheduleAlloc(void *args) -> void {
         auto ptr = static_cast<Fn*>(args);
-        auto guard = std::unique_ptr<Fn>(ptr);
+        auto guard = std::unique_ptr<Fn>{ptr};
         (*guard)();
     }
 };
@@ -132,8 +133,9 @@ public:
     auto sleep(std::chrono::nanoseconds ns) -> Task<void> override;
 private:
     struct Impl;
+    auto impl() -> Impl *;
 
-    std::unique_ptr<Impl> d;
+    std::array<void*, 50> mStorage; // 50 pointers for store the impl, should be enough
 };
 
 /**

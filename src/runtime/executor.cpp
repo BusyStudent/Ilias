@@ -48,10 +48,16 @@ struct EventLoop::Impl {
     TimerService service;
 };
 
-EventLoop::EventLoop() : d(std::make_unique<Impl>()) {}
-EventLoop::~EventLoop() = default;
+EventLoop::EventLoop() {
+    static_assert(sizeof(Impl) <= sizeof(mStorage), "EventLoop::Impl is too large");
+    new (mStorage.data()) Impl {};
+}
+EventLoop::~EventLoop() {
+    impl()->~Impl();
+}
 
 auto EventLoop::post(void (*fn)(void *), void *args) -> void {
+    auto d = impl();
     if (Executor::currentThread() == this) {
         d->localQueue.emplace(fn, args);
         return;
@@ -64,6 +70,7 @@ auto EventLoop::post(void (*fn)(void *), void *args) -> void {
 }
 
 auto EventLoop::run(StopToken token) -> void {
+    auto d = impl();
     auto callback = runtime::StopCallback(token, [&]() {
         d->cond.notify_one();
     });
@@ -100,7 +107,11 @@ auto EventLoop::run(StopToken token) -> void {
 }
 
 auto EventLoop::sleep(std::chrono::nanoseconds ns) -> Task<void> {
-    co_return co_await d->service.sleep(ns);
+    co_return co_await impl()->service.sleep(ns);
+}
+
+inline auto EventLoop::impl() -> Impl * {
+    return std::launder(reinterpret_cast<Impl *>(mStorage.data()));
 }
 
 ILIAS_NS_END

@@ -1,26 +1,22 @@
 #include <ilias/detail/scope_exit.hpp>
-#include <ilias/task/when_all.hpp>
-#include <ilias/task/spawn.hpp>
-#include <ilias/io/context.hpp>
 #include <ilias/process.hpp>
 
 #if defined(_WIN32)
     #include <ilias/detail/win32defs.hpp>
 #else
-    #include <sys/syscall.h> // pidfd
     #include <sys/poll.h> // POLLIN
     #include <sys/wait.h> // waitpid
     #include <unistd.h> // pipe, vfork, execve
     #include <csignal> // SIGCHLD
     #include <cerrno>
+    #include "pidfd.hpp"
 #endif // _WIN32
 
 ILIAS_NS_BEGIN
 
-// MARK: Builder
-auto Process::Builder::spawn() -> IoResult<Process> {
-
 #if defined(_WIN32)
+
+auto Process::Builder::spawn() -> IoResult<Process> {
     // Process commandline
     std::wstring cmdline;
     if (mExec.find(' ') != std::string_view::npos) {
@@ -147,7 +143,11 @@ auto Process::Builder::spawn() -> IoResult<Process> {
     proc.mPid = pi.dwProcessId;
     proc.mKillOnDestroy = mKillOnDestroy;
     return proc;
+}
+
 #else // Posix platform, use fork + exec
+
+auto Process::Builder::spawn() -> IoResult<Process> {
     // Allocate argv array with space for program name + args + nullptr
     std::vector<char *> args;
     std::vector<char *> envs;
@@ -176,12 +176,8 @@ auto Process::Builder::spawn() -> IoResult<Process> {
     FileDescriptor parent{subpipes[0]};
 
     // Begin the spawn
-    ::pid_t pid = ::vfork(); // NOLINT
-    if (pid == -1) {
-        return Err(SystemError::fromErrno());
-    }
-    if (pid == 0) { // Child, close the read end
-        // parent.close();
+    auto onChild = [&]() {
+        // We are the child
         ::close(parent.get()); // < vfork
         
         do {
@@ -203,7 +199,9 @@ auto Process::Builder::spawn() -> IoResult<Process> {
         int err = errno;
         ::write(child.get(), &err, sizeof(err));
         ::_Exit(127);
-    }
+    };
+    ILIAS_TRY(auto res, pidfd::vfork(onChild));
+    auto [pid, pfd] = std::move(res);
 
     // Parent, close the write end
     ScopeExit guard([pid]() {
@@ -225,107 +223,14 @@ auto Process::Builder::spawn() -> IoResult<Process> {
     mStderr.reset();
 
     // Open pidfd
-    if (auto pidfd = FileDescriptor{static_cast<int>(::syscall(SYS_pidfd_open, pid, 0))}; !pidfd) [[unlikely]] {
-        return Err(SystemError::fromErrno());
-    }
-    else {
-        Process proc {};
-        ILIAS_TRY(proc.mHandle, IoHandle<FileDescriptor>::make(std::move(pidfd), IoDescriptor::Pollable));
-        proc.mPid = static_cast<uint32_t>(pid);
-        proc.mKillOnDestroy = mKillOnDestroy;
-        guard.release(); // All done, clear the guard
-        return proc;
-    }
+    Process proc {};
+    ILIAS_TRY(proc.mHandle, IoHandle<FileDescriptor>::make(std::move(pfd), IoDescriptor::Pollable));
+    proc.mPid = static_cast<uint32_t>(pid);
+    proc.mKillOnDestroy = mKillOnDestroy;
+    guard.release(); // All done, clear the guard
+    return proc;
+}
+
 #endif // _WIN32
-
-}
-
-auto Process::Builder::output() -> IoTask<Output> {
-    ILIAS_CO_TRY(auto out, PipePair::make());
-    ILIAS_CO_TRY(auto err, PipePair::make());
-
-    // Bind the pipes
-    this->cout(std::move(out.writer));
-    this->cerr(std::move(err.writer));
-
-    // Start it
-    ILIAS_CO_TRY(auto proc, this->spawn());
-
-    Output output {};
-    auto [outDone, errDone, done] = co_await whenAll(
-        out.reader.readToEnd(output.cout),
-        err.reader.readToEnd(output.cerr),
-        proc.wait()
-    );
-    if (!done) {
-        co_return Err(done.error());
-    }
-    output.exitStatus = *done;
-    co_return output;
-}
-
-// MARK: Process
-auto Process::kill() const -> IoResult<void> {
-
-#if defined(_WIN32)
-    if (!::TerminateProcess(mHandle.get(), 0)) {
-        return Err(SystemError::fromErrno());
-    }
-#else // Pidfd
-    if (mPid == 0) {
-        return Err(IoError::InvalidArgument);
-    }
-    if (::syscall(SYS_pidfd_send_signal, mHandle.fd().get(), SIGKILL, nullptr, 0) == -1) {
-        return Err(SystemError::fromErrno());
-    }
-#endif // _WIN32
-    return {};
-}
-
-auto Process::wait() -> IoTask<int32_t> {
-    if (!mHandle) {
-        co_return Err(IoError::InvalidArgument);
-    }
-#if defined(_WIN32)
-    ::DWORD code {};
-    ILIAS_CO_TRYV(co_await win32::waitObject(mHandle.get()));
-    if (!::GetExitCodeProcess(mHandle.get(), &code)) {
-        co_return Err(SystemError::fromErrno());
-    }
-    mHandle = {}; // Used
-    co_return static_cast<int32_t>(code);
-#else // Pidfd
-    ScopeExit guard([&]() {
-        auto _ = kill();
-    });
-    while (true) {
-        ILIAS_CO_TRY(auto events, co_await mHandle.poll(POLLIN));
-        if (events & POLLIN) {
-            guard.release();
-            break;
-        }
-    }
-    ::siginfo_t info {};
-    if (::waitid(P_PIDFD, mHandle.fd().get(), &info, WEXITED) == -1) {
-        co_return Err(SystemError::fromErrno());
-    }
-    mHandle = {}; // Used
-    co_return info.si_status;
-#endif // _WIN32
-}
-
-auto Process::detach() -> void {
-    if (!mHandle) {
-        return;
-    }
-#if defined(__linux__)
-    ilias::spawn([](Process proc) -> Task<void> {
-        auto _ = co_await proc.wait();
-    }(std::move(*this)));
-#endif // __linux__
-    mHandle = {};
-    mPid = 0;
-    mKillOnDestroy = false;
-}
 
 ILIAS_NS_END

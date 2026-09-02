@@ -8,6 +8,7 @@
  * @copyright Copyright (c) 2025
  * 
  */
+#pragma once
 #include <ilias/io/system_error.hpp>
 #include <ilias/io/context.hpp>
 #include <ilias/io/error.hpp>

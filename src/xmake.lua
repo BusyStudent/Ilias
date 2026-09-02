@@ -13,6 +13,7 @@ target("ilias")
     
     -- Add source code
     add_files("runtime/*.cpp")
+    add_files("process/*.cpp")
     add_files("task/*.cpp")
     add_files("net/*.cpp")
     add_files("*.cpp")
