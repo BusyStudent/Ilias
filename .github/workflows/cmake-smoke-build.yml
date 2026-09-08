@@ -1,0 +1,56 @@
+name: CMake Smoke Build
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ "*" ]
+
+jobs:
+  smoke-build:
+    name: ${{ matrix.os }} (${{ matrix.build_type }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        build_type: [Debug, Release]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libssl-dev liburing-dev
+
+      - name: Set up Ninja
+        if: runner.os == 'Windows'
+        uses: ashutoshvarma/setup-ninja@master
+        with:
+          version: 1.11.1
+
+      - name: Set up MSVC Developer Prompt
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure CMake on Linux
+        if: runner.os == 'Linux'
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DILIAS_TLS=ON
+
+      - name: Configure CMake on Windows
+        if: runner.os == 'Windows'
+        run: |
+          cmake -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
+            -DILIAS_TLS=ON
+
+      - name: Build Target
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel

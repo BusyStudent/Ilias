@@ -2,17 +2,16 @@
 
 include(CMakeFindDependencyMacro)
 
-# 如果构建时用到了 fmt，使用者也需要 fmt
+# Fmt
 if(@ILIAS_USE_FMT@)
     find_dependency(fmt)
 endif()
 
-# 如果构建时用到了 spdlog
+# Spdlog
 if(@ILIAS_USE_SPDLOG@)
     find_dependency(spdlog)
 endif()
 
-# 恢复 Target 定义
 include("${CMAKE_CURRENT_LIST_DIR}/IliasTargets.cmake")
 
 check_required_components(ilias)

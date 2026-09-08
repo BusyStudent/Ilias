@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(ilias 
-    VERSION 0.5.0
+    VERSION 0.5.1
     DESCRIPTION "Modern C++ Async I/O Library"
     LANGUAGES CXX
 )
 
+# In cmake, simplify the build file, just use 23 :)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -19,6 +20,13 @@ option(ILIAS_USE_FIBER      "Use Fiber" ON)
 option(ILIAS_USE_SPDLOG     "Use spdlog" OFF)
 option(ILIAS_USE_IO_URING   "Use io_uring (Linux only)" OFF)
 
+# Unity build on release
+if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    set(CMAKE_UNITY_BUILD ON)
+    set(CMAKE_UNITY_BUILD_BATCH_SIZE 32)
+endif()
+
+# The libs kind
 if(BUILD_SHARED_LIBS)
     set(ILIAS_DLL 1)
 else()
@@ -36,6 +44,7 @@ file(GLOB SRCS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/net/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/fiber/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/process/*.cpp"
 )
 
 set(LIBS)
@@ -114,12 +123,15 @@ target_link_libraries(ilias PRIVATE ${LIBS})
 if(ILIAS_USE_FMT AND fmt_FOUND)
     target_link_libraries(ilias PUBLIC fmt::fmt)
 endif()
+
 if(ILIAS_USE_SPDLOG AND spdlog_FOUND)
     target_link_libraries(ilias PUBLIC spdlog::spdlog)
 endif()
+
 if(ILIAS_TLS AND OpenSSL_FOUND)
     target_link_libraries(ilias PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
+
 if(ILIAS_USE_IO_URING AND LIBURING_FOUND)
     target_link_libraries(ilias PRIVATE ${LIBURING_LIBRARIES})
     target_include_directories(ilias PRIVATE ${LIBURING_INCLUDE_DIRS})
@@ -128,9 +140,8 @@ endif()
 if(WIN32)
     target_compile_definitions(ilias PRIVATE _WIN32_WINNT=0x0A00 NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
-if(BUILD_SHARED_LIBS)
-    target_compile_definitions(ilias PRIVATE _ILIAS_SOURCE)
-endif()
+
+target_compile_definitions(ilias PRIVATE _ILIAS_SOURCE)
 
 # Install & Export
 include(CMakePackageConfigHelpers)

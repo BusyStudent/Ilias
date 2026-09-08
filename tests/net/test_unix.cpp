@@ -4,7 +4,7 @@
 using namespace ilias;
 
 ILIAS_TEST(Net, Unix) {
-    UnixEndpoint endpoint{"test_sock"};
+    UnixEndpoint endpoint{::tmpnam(nullptr)}; // Just use tmpnam to make temp name
     auto listener = (co_await UnixListener::bind(endpoint)).value();
     auto stream = (co_await UnixStream::connect(endpoint)).value();
 

@@ -1,5 +1,5 @@
 set_project("ilias")
-set_version("0.5.0", {soname = true})
+set_version("0.5.1", {soname = true})
 set_xmakever("3.0.0")
 
 -- Cpp version
