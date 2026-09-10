@@ -83,7 +83,7 @@
 #endif // ILIAS_MODULE
 
 // Exception check
-#if !defined(__cpp_exceptions)
+#if !defined(__cpp_exceptions) || defined(ILIAS_NO_EXCEPTIONS)
     #define ILIAS_TRY_EXCEPTION if constexpr(true)
     #define ILIAS_THROW(...) ::abort()
     #define ILIAS_CATCH(...) if constexpr(false)
@@ -91,7 +91,7 @@
     #define ILIAS_TRY_EXCEPTION try
     #define ILIAS_THROW(...) throw(__VA_ARGS__)
     #define ILIAS_CATCH(...) catch(__VA_ARGS__)
-#endif // __cpp_exceptions
+#endif // __cpp_exceptions || ILIAS_NO_EXCEPTIONS
 
 // Utils macro
 #define ILIAS_NS_BEGIN ILIAS_EXPORT_BEGIN namespace ilias {

@@ -23,8 +23,9 @@ option("coro_trace", {default = false,     description = "Add coroutine trace fo
 option("tls",        {default = true,      description = "Enable tls support"})
 option("fiber",      {default = true,      description = "Enable stackful coroutine 'fiber' support"})
 option("modules",    {default = false,     description = "Enable c++ modules support"})
+option("noexcept",   {default = false,     description = "Disable c++ exception"})
 
--- No-op Options (leave for compatibility)
+-- No-op Options (leave for compatibility currently)
 option("io",         {default = true,      description = "Enable io support"})
 
 -- Qt

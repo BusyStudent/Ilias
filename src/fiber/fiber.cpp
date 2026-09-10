@@ -188,8 +188,10 @@ auto FiberContextImpl::current() -> FiberContextImpl * {
     // 0x1E00 is a magic number that current thread is not a fiber
     if (auto fiber = ::GetCurrentFiber(); fiber != nullptr || fiber != reinterpret_cast<void*>(0x1E00)) [[likely]] {
         auto data = static_cast<FiberContextImpl *>(::GetFiberData());
-        ILIAS_ASSERT(data->mMagic == 0x114514, "Magic number mismatch, memory corrupted ???");
-        ptr = data;
+        if (data) [[likely]] { // Not in main fiber
+            ILIAS_ASSERT(data->mMagic == 0x114514, "Magic number mismatch, memory corrupted ???");
+            ptr = data;
+        }
     }
 #else
     ptr = gCurrentContext;
@@ -354,7 +356,7 @@ auto this_fiber::stopToken() -> runtime::StopToken {
     return FiberContextImpl::current()->mStopSource.get_token();
 }
 
-auto this_fiber::awaitImpl(runtime::CoroHandle handle, runtime::CaptureSource source) -> void {
+auto this_fiber::detail::await(runtime::CoroHandle handle, runtime::CaptureSource source) -> void {
     auto handler = [](runtime::CoroContext &ctxt) noexcept {
         auto self = static_cast<FiberContextImpl *>(ctxt.userdata());
         if (self) {

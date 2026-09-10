@@ -151,6 +151,14 @@ extern auto ILIAS_API shutdown() -> void;
 
 } // namespace fiber
 
+// Internal code
+namespace this_fiber::detail {
+
+// Wait the stackless CoroHandle to done or stopped
+extern auto ILIAS_API await(runtime::CoroHandle handle, runtime::CaptureSource source) -> void;
+
+} // namespace this_fiber::detail
+
 // Operations on the current fiber
 namespace this_fiber {
 
@@ -160,16 +168,13 @@ extern auto ILIAS_API stopToken() -> runtime::StopToken;
 // Yield the current fiber, resume the fiber when the next time it is scheduled
 extern auto ILIAS_API yield() -> void;
 
-// INTERNAL!!!, wait the stackless CoroHandle to done or stopped
-extern auto ILIAS_API awaitImpl(runtime::CoroHandle handle, runtime::CaptureSource source) -> void;
-
 // Functor for impl await
 class Await {
 public:
     template <typename T>
     auto operator ()(Task<T> task, runtime::CaptureSource source = {}) const -> T {
         task::TaskHandle<T> handle {task._handle()};
-        awaitImpl(handle, source);
+        detail::await(handle, source);
         ILIAS_ASSUME(handle, "This handle still exists");
         return handle.value();
     }

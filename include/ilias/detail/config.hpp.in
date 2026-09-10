@@ -21,6 +21,9 @@ ${define ILIAS_USE_SPDLOG}
 ${define ILIAS_USE_IO_URING}
 ${define ILIAS_USE_ZEUS_EXPECTED}
 
+// Config of the disable
+${define ILIAS_NO_EXCEPTIONS}
+
 // Version from build system
 #define ILIAS_VERSION_MAJOR ${VERSION_MAJOR}
 #define ILIAS_VERSION_MINOR ${VERSION_MINOR}

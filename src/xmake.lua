@@ -91,6 +91,12 @@ target("ilias")
         set_configvar("ILIAS_USE_IO_URING", 1)
     end
 
+    -- Exception
+    if has_config("noexcept") then
+        set_configvar("ILIAS_NO_EXCEPTIONS", 1)
+        set_exceptions("none")
+    end
+
     -- Tracing
     if has_config("coro_trace") then
         add_files("console/*.cpp")

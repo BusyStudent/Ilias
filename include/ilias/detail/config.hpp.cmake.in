@@ -23,6 +23,9 @@
 #cmakedefine ILIAS_USE_IO_URING
 #cmakedefine ILIAS_USE_ZEUS_EXPECTED
 
+// Config of the disable
+#cmakedefine ILIAS_NO_EXCEPTIONS
+
 // Version from build system
 #define ILIAS_VERSION_MAJOR @ILIAS_VERSION_MAJOR@
 #define ILIAS_VERSION_MINOR @ILIAS_VERSION_MINOR@

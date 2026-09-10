@@ -43,6 +43,11 @@ TEST(Fiber, Await) {
     fiber.wait();
 }
 
+TEST(Fiber, Throws) {
+    // We are not in fiber, call a fiber function
+    ASSERT_THROW(this_fiber::yield(), std::exception);
+}
+
 ILIAS_TEST(Fiber, Spawn) {
     auto fiber = Fiber([]() {
         return 42;
@@ -53,8 +58,7 @@ ILIAS_TEST(Fiber, Spawn) {
     // With stop
     auto reached = false;
     auto fiber2 = Fiber([&]() {
-        auto token = this_fiber::stopToken();
-        auto callback = runtime::StopCallback(token, [&]() {
+        runtime::StopCallback callback(this_fiber::stopToken(), [&]() {
             reached = true;
         });
         this_fiber::await(sleep(1000ms));

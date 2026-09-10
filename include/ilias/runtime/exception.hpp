@@ -8,7 +8,7 @@ ILIAS_NS_BEGIN
 
 namespace runtime {
 
-#if defined(__cpp_exceptions)
+#if defined(__cpp_exceptions) && !defined(ILIAS_NO_EXCEPTIONS)
 
 /**
  * @brief The std::exception_ptr wrapper.

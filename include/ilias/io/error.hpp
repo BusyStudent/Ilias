@@ -14,6 +14,10 @@ using IoResult = Result<T, std::error_code>;
 template <typename T = void>
 using IoTask = Task<IoResult<T> >;
 
+// Stackful Async Result for doing io operations
+template <typename T = void>
+using IoFiber = Fiber<IoResult<T> >;
+
 // Async Generator for doing io operations
 template <typename T>
 using IoGenerator = Generator<IoResult<T> >;
