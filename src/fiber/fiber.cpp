@@ -28,17 +28,20 @@ namespace {
 // The hidden implment of the fiber
 class FiberContextImpl : public FiberContext {
 public:
+    FiberContextImpl() {
+        mComplete = false;
+        mRunning = false;
+        mStarted = false;
+    }
+
     // Guard magic
     uint32_t mMagic = 0x114514;
 
     // Environment Guard
-    [[ILIAS_NO_UNIQUE_ADDRESS]]
     FiberInitializer mInitializer;
 
     // TODO: TRACING
-    [[ILIAS_NO_UNIQUE_ADDRESS]]
     runtime::CaptureSource mSuspendPoint; // The source location of the fiber suspend
-    [[ILIAS_NO_UNIQUE_ADDRESS]]
     runtime::CaptureSource mCreation; // The source location of the fiber create
 
     // Internal state
@@ -181,7 +184,7 @@ auto FiberContextImpl::current() -> FiberContextImpl * {
 #if defined(_WIN32)
     // boost/context/continuation_winfib.hpp
     // 0x1E00 is a magic number that current thread is not a fiber
-    if (auto fiber = ::GetCurrentFiber(); fiber != nullptr || fiber != reinterpret_cast<void*>(0x1E00)) [[likely]] {
+    if (auto fiber = ::GetCurrentFiber(); fiber != nullptr && fiber != reinterpret_cast<void*>(0x1E00)) [[likely]] {
         auto data = static_cast<FiberContextImpl *>(::GetFiberData());
         if (data) [[likely]] { // Not in main fiber
             ILIAS_ASSERT(data->mMagic == 0x114514, "Magic number mismatch, memory corrupted ???");
@@ -237,6 +240,8 @@ auto FiberContext::wait(runtime::CaptureSource where) -> void {
         self->mCompletionHandler = handler;
         self->mUser = &stopSource;
         self->executor().run(stopSource.get_token());
+        self->mCompletionHandler = nullptr;
+        self->mUser = nullptr;
     }
     ILIAS_ASSERT(self->mComplete);
 }
@@ -256,6 +261,9 @@ auto FiberContext::create4(FiberEntry *entry) -> FiberContext * {
         },
         ctxt.get()
     );
+    if (!ctxt->win32.handle) {
+        ILIAS_THROW(std::runtime_error{"Failed to CreateFiberEx"});
+    }
 #else
     if (entry->stackSize == 0) {
         entry->stackSize = 1024 * 1024; // Use 1MB
