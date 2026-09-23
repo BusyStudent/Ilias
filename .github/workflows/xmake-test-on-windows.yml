@@ -96,7 +96,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-logs-${{ runner.os }}-${{ matrix.arch || 'x64' }}
+          name: test-logs-${{ runner.os }}-${{ matrix.toolchain }}-${{ matrix.kind }}-${{ matrix.mode }}
           path: build/.gens/**/tests/**/*.log
           include-hidden-files: true
   coverage-windows-mingw:
