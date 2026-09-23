@@ -22,4 +22,8 @@ ILIAS_TEST(Net, GetAddrInfo) {
             std::cout << endpoint.toString() << std::endl;
         }
     }
+    {
+        auto info = co_await AddressInfo::lookup("[::1]:80");
+        EXPECT_TRUE(info);
+    }
 }

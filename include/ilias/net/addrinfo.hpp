@@ -106,13 +106,13 @@ public:
     }
 
     /**
-     * @brief Async lookup the address info by given host
+     * @brief Async lookup the address info by given endpoint name
      * 
-     * @param host The host (such as "localhost:1145")
+     * @param endpoint The endpoint (such as "localhost:1145")
      * @param hints The hints for getaddrinfo
      * @return IoTask<AddressInfo> 
      */
-    static auto lookup(std::string_view host, std::optional<addrinfo_t> hints = {}) -> IoTask<AddressInfo>;
+    static auto lookup(std::string_view endpoint, std::optional<addrinfo_t> hints = {}) -> IoTask<AddressInfo>;
 
     /**
      * @brief Wrapping the raw getaddrinfo asynchronously
@@ -140,7 +140,7 @@ private:
             ::FreeAddrInfoExW(info);
 #else
             ::freeaddrinfo(info);
-#endif
+#endif // _WIN32
         }
     };
     std::unique_ptr<addrinfo_t, FreeInfo> mInfo;
@@ -170,15 +170,23 @@ inline auto AddressInfo::canonicalName() const -> std::string {
 #endif // _WIN32
 }
 
-inline auto AddressInfo::lookup(std::string_view host, std::optional<addrinfo_t> hints) -> IoTask<AddressInfo> {
+inline auto AddressInfo::lookup(std::string_view endpoint, std::optional<addrinfo_t> hints) -> IoTask<AddressInfo> {
+    // Split xxx:port
     std::string_view name;
     std::string_view service;
-    if (auto sep = host.rfind(':'); sep != std::string_view::npos) {
-        name = host.substr(0, sep);
-        service = host.substr(sep + 1);
+    if (auto sep = endpoint.rfind(':'); sep != std::string_view::npos) {
+        name = endpoint.substr(0, sep);
+        service = endpoint.substr(sep + 1);
+
+        // Handle V6
+        // [::]:666
+        if (name.starts_with("[") && name.ends_with("]")) {
+            name.remove_prefix(1);
+            name.remove_suffix(1);
+        }
     }
     else {
-        name = host;
+        name = endpoint;
     }
     return AddressInfo::fromHostname(name, service, hints);
 }

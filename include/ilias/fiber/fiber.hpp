@@ -26,6 +26,12 @@ ILIAS_NS_BEGIN
 
 namespace fiber {
 
+// Re-import
+using runtime::StopRegistration;
+using runtime::CoroContext;
+using runtime::CoroHandle;
+using runtime::Executor;
+
 // The entry point of the fiber
 class FiberEntry {
 public:
@@ -35,7 +41,7 @@ public:
 };
 
 // The context of the fiber (user part)
-class ILIAS_API FiberContext {
+class ILIAS_API FiberContext : public CoroContext {
 public:
     class Deleter {
     public:
@@ -43,6 +49,11 @@ public:
             ctxt->destroy();
         }
     };
+
+    // Using
+    using CoroContext::setExecutor;
+    using CoroContext::isStopped;
+    using CoroContext::stop;
 
     // Resume the fiber, return bool for whether the fiber is done
     [[nodiscard]]
@@ -58,9 +69,6 @@ public:
     template <typename T>
     [[nodiscard]]
     auto value() -> T;
-
-    // Set the executor
-    auto setExecutor(runtime::Executor &executor) -> void;
 
     // Create the fiber by given entry, it take the ownership of the entry
     static auto create4(FiberEntry *entry) -> FiberContext *;
@@ -118,14 +126,14 @@ public:
     }
 
     ILIAS_API
-    auto await_suspend(runtime::CoroHandle caller) -> void;
+    auto await_suspend(CoroHandle caller) -> void;
 protected:
     auto onStopRequested() -> void;
-    static auto onCompletion(FiberContext *ctxt, void *_self) -> void;
+    static auto onCompletion(FiberContext *ctxt, void *_self) noexcept -> void;
 
     FiberHandle mHandle;
-    runtime::CoroHandle mCaller;
-    runtime::StopRegistration mReg;
+    CoroHandle mCaller;
+    StopRegistration mReg;
 };
 
 template <typename T>

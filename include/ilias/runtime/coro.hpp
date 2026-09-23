@@ -100,6 +100,7 @@ public:
     }
 
     auto executor() const noexcept -> Executor & {
+        ILIAS_ASSERT(mExecutor, "The coroutine is not associated with an executor");
         return *mExecutor;
     }
 

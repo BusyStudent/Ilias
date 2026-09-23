@@ -41,18 +41,13 @@ public:
     [[ILIAS_NO_UNIQUE_ADDRESS]]
     runtime::CaptureSource mCreation; // The source location of the fiber create
 
-    // State
-    runtime::StopSource mStopSource;
-    runtime::Executor *mExecutor = nullptr;
-    bool mComplete = false;
-    bool mStopped = false;
-
     // Internal state
+    bool mComplete = false;
     bool mRunning = false;
     bool mStarted = false;
 
     // Handler invoked when complete
-    void (*mCompletionHandler)(FiberContext *ctxt, void *) = nullptr;
+    void (*mCompletionHandler)(FiberContext *ctxt, void *) noexcept = nullptr;
     void  *mUser = nullptr;
 
     // Entry
@@ -115,7 +110,7 @@ auto FiberContextImpl::main() -> void {
         mValue = mEntry->invoke(mEntry);
     }
     catch (FiberCancellation &) {
-        mStopped = true;
+        this->setStopped();
     }
     catch (...) { // Another user exception
         mException = runtime::ExceptionPtr::currentException();
@@ -176,7 +171,7 @@ auto FiberContextImpl::suspend() -> void {
 }
 
 auto FiberContextImpl::schedule() -> void {
-    mExecutor->schedule([this]() {
+    executor().schedule([this]() {
         resumeImpl();
     });
 }
@@ -236,19 +231,14 @@ auto FiberContext::wait(runtime::CaptureSource where) -> void {
     auto self = static_cast<FiberContextImpl *>(this);
     if (!resume()) { // If not complete, enter the event loop
         auto stopSource = runtime::StopSource {};
-        auto handler = [](auto ctxt, void *source) {
+        auto handler = [](auto ctxt, void *source) noexcept {
             static_cast<runtime::StopSource *>(source)->request_stop();
         };
         self->mCompletionHandler = handler;
         self->mUser = &stopSource;
-        self->mExecutor->run(stopSource.get_token());
+        self->executor().run(stopSource.get_token());
     }
     ILIAS_ASSERT(self->mComplete);
-}
-
-auto FiberContext::setExecutor(runtime::Executor &e) -> void {
-    auto self = static_cast<FiberContextImpl *>(this);
-    self->mExecutor = &e;
 }
 
 auto FiberContext::create4(FiberEntry *entry) -> FiberContext * {
@@ -296,13 +286,15 @@ auto FiberContext::create4(FiberEntry *entry) -> FiberContext * {
     sys::makecontext(&ctxt->posix.self, ucontextEntry, 0);
 #endif // _WIN32
 
+    // Set an dummy stopped handler (used to unwind the stackless corotuine, no-op in stackful)
+    ctxt->setStoppedHandler([](auto &ctxt) noexcept {});
     return ctxt.release();
 }
 
 auto FiberContext::valuePointer() -> void * {
     auto self = static_cast<FiberContextImpl *>(this);
     ILIAS_ASSERT(self->mComplete, "Fiber not complete yet");
-    ILIAS_ASSERT(!self->mStopped, "Fiber is stopped, no value provided");
+    ILIAS_ASSERT(!self->isStopped(), "Fiber is stopped, no value provided");
     self->mException.rethrowIfAny();
     return self->mValue;
 }
@@ -353,7 +345,7 @@ auto this_fiber::yield() -> void {
 }
 
 auto this_fiber::stopToken() -> runtime::StopToken {
-    return FiberContextImpl::current()->mStopSource.get_token();
+    return FiberContextImpl::current()->stopSource().get_token();
 }
 
 auto this_fiber::detail::await(runtime::CoroHandle handle, runtime::CaptureSource source) -> void {
@@ -367,12 +359,12 @@ auto this_fiber::detail::await(runtime::CoroHandle handle, runtime::CaptureSourc
 
     // Forward the stop to the context
     runtime::CoroContext ctxt {};
-    runtime::StopCallback callback {fiber->mStopSource.get_token(), [&]() {
+    runtime::StopCallback callback {fiber->stopSource().get_token(), [&]() {
         ctxt.stop();
     }};
 
     // Begin execute
-    ctxt.setExecutor(*fiber->mExecutor);
+    ctxt.setExecutor(fiber->executor());
     ctxt.setStoppedHandler(handler);
     handle.setCompletionHandler(handler);
     handle.setContext(ctxt);
@@ -398,20 +390,20 @@ auto this_fiber::detail::await(runtime::CoroHandle handle, runtime::CaptureSourc
 
 // MARK: FiberAwaiter
 auto FiberAwaiterBase::await_suspend(runtime::CoroHandle caller) -> void {
-    auto handle = static_cast<FiberContextImpl *>(mHandle.get());
-    handle->mCompletionHandler = onCompletion;
-    handle->mUser = this;
+    auto ctxt = static_cast<FiberContextImpl *>(mHandle.get());
+    ctxt->mCompletionHandler = onCompletion;
+    ctxt->mUser = this;
     mCaller = caller;
     mReg.register_<&FiberAwaiterBase::onStopRequested>(caller.stopToken(), this);
 }
 
-auto FiberAwaiterBase::onStopRequested() -> void {
-    static_cast<FiberContextImpl*>(mHandle.get())->mStopSource.request_stop(); // forward the stop request to the fiber
+inline auto FiberAwaiterBase::onStopRequested() -> void {
+    mHandle->stop(); // forward the stop request to the fiber
 }
 
-auto FiberAwaiterBase::onCompletion(FiberContext *ctxt, void *_self) -> void {
+inline auto FiberAwaiterBase::onCompletion(FiberContext *ctxt, void *_self) noexcept -> void {
     auto self = static_cast<FiberAwaiterBase *>(_self);
-    if (static_cast<FiberContextImpl*>(ctxt)->mStopped) {
+    if (ctxt->isStopped()) {
         self->mCaller.setStopped(); // Forward the stop to the caller
         return;
     }

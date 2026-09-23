@@ -31,16 +31,9 @@
 
 // result.hpp
 // MARK: Try API
-// Impl TRY...
 #if defined(__clang__) // Using clang's statement expression to optoimize away the temporary
     #define ILIAS_BASIC_TRY_IMPL(var, tmp, ret, ...)           \
-        var = ({                                               \
-            auto &&tmp = (__VA_ARGS__);                        \
-            if (!tmp) {                                        \
-                ret ::ilias::makeErr(std::move(tmp));          \
-            }                                                  \
-            std::move(*tmp);                                   \
-        })
+        var = ILIAS_BASIC_TRYX(tmp, ret, __VA_ARGS__)          
 #else
     #define ILIAS_BASIC_TRY_IMPL(var, tmp, ret, ...)           \
         auto &&tmp = (__VA_ARGS__);                            \
@@ -58,6 +51,16 @@
             ret ::ilias::makeErr(std::move(_res));             \
         }                                                      \
     } while (false)
+
+// Impl TRYX...
+#define ILIAS_BASIC_TRYX(tmp, ret, ...)                    \
+    ({                                                     \
+        auto &&tmp = (__VA_ARGS__);                        \
+        if (!tmp) {                                        \
+            ret ::ilias::makeErr(std::move(tmp));          \
+        }                                                  \
+        std::move(*tmp);                                   \
+    })
 
 /**
  * @brief Unwrap an expected/optional value inside a coroutine and bind it to a local variable.
@@ -77,6 +80,24 @@
  * @endcode
  */
 #define ILIAS_CO_TRY(var, ...) ILIAS_BASIC_TRY_IMPL(var, ILIAS_CONCAT(_tmp_, __LINE__), co_return, __VA_ARGS__)
+
+/**
+ * @brief Unwrap an expected/optional value inside a coroutine and pass the value as the expression result.
+ *
+ * @param ... An expression that evaluates to an expected-like type, such as
+ *            `Result<T, E>`. The expression may contain `co_await`.
+ *
+ * @note This macro is only valid inside a coroutine whose return type and promise type. and may use only in clang (ICE in gcc).
+ *
+ * @code
+ *   auto example() -> IoTask<int> {
+ *       auto data = ILIAS_CO_TRYX(co_await fetchData());
+ *       auto value = ILIAS_CO_TRYX(parse(data));
+ *       co_return value + 1;
+ *   }
+ * @endcode
+ */
+#define ILIAS_CO_TRYX(...) ILIAS_BASIC_TRYX(ILIAS_CONCAT(_tmp_, __LINE__), co_return, __VA_ARGS__)
 
 /**
  * @brief Check an expected/optional result inside a coroutine and discard the success value.
@@ -122,6 +143,24 @@
  * @endcode
  */
 #define ILIAS_TRY(var, ...)  ILIAS_BASIC_TRY_IMPL(var, ILIAS_CONCAT(_tmp_, __LINE__), return, __VA_ARGS__)
+
+/**
+ * @brief Unwrap an expected/optional value inside a coroutine and pass the value as the expression result.
+ *
+ * @param ... An expression that evaluates to an expected-like type, such as
+ *            `Result<T, E>`.
+ *
+ * @note This macro is only valid inside a normal function.. and may use only in clang and gcc (msvc doesn't support it)
+ *
+ * @code
+ *   auto example() -> IoResult<int> {
+ *       auto data = ILIAS_TRYX(fetchData());
+ *       auto value = ILIAS_TRYX(parse(data));
+ *       return value + 1;
+ *   }
+ * @endcode
+ */
+#define ILIAS_TRYX(...) ILIAS_BASIC_TRYX(ILIAS_CONCAT(_tmp_, __LINE__), co_return, __VA_ARGS__)
 
 /**
  * @brief Check an expected/optional result inside a coroutine and discard the success value.
