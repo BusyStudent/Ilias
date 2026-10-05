@@ -49,6 +49,10 @@ public:
         return *reinterpret_cast<T *>(ptr);
     }
 
+    auto asHandle() noexcept -> std::coroutine_handle<> {
+        return std::coroutine_handle<>::from_address(this);
+    }
+
     // Get the frame from the coroutine handle
     static auto from(std::coroutine_handle<> handle) -> FrameABI * {
         return reinterpret_cast<FrameABI *>(handle.address());
@@ -145,7 +149,6 @@ private:
     void          *mUser = nullptr;           // The user data, useful in the callback
     [[ILIAS_NO_UNIQUE_ADDRESS]]
     TraceContext   mTraceContext;             // The context used for tracing
-friend class CoroPromise;
 friend class CoroHandle;
 };
 
@@ -216,6 +219,9 @@ public:
         return await_transform<decltype(awaitable), false>(std::move(awaitable), source); // Move into inner if necessary
     }
 
+    // Disable co_await std::suspend_always{}; It willn't able to wakeup
+    auto await_transform(std::suspend_always) = delete;
+
     // Our runtime interface
     auto takeException() noexcept -> ExceptionPtr {
         return std::exchange(mException, nullptr);
@@ -271,14 +277,20 @@ friend class CoroHandle;
 // The common part handle of all stackless coroutines
 class CoroHandle {
 public:
-    template <typename T> requires (std::is_base_of_v<CoroPromise, T>)
-    CoroHandle(std::coroutine_handle<T> handle) noexcept : mHandle(handle) {
-#if defined(ILIAS_USE_CORO_ABI)
-        ILIAS_ASSERT(&promise() == &handle.promise(), "Coroutine frame abi mismatch");
-#else
+    // From type erased handle and promise reference
+    CoroHandle(std::coroutine_handle<> handle, CoroPromise &promise) noexcept : mHandle(handle) {
+#if !defined(ILIAS_USE_CORO_ABI)
         mPromise = &handle.promise(); 
 #endif // ILIAS_USE_CORO_ABI
     }
+
+    // From typed handle
+    template <typename T> requires (std::is_base_of_v<CoroPromise, T>)
+    CoroHandle(std::coroutine_handle<T> handle) noexcept : CoroHandle(handle, handle.promise()) {
+        ILIAS_ASSERT(&promise() == &handle.promise(), "Coroutine frame abi mismatch");
+    }
+
+    // Other
     CoroHandle(std::nullptr_t) noexcept {}
     CoroHandle() noexcept = default;
 

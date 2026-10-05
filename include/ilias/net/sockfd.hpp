@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <ilias/detail/narrow.hpp> // narrowInto
 #include <ilias/net/endpoint.hpp>
 #include <ilias/net/sockopt.hpp>
 #include <ilias/net/system.hpp>
@@ -40,7 +41,7 @@ public:
      * @return IoResult<size_t> 
      */
     auto recv(MutableBuffer buf, int flags = 0) const -> IoResult<size_t> {
-        auto ret = ::recv(mFd, reinterpret_cast<char*>(buf.data()), buf.size_bytes(), flags);
+        auto ret = ::recv(mFd, reinterpret_cast<char*>(buf.data()), narrowInto(buf.size_bytes()), flags);
         if (ret < 0) {
             return Err(SystemError::fromErrno());
         }
@@ -55,7 +56,7 @@ public:
      * @return IoResult<size_t> 
      */
     auto send(Buffer buf, int flags = 0) const -> IoResult<size_t> {
-        auto ret = ::send(mFd, reinterpret_cast<const char*>(buf.data()), buf.size_bytes(), flags);
+        auto ret = ::send(mFd, reinterpret_cast<const char*>(buf.data()), narrowInto(buf.size_bytes()), flags);
         if (ret < 0) {
             return Err(SystemError::fromErrno());
         }
@@ -73,7 +74,7 @@ public:
     auto sendto(Buffer buf, int flags, EndpointView endpoint) const -> IoResult<size_t> {
         const ::sockaddr *addr = endpoint.data();
         const ::socklen_t addrLen = endpoint.length();
-        auto ret = ::sendto(mFd, reinterpret_cast<const char*>(buf.data()), buf.size_bytes(), flags, addr, addrLen);
+        auto ret = ::sendto(mFd, reinterpret_cast<const char*>(buf.data()), narrowInto(buf.size_bytes()), flags, addr, addrLen);
         if (ret < 0) {
             return Err(SystemError::fromErrno());
         }
@@ -91,7 +92,7 @@ public:
     auto recvfrom(MutableBuffer buf, int flags, MutableEndpointView endpoint) const -> IoResult<size_t> {
         ::sockaddr *addr = endpoint.data();
         ::socklen_t addrLen = endpoint.bufsize();
-        auto ret = ::recvfrom(mFd, reinterpret_cast<char*>(buf.data()), buf.size_bytes(), flags, addr, &addrLen);
+        auto ret = ::recvfrom(mFd, reinterpret_cast<char*>(buf.data()), narrowInto(buf.size_bytes()), flags, addr, &addrLen);
         if (ret < 0) {
             return Err(SystemError::fromErrno());
         }

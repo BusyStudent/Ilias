@@ -10,6 +10,7 @@
  */
 // Experimental!!!
 #pragma once
+#include <ilias/detail/narrow.hpp> // narrowInto
 #include <ilias/net/endpoint.hpp> // IPEndoint
 #include <ilias/net/system.hpp> // ILIAS_MSGHDR_T
 #include <ilias/io/vec.hpp> // IoVec
@@ -79,7 +80,7 @@ public:
     auto setBuffers(std::span<const IoVec> buffers) noexcept -> void {
         // It should fine ? the recvmsg and sendmsg should not modify the buffer's pointers values
         msg_iov = toSystem(const_cast<IoVec*>(buffers.data()));
-        msg_iovlen = buffers.size();
+        msg_iovlen = narrowInto(buffers.size());
     }
 
     /**
@@ -116,7 +117,7 @@ public:
     auto setBuffers(std::span<const MutableIoVec> buffers) noexcept -> void {
         // It should fine ? the recvmsg and sendmsg should not modify the buffer's pointers values
         msg_iov = toSystem(const_cast<MutableIoVec*>(buffers.data()));
-        msg_iovlen = buffers.size();
+        msg_iovlen = narrowInto(buffers.size());
     }
 
     // Inherit flags from MsgHdr

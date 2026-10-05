@@ -58,9 +58,9 @@ public:
             // Convert the endpint(utf8) to wchar_t
             auto path = endpoint.path();
 #if defined(_WIN32)
-            auto len = ::MultiByteToWideChar(CP_UTF8, 0, path.data(), path.size(), nullptr, 0);
+            auto len = ::MultiByteToWideChar(CP_UTF8, 0, path.data(), static_cast<int>(path.size()), nullptr, 0);
             path2 = std::make_unique<wchar_t[]>(len + 1);
-            ::MultiByteToWideChar(CP_UTF8, 0, path.data(), path.size(), path2.get(), len);
+            ::MultiByteToWideChar(CP_UTF8, 0, path.data(), static_cast<int>(path.size()), path2.get(), len);
             path2[len] = L'\0';
 #else
             path2 = std::make_unique<char[]>(path.size() + 1);

@@ -1,3 +1,4 @@
+// INTERNAL!!!
 /**
  * @file format.hpp
  * @author BusyStudent (fyw90mc@gmail.com)

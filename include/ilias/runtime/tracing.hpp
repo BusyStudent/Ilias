@@ -244,19 +244,12 @@ template <typename T, bool Forward>
 class TracingAwaitable {
 public:
     template <typename U>
-    using DecayIf     = std::conditional_t<Forward, U, std::decay_t<U> >;
+    using DecayIf     = std::conditional_t<Forward, U, std::decay_t<U> >; // If not forward, move the awaitable
     using Awaitable   = DecayIf<T>;
     using Awaiter     = DecayIf<decltype(toAwaiter(std::declval<T>()))>;
 
-    // Move version, store it by value
-    TracingAwaitable(T awaitable, TraceContext &ctxt, CaptureSource source) requires(!Forward) : 
-        mAwaitable(std::move(awaitable)), 
-        mAwaiter(toAwaiter(std::move(mAwaitable))),
-        mCtxt(ctxt),
-        mSource(source) {}
-
-    // Forward version, just store the reference
-    TracingAwaitable(T awaitable, TraceContext &ctxt, CaptureSource source) requires(Forward) :
+    // Store the awaitable and make the awaiter by forward (move on !Forward), source is the location of the await point
+    TracingAwaitable(T awaitable, TraceContext &ctxt, CaptureSource source) :
         mAwaitable(std::forward<T>(awaitable)),
         mAwaiter(toAwaiter(std::forward<T>(mAwaitable))),
         mCtxt(ctxt),
