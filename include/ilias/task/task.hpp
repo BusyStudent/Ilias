@@ -50,8 +50,6 @@ using runtime::ExceptionPtr;
 
 // Forward declaration
 class Null {};
-template <typename T>
-class TaskTryAwaiter;
 
 // MARK: TaskPromise
 // The return value part of the task promise
@@ -70,6 +68,7 @@ public:
 
     auto value() {
         this->rethrowIfAny();
+        ILIAS_ASSERT(mValue, "The task completed without a value or exception, did you missing a co_return?");
         return std::move(*mValue);
     }
 private:
@@ -186,7 +185,7 @@ public:
      * @return T>
      */
     auto await_resume() const -> T {
-        ILIAS_ASSERT(mTask.done(), "The task is not done, maybe call resume() twice");
+        ILIAS_ASSERT(mTask.done(), "The task is not done, maybe call resume() twice or forget co_return in the coroutine?");
         return TaskHandle<T>::cast(mTask).value();
     }
 };
@@ -238,20 +237,21 @@ protected:
 };
 
 // Environment for the blocking wait task (borrow the task ownship)
-class TaskBlockingContext final : private CoroContext {
+class TaskRefBlockingContext final : private CoroContext {
 public:
-    TaskBlockingContext(TaskHandle<> task, CaptureSource source) : CoroContext(std::nostopstate), mTask(task), mSource(source) {
+    TaskRefBlockingContext(TaskHandle<> task, CaptureSource source) : CoroContext(std::nostopstate), mTask(task), mSource(source) {
         auto *executor = runtime::Executor::currentThread();
         ILIAS_ASSERT(executor, "The current thread has no executor");
 
-        mTask.setCompletionHandler(TaskBlockingContext::onComplete);
+        mTask.setCompletionHandler(TaskRefBlockingContext::onComplete);
         mTask.setContext(*this);
         this->setExecutor(*executor);
         this->tracing().pushFrame("wait", source); // TRACING: trace the blocking point
     }
-    TaskBlockingContext(const TaskBlockingContext &) = delete;
+    TaskRefBlockingContext(const TaskRefBlockingContext &) = delete;
 
-    auto enter() -> void {
+    // Enter the eventloop and wait for the task to complete
+    auto enter() noexcept -> void {
         this->tracing().spawn(mSource); // TRACING: blocking wait is also spawn
         mTask.resume();
         if (!mTask.done()) {
@@ -266,8 +266,9 @@ public:
     }
 private:
     static auto onComplete(CoroContext &_self) noexcept -> void { // Break the event loop
-        _self.tracing().complete(); // TRACING: completion
-        static_cast<TaskBlockingContext &>(_self).mStopExecutor.request_stop();
+        auto &self = static_cast<TaskRefBlockingContext &>(_self);
+        self.tracing().complete(); // TRACING: completion
+        self.mStopExecutor.request_stop();
     }
     
     TaskHandle<> mTask; // The task we use to wait for (borrow)
@@ -365,7 +366,7 @@ public:
 } // namespace task
 
 /**
- * @brief The lazy task class, it take the ownership of the coroutine
+ * @brief The lazy task class, respresent a task that is not started yet, it take the ownership of the coroutine
  * 
  * @tparam T The return type of the task (default: void)
  */
@@ -376,10 +377,10 @@ public:
     using handle_type = std::coroutine_handle<promise_type>;
     using value_type = T;
    
-    Task() = default;
-    Task(const Task &) = delete; // Disable copy
-    Task(std::nullptr_t) noexcept {}
     Task(Task &&other) noexcept : mHandle(other._leak()) {}
+    Task(std::nullptr_t) noexcept {}
+    Task(const Task &) = delete; // Disable copy
+    Task() = default;
     ~Task() { clear(); }
 
     /**
@@ -401,8 +402,9 @@ public:
     auto wait(runtime::CaptureSource source = {}) -> T {
         ILIAS_ASSERT(mHandle, "Task is null");
         ILIAS_ASSERT(!mHandle.done(), "Task is done, can't wait again");
-        task::TaskBlockingContext context{mHandle, source};
+        task::TaskRefBlockingContext context{mHandle, source};
         context.enter();
+        ILIAS_ASSUME(mHandle.done(), "The task should be done");
         return context.value<T>();
     }
 
@@ -443,18 +445,19 @@ public:
         return std::swap(mHandle, other.mHandle);
     }
 
-    auto operator =(Task<T> &&other) noexcept -> Task & {
-        swap(other);
-        return *this;
-    }
+    // Operator
+    auto operator =(Task<T> &&other) noexcept -> Task & { swap(other); return *this; }
+    auto operator <=>(const Task<T> &other) const noexcept = default;
 
+    // Impl co_await
     auto operator co_await() && noexcept -> task::TaskAwaiter<T> {
         ILIAS_ASSERT(mHandle, "Task is null");
-        return task::TaskAwaiter<T> {_leak()};
+        return task::TaskAwaiter<T>{_leak()};
     }
 
+    // Check the task is valid
     explicit operator bool() const noexcept {
-        return bool(mHandle);
+        return static_cast<bool>(mHandle);
     }
 private:
     Task(handle_type handle) noexcept : mHandle(handle) {}
@@ -467,7 +470,7 @@ friend class task::TaskPromise<T>;
 template <std::invocable Fn>
 [[nodiscard]]
 inline auto blocking(Fn fn) {
-    return task::TaskBlockingAwaiter<Fn> {std::move(fn)};
+    return task::TaskBlockingAwaiter<Fn>{std::move(fn)};
 }
 
 // Sleep for a duration
