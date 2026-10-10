@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ilias/detail/intrusive.hpp> // Rc, List
+#include <ilias/runtime/functional.hpp> // SmallFunction
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp>
 #include <ilias/task/spawn.hpp>
@@ -11,70 +12,107 @@ ILIAS_NS_BEGIN
 
 namespace task {
 
-using runtime::CoroContext;
 using runtime::CoroHandle;
+using runtime::CoroContext;
 using runtime::StopRegistration;
 
-// Forward declaration
-class TaskGroupAwaiterBase;
-
 // The common part of TaskGroup<T>
-class ILIAS_API TaskGroupBase {
+class TaskGroupBase {
 public:
-    TaskGroupBase();
+    ILIAS_API
+    TaskGroupBase() noexcept;
+
+    ILIAS_API
     TaskGroupBase(TaskGroupBase &&) noexcept;
+
+    ILIAS_API
     ~TaskGroupBase();
 
-    // API for TaskGroup<T>
-    auto size() const noexcept -> size_t;
+    // API for impl TaskGroup<T>
+    auto size() const noexcept -> size_t {
+        return mNumRunning + mNumCompleted;
+    }
+
+    auto completionSize() const noexcept -> size_t {
+        return mNumCompleted;
+    }
+
+    auto runningSize() const noexcept -> size_t {
+        return mNumRunning;
+    }
+
+    // Send the stop request to all tasks
+    ILIAS_API
     auto stop() -> void;
+
+    // Insert a new task spaned handle to the group
+    ILIAS_API
     auto insert(Rc<TaskSpawnContextBase> task) -> StopHandle;
-    auto hasCompletion() const noexcept -> bool;
+
+    ILIAS_API
     auto nextCompletion() noexcept -> Rc<TaskSpawnContextBase>;
 private:
     auto notifyCompletion() -> void;
     auto onTaskCompleted(TaskSpawnContextBase &ctxt) -> void;
 
     using List = intrusive::List<TaskSpawnContextBase>; // intrusive list doesn't have O(1) size()
-    using Awaiter = TaskGroupAwaiterBase;
 
-    List     mRunning;
-    List     mCompleted;
-    bool     mStopRequested = false;
-    size_t   mNumRunning = 0; // The size of the running list
-    size_t   mNumCompleted = 0; // The size of the completed list
-    Awaiter *mAwaiter = nullptr;
-friend class TaskGroupAwaiterBase;
+    List   mRunning;
+    List   mCompleted;
+    bool   mStopRequested = false;
+    size_t mNumRunning = 0; // The size of the running list
+    size_t mNumCompleted = 0; // The size of the completed list
+    SmallFunction<void()> mNotify; // Called when a new completion is added
+friend class TaskGroupWaitNextBase;
+friend class TaskGroupWaitAllBase;
 };
 
 // The common part of waitNext
-class TaskGroupAwaiterBase {
+class TaskGroupWaitNextBase {
 public:
-    TaskGroupAwaiterBase(TaskGroupBase &group) : mGroup(group) {}
+    TaskGroupWaitNextBase(TaskGroupBase &group) : mGroup(group) {}
+    TaskGroupWaitNextBase(TaskGroupWaitNextBase &&) = default;
 
-    auto await_ready() const noexcept -> bool {
-        return mGroup.hasCompletion();
+    auto await_ready() const -> bool {
+        ILIAS_ASSERT(mGroup.size() != 0, "The group is empty");
+        return mGroup.completionSize() > 0;
     }
 
     ILIAS_API
-    auto await_suspend(CoroHandle caller) -> void;
+    auto await_suspend(CoroHandle caller) noexcept -> void;
 protected:
-    TaskGroupBase &mGroup;
-private:
-    auto onStopRequested() -> void;
-    auto onCompletion() -> void; // Called by TaskGroupBase
-
-    bool mStopRequested = false;
     bool mGot = false;
-    CoroHandle mCaller;
+    TaskGroupBase &mGroup;
+    CoroHandle     mCaller;
     StopRegistration mReg;
-friend class TaskGroupBase;
 };
 
-template <typename T>
-class TaskGroupAwaiter final : public TaskGroupAwaiterBase {
+// The common part of waitAll
+class TaskGroupWaitAllBase {
 public:
-    TaskGroupAwaiter(TaskGroupBase &group, uintptr_t *id) : TaskGroupAwaiterBase(group), mId(id) {}
+    TaskGroupWaitAllBase(TaskGroupBase &group) : mGroup(group) {}
+    TaskGroupWaitAllBase(TaskGroupWaitAllBase &&) = default;
+
+    auto await_ready() const -> bool {
+        return mGroup.size() == mGroup.completionSize(); // All tasks are completed or empty
+    }
+
+    ILIAS_API
+    auto await_suspend(CoroHandle caller) noexcept -> void;
+protected:
+    auto onCompletion() noexcept -> void;
+
+    bool mShutdown = false; // If true, all completions will be discarded (used by shutdown or stop requested)
+    TaskGroupBase &mGroup;
+    CoroHandle     mCaller;
+    StopRegistration mReg;
+};
+
+
+template <typename T>
+class TaskGroupWaitNext final : public TaskGroupWaitNextBase {
+public:
+    TaskGroupWaitNext(TaskGroupBase &group, uintptr_t *id) : TaskGroupWaitNextBase(group), mId(id) {}
 
     auto await_resume() -> Option<T> {
         auto ctxt = mGroup.nextCompletion();
@@ -85,6 +123,41 @@ public:
     }
 private:
     uintptr_t *mId;
+};
+
+// Impl TaskGroup::waitAll
+template <typename T>
+class TaskGroupWaitAll final : public TaskGroupWaitAllBase {
+public:
+    TaskGroupWaitAll(TaskGroupBase &group) : TaskGroupWaitAllBase(group) {}
+
+    using Value = typename Option<T>::value_type; // Rplace the void to std::monostate
+    using Vector = std::vector<Value>;
+
+    auto await_resume() -> Vector {
+        Vector vec;
+        while (mGroup.completionSize() > 0) { // Collect all completions
+            auto ctxt = mGroup.nextCompletion();
+            auto val = static_cast<TaskSpawnContext<T> &>(*ctxt).value();
+            if (val) { // Is not stopped
+                vec.emplace_back(std::move(*val));
+            }
+        }
+        return vec;
+    }
+};
+
+// Impl TaskGroup::shutdown
+class TaskGroupShutdown final : public TaskGroupWaitAllBase {
+public:
+    TaskGroupShutdown(TaskGroupBase &group) : TaskGroupWaitAllBase(group) {}
+
+    auto await_ready() -> bool {
+        mShutdown = true;
+        mGroup.stop(); // Send the stop request
+        return TaskGroupWaitAllBase::await_ready();
+    }
+    auto await_resume() -> void {}
 };
 
 } // namespace task
@@ -102,8 +175,16 @@ public:
     TaskGroup(TaskGroup &&) = default;
     ~TaskGroup() = default;
 
-    using value_type = typename Option<T>::value_type; // Use Option<T> to replace void to std::monostate :(
-    using Vector = std::vector<value_type>;
+    /**
+     * @brief Create an task group, spawn a task from the awaitable.
+     * 
+     * @tparam U 
+     * @param awaitable The awaitable to spawn.
+     */
+    template <Awaitable U> requires (std::is_same_v<AwaitableResult<U>, T>)
+    explicit TaskGroup(U awaitable, runtime::CaptureSource source = {}) {
+        spawn(std::move(awaitable), source);
+    }
 
     /**
      * @brief Insert a handle to the group, the group take the ownership of the handle.
@@ -182,49 +263,43 @@ public:
     // Wait Function, all of them shouldn't be called concurrently
     /**
      * @brief Stop all tasks and wait for them to finish.
+     * @note If the stop requested, The function will forward the stop to the group and wait for the tasks to finish.
      * 
      */
     [[nodiscard]]
-    auto shutdown() -> Task<void>;
+    auto shutdown() -> task::TaskGroupShutdown {
+        return {mGroup};
+    }
 
     /**
      * @brief Get the next task that has completed.
      * @param id The pointer to receive the id of the task. (If nullptr, the id will not be set)
-     * @note If the group is empty, it will wait forever until a new task is inserted and completed.
+     * @note Don't call this function concurrently and it can't be called when the group is empty
      * @return Option<T> nullopt on the task that has been stopped.
      */
     [[nodiscard]]
-    auto next(uintptr_t *id = nullptr) noexcept -> task::TaskGroupAwaiter<T> {
+    auto next(uintptr_t *id = nullptr) noexcept -> task::TaskGroupWaitNext<T> {
         return {mGroup, id};
     }
 
     /**
      * @brief Wait All tasks to finish. the return vector doesn't contain the task that has been stopped.
-     * 
-     * @return Task<Vector> 
+     * @note If the stop requested, The function will forward the stop to the group and wait for the tasks to finish.
+     * @return Vector<
      */
-    auto waitAll() -> Task<Vector>;
+    [[nodiscard]]
+    auto waitAll() noexcept -> task::TaskGroupWaitAll<T> {
+        return {mGroup};
+    }
+
+    // Operator
+    auto operator =(const TaskGroup &) = delete;
 private:
     task::TaskGroupBase mGroup;
 };
 
-template <typename T>
-auto TaskGroup<T>::shutdown() -> Task<void> {
-    stop();
-    while (!empty()) {
-        auto _ = co_await next();
-    }
-}
-
-template <typename T>
-auto TaskGroup<T>::waitAll() -> Task<Vector> {
-    Vector vec;
-    while (!empty()) {
-        if (auto ret = co_await next(); ret) {
-            vec.emplace_back(std::move(*ret));
-        }
-    }
-    co_return vec;
-}
+// Types
+template <Awaitable T>
+TaskGroup(T awaitable, runtime::CaptureSource source = {}) -> TaskGroup<AwaitableResult<T> >;
 
 ILIAS_NS_END

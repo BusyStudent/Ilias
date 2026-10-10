@@ -7,9 +7,7 @@ ILIAS_NS_BEGIN
 using namespace task;
 
 // MARK: TaskGroup
-TaskGroupBase::TaskGroupBase() {
-    
-}
+TaskGroupBase::TaskGroupBase() noexcept = default;
 
 TaskGroupBase::TaskGroupBase(TaskGroupBase &&other) noexcept : 
     mRunning(std::move(other.mRunning)),
@@ -17,7 +15,7 @@ TaskGroupBase::TaskGroupBase(TaskGroupBase &&other) noexcept :
     mStopRequested(std::exchange(other.mStopRequested, false)),
     mNumRunning(std::exchange(other.mNumRunning, 0)),
     mNumCompleted(std::exchange(other.mNumCompleted, 0)),
-    mAwaiter(std::exchange(other.mAwaiter, nullptr))
+    mNotify(std::exchange(other.mNotify, nullptr))
 {
     // Rebind the completion handlers
     for (auto &task : mRunning) {
@@ -36,14 +34,10 @@ TaskGroupBase::~TaskGroupBase() {
     }
 
     // Release all the tasks in the completed list
-    while (hasCompletion()) {
+    while (completionSize() != 0) {
         auto _ = nextCompletion();
     }
     ILIAS_ASSERT(mNumCompleted == 0);
-}
-
-auto TaskGroupBase::size() const noexcept -> size_t {
-    return mNumRunning + mNumCompleted;
 }
 
 auto TaskGroupBase::insert(Rc<TaskSpawnContextBase> task) -> StopHandle {
@@ -65,6 +59,7 @@ auto TaskGroupBase::insert(Rc<TaskSpawnContextBase> task) -> StopHandle {
     return StopHandle(std::move(task));
 }
 
+inline
 auto TaskGroupBase::onTaskCompleted(TaskSpawnContextBase &ctxt) -> void {
     ILIAS_ASSERT(ctxt.isLinked(), "Should be linked the running list");
     ILIAS_ASSERT(ctxt.isCompleted(), "Should be completed");
@@ -106,12 +101,8 @@ auto TaskGroupBase::stop() -> void {
     }
 }
 
-auto TaskGroupBase::hasCompletion() const noexcept -> bool {
-    return !mCompleted.empty();
-}
-
 auto TaskGroupBase::nextCompletion() noexcept -> Rc<TaskSpawnContextBase> {
-    ILIAS_ASSERT(hasCompletion(), "No completion, invalid call?");
+    ILIAS_ASSERT(completionSize() != 0, "No completion, invalid call?");
     auto &front = mCompleted.front();
     auto ptr = Rc<TaskSpawnContextBase>{&front};
     mCompleted.pop_front();
@@ -120,46 +111,71 @@ auto TaskGroupBase::nextCompletion() noexcept -> Rc<TaskSpawnContextBase> {
     return ptr;
 }
 
+inline 
 auto TaskGroupBase::notifyCompletion() -> void {
-    auto awaiter = std::exchange(mAwaiter, nullptr);
-    if (awaiter) {
-        awaiter->onCompletion();
+    auto notify = std::exchange(mNotify, nullptr);
+    if (notify) {
+        notify();
     }
 }
 
 
-// Awiater internal part
-auto TaskGroupAwaiterBase::await_suspend(CoroHandle caller) -> void {
-    ILIAS_ASSERT(mGroup.mAwaiter == nullptr, "User should not call group.next() | shutdown() | waitAll() concurrently");
+// Awaiter internal part
+auto TaskGroupWaitNextBase::await_suspend(CoroHandle caller) noexcept -> void {
+    ILIAS_ASSERT(mGroup.mNotify == nullptr, "User should not call group.next() | shutdown() | waitAll() concurrently");
     mCaller = caller;
-    mGroup.mAwaiter = this;
-    mReg.register_<&TaskGroupAwaiterBase::onStopRequested>(caller.stopToken(), this);
-}
-
-auto TaskGroupAwaiterBase::onCompletion() -> void {
-    if (mStopRequested) {
-        auto _ = mGroup.nextCompletion(); // Drop the completion
-        // Check all the task has been completed
-        if (mGroup.mNumRunning == 0) {
-            mCaller.setStopped();
+    
+    // onCompletion
+    mGroup.mNotify = [this]() noexcept {
+        if (mGot) {
             return;
         }
-        // Continue to wait for the completion
-        mGroup.mAwaiter = this;
-        return;
-    }
-    mGot = true;
-    mCaller.schedule();
+        // Completion Win
+        mGot = true;
+        mCaller.resume();
+    };
+
+    // StopRequested
+    mReg.register_(caller.stopToken(), [this]() noexcept {
+        if (mGot) {
+            return;
+        }
+        // Stop Win
+        mGroup.mNotify = nullptr; // Unregister the the notify
+        mGot = true;
+        mCaller.setStopped();
+    });
 }
 
-auto TaskGroupAwaiterBase::onStopRequested() -> void {
-    if (mGot) {
-        return;
-    }
-    mStopRequested = true;
-    mGroup.stop();
+auto TaskGroupWaitAllBase::await_suspend(CoroHandle caller) noexcept -> void {
+    ILIAS_ASSERT(mGroup.mNotify == nullptr, "User should not call group.next() | shutdown() | waitAll() concurrently");
+    mCaller = caller;
+
+    // onCompletion
+    mGroup.mNotify = [this]() noexcept { onCompletion(); };
+
+    // StopRequested
+    mReg.register_(caller.stopToken(), [this]() noexcept {
+        mShutdown = true;
+        mGroup.stop(); // forward the stop to the group
+    });
 }
 
+auto TaskGroupWaitAllBase::onCompletion() noexcept -> void {
+    // Wait all completion
+    if (mShutdown) { // Shutdown
+        auto _ = mGroup.nextCompletion();
+    }
+    if (mGroup.mNumRunning != 0) { // Still running
+        mGroup.mNotify = [this]() { onCompletion(); }; // Continue wait
+        return;
+    }
 
+    if (mCaller.isStopRequested()) { // Enter the stop state, we need wait all task completed and then stop
+        mCaller.setStopped();
+        return;
+    }
+    mCaller.resume();
+}
 
 ILIAS_NS_END

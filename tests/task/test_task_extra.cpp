@@ -24,14 +24,14 @@ auto returnAfterSleep(int x) -> Task<int> {
 
 ILIAS_TEST(Task, TaskGroup) {
     {
-        auto group = TaskGroup<void> {};
+        TaskGroup<void> group{};
         group.spawn(neverReturn());
         co_await this_coro::yield(); // Make sure the neverReturn task is running
         co_await group.shutdown();
     }
 
     {
-        auto group = TaskGroup<void> {};
+        TaskGroup<void> group{};
         group.spawn(neverReturn());
         co_await this_coro::yield(); // As shown above
         group.stop();
@@ -39,7 +39,7 @@ ILIAS_TEST(Task, TaskGroup) {
     }
 
     {
-        auto group = TaskGroup<int> {};
+        TaskGroup<int> group{};
         for (auto i : views::iota(0, 10)) {
             group.spawn(returnAfterSleep(i));
         }
@@ -48,12 +48,11 @@ ILIAS_TEST(Task, TaskGroup) {
     }
 
     {
-        auto group = TaskGroup<void> {};
-        group.spawn(sleep(10ms));
+        TaskGroup group{sleep(10ms)};
     }
 
     {
-        auto group = TaskGroup<void> {};
+        TaskGroup<void> group{};
         group.spawn(sleep(10h));
         co_await this_coro::yield();
         group.stop();
@@ -61,11 +60,11 @@ ILIAS_TEST(Task, TaskGroup) {
 
     {
         // Test already stopped group
-        auto group = TaskGroup<void> {};
+        TaskGroup<void> group{};
         group.stop();
         for (auto i : views::iota(1, 100)) {
             group.spawn(sleep(1s * i));
-            if (i % 2) { // Randomly back to executor
+            if (i % 2 == 0) { // Randomly back to executor
                 co_await this_coro::yield();
             }
         }
@@ -74,7 +73,7 @@ ILIAS_TEST(Task, TaskGroup) {
 
     { // Test Stop
         auto fn = []() -> Task<void> {
-            auto group = TaskGroup<void> {};
+            TaskGroup<void> group{};
             for (auto i : views::iota(1, 100)) {
                 group.spawn(sleep(1s * i));
                 co_await this_coro::yield();
@@ -88,8 +87,19 @@ ILIAS_TEST(Task, TaskGroup) {
         EXPECT_FALSE(co_await std::move(handle));
     }
 
+    {
+        // Test Stop of next
+        TaskGroup<void> group{};
+        group.spawn(sleep(10ms));
+        auto val = co_await timeout(group.next(), 1ms);
+        EXPECT_FALSE(val); // Timeout
+
+        val = co_await timeout(group.next(), 20ms);
+        EXPECT_TRUE(val);
+    }
+
     { // Test already completed handle
-        auto group = TaskGroup<void> {};
+        TaskGroup<void> group{};
         auto handle = spawn([]() -> Task<void> {
             co_return;
         });
