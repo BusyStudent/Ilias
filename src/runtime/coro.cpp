@@ -29,7 +29,7 @@ static_assert(std::is_standard_layout_v<TraceSpan>);
 static_assert(std::is_standard_layout_v<TraceRegistery>);
 
 // TRACING
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
 namespace {
     struct Registery {
         // ABI export to outside
@@ -321,8 +321,8 @@ extern "C" {
 #endif // ILIAS_CORO_TRACE
 
 // Use system allocator
-auto runtime::allocate(size_t size) -> void * { 
-    return std::malloc(size); 
+auto runtime::allocate(size_t n) -> void * { 
+    return std::malloc(n); 
 }
 
 auto runtime::deallocate(void *ptr, size_t) noexcept -> void { 

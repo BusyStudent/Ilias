@@ -16,7 +16,7 @@
 #include <vector>
 #include <set>
 
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
 
 // Resource by build system
 extern "C" {

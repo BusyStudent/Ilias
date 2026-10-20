@@ -42,7 +42,7 @@ private:
 };
 
 // Disable
-#if !defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE == 0
 struct TracingWebUi::Impl {};
 inline TracingWebUi::TracingWebUi(std::string_view) {}
 inline TracingWebUi::~TracingWebUi() {}

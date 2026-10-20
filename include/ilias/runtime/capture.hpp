@@ -192,7 +192,7 @@ private:
 ILIAS_FORMATTABLE(StackFrame);
 ILIAS_FORMATTABLE(Stacktrace);
 
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
 
 /**
  * @brief Capture a source location, use `CaptureSouce loc = {}` to capture the current location

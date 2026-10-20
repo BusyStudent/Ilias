@@ -36,7 +36,7 @@ public:
 
     // Set the context of the task, call on await_transform
     auto setContext(runtime::CoroContext &ctxt, runtime::CaptureSource sorce) {
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
         // TRACING: mark the current await point is unstoppable
         if (auto frame = mCtxt.tracing().topFrame(); frame) {
             frame->setMessage("unstoppable");
@@ -103,7 +103,7 @@ public:
     auto await_suspend(runtime::CoroHandle caller) -> void;
 
     // TRACING: mark the await point is scheduleOn
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
     auto setContext(runtime::CoroContext &ctxt) {
         if (auto frame = ctxt.tracing().topFrame(); frame) {
             frame->setMessage("scheduleOn");
@@ -156,7 +156,7 @@ public:
     auto await_ready() -> bool { return false; } // Always suspend, because althrough the task is ready, we need to call the finally handler
 
     auto setContext(runtime::CoroContext &ctxt, runtime::CaptureSource source) noexcept {
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
         // TRACING: mark the current await point is finally
         if (auto frame = ctxt.tracing().topFrame(); frame) {
             frame->setMessage("finally");

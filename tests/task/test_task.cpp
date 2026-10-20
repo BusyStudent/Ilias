@@ -52,7 +52,7 @@ auto testTask() -> Task<void> {
     EXPECT_EQ(co_await just(0), 0);
 
     // Test the debug set name
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
     co_await this_coro::setName("testTask");
     EXPECT_EQ(co_await this_coro::name(), "testTask");
 #endif // ILIAS_CORO_TRACE

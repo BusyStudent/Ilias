@@ -23,13 +23,14 @@ Checks: >
   -modernize-avoid-c-arrays,
   -modernize-return-braced-init-list,
   -modernize-use-nodiscard,
-  -modernize-use-trailing-return-type,
   -readability-braces-around-statements,
   -readability-convert-member-functions-to-static,
   -readability-function-cognitive-complexity,
   -readability-identifier-length,
   -readability-magic-numbers,
-  -readability-named-parameter
+  -readability-named-parameter,
+  -readability-use-concise-preprocessor-directives,
+  -readability-avoid-return-with-void-value,
 
 WarningsAsErrors: ''
 HeaderFilterRegex: '^(include|src|tests|example|benchmark)/'
@@ -56,7 +57,7 @@ CheckOptions:
   readability-identifier-naming.TemplateParameterCase: CamelCase
   readability-identifier-naming.FunctionCase: camelBack
   readability-identifier-naming.MethodCase: camelBack
-  readability-identifier-naming.MethodIgnoredRegexp: '^(await_ready|await_suspend|await_resume)$'
+  readability-identifier-naming.MethodIgnoredRegexp: '^(await_ready|await_suspend|await_resume|push_back|push_front|pop_back|pop_front|emplace_back|emplace_front)$'
   readability-identifier-naming.ParameterCase: camelBack
   readability-identifier-naming.VariableCase: camelBack
   readability-identifier-naming.LocalVariableCase: camelBack
@@ -65,4 +66,6 @@ CheckOptions:
   readability-identifier-naming.PrivateMemberPrefix: m
   readability-identifier-naming.ProtectedMemberCase: CamelCase
   readability-identifier-naming.ProtectedMemberPrefix: m
+
+  readability-implicit-bool-conversion.AllowPointerConditions: true
 ...

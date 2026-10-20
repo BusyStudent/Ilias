@@ -89,7 +89,7 @@ auto FinallyAwaiterBase::onTaskCompletion() -> void {
 
         // Store the context info
         auto &executor = mContext->executor();
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
         auto parent = mContext->tracing().parent();
 #endif // ILIAS_CORO_TRACE
         mStopped = mContext->isStopped();
@@ -107,7 +107,7 @@ auto FinallyAwaiterBase::onTaskCompletion() -> void {
         handle.setContext(*mContext);
         handle.setCompletionHandler(finallyCallback);
 
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
         mContext->tracing().setParent(*parent);
         mContext->tracing().spawn(mSource);
 #endif // ILIAS_CORO_TRACE

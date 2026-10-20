@@ -10,7 +10,7 @@
 #include <utility> // std::exchange
 
 #if defined(_MSC_VER) || defined(__clang__) || defined(__GNUC__)
-    #define ILIAS_USE_CORO_ABI
+    #define ILIAS_USE_CORO_ABI 1
 #endif // _MSVC_ || __clang__ || __GNUC__
 
 ILIAS_NS_BEGIN
@@ -139,7 +139,7 @@ public:
     }
 
     // Other operator
-    auto operator =(CoroContext &&) -> CoroContext & = default;
+    auto operator =(CoroContext &&) -> CoroContext & = delete;
     auto operator =(const CoroContext &) -> CoroContext & = delete;
 private:
     StopSource     mStopSource;               // Used to request cooperative cancellation
@@ -165,7 +165,7 @@ public:
             constexpr
             auto await_ready() noexcept { return false; }
             auto await_suspend(std::coroutine_handle<>) noexcept {}
-            auto await_resume() noexcept { return self.init(); }
+            auto await_resume() const noexcept { return self.init(); }
             CoroPromise &self;
         };
         return Awaiter {*this};
@@ -175,7 +175,7 @@ public:
         struct Awaiter {
             constexpr
             auto await_ready() noexcept { return false; }
-            auto await_suspend(std::coroutine_handle<>) noexcept { return self.final(); }
+            auto await_suspend(std::coroutine_handle<>) const noexcept { return self.final(); }
             [[noreturn]]
             auto await_resume() noexcept { // UNREACHABLE here, we can't resume an done coroutine
                 ILIAS_UNREACHABLE(); // LCOV_EXCL_LINE
@@ -199,7 +199,7 @@ public:
         else if constexpr (requires { awaitable.setContext(*mContext); }) { // It support setContext
             awaitable.setContext(*mContext);
         }
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
         if constexpr (requires { typename T::SkipTracing; }) {
             return std::forward<T>(awaitable);
         }
@@ -243,7 +243,7 @@ private:
     // Doing sth before the coroutine starts
     auto init() const noexcept -> void {
         ILIAS_ASSERT(mContext, "Coroutine context must be set before coroutine starts");
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
         // TRACING: Push the frame, we are start now
         mContext->tracing().resume();
         mContext->tracing().pushFrame(mCreation);
@@ -255,7 +255,7 @@ private:
         if (mCompletionHandler) {
             mCompletionHandler(*mContext);
         }
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
         // TRACING: Cleanup the frame belong to us
         mContext->tracing().popFrame();
 #endif // ILIAS_CORO_TRACE
@@ -268,7 +268,7 @@ private:
     CompletionHandler  mCompletionHandler = nullptr; // Called when coroutine is completed, stopped is not completed for promise
 protected: // protected ...
     [[ILIAS_NO_UNIQUE_ADDRESS]] // The CaptureSource will be std::monostate if disabled, so add it
-    CaptureSource           mCreation = {}; // The source of the coroutine creation
+    CaptureSource           mCreation; // The source of the coroutine creation
     std::coroutine_handle<> mPrevAwaiting = std::noop_coroutine(); // write by Generator :(
 friend class CoroHandle;
 };
@@ -278,9 +278,9 @@ friend class CoroHandle;
 class CoroHandle {
 public:
     // From type erased handle and promise reference
-    CoroHandle(std::coroutine_handle<> handle, CoroPromise &promise) noexcept : mHandle(handle) {
-#if !defined(ILIAS_USE_CORO_ABI)
-        mPromise = &handle.promise(); 
+    CoroHandle(std::coroutine_handle<> handle, [[maybe_unused]] CoroPromise &promise) noexcept : mHandle(handle) {
+#if ILIAS_USE_CORO_ABI == 0
+        mPromise = &promise;
 #endif // ILIAS_USE_CORO_ABI
     }
 
@@ -312,7 +312,7 @@ public:
     template <typename T = CoroPromise>
     auto promise() const noexcept -> T & {
         ILIAS_ASSERT(mHandle, "Can't get promise from null handle");
-#if defined(ILIAS_USE_CORO_ABI)
+#if ILIAS_USE_CORO_ABI
         auto *frame = FrameABI::from(mHandle);
         return frame->promise<T>();
 #else
@@ -323,7 +323,7 @@ public:
     // Our runtime interface
     auto context() const noexcept -> CoroContext & {
         ILIAS_ASSERT(mHandle, "Can't get context from null handle");
-        return *(promise().mContext); // Context must be set before coroutine starts
+        return *promise().mContext; // Context must be set before coroutine starts
     }
 
     // Get the executor of the coroutine
@@ -388,11 +388,11 @@ public:
 
     // Check if the handle is valid
     explicit operator bool() const noexcept {
-        return bool(mHandle);
+        return static_cast<bool>(mHandle);
     }
 private:
     std::coroutine_handle<> mHandle; // The std coroutine handle
-#if !defined(ILIAS_USE_CORO_ABI)
+#if ILIAS_USE_CORO_ABI == 0
     CoroPromise            *mPromise = nullptr; // The promise of the coroutine
 #endif // ILIAS_USE_CORO_ABI
 };
@@ -405,6 +405,7 @@ namespace this_coro {
 
 using runtime::CoroContext;
 using runtime::CoroHandle;
+using runtime::StopRegistration;
 using runtime::StackFrame;
 using runtime::StopToken;
 using runtime::Executor;
@@ -429,7 +430,7 @@ inline auto stopToken() noexcept {
         }
     };
 
-    return Awaiter {};
+    return Awaiter{};
 }
 
 // Check current coroutine is requested to stop
@@ -441,7 +442,7 @@ inline auto isStopRequested() noexcept {
         }
     };
 
-    return Awaiter {};
+    return Awaiter{};
 }
 
 // Get the executor
@@ -453,7 +454,7 @@ inline auto executor() noexcept {
         }
     };
 
-    return Awaiter {};
+    return Awaiter{};
 }
 
 // Arrive the context stop point, it will stop when the stop was requested
@@ -476,7 +477,7 @@ inline auto stopPoint() noexcept {
         bool mStopped = false;
     };
 
-    return Awaiter {};
+    return Awaiter{};
 }
 
 // Yield the current coroutine, it will be resumed in the executor
@@ -488,7 +489,7 @@ inline auto yield() noexcept {
         auto await_resume() noexcept {}
     };
 
-    return Awaiter {};
+    return Awaiter{};
 }
 
 // Get the current virtual callstack (empty on disabled)
@@ -507,7 +508,7 @@ inline auto stacktrace() noexcept {
         CoroContext *mCtxt = nullptr;
     };
 
-    return Awaiter {};
+    return Awaiter{};
 }
 
 // Get the current name from the coroutine context
@@ -535,6 +536,29 @@ inline auto setName(std::string_view name) noexcept {
     Awaiter awaiter {};
     awaiter.name = name;
     return awaiter;
+}
+
+// Suspend forever until the stop was requested
+[[nodiscard]]
+inline auto suspendForever() noexcept {
+    struct Awaiter {
+        auto await_ready() noexcept { return false; }
+        auto await_suspend(CoroHandle h) noexcept {
+            caller = h;
+            reg.register_(h.stopToken(), [this]() -> void {
+                caller.setStopped();
+            });
+        }
+        [[noreturn]]
+        auto await_resume() noexcept { 
+            ILIAS_ASSERT(false, "This should never be called, internal error???");
+            ILIAS_UNREACHABLE(); 
+        }
+
+        StopRegistration reg;
+        CoroHandle caller;
+    };
+    return Awaiter {};
 }
 
 // For compatibility

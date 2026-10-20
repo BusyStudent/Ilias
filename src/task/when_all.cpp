@@ -7,7 +7,7 @@ using namespace task;
 
 auto WhenAllAwaiterBase::await_ready() -> bool {
     // Start all first
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
     // TRACING: mark the current await point we are on whenAll
     if (auto frame = mContext.tracing().topFrame(); frame) {
         frame->setMessage("whenAll");

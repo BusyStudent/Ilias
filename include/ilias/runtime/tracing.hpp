@@ -8,7 +8,7 @@
 #include <chrono>
 #include <string>
 
-#if !defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE == 0
     #define ILIAS_TRACING_API
 #else
     #define ILIAS_TRACING_API ILIAS_API
@@ -100,9 +100,9 @@ public:
     TraceContext(TraceContext &&) = default;
     
     // Operator
-    auto operator =(TraceContext &&) -> TraceContext & = default;
+    auto operator =(TraceContext &&) -> TraceContext & = delete;
 
-#if !defined(ILIAS_CORO_TRACE) // Disabled
+#if ILIAS_CORO_TRACE == 0 // Disabled
     auto setParent(TraceContext &) noexcept {}
     auto setName(std::string_view) noexcept {}
     auto pushFrame(auto ...) noexcept { return 0; }
@@ -237,7 +237,7 @@ public:
     static auto currentThread() noexcept -> TracingSubscriber *;
 };
 
-#if defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE
 // MARK: TracingAwaitable
 // Add hooks to an awaitable, used for tracing
 template <typename T, bool Forward>
@@ -262,7 +262,7 @@ public:
     auto await_ready() noexcept(noexcept(mAwaiter.await_ready())) -> bool {
         // Update the line number of the top frame
         // co_await doStd();
-        if (auto frame = mCtxt.topFrame(); frame) {
+        if (auto *frame = mCtxt.topFrame(); frame) {
             frame->setLine(mSource.toLocation().line());
         }
         return mAwaiter.await_ready(); 
@@ -317,10 +317,10 @@ public:
 };
 
 extern "C" {
-    extern ILIAS_TRACING_API auto _ilias_trace_registry_v1() -> const TraceRegistery *;
+    extern ILIAS_TRACING_API auto _ilias_trace_registry_v1() -> const TraceRegistery *; // NOLINT
 } // extern "C"
 
-#if !defined(ILIAS_CORO_TRACE)
+#if ILIAS_CORO_TRACE == 0
 inline TracingSubscriber::~TracingSubscriber() {}
 inline auto TracingSubscriber::install() noexcept -> bool { ILIAS_WARN("Runtime", "Tracing feature is not enabled"); return false; }
 inline auto TracingSubscriber::currentThread() noexcept -> TracingSubscriber * { ILIAS_WARN("Runtime", "Tracing feature is not enabled"); return nullptr; }

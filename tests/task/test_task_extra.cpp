@@ -12,9 +12,7 @@ using namespace ilias;
 namespace views = std::views;
 
 auto neverReturn() -> Task<void> {
-    while (true) {
-        co_await sleep(100ms);
-    }
+    co_await this_coro::suspendForever();
 }
 
 auto returnAfterSleep(int x) -> Task<int> {
