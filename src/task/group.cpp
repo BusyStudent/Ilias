@@ -82,14 +82,14 @@ auto TaskGroupBase::onTaskCompleted(TaskSpawnContextBase &ctxt) -> void {
     notifyCompletion();
 }
 
-auto TaskGroupBase::stop() -> void {
+auto TaskGroupBase::stop() noexcept -> void {
     if (mStopRequested) { // Already notified
         return;
     }
     mStopRequested = true;
 
     // The stop may immediately stop the task, and then onTaskCompleted was called, the mRunning will be changed in iteration, so we need to copy it
-    // TODO: Think a better way?
+    // TODO: Think a better way?, and this function should be noexcept
     std::vector<TaskSpawnContextBase *> running;
     running.reserve(mNumRunning);
     for (auto &task : mRunning) {

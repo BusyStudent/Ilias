@@ -36,7 +36,7 @@ using runtime::ExceptionPtr;
 using runtime::CoroPromise;
 
 // Environment for the spawn task common part
-class TaskSpawnContextBase : public RefCounted<TaskSpawnContextBase>,
+class TaskSpawnContextBase : public RefCounted<TaskSpawnContextBase>, // NOLINT(misc-multiple-inheritance)
                              public ListNode<TaskSpawnContextBase>,
                              protected TaskContext
 {
@@ -61,7 +61,7 @@ public:
     auto enter() -> void {
         if (!mCompleted) {
             StopSource source;
-            mCompletionHandler = [&](auto &) {
+            mCompletionHandler = [&](auto &) noexcept {
                 source.request_stop();
             };
             executor().run(source.get_token());
@@ -77,28 +77,28 @@ public:
     auto isCompleted() const -> bool { return mCompleted; }
 
     // Set the handle when the task is completed
-    auto setCompletionHandler(SmallFunction<void (TaskSpawnContextBase &)> handler) -> void {
+    auto setCompletionHandler(SmallFunction<void (TaskSpawnContextBase &) noexcept> handler) -> void {
         mCompletionHandler = handler;
     }
 
     // Set the handler when the task is completed, more convenient
     template <auto Method, typename Object>
     auto setCompletionHandler(Object *obj) -> void {
-        mCompletionHandler = [obj](TaskSpawnContextBase &ctxt) {
+        mCompletionHandler = [obj](TaskSpawnContextBase &ctxt) noexcept {
             (obj->*Method)(ctxt);
         };
     }
 protected:
     // Call on the task completed or stopped
-    auto onComplete() -> void;
+    auto onComplete() noexcept -> void;
 
-    SmallFunction<void (TaskSpawnContextBase &)> mCompletionHandler; // The completion handler, call when the task is completed or stopped
+    SmallFunction<void (TaskSpawnContextBase &) noexcept> mCompletionHandler; // The completion handler, call when the task is completed or stopped
     ExceptionPtr mException; // The exception of the task
     bool mCompleted = false;
 
     // Virtual method
     enum Ops : uint8_t { Delete, SetValue };
-    void (*mManager)(TaskSpawnContextBase &self, Ops) = nullptr;
+    void (*mManager)(TaskSpawnContextBase &self, Ops) noexcept = nullptr;
 };
 
 // Environment for the spawn task<T>, store the return value
@@ -128,7 +128,7 @@ public:
         return runtime::deallocate(ptr, size);
     }
 protected:
-    static auto manager(TaskSpawnContextBase &_self, Ops op) -> void {
+    static auto manager(TaskSpawnContextBase &_self, Ops op) noexcept -> void {
         auto &self = static_cast<TaskSpawnContext &>(_self);
         switch (op) {
             case Ops::Delete: {
@@ -234,7 +234,7 @@ public:
     auto operator ==(const StopHandle &other) const noexcept -> bool = default;
 
     explicit operator bool() const noexcept {
-        return bool(mPtr);
+        return static_cast<bool>(mPtr);
     }
 protected:
     task::Rc<task::TaskSpawnContextBase> mPtr;
@@ -307,7 +307,7 @@ public:
 
     // Check the wait handle is valid
     explicit operator bool() const noexcept {
-        return bool(mPtr);
+        return static_cast<bool>(mPtr);
     }
 private:
     WaitHandle(task::TaskSpawnContextBase *ptr) : mPtr(ptr) {}

@@ -89,7 +89,8 @@ public:
         if constexpr (SmallCallable<Fn>) {
             // We can store the function in the void *;
             // Delegate to it
-            auto [proxy, args] = SmallFunction<void()> {fn}.toRaw();
+            SmallFunction<void()> smfn{fn};
+            auto [proxy, args] = smfn.toRaw();
             post(proxy, args);
         }
         else { // Alloc the memory and post it

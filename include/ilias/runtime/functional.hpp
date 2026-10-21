@@ -32,13 +32,12 @@ concept SmallCallable =
  * @tparam R 
  * @tparam Args 
  */
-template <typename R, typename ...Args>
-class SmallFunction<R (Args...)> {
-public:    
-    SmallFunction(const SmallFunction &) = default;
-    SmallFunction(SmallFunction &&) = default;
-    SmallFunction(std::nullptr_t) noexcept {} // Empty function
-    SmallFunction() = default;
+template <bool Noexcept, typename R, typename ...Args>
+class SmallFunctionBase {
+public:
+    SmallFunctionBase(const SmallFunctionBase &) = default;
+    SmallFunctionBase(std::nullptr_t) noexcept {} // Empty function
+    SmallFunctionBase() noexcept = default;
 
     /**
      * @brief Construct a new Small Function object, the Fn must be small enough (<= pointer size)
@@ -47,8 +46,11 @@ public:
      */
     template <SmallCallable Fn> 
         requires(std::is_invocable_r_v<R, Fn, Args...>)
-    SmallFunction(Fn fn) noexcept {
-        mFn = &SmallFunction::objectProxy<Fn>;
+    SmallFunctionBase(Fn fn) noexcept {
+        if constexpr (Noexcept) {
+            static_assert(std::is_nothrow_invocable_v<Fn, Args...>, "The function must be noexcept");
+        }
+        mFn = &SmallFunctionBase::objectProxy<Fn>;
         ::memcpy(&mUser, &fn, sizeof(fn));
     }
 
@@ -58,19 +60,9 @@ public:
      * @param fn 
      * @param user 
      */
-    SmallFunction(R (*fn)(Args..., void *), void *user) noexcept {
+    SmallFunctionBase(R (*fn)(Args..., void *) noexcept(Noexcept), void *user) noexcept {
         mFn = fn;
         mUser = user;
-    }
-
-    /**
-     * @brief Construct a new Small Function object, the fn is the no void * version of the function
-     * 
-     * @param fn 
-     */
-    SmallFunction(R (*fn)(Args...)) noexcept {
-        mFn = &SmallFunction::fnProxy;
-        mUser = std::bit_cast<void *>(fn);
     }
 
     auto toRaw() const noexcept {
@@ -78,15 +70,14 @@ public:
     }
 
     // Invoke this function, UB on empty function
-    auto operator ()(Args ...args) const -> R {
+    auto operator ()(Args ...args) const noexcept(Noexcept) -> R {
         ILIAS_ASSERT(mFn, "The function can't be call with empty state");
         return mFn(std::forward<Args>(args)..., mUser);
     }
 
     // Default...
-    auto operator =(const SmallFunction &) -> SmallFunction & = default;
-    auto operator =(SmallFunction &&) -> SmallFunction & = default;
-    auto operator <=>(const SmallFunction &) const noexcept = default;
+    auto operator =(const SmallFunctionBase &) -> SmallFunctionBase & = default;
+    auto operator <=>(const SmallFunctionBase &) const noexcept = default;
 
     // Check if the function is not empty
     explicit operator bool() const noexcept {
@@ -95,7 +86,7 @@ public:
 private:
     // The proxy used for small function object
     template <SmallCallable Fn>
-    static auto objectProxy(Args ...args, void *user) -> R {
+    static auto objectProxy(Args ...args, void *user) noexcept(Noexcept) -> R {
         std::array<std::byte, sizeof(Fn)> storage;
         ::memcpy(&storage, &user, sizeof(Fn));
 
@@ -103,14 +94,27 @@ private:
         return fn(std::forward<Args>(args)...);
     }
 
-    // The proxy used for raw function pointer 
-    static auto fnProxy(Args ...args, void *user) -> R {
-        auto fn = std::bit_cast<R (*)(Args...)>(user);
-        return (*fn)(std::forward<Args>(args)...);
-    }
-
-    R   (*mFn)(Args..., void *) = nullptr;
+    R   (*mFn)(Args..., void *) noexcept(Noexcept) = nullptr;
     void *mUser = nullptr;
+};
+
+
+/// @copydoc SmallFunctionBase
+template <typename R, typename ...Args>
+class SmallFunction<R(Args...)> : public SmallFunctionBase<false, R, Args...> {
+public:
+    using SmallFunctionBase<false, R, Args...>::SmallFunctionBase;
+
+    auto operator<=>(const SmallFunction &) const noexcept = default;
+};
+
+/// @copydoc SmallFunctionBase
+template <typename R, typename ...Args>
+class SmallFunction<R(Args...) noexcept> : public SmallFunctionBase<true, R, Args...> {
+public:
+    using SmallFunctionBase<true, R, Args...>::SmallFunctionBase;
+
+    auto operator<=>(const SmallFunction &) const noexcept = default;
 };
 
 } // namespace runtime

@@ -43,7 +43,7 @@ public:
 
     // Send the stop request to all tasks
     ILIAS_API
-    auto stop() -> void;
+    auto stop() noexcept -> void;
 
     // Insert a new task spaned handle to the group
     ILIAS_API

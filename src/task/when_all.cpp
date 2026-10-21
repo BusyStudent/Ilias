@@ -30,7 +30,7 @@ auto WhenAllAwaiterBase::await_ready() -> bool {
 
 auto WhenAllAwaiterBase::await_suspend(CoroHandle caller) -> void {
     mCaller = caller;
-    mReg.register_(caller.stopToken(), [this]() {
+    mReg.register_(caller.stopToken(), [this]() noexcept {
         // Forward the stop if needed
         mStopRequested = true;
         for (auto &ctxt : mTasks) {

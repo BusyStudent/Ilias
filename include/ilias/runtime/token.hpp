@@ -55,6 +55,8 @@ private:
 /// Helper class for using std::stop_callback on Awaiter
 class StopRegistration {
 public:
+    using Fn = SmallFunction<void() noexcept>;
+
     StopRegistration(const StopRegistration &) = delete;
     StopRegistration(StopRegistration &&) = default;
     StopRegistration() = default;
@@ -65,14 +67,14 @@ public:
     // NOLINTBEGIN
     // Do the registration with fn
     template <typename Token>
-    auto register_(Token &&token, SmallFunction<void()> fn) -> void {
+    auto register_(Token &&token, Fn fn) -> void {
         mCallback.emplace(std::forward<Token>(token), fn);
     }
 
     // Do the registration with a member function
     template <auto Method, typename Object, typename Token>
     auto register_(Token &&token, Object *self) -> void {
-        register_(std::forward<Token>(token), [self]() -> void {
+        register_(std::forward<Token>(token), [self]() noexcept -> void {
             (self->*Method)(); // Call the method
         });
     }
@@ -80,7 +82,7 @@ public:
     // NOLINTEND
     auto reset() -> void { mCallback.reset(); }
 private:
-    StopCallbackEx<SmallFunction<void()> > mCallback;
+    StopCallbackEx<Fn> mCallback;
 };
 
 } // namespace runtime

@@ -168,7 +168,7 @@ public:
             auto await_resume() const noexcept { return self.init(); }
             CoroPromise &self;
         };
-        return Awaiter {*this};
+        return Awaiter{*this};
     }
 
     auto final_suspend() noexcept { // NOLINT
@@ -182,7 +182,7 @@ public:
             }
             CoroPromise &self;
         };
-        return Awaiter {*this};
+        return Awaiter{*this};
     }
 
     auto unhandled_exception() noexcept -> void { // NOLINT
@@ -524,6 +524,7 @@ inline auto name() noexcept {
 }
 
 // Set the name to the current coroutine context
+[[nodiscard]]
 inline auto setName(std::string_view name) noexcept {
     struct Awaiter : AwaiterBase {
         auto await_resume() noexcept {
@@ -545,14 +546,14 @@ inline auto suspendForever() noexcept {
         auto await_ready() noexcept { return false; }
         auto await_suspend(CoroHandle h) noexcept {
             caller = h;
-            reg.register_(h.stopToken(), [this]() -> void {
+            reg.register_(h.stopToken(), [this]() noexcept -> void {
                 caller.setStopped();
             });
         }
         [[noreturn]]
         auto await_resume() noexcept { 
-            ILIAS_ASSERT(false, "This should never be called, internal error???");
-            ILIAS_UNREACHABLE(); 
+            ILIAS_ASSERT(false, "This should never be called, internal error???"); // LCOV_EXCL_LINE
+            ILIAS_UNREACHABLE(); // LCOV_EXCL_LINE
         }
 
         StopRegistration reg;

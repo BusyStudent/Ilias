@@ -27,7 +27,7 @@ TaskSpawnContextBase::TaskSpawnContextBase(TaskHandle<> task, CaptureSource sour
     mTask.schedule(); // Schedule the task in the executor
 }
 
-auto TaskSpawnContextBase::onComplete() -> void {
+auto TaskSpawnContextBase::onComplete() noexcept -> void {
     // Done..
     mCompleted = true;
     // Call the child class to store the result

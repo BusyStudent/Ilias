@@ -393,7 +393,7 @@ public:
 
     template <Awaitable T, typename U>
     [[nodiscard]]
-    friend auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Tags<U> tag) -> FinallyAwaiter<AwaitableResult<T>, U> {
+    friend auto operator |([[ILIAS_CORO_ELIDABLE_ARGUMENT]] T awaitable, Tags<U> tag) {
         return Finally{}(std::move(awaitable), std::move(tag.v));
     }
 };
