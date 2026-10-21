@@ -129,7 +129,7 @@ private:
  * @brief The Qt IoContext implementation, it need a qt's event loop to run
  * 
  */
-class QIoContext final : public IoContext, public QObject {
+class QIoContext final : public IoContext, public QObject { // NOLINT
 public:
     QIoContext(QObject *parent = nullptr);
     QIoContext(const QIoContext &) = delete;
@@ -275,10 +275,10 @@ inline auto QIoContext::addDescriptor(fd_t fd, IoDescriptor::Type type) -> IoRes
         // Disable UDP NetReset and ConnReset
         SocketView sockfd{nfd->sockfd};
         if (auto info = sockfd.getOption<sockopt::ProtocolInfo>(); info && info->value().iSocketType == SOCK_DGRAM) {
-            if (auto res = sockfd.setOption(sockopt::UdpConnReset(false)); !res) {
+            if (auto res = sockfd.setOption(sockopt::UdpConnReset{false}); !res) {
                 ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to disable UDP NetReset, {}", res.error().message());
             }
-            if (auto res = sockfd.setOption(sockopt::UdpNetReset(false)); !res) {
+            if (auto res = sockfd.setOption(sockopt::UdpNetReset{false}); !res) {
                 ILIAS_WARN("QIo", "QIoContext::addDescriptor(): failed to disable UDP ConnReset, {}", res.error().message());
             }
         }
@@ -642,15 +642,15 @@ inline auto QPollAwaiter::onNotifierActivated(QSocketDescriptor, QSocketNotifier
 
 inline auto QPollAwaiter::doDisconnect() -> void {
     if (mReadCon) {
-        mFd->poll.readNotifier->disconnect(mReadCon);
+        QObject::disconnect(mReadCon);
         mFd->poll.numOfRead--;
     }
     if (mWriteCon) {
-        mFd->poll.writeNotifier->disconnect(mWriteCon);
+        QObject::disconnect(mWriteCon);
         mFd->poll.numOfWrite--;
     }
     if (mExceptCon) {
-        mFd->poll.exceptNotifier->disconnect(mExceptCon);
+        QObject::disconnect(mExceptCon);
         mFd->poll.numOfExcept--;
     }
 
@@ -689,19 +689,20 @@ inline auto QPollAwaiter::doConnect() -> void {
 #if defined(_WIN32)
 inline auto QOverlapped::await_suspend(runtime::CoroHandle caller) -> void {
     mCaller = caller;
-    mRegistration.register_(caller.stopToken(), [this]() {
+    mRegistration.register_(caller.stopToken(), [this]() noexcept {
         ::CancelIoEx(mHandle, &mOverlapped);
     });
     QObject::connect(&mNotifier, &QWinEventNotifier::activated, [this](::HANDLE event) {
         mNotifier.setEnabled(false);
         mCaller.schedule();
+        static_cast<void>(event);
     });
     mNotifier.setEnabled(true);
 }
 
 inline auto QOverlapped::setOffset(size_t offset) -> void {
     ::ULARGE_INTEGER integer {
-        .QuadPart = offset
+        .QuadPart = offset,
     };
     mOverlapped.Offset = integer.LowPart;
     mOverlapped.OffsetHigh = integer.HighPart;

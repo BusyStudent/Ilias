@@ -91,7 +91,7 @@ private:
         return sqe;
     }
 
-    auto onStopRequested() -> void {
+    auto onStopRequested() noexcept -> void {
         ILIAS_TRACE("Uring", "Operation cancel request");
         mCancelSqe = allocSqe();
         UringCallbackCancel::onCallback = UringAwaiterBase::cancelCallback;
@@ -99,7 +99,7 @@ private:
         ::io_uring_sqe_set_data(mCancelSqe, static_cast<UringCallbackCancel*>(this));
     }
 
-    auto onResume() {
+    auto onResume() -> void {
         if (mResult == -ECANCELED && mCaller.isStopRequested()) {
             mCaller.setStopped();
             return;
