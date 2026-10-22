@@ -1,4 +1,3 @@
----
 # Ilias is a C++23 async I/O library with coroutine internals and low-level
 # platform code. Keep clang-tidy focused on actionable issues and avoid noisy
 # rules that fight the current ABI/system-programming style.
@@ -69,4 +68,3 @@ CheckOptions:
   readability-identifier-naming.ProtectedMemberPrefix: m
 
   readability-implicit-bool-conversion.AllowPointerConditions: true
-...

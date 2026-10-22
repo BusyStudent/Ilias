@@ -72,8 +72,11 @@ auto TaskScopeBase::onTaskCompleted(TaskSpawnContextBase &ctxt) noexcept -> void
         return;
     }
     
-    // Has waiter
+    // Notify waiter if any
     auto waiter = std::exchange(mWaiter, nullptr); // Prevent double wakeup
+    if (!waiter) {
+        return;
+    }
     if (waiter.isStopRequested()) { // If the waiter is requested to stop, just set it to stopped
         waiter.setStopped();
     }
@@ -85,7 +88,7 @@ auto TaskScopeBase::onTaskCompleted(TaskSpawnContextBase &ctxt) noexcept -> void
 auto TaskScopeWaitAll::await_suspend(CoroHandle caller) -> void {
     ILIAS_ASSERT(mScope.mWaiter == nullptr, "The waitAll or shutdown can't be called cocurrently");
     mScope.mWaiter = caller;
-    mReg.register_(caller.stopToken(), [&]() noexcept{ mScope.stop(); }); // Forward the stop to the scope
+    mReg.register_(caller.stopToken(), [&]() noexcept { mScope.stop(); }); // Forward the stop to the scope
 }
 
 ILIAS_NS_END

@@ -11,11 +11,11 @@ using namespace std::literals;
 using namespace ilias;
 namespace views = std::views;
 
-auto neverReturn() -> Task<void> {
+static auto neverReturn() -> Task<void> {
     co_await this_coro::suspendForever();
 }
 
-auto returnAfterSleep(int x) -> Task<int> {
+static auto returnAfterSleep(int x) -> Task<int> {
     co_await sleep(std::chrono::milliseconds(x));
     co_return x;
 }
@@ -232,6 +232,23 @@ ILIAS_TEST(Task, Scope) {
         handle.stop();
         EXPECT_FALSE(co_await std::move(handle)); // Should be stopped
     }
+
+    {
+        // Test task completion without waiter
+        TaskScope scope;
+        scope.spawn([]() -> Task<void> {
+            co_await this_coro::yield(); // Almost immediately return
+        });
+        co_await sleep(50ms);
+        co_await scope.waitAll();
+    }
+}
+
+TEST(TaskDeathTest, Scope) { // NOLINT
+    ASSERT_DEATH({
+        TaskScope scope;
+        scope.spawn(sleep(1h));
+    }, "");
 }
 
 ILIAS_TEST(Task, Thread) {

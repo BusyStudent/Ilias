@@ -20,9 +20,9 @@
 #include "format.hpp"
 
 // Assertion
-#if defined(NDEBUG)
+#if    defined(NDEBUG)
     #define ILIAS_ASSERT(x, ...) do { } while (false)
-#else
+#elif !defined(ILIAS_ASSERT) // Allow user to replace the internal assert
     #define ILIAS_ASSERT(x, ...) do {            \
         if (!(x)) [[unlikely]] {                 \
             ::ilias::assertion::handler(         \
@@ -70,6 +70,7 @@ inline auto handlerImpl(std::string_view expr, std::source_location where, std::
         idx += 1;
     }
 #endif // __cpp_lib_stacktrace
+    std::fflush(stderr);
     // NOLINTEND
     
     // Raise the debugger first

@@ -20,10 +20,10 @@
 #define ILIAS_STRINGIFY(x) ILIAS_STRINGIFY_(x)
 
 // Version helper
-#define ILIAS_VERSION_AT_LEAST(major, minor, patch)                  \
-    (ILIAS_VERSION_MAJOR > major ||                                  \
-    (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR > minor) || \
-    (ILIAS_VERSION_MAJOR == major && ILIAS_VERSION_MINOR == minor && ILIAS_VERSION_PATCH >= patch))
+#define ILIAS_VERSION_AT_LEAST(major, minor, patch)                      \
+    (ILIAS_VERSION_MAJOR > (major) ||                                    \
+    (ILIAS_VERSION_MAJOR == (major) && ILIAS_VERSION_MINOR > (minor)) || \
+    (ILIAS_VERSION_MAJOR == (major) && ILIAS_VERSION_MINOR == (minor) && ILIAS_VERSION_PATCH >= (patch)))
 #define ILIAS_VERSION_STRING                                         \
     ILIAS_STRINGIFY(ILIAS_VERSION_MAJOR) "."                         \
     ILIAS_STRINGIFY(ILIAS_VERSION_MINOR) "."                         \
@@ -306,7 +306,7 @@
  * @param name The test suite name
  * @param test The test name
  */
-#define ILIAS_TEST(name, test) ILIAS_TEST_IMPL(name##_##test, TEST(name, test))
+#define ILIAS_TEST(name, test) ILIAS_TEST_IMPL(name##_##test, TEST(name, test)) // NOLINT
 
 /**
  * @brief Create a result based test case with gtest
@@ -320,7 +320,7 @@
  *  }
  * @endcode
  */
-#define ILIAS_RTEST(name, test) ILIAS_RTEST_IMPL(name##_##test, TEST(name, test))
+#define ILIAS_RTEST(name, test) ILIAS_RTEST_IMPL(name##_##test, TEST(name, test)) // NOLINT
 
 /**
  * @brief Create a main testing function, the function body will be call before executing the test cases
@@ -343,7 +343,7 @@
     }                                           \
     static auto _ilias_before_test() -> void
 
-#define ILIAS_TEST_MAIN() ILIAS_TEST_MAIN_F(::ilias::PlatformContext)
+#define ILIAS_TEST_MAIN() ILIAS_TEST_MAIN_F(::ilias::PlatformContext) // NOLINT
 
 // platform.hpp
 // MARK: Main helper
