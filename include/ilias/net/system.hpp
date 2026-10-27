@@ -35,6 +35,7 @@
 
     #include <WinSock2.h>
     #include <WS2tcpip.h>
+    #include <MSWSock.h> // WSACMSGHDR definition at here on mingw
 
     #if __has_include(<afunix.h>)
         #include <afunix.h>

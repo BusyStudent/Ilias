@@ -16,6 +16,7 @@
 #include <ilias/net/system.hpp> // CMSG_*
 #include <ilias/buffer.hpp> // Buffer
 #include <cstdlib> // align_malloc
+#include <cstring> // std::memcpy, std::memset
 #include <utility> // std::in_range
 #include <memory> // std::unique_ptr
 #include <array>
@@ -140,7 +141,7 @@ public:
     auto resize(size_t size) -> void {
         // In windows, check the size is not too large
 #if defined(_WIN32)
-        ILIAS_ASSERT(std::in_range<decltype(WSABUF::len)>(size), "The size {} is too large, can't passed by ABI", size);
+        ILIAS_ASSERT(std::in_range<decltype(::WSABUF::len)>(size), "The size {} is too large, can't passed by ABI", size);
 #endif // _WIN32
 
         if (size == 0) {
@@ -363,7 +364,9 @@ public:
 
     // Advance
     auto operator ++() noexcept -> Iterator & {
-        mCur = View{ILIAS_CMSG_NXTHDR(mMsg, mCur.get())};
+        // Some system interfaces (e.g. glibc) require mutable pointers even though
+        // locating the next header does not modify the message or its control data.
+        mCur = View{ILIAS_CMSG_NXTHDR(const_cast<msghdr_t*>(mMsg), const_cast<cmsghdr_t*>(mCur.get()))};
         return *this;
     }
 
