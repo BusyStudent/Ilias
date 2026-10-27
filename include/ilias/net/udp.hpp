@@ -114,7 +114,7 @@ public:
         msg.setBuffers(sequence);
         msg.setEndpoint(endpoint);
         ILIAS_CO_TRY(auto n, co_await mHandle.recvmsg(msg, 0));
-        co_return std::pair {n, endpoint};
+        co_return std::pair{n, endpoint};
     }
 
     /**
@@ -132,6 +132,29 @@ public:
         msg.setEndpoint(endpoint);
         msg.setBuffers(sequence);
         co_return co_await mHandle.sendmsg(msg, 0);
+    }
+
+    // Advanced socket api
+    /**
+     * @brief Receive a message from the socket.
+     * 
+     * @param msg 
+     * @param flags 
+     * @return IoTask<size_t> 
+     */
+    auto recvmsg(MutableMsgHdr &msg, int flags = 0) const -> IoTask<size_t> {
+        return mHandle.recvmsg(msg, flags);
+    }
+
+    /**
+     * @brief Send an mssage to the socket.
+     * 
+     * @param msg 
+     * @param flags 
+     * @return IoTask<size_t> 
+     */
+    auto sendmsg(const MsgHdr &msg, int flags = 0) const -> IoTask<size_t> {
+        return mHandle.sendmsg(msg, flags);
     }
 
     /**
@@ -176,6 +199,15 @@ public:
         return mHandle.poll(events);
     }
 
+    /**
+     * @brief Get the inner socket handle.
+     * 
+     * @return SocketView 
+     */
+    auto fd() const -> SocketView {
+        return mHandle.fd();
+    }
+
     auto operator <=>(const UdpSocket &) const = default;
 
     /**
@@ -208,10 +240,11 @@ public:
      * @return true 
      * @return false 
      */
-    explicit operator bool() const { return bool(mHandle); }
+    explicit operator bool() const { return static_cast<bool>(mHandle); }
 private:
     IoHandle<Socket> mHandle;
 };
+// TODO: Udp Batching
 
 // Impl
 inline auto UdpBuilder::bind(IPEndpoint endpoint) -> Just<IoResult<UdpSocket> > {

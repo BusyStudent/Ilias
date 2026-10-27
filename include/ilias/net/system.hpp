@@ -23,7 +23,15 @@
     #define ILIAS_SHUT_RD          SD_RECEIVE
     #define ILIAS_SHUT_WR          SD_SEND
     #define ILIAS_SHUT_RDWR        SD_BOTH
-    #define ILIAS_MSGHDR_T         ::WSAMSG
+
+    // Msg
+    #define ILIAS_MSGHDR_T          ::WSAMSG
+    #define ILIAS_CMSGHDR_T         ::WSACMSGHDR
+    #define ILIAS_CMSG_SPACE(x)     WSA_CMSG_SPACE(x)
+    #define ILIAS_CMSG_DATA(x)      WSA_CMSG_DATA(x)
+    #define ILIAS_CMSG_LEN(x)       WSA_CMSG_LEN(x)
+    #define ILIAS_CMSG_FIRSTHDR(x)  WSA_CMSG_FIRSTHDR(x)
+    #define ILIAS_CMSG_NXTHDR(x, y) WSA_CMSG_NXTHDR(x, y)
 
     #include <WinSock2.h>
     #include <WS2tcpip.h>
@@ -49,7 +57,15 @@
     #define ILIAS_SHUT_RD          SHUT_RD
     #define ILIAS_SHUT_WR          SHUT_WR
     #define ILIAS_SHUT_RDWR        SHUT_RDWR
-    #define ILIAS_MSGHDR_T         ::msghdr
+
+    // Msg
+    #define ILIAS_MSGHDR_T          ::msghdr
+    #define ILIAS_CMSGHDR_T         ::cmsghdr
+    #define ILIAS_CMSG_SPACE(x)     CMSG_SPACE(x)
+    #define ILIAS_CMSG_DATA(x)      CMSG_DATA(x)
+    #define ILIAS_CMSG_LEN(x)       CMSG_LEN(x)
+    #define ILIAS_CMSG_FIRSTHDR(x)  CMSG_FIRSTHDR(x)
+    #define ILIAS_CMSG_NXTHDR(x, y) CMSG_NXTHDR(x, y)
 
     #include <sys/socket.h>
     #include <sys/poll.h>
@@ -68,7 +84,7 @@ ILIAS_NS_BEGIN
  * @brief The poll event enum. It is the same as in poll.h and can be combined with bitwise operations.
  * 
  */
-enum PollEvent : uint32_t {
+enum PollEvent : uint32_t { // NOLINT(performance-enum-size)
     In  = POLLIN,  //< When fd can be read (similar to readfds in select)
     Out = POLLOUT, //< When fd can be written (similar to writefds in select)
     Pri = POLLPRI, //< When fd has urgent data (similar to exceptfds in select)
@@ -80,7 +96,7 @@ enum PollEvent : uint32_t {
  * @brief The socket shutdown mode enum, as same as shutdown(2)
  * 
  */
-enum class Shutdown : int {
+enum class Shutdown : int { // NOLINT(performance-enum-size)
     Read  = ILIAS_SHUT_RD,
     Write = ILIAS_SHUT_WR,
     Both  = ILIAS_SHUT_RDWR,
@@ -90,7 +106,7 @@ enum class Shutdown : int {
  * @brief The address family enum, as same as in socket.h
  * 
  */
-enum class AddressFamily : int {
+enum class AddressFamily : int { // NOLINT(performance-enum-size)
     IPv4 = AF_INET,
     IPv6 = AF_INET6,
     Unix = AF_UNIX,
@@ -100,7 +116,7 @@ enum class AddressFamily : int {
  * @brief The socket type enum, as same as in socket.h
  * 
  */
-enum class SocketType : int {
+enum class SocketType : int { // NOLINT(performance-enum-size)
     Stream = SOCK_STREAM,
     Dgram  = SOCK_DGRAM,
     Raw    = SOCK_RAW,
@@ -135,9 +151,7 @@ private:
 };
 
 // Platform initialization
-inline SockInitializer::SockInitializer() {
-
-}
+inline SockInitializer::SockInitializer() = default;
 
 inline SockInitializer::~SockInitializer() {
     if (mInited) {

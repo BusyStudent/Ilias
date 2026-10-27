@@ -37,7 +37,7 @@ using addrinfo_t = ILIAS_ADDRINFO;
  * @brief The raw error code of getaddrinfo and getnameinfo
  * 
  */
-enum class GaiError : int {
+enum class GaiError : int { // NOLINT(performance-enum-size)
     TryAgain                  = EAI_AGAIN,
     Fail                      = EAI_FAIL,
     OutOfMemory               = EAI_MEMORY,
@@ -102,7 +102,7 @@ public:
      * @return false 
      */
     explicit operator bool() const noexcept {
-        return bool(mInfo);
+        return static_cast<bool>(mInfo);
     }
 
     /**
@@ -149,7 +149,7 @@ private:
 // --- AddressInfo Impl
 inline auto AddressInfo::endpoints() const -> std::vector<IPEndpoint> {
     std::vector<IPEndpoint> vec;
-    for (auto cur = mInfo.get(); cur != nullptr; cur = cur->ai_next) {
+    for (const auto *cur = mInfo.get(); cur != nullptr; cur = cur->ai_next) {
         auto buf = makeBuffer(cur->ai_addr, cur->ai_addrlen);
         auto ep = IPEndpoint::fromBytes(buf);
         if (ep) {
@@ -180,7 +180,7 @@ inline auto AddressInfo::lookup(std::string_view endpoint, std::optional<addrinf
 
         // Handle V6
         // [::]:666
-        if (name.starts_with("[") && name.ends_with("]")) {
+        if (name.starts_with('[') && name.ends_with(']')) {
             name.remove_prefix(1);
             name.remove_suffix(1);
         }

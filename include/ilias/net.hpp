@@ -18,6 +18,7 @@
 #include <ilias/net/system.hpp>
 #include <ilias/net/poller.hpp>
 #include <ilias/net/unix.hpp>
+#include <ilias/net/cmsg.hpp>
 #include <ilias/net/pipe.hpp>
 #include <ilias/net/tcp.hpp>
 #include <ilias/net/udp.hpp>

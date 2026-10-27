@@ -244,6 +244,38 @@ public:
     auto poll(uint32_t events) const -> IoTask<uint32_t> {
         return mHandle.poll(events);
     }
+    
+    // Advanced socket api
+    /**
+     * @brief Receive a message from the socket.
+     * 
+     * @param msg 
+     * @param flags 
+     * @return IoTask<size_t> 
+     */
+    auto recvmsg(MutableMsgHdr &msg, int flags = 0) const -> IoTask<size_t> {
+        return mHandle.recvmsg(msg, flags);
+    }
+
+    /**
+     * @brief Send an mssage to the socket.
+     * 
+     * @param msg 
+     * @param flags 
+     * @return IoTask<size_t> 
+     */
+    auto sendmsg(const MsgHdr &msg, int flags = 0) const -> IoTask<size_t> {
+        return mHandle.sendmsg(msg, flags);
+    }
+
+    /**
+     * @brief Get the inner socket handle.
+     * 
+     * @return SocketView 
+     */
+    auto fd() const -> SocketView {
+        return mHandle.fd();
+    }
 
     auto operator <=>(const TcpStream &) const = default;
 
@@ -263,7 +295,7 @@ public:
      * @return true 
      * @return false 
      */
-    explicit operator bool() const noexcept { return bool(mHandle); }
+    explicit operator bool() const noexcept { return static_cast<bool>(mHandle); }
 private:
     IoHandle<Socket> mHandle;
 };
@@ -349,6 +381,15 @@ public:
     }
 
     /**
+     * @brief Get the inner socket handle.
+     * 
+     * @return SocketView 
+     */
+    auto fd() const -> SocketView {
+        return mHandle.fd();
+    }
+
+    /**
      * @brief Get the local endpoint associated with the socket.
      * 
      * @return IoResult<IPEndpoint> 
@@ -388,7 +429,7 @@ public:
      * @return true 
      * @return false 
      */
-    explicit operator bool() const noexcept { return bool(mHandle); }
+    explicit operator bool() const noexcept { return static_cast<bool>(mHandle); }
 private:
     IoHandle<Socket> mHandle;
 };

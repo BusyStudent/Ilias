@@ -70,10 +70,10 @@ namespace sockopt {
  * @brief Helper enum to limit the access of socket options
  * 
  */
-enum OptionAccess {
+enum OptionAccess : uint8_t {
     Read = 1 << 0,
     Write = 1 << 1,
-    ReadWrite = Read | Write
+    ReadWrite = Read | Write,
 };
 
 /**
@@ -90,7 +90,7 @@ public:
     constexpr OptionT() = default;
     constexpr OptionT(T value) : mValue(value) { }
 
-    auto setopt(socket_t sock) const -> IoResult<void> requires (bool(Access & OptionAccess::Write)) {
+    auto setopt(socket_t sock) const -> IoResult<void> requires ((Access & OptionAccess::Write) == OptionAccess::Write) {
         auto ret = ::setsockopt(sock, Level, Optname, reinterpret_cast<const char *>(&mValue), sizeof(T));
         if (ret != 0) {
             return Err(SystemError::fromErrno());
@@ -98,7 +98,7 @@ public:
         return {};
     }
 
-    static auto getopt(socket_t sock) -> IoResult<OptionT> requires (bool(Access & OptionAccess::Read)) {
+    static auto getopt(socket_t sock) -> IoResult<OptionT> requires ((Access & OptionAccess::Read) == OptionAccess::Read) {
         ::socklen_t optlen = sizeof(T);
         T value;
         auto ret = ::getsockopt(sock, Level, Optname, reinterpret_cast<char *>(&value), &optlen);
@@ -121,7 +121,7 @@ public:
      */
     constexpr operator T() const noexcept { return mValue; }
 private:
-    T mValue { };
+    T mValue {};
 };
 
 // For Some options, the value type is not int
@@ -139,9 +139,9 @@ template <DWORD Opcode, typename T, OptionAccess Access = OptionAccess::ReadWrit
 class WSAOptionT {
 public:
     constexpr WSAOptionT() = default;
-    constexpr WSAOptionT(T value) : mValue(value) { }
+    constexpr WSAOptionT(T value) : mValue(value) {}
 
-    auto setopt(socket_t sock) const -> IoResult<void> requires (bool(Access & OptionAccess::Write)) {
+    auto setopt(socket_t sock) const -> IoResult<void> requires ((Access & OptionAccess::Write) == OptionAccess::Write) {
         DWORD bytes = 0;
         auto in = mValue;
         auto out = mValue;
@@ -152,15 +152,19 @@ public:
         return {};
     }
 
-    static auto getopt(socket_t sock) -> IoResult<WSAOptionT> requires (bool(Access & OptionAccess::Read)) {
+    static auto getopt(socket_t sock) -> IoResult<WSAOptionT> requires ((Access & OptionAccess::Read) == OptionAccess::Read) {
         DWORD bytes = 0;
-        auto out = T { };
+        T out{};
         auto ret = ::WSAIoctl(sock, Opcode, nullptr, 0, &out, sizeof(out), &bytes, nullptr, nullptr);
         if (ret != 0) {
             return Err(SystemError::fromErrno());
         }
         return out;
     }
+
+    // For tuple protocol
+    template <size_t I = 0> requires(I == 0)
+    constexpr auto get() const noexcept { return mValue; }
 
     /**
      * @brief Get the value of the option
@@ -175,7 +179,7 @@ public:
      */
     constexpr operator T() const noexcept { return mValue; }
 private:
-    T mValue { };
+    T mValue {};
 };
 
 using dword_t = ::DWORD;
@@ -312,6 +316,7 @@ ILIAS_NS_END
 
 #if !defined(ILIAS_NO_FORMAT)
 
+// MARK: Formatter
 // Formatter for SOL_SOCKET options
 ILIAS_FORMATTER(ilias::sockopt::ReuseAddress) {
     auto format(const auto &opt, auto &ctxt) const {

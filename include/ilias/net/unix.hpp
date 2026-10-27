@@ -79,7 +79,7 @@ public:
     auto operator ->() const -> const Socket * { return &mFd; }
 
     // Impl BorrowFileDescriptor
-    explicit operator fd_t() const noexcept { return fd_t(mFd); }
+    explicit operator fd_t() const noexcept { return fd_t(mFd); } // NOLINT(modernize-avoid-c-style-cast)
 
     static auto make(int type) -> IoResult<UnixSocket> {
         ILIAS_TRY(auto sock, Socket::make(AF_UNIX, type, 0));
@@ -226,6 +226,38 @@ public:
         return mHandle.fd()->remoteEndpoint<UnixEndpoint>();
     }
 
+    // Advanced socket api
+    /**
+     * @brief Receive a message from the socket.
+     * 
+     * @param msg 
+     * @param flags 
+     * @return IoTask<size_t> 
+     */
+    auto recvmsg(MutableMsgHdr &msg, int flags = 0) const -> IoTask<size_t> {
+        return mHandle.recvmsg(msg, flags);
+    }
+
+    /**
+     * @brief Send an mssage to the socket.
+     * 
+     * @param msg 
+     * @param flags 
+     * @return IoTask<size_t> 
+     */
+    auto sendmsg(const MsgHdr &msg, int flags = 0) const -> IoTask<size_t> {
+        return mHandle.sendmsg(msg, flags);
+    }
+
+    /**
+     * @brief Get the inner socket handle.
+     * 
+     * @return SocketView 
+     */
+    auto fd() const -> SocketView {
+        return mHandle.fd()->get();
+    }
+
     // Operator
     auto operator <=>(const UnixStream &) const = default;
 
@@ -346,6 +378,15 @@ public:
      */
     auto localEndpoint() const -> IoResult<UnixEndpoint> {
         return mHandle.fd()->localEndpoint<UnixEndpoint>();
+    }
+
+    /**
+     * @brief Get the inner socket handle.
+     * 
+     * @return SocketView 
+     */
+    auto fd() const -> SocketView {
+        return mHandle.fd()->get();
     }
 
     // Operator

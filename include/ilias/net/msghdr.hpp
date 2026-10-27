@@ -9,11 +9,13 @@
  * 
  */
 // Experimental!!!
+// The API maybe changed in the future
 #pragma once
 #include <ilias/detail/narrow.hpp> // narrowInto
 #include <ilias/net/endpoint.hpp> // IPEndoint
 #include <ilias/net/system.hpp> // ILIAS_MSGHDR_T
 #include <ilias/io/vec.hpp> // IoVec
+#include <ilias/buffer.hpp> // Buffer
 #include <span>
 
 #if defined(_WIN32) // Redirect the names to the windows ones
@@ -44,6 +46,7 @@
 
 ILIAS_NS_BEGIN
 
+// Import the system types
 using msghdr_t = ILIAS_MSGHDR_T;
 
 /**
@@ -52,9 +55,9 @@ using msghdr_t = ILIAS_MSGHDR_T;
  */
 class MsgHdr : public msghdr_t {
 public:
-    constexpr MsgHdr(const msghdr_t &v) : msghdr_t{v} { }
+    constexpr MsgHdr(const msghdr_t &v) : msghdr_t{v} {}
     constexpr MsgHdr(const MsgHdr &) = default;
-    constexpr MsgHdr() : msghdr_t{} { }
+    constexpr MsgHdr() : msghdr_t{} {}
 
     /**
      * @brief Set the Endpoint object
@@ -62,14 +65,16 @@ public:
      * @param addr The const endpoint pointer
      * @param len The endpoint length
      */
-    auto setEndpoint(const ::sockaddr *addr, ::socklen_t len) noexcept -> void {
+    auto setEndpoint(const ::sockaddr *addr, ::socklen_t len) noexcept -> MsgHdr & {
         msg_name = const_cast<::sockaddr*>(addr);
         msg_namelen = len;
+        return *this;
     }
 
-    auto setEndpoint(EndpointView endpoint) noexcept -> void {
+    auto setEndpoint(EndpointView endpoint) noexcept -> MsgHdr & {
         msg_name = const_cast<::sockaddr*>(endpoint.data());
         msg_namelen = endpoint.length();
+        return *this;
     }
 
     /**
@@ -77,10 +82,22 @@ public:
      * 
      * @param buffers 
      */
-    auto setBuffers(std::span<const IoVec> buffers) noexcept -> void {
+    auto setBuffers(std::span<const IoVec> buffers) noexcept -> MsgHdr & {
         // It should fine ? the recvmsg and sendmsg should not modify the buffer's pointers values
         msg_iov = toSystem(const_cast<IoVec*>(buffers.data()));
         msg_iovlen = narrowInto(buffers.size());
+        return *this;
+    }
+
+    /**
+     * @brief Set the Control object, the control part of this message
+     * 
+     * @param control 
+     */
+    auto setControl(Buffer control) noexcept -> MsgHdr & {
+        msg_control = reinterpret_cast<char*>(const_cast<std::byte*>(control.data()));
+        msg_controllen = narrowInto(control.size());
+        return *this;
     }
 
     /**
@@ -94,30 +111,44 @@ public:
 };
 
 /**
- * @brief The mutable version for system msghdr, used for sendmsg & recvmsg
+ * @brief The mutable version for system msghdr, used for recvmsg
  * 
  */
 class MutableMsgHdr final : public MsgHdr {
 public:
-    constexpr MutableMsgHdr(const msghdr_t &v) : MsgHdr(v) { }
+    constexpr MutableMsgHdr(const msghdr_t &v) : MsgHdr{v} {}
     constexpr MutableMsgHdr(const MutableMsgHdr &) = default;
     constexpr MutableMsgHdr(const MsgHdr &) = delete; // Doesn't allow from const to mutable
     constexpr MutableMsgHdr() = default;
 
-    auto setEndpoint(::sockaddr *addr, ::socklen_t len) noexcept -> void {
+    auto setEndpoint(::sockaddr *addr, ::socklen_t len) noexcept -> MutableMsgHdr & {
         msg_name = addr;
         msg_namelen = len;
+        return *this;
     }
 
-    auto setEndpoint(MutableEndpointView endpoint) noexcept -> void {
+    auto setEndpoint(MutableEndpointView endpoint) noexcept -> MutableMsgHdr & {
         msg_name = endpoint.data();
         msg_namelen = endpoint.bufsize();
+        return *this;
     }
 
-    auto setBuffers(std::span<const MutableIoVec> buffers) noexcept -> void {
+    auto setBuffers(std::span<const MutableIoVec> buffers) noexcept -> MutableMsgHdr & {
         // It should fine ? the recvmsg and sendmsg should not modify the buffer's pointers values
         msg_iov = toSystem(const_cast<MutableIoVec*>(buffers.data()));
         msg_iovlen = narrowInto(buffers.size());
+        return *this;
+    }
+
+    /**
+     * @brief Set the Control object, the control part of this message
+     * 
+     * @param control 
+     */
+    auto setControl(MutableBuffer control) noexcept -> MutableMsgHdr & {
+        msg_control = reinterpret_cast<char*>(control.data());
+        msg_controllen = narrowInto(control.size());
+        return *this;
     }
 
     // Inherit flags from MsgHdr
@@ -135,6 +166,7 @@ ILIAS_NS_END
     #undef msg_controllen
     #undef msg_flags
     
+    // NOLINTBEGIN
     #pragma pop_macro("msg_flags")
     #pragma pop_macro("msg_controllen")
     #pragma pop_macro("msg_control")
@@ -142,4 +174,5 @@ ILIAS_NS_END
     #pragma pop_macro("msg_iov")
     #pragma pop_macro("msg_namelen")
     #pragma pop_macro("msg_name")
+    // NOLINTEND
 #endif // _WIN32
