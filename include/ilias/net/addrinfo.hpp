@@ -54,9 +54,8 @@ public:
     auto name() const noexcept -> const char * override;
     auto message(int value) const -> std::string override;
 
-    ILIAS_API
     ILIAS_GNUC([[gnu::const]])
-    static auto instance() noexcept -> const GaiCategory &;
+    ILIAS_API static auto instance() noexcept -> const GaiCategory &;
 private:
     constexpr GaiCategory() noexcept = default;
 };

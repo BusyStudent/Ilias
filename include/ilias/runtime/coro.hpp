@@ -19,8 +19,8 @@ ILIAS_NS_BEGIN
 namespace runtime {
 
 // Memory pool for coroutines
-extern auto ILIAS_API allocate(size_t n) -> void *;
-extern auto ILIAS_API deallocate(void *ptr, size_t n) noexcept -> void;
+ILIAS_API extern auto allocate(size_t n) -> void *;
+ILIAS_API extern auto deallocate(void *ptr, size_t n) noexcept -> void;
 
 // Helper class to switch between coroutines
 class SwitchCoroutine {

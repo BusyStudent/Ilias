@@ -20,7 +20,7 @@ enum class TlsVerify;
 
 #if defined(_WIN32)
 namespace win32 {
-    extern auto ILIAS_API toWide(std::string_view str) -> std::wstring;
+    ILIAS_API extern auto toWide(std::string_view str) -> std::wstring;
 } // namespace win32
 #endif // defined(_WIN32)
 
@@ -61,17 +61,17 @@ protected:
 
 // INTERNAL!!
 namespace context {
-    extern auto ILIAS_API make(uint32_t flags) -> void *;
-    extern auto ILIAS_API destroy(void *ctxt) -> void;
-    extern auto ILIAS_API backend() -> TlsBackend;
+    ILIAS_API extern auto make(uint32_t flags) -> void *;
+    ILIAS_API extern auto destroy(void *ctxt) -> void;
+    ILIAS_API extern auto backend() -> TlsBackend;
 
-    extern auto ILIAS_API setVerify(void *ctxt, TlsVerify verify) -> void;
-    extern auto ILIAS_API setMinVersion(void *ctxt, std::optional<TlsVersion> version) -> void;
-    extern auto ILIAS_API setMaxVersion(void *ctxt, std::optional<TlsVersion> version) -> void;
-    extern auto ILIAS_API loadDefaultRootCerts(void *ctxt) -> bool;
-    extern auto ILIAS_API loadRootCerts(void *ctxt, Buffer buffer) -> bool;
-    extern auto ILIAS_API usePrivateKey(void *ctxt, Buffer key, std::string_view password) -> bool;
-    extern auto ILIAS_API useCert(void *ctxt, Buffer cert) -> bool;
+    ILIAS_API extern auto setVerify(void *ctxt, TlsVerify verify) -> void;
+    ILIAS_API extern auto setMinVersion(void *ctxt, std::optional<TlsVersion> version) -> void;
+    ILIAS_API extern auto setMaxVersion(void *ctxt, std::optional<TlsVersion> version) -> void;
+    ILIAS_API extern auto loadDefaultRootCerts(void *ctxt) -> bool;
+    ILIAS_API extern auto loadRootCerts(void *ctxt, Buffer buffer) -> bool;
+    ILIAS_API extern auto usePrivateKey(void *ctxt, Buffer key, std::string_view password) -> bool;
+    ILIAS_API extern auto useCert(void *ctxt, Buffer cert) -> bool;
 
     struct Deleter {
         auto operator()(void *ptr) -> void { destroy(ptr); }
@@ -313,7 +313,7 @@ public:
 
     // Check the stream is valid
     explicit operator bool() const noexcept {
-        return bool(mHandle);
+        return static_cast<bool>(mHandle);
     }
 private:
     tls::TlsHandle mHandle;

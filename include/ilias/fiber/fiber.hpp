@@ -154,8 +154,8 @@ inline auto FiberContext::value() -> T {
 }
 
 // Initialize the fiber environment (reference count)
-extern auto ILIAS_API initialize() -> void;
-extern auto ILIAS_API shutdown() -> void;
+ILIAS_API extern auto initialize() -> void;
+ILIAS_API extern auto shutdown() -> void;
 
 } // namespace fiber
 
@@ -163,7 +163,7 @@ extern auto ILIAS_API shutdown() -> void;
 namespace this_fiber::detail {
 
 // Wait the stackless CoroHandle to done or stopped
-extern auto ILIAS_API await(runtime::CoroHandle handle, runtime::CaptureSource source) -> void;
+ILIAS_API extern auto await(runtime::CoroHandle handle, runtime::CaptureSource source) -> void;
 
 } // namespace this_fiber::detail
 
@@ -171,10 +171,10 @@ extern auto ILIAS_API await(runtime::CoroHandle handle, runtime::CaptureSource s
 namespace this_fiber {
 
 // Get the current fiber's stop token
-extern auto ILIAS_API stopToken() -> runtime::StopToken;
+ILIAS_API extern auto stopToken() -> runtime::StopToken;
 
 // Yield the current fiber, resume the fiber when the next time it is scheduled
-extern auto ILIAS_API yield() -> void;
+ILIAS_API extern auto yield() -> void;
 
 // Functor for impl await
 class Await {

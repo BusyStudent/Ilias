@@ -123,7 +123,7 @@ public:
     [[nodiscard]]
     auto size() const -> size_t {
         size_t n = 0;
-        for (auto cur = next(); cur != this; cur = cur->next()) {
+        for (const auto *cur = next(); cur != this; cur = cur->next()) {
             n += 1;
         }
         return n;
@@ -251,7 +251,7 @@ public:
 
     // Get the refcount, as same as STL
     [[nodiscard]]
-    auto use_count() const noexcept {
+    auto use_count() const noexcept { // NOLINT
         return mCount;
     }
 protected:
@@ -300,7 +300,7 @@ public:
 
     // Get the refcount value, as same as STL
     [[nodiscard]]
-    auto use_count() const noexcept -> size_t {
+    auto use_count() const noexcept -> size_t { // NOLINT
         return mPtr ? mPtr->use_count() : 0;
     }
 
@@ -342,7 +342,7 @@ public:
     template <typename ...Args>
     static auto make(Args &&...args) -> Rc<T> {
         return Rc<T> {
-            new T (std::forward<Args>(args)...)
+            new T (std::forward<Args>(args)...),
         };
     }
 private:
@@ -363,7 +363,7 @@ struct std::pointer_traits<ilias::intrusive::Rc<T> > {
     template<typename U>
     using rebind = ilias::intrusive::Rc<U>;
 
-    static auto to_address(const pointer &p) noexcept {
+    static auto to_address(const pointer &p) noexcept { // NOLINT
         return p.get();
     }
 };

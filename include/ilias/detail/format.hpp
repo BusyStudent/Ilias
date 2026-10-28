@@ -68,7 +68,7 @@ struct DefaultFormatter {
 
     // Redirect the format_to
     template <typename It, typename ...Args>
-    static auto format_to(It &&it, fmtlib::format_string<Args...> fmt, Args &&...args) {
+    static auto format_to(It &&it, fmtlib::format_string<Args...> fmt, Args &&...args) { // NOLINT
         return fmtlib::format_to(it, fmt, std::forward<Args>(args)...);
     }
 
@@ -113,17 +113,17 @@ ILIAS_NS_END
 #if !defined(ILIAS_NO_FORMAT)
 // Make formatter for all type with InfoString concept
 template <ilias::IntoString T>
-class ilias::fmtlib::formatter<T> {
+class ilias::fmtlib::formatter<T> { // NOLINT(bugprone-std-namespace-modification)
 public:
     constexpr auto parse(auto &ctxt) {
-        return inner.parse(ctxt);
+        return mInner.parse(ctxt);
     }
 
     auto format(const T &value, auto &ctxt) const {
         auto str = _ilias_implToString(value);
-        return inner.format(std::string_view{str}, ctxt);
+        return mInner.format(std::string_view{str}, ctxt);
     }
 private:
-    ilias::fmtlib::formatter<std::string_view> inner;
+    ilias::fmtlib::formatter<std::string_view> mInner;
 };
 #endif // ILIAS_NO_FORMAT

@@ -32,9 +32,9 @@ public:
     auto message(int value) const -> std::string override;
     auto equivalent(int value, const std::error_condition &other) const noexcept -> bool override;
 
-    ILIAS_API
+    
     ILIAS_GNUC([[gnu::const]]) // Make compiler happy to deduplicate calls
-    static auto instance() noexcept -> const IoCategory &;
+    ILIAS_API static auto instance() noexcept -> const IoCategory &;
 private:
     constexpr IoCategory() = default;
 };

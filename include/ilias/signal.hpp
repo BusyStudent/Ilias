@@ -12,7 +12,7 @@ namespace signal {
  * 
  * @return Ok on SIGINT, Err on system error
  */
-extern auto ILIAS_API ctrlC() -> IoTask<void>;
+ILIAS_API extern auto ctrlC() -> IoTask<void>;
 
 #if defined(__linux__)
 /**
@@ -21,7 +21,7 @@ extern auto ILIAS_API ctrlC() -> IoTask<void>;
  * @param sig The signal number like SIGINT, SIGQUIT, etc.
  * @return IoTask<void> 
  */
-extern auto ILIAS_API waitFor(int sig) -> IoTask<void>;
+ILIAS_API extern auto waitFor(int sig) -> IoTask<void>;
 #endif
 
 } // namespace signal

@@ -176,7 +176,7 @@ private:
 } // namespace runtime
 
 namespace runtime::threadpool {
-    extern auto ILIAS_API submit(CallableRef &callable) -> void;
+    ILIAS_API extern auto submit(CallableRef &callable) -> void;
 } // namespace runtime::threadpool
 
 // Re-export the EventLoop

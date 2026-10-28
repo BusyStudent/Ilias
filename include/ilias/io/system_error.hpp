@@ -38,9 +38,8 @@ public:
     auto equivalent(int value, const std::error_condition &other) const noexcept -> bool override;
     auto default_error_condition(int value) const noexcept -> std::error_condition override;
     
-    ILIAS_API
     ILIAS_GNUC([[gnu::const]]) // Make compiler happy to deduplicate calls
-    static auto instance() noexcept -> const SystemCategory &;
+    ILIAS_API static auto instance() noexcept -> const SystemCategory &;
 private:
     constexpr SystemCategory() noexcept = default;
 };

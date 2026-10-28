@@ -29,13 +29,13 @@ namespace win32 {
 
 struct NtDll; // Internal use struct
 
-extern auto ILIAS_API toWide(std::string_view str) -> std::wstring;
-extern auto ILIAS_API toUtf8(std::wstring_view str) -> std::string;
+ILIAS_API extern auto toWide(std::string_view str) -> std::wstring;
+ILIAS_API extern auto toUtf8(std::wstring_view str) -> std::string;
 
-extern auto ILIAS_API pipe(HANDLE *read, HANDLE *write, SECURITY_ATTRIBUTES *attr = nullptr) -> bool;
+ILIAS_API extern auto pipe(HANDLE *read, HANDLE *write, SECURITY_ATTRIBUTES *attr = nullptr) -> bool;
 
-extern auto ILIAS_API setThreadName(HANDLE thread, std::string_view name) -> bool;
-extern auto ILIAS_API threadName(HANDLE thread) -> std::string;
+ILIAS_API extern auto setThreadName(HANDLE thread, std::string_view name) -> bool;
+ILIAS_API extern auto threadName(HANDLE thread) -> std::string;
 
 } // namespace win32
 

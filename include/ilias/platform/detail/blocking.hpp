@@ -19,8 +19,8 @@
 ILIAS_NS_BEGIN
 
 namespace runtime::threadpool {
-    extern auto ILIAS_API read(fd_t fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t>;
-    extern auto ILIAS_API write(fd_t fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t>;
+    ILIAS_API extern auto read(fd_t fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t>;
+    ILIAS_API extern auto write(fd_t fd, Buffer buffer, std::optional<size_t> offset) -> IoTask<size_t>;
 } // namespace runtime::threadpool
 
 ILIAS_NS_END

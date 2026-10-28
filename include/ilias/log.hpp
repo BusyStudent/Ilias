@@ -52,11 +52,11 @@ enum class LogLevel {
     Off
 };
 
-extern auto ILIAS_API write(LogLevel level, std::string_view mod, std::source_location where, std::string_view content) -> void;
-extern auto ILIAS_API check(LogLevel level, std::string_view mod) -> bool;
-extern auto ILIAS_API setLevel(LogLevel level) -> void;
-extern auto ILIAS_API addWhitelist(std::string_view mod) -> void;
-extern auto ILIAS_API addBlacklist(std::string_view mod) -> void;
+ILIAS_API extern auto write(LogLevel level, std::string_view mod, std::source_location where, std::string_view content) -> void;
+ILIAS_API extern auto check(LogLevel level, std::string_view mod) -> bool;
+ILIAS_API extern auto setLevel(LogLevel level) -> void;
+ILIAS_API extern auto addWhitelist(std::string_view mod) -> void;
+ILIAS_API extern auto addBlacklist(std::string_view mod) -> void;
 
 } // namespace logging
 
