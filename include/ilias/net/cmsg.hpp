@@ -335,6 +335,10 @@ public:
      * @return Buffer 
      */
     auto end() -> Buffer {
+        if (mHead == 0) {
+            // Winsock requires a null control pointer when no control messages are sent.
+            return {};
+        }
         return mSpace.data().subspan(0, mHead);
     }
 private:

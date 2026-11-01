@@ -13,11 +13,15 @@ on:
 jobs:
   build:
     name: Build ${{ matrix.toolchain }} ${{ matrix.mode }} ${{ matrix.backend }} ${{ matrix.kind }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [gcc, clang]
+        # GCC 15.1-15.3 and 16.1 can skip destructors of tuple-like structured
+        # bindings across coroutine suspension at -O1+, leaking owned resources.
+        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=124584
+        # Fixed in GCC 16.2; keep GCC 14 until CI uses a compiler with the fix.
+        toolchain: [gcc-14, clang]
         mode: [release, coverage]
         backend: [epoll, io_uring]
         kind: [shared, static]
@@ -30,31 +34,43 @@ jobs:
       with:
         xmake-version: latest
 
-    - name: Update apt
-      if: matrix.mode == 'coverage'
+    - name: Install dependencies
       run: |
-        sudo apt update -y
-        sudo apt install -y lcov
+        PACKAGES=()
+        if [ "${{ matrix.mode }}" == "coverage" ]; then
+          PACKAGES+=(lcov)
+        fi
+        if [ "${{ matrix.backend }}" == "io_uring" ]; then
+          PACKAGES+=(liburing-dev)
+        fi
+        if [ "${{ matrix.toolchain }}" == "gcc-14" ]; then
+          PACKAGES+=(gcc-14 g++-14)
+        fi
+        if [ "${{ matrix.toolchain }}" == "clang" ]; then
+          PACKAGES+=(clang-21 libclang-rt-21-dev)
+        fi
+        if [ "${#PACKAGES[@]}" -gt 0 ]; then
+          sudo apt-get update
+          sudo apt-get install -y "${PACKAGES[@]}"
+        fi
 
-    - name: Install io_uring
-      if: matrix.backend == 'io_uring'
+    - name: Set up GCC 14
+      if: matrix.toolchain == 'gcc-14'
       run: |
-        sudo apt install -y liburing-dev
+        gcc-14 --version
+        g++-14 --version
+        gcov-14 --version
+        # Match Codecov's unversioned gcov command to GCC 14 coverage data.
+        GCOV_BIN="$RUNNER_TEMP/gcc-14-coverage"
+        mkdir -p "$GCOV_BIN"
+        ln -s "$(command -v gcov-14)" "$GCOV_BIN/gcov"
+        echo "$GCOV_BIN" >> "$GITHUB_PATH"
 
-    - name: Install clang
+    - name: Select Clang 21
       if: matrix.toolchain == 'clang'
       run: |
-        wget -P ~/Downloads https://apt.llvm.org/llvm.sh
-        sudo chmod +x ~/Downloads/llvm.sh
-        sudo ~/Downloads/llvm.sh 21
         sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-21 21
         sudo update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-21   21
-        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 18
-        sudo update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-18   18
-        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-17 17
-        sudo update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-17   17
-        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 16
-        sudo update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-16   16
         clang++ --version
         clang   --version
 

@@ -13,6 +13,7 @@
 
 #include <source_location>
 #include <string_view>
+#include <exception> // std::terminate
 #include <cstdlib>
 #include <cstdio>
 

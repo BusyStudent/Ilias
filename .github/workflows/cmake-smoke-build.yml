@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-26.04, windows-latest]
         build_type: [Debug, Release]
 
     steps:
@@ -26,7 +26,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libssl-dev liburing-dev
+          sudo apt-get install -y gcc-14 g++-14 ninja-build libssl-dev liburing-dev
 
       - name: Set up Ninja
         if: runner.os == 'Windows'
@@ -40,8 +40,11 @@ jobs:
 
       - name: Configure CMake on Linux
         if: runner.os == 'Linux'
+        # Keep GCC 14 for PR124584, as documented in xmake-test-on-linux.yml:
+        # optimized coroutine structured bindings can otherwise skip destructors.
         run: |
           cmake -B build -G Ninja \
+            -DCMAKE_CXX_COMPILER=g++-14 \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DILIAS_TLS=ON
 
