@@ -81,7 +81,7 @@ namespace {
             }
             auto id = ctxt.id();
             auto &parentSpan = ctxt.parent()->span();
-            auto child = children.at(parentSpan.id);
+            auto &child = children.at(parentSpan.id);
             auto n = std::erase_if(child, [id](auto &v) { return v == id; });
             ILIAS_ASSERT(n == 1, "Id {} not found, this should never happen", id);
 

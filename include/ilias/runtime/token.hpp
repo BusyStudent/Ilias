@@ -3,8 +3,8 @@
 
 #include <ilias/runtime/functional.hpp> // SmallFunction
 #include <ilias/defines.hpp>
-#include <stop_token>
-#include <memory>
+#include <stop_token> // std::stop_token
+#include <memory> // std::construct_at
 #include <new>
 
 ILIAS_NS_BEGIN
@@ -20,7 +20,14 @@ using StopSource = std::stop_source;
 template <typename Callable>
 using StopCallback = std::stop_callback<Callable>;
 
-/// Helper class for using std::stop_callback on Awaiter
+/// Concept for stoppable token (like std::stop_token)
+template< class Token >
+concept StoppableToken = requires (const Token token) {
+    { token.stop_requested() } noexcept -> std::same_as<bool>;
+    { token.stop_possible() } noexcept -> std::same_as<bool>;
+};
+
+/// Helper class for using std::stop_callback on Awaiter, like optional<stop_callback<Fn>>
 template <typename Callable>
 class StopCallbackEx {
 public:

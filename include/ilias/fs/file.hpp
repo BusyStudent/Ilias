@@ -208,7 +208,7 @@ public:
      * 
      * @return IoTask<void> 
      */
-    auto flush() -> IoTask<void> {
+    auto flush() const -> IoTask<void> {
         co_return co_await ilias::blocking([&]() -> IoResult<void> {
 #if defined(_WIN32)
             if (::FlushFileBuffers(fd())) {
@@ -396,7 +396,7 @@ inline auto OpenOptions::doOpen(OpenOptions self, fs::Path path) -> IoTask<File>
         access |= GENERIC_WRITE;
     }
     if (self.mAppend) {
-        access &= ~(DWORD)GENERIC_WRITE;
+        access &= ~static_cast<::DWORD>(GENERIC_WRITE);
         access |= FILE_APPEND_DATA;
     }
 
@@ -417,8 +417,8 @@ inline auto OpenOptions::doOpen(OpenOptions self, fs::Path path) -> IoTask<File>
         creationDisposition = OPEN_EXISTING;
     }
 
-    auto fd = co_await ilias::blocking([&]() { // The CreateFileW may block
-        auto fd = ::CreateFileW(
+    ::HANDLE fd = co_await ilias::blocking([&]() { // The CreateFileW may block
+        ::HANDLE fd = ::CreateFileW(
             path.wstring().c_str(),
             access,
             self.mShareMode,
@@ -503,7 +503,7 @@ inline auto OpenOptions::doOpen(OpenOptions self, fs::Path path) -> IoTask<File>
     if (::GetFileType(fd) == FILE_TYPE_DISK) {
         ::LARGE_INTEGER offset { .QuadPart = 0 };
         ::LARGE_INTEGER cur;
-        if (::SetFilePointerEx(fd, offset, &cur, FILE_CURRENT)) {
+        if (::SetFilePointerEx(fd, offset, &cur, FILE_CURRENT)) { // NOLINT(readability-implicit-bool-conversion)
             off = cur.QuadPart;
         }
     }
@@ -517,12 +517,12 @@ inline auto OpenOptions::doOpen(OpenOptions self, fs::Path path) -> IoTask<File>
     }
 #endif // defined(_WIN32)
 
-    co_return File {std::move(handle), off};
+    co_return File{std::move(handle), off};
 }
 
 // Predefined open options
-constexpr OpenOptions OpenOptions::ReadOnly = OpenOptions {}.read(true);
-constexpr OpenOptions OpenOptions::WriteOnly = OpenOptions {}.write(true).create(true).truncate(true);
-constexpr OpenOptions OpenOptions::ReadWrite = OpenOptions {}.read(true).write(true).create(true);
+inline constexpr OpenOptions OpenOptions::ReadOnly = OpenOptions{}.read(true);
+inline constexpr OpenOptions OpenOptions::WriteOnly = OpenOptions{}.write(true).create(true).truncate(true);
+inline constexpr OpenOptions OpenOptions::ReadWrite = OpenOptions{}.read(true).write(true).create(true);
 
 ILIAS_NS_END

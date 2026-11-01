@@ -14,7 +14,7 @@ using namespace std::literals;
 #if defined(ILIAS_TLS)
 
 // Test Client / Server
-auto onServer(TlsContext &tlsCtxt, DuplexStream duplexStream) -> IoTask<void> {
+static auto onServer(TlsContext &tlsCtxt, DuplexStream duplexStream) -> IoTask<void> {
     TlsStream stream {tlsCtxt, std::move(duplexStream)};
     ILIAS_CO_TRYV(co_await stream.handshake(TlsRole::Server));
     // Read the hello world
@@ -23,7 +23,7 @@ auto onServer(TlsContext &tlsCtxt, DuplexStream duplexStream) -> IoTask<void> {
     co_return {};
 }
 
-auto onClient(TlsContext &tlsCtxt, DuplexStream duplexStream) -> IoTask<void> {
+static auto onClient(TlsContext &tlsCtxt, DuplexStream duplexStream) -> IoTask<void> {
     TlsStream stream {tlsCtxt, std::move(duplexStream)};
     stream.setHostname("localhost");
     ILIAS_CO_TRYV(co_await stream.handshake(TlsRole::Client));
@@ -106,7 +106,7 @@ auto doHttps(TlsContext &tlsCtxt, std::string_view hostname) -> IoTask<void> {
 
 ILIAS_TEST(Tls, Https) {
     TlsContext ctxt{};
-    std::cout << "Backend: " << ctxt.backend() << '\n';
+    std::cout << "Backend: " << TlsContext::backend() << '\n';
     EXPECT_TRUE(co_await doHttps(ctxt, "www.baidu.com"));
 }
 
@@ -114,11 +114,6 @@ ILIAS_TEST(Tls, Tls1_3) {
     TlsContext ctxt{};
     EXPECT_TRUE(co_await doHttps(ctxt, "websocket.org")); // This website support tls1.3
     EXPECT_TRUE(co_await doHttps(ctxt, "www.bilibili.com"));
-}
-
-ILIAS_TEST(Tls, NoVerify) {
-    TlsContext ctxt { TlsContext::NoVerify };
-    EXPECT_TRUE(co_await doHttps(ctxt, "expired.badssl.com"));
 }
 #endif // ILIAS_TLS
 

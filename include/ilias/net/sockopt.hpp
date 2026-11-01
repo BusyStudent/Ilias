@@ -27,6 +27,7 @@
     #endif // defined(SIO_UDP_NETRESET)
 #else
     #include <netinet/tcp.h>
+    #include <netinet/udp.h>
 #endif // defined(_WIN32)
 
 ILIAS_NS_BEGIN
@@ -88,7 +89,7 @@ template <int Level, int Optname, typename T, OptionAccess Access = OptionAccess
 class OptionT {
 public:
     constexpr OptionT() = default;
-    constexpr OptionT(T value) : mValue(value) { }
+    constexpr OptionT(T value) : mValue(value) {}
 
     auto setopt(socket_t sock) const -> IoResult<void> requires ((Access & OptionAccess::Write) == OptionAccess::Write) {
         auto ret = ::setsockopt(sock, Level, Optname, reinterpret_cast<const char *>(&mValue), sizeof(T));
@@ -273,13 +274,114 @@ using TcpKeepCnt = OptionT<IPPROTO_TCP, TCP_KEEPCNT, dword_t>;
 using TcpUserTimeout = OptionT<IPPROTO_TCP, TCP_USER_TIMEOUT, int>;
 #endif // defined(TCP_USER_TIMEOUT)
 
+// MARK: IPPROTO_UDP
+#if defined(UDP_SEND_MSG_SIZE) && defined(UDP_RECV_MAX_COALESCED_SIZE)
+/**
+ * @brief Set Default UDP segment payload size in bytes; zero disables segmentation.
+ * 
+ */
+using UdpSendMsgSize = OptionT<IPPROTO_UDP, UDP_SEND_MSG_SIZE, ::DWORD>;
+
+/**
+ * @brief Set Maximum coalesced receive size in bytes; zero disables coalescing.
+ * 
+ */
+using UdpRecvMaxCoalescedSize = OptionT<IPPROTO_UDP, UDP_RECV_MAX_COALESCED_SIZE, ::DWORD>;
+#endif // defined(UDP_SEND_MSG_SIZE) && defined(UDP_RECV_MAX_COALESCED_SIZE)
+
+#if defined(UDP_SEGMENT) && defined(UDP_GRO)
+/**
+ * @brief Set Default UDP segment payload size
+ * 
+ */
+using UdpSegment = OptionT<IPPROTO_UDP, UDP_SEGMENT, int>;
+
+/**
+ * @brief Set Enable coalesced UDP receives and UDP_GRO metadata.
+ * 
+ */
+using UdpGro = OptionT<IPPROTO_UDP, UDP_GRO, int>;
+#endif // defined(UDP_SEGMENT) && defined(UDP_GRO)
+
+// MARK: IPPROTO_IP
+#if defined(IP_RECVECN)
+/**
+ * @brief Enable IP_ECN metadata on received datagrams.
+ * 
+ */
+using Ipv4RecvEcn = OptionT<IPPROTO_IP, IP_RECVECN, dword_t>;
+#endif // defined(IP_RECVECN)
+
+#if defined(IP_RECVTOS)
+/**
+ * @brief Enable IPv4 TOS metadata on received datagrams.
+ * 
+ */
+using Ipv4RecvTos = OptionT<IPPROTO_IP, IP_RECVTOS, int>;
+#endif // defined(IP_RECVTOS)
+
+/**
+ * @brief Enable IP_PKTINFO metadata on received datagrams.
+ * 
+ */
+using Ipv4RecvPktInfo = OptionT<IPPROTO_IP, IP_PKTINFO, dword_t>;
+
+/**
+ * @brief Set the option of the IPv4 mtu discovery
+ * 
+ */
+using Ipv4MtuDiscover = OptionT<IPPROTO_IP, IP_MTU_DISCOVER, dword_t>;
+
+/**
+ * @brief Get the IPv4 mtu of the socket
+ * 
+ */
+using Ipv4Mtu = OptionT<IPPROTO_IP, IP_MTU, dword_t, OptionAccess::Read>;
+
+
 // MARK: IPPROTO_IPV6
 /**
- * @brief Set the ipv6 socket option IPV6_V6ONLY (true or false)
+ * @brief Set the IPv6 socket option IPV6_V6ONLY (true or false)
  * 
  */
 using Ipv6Only = OptionT<IPPROTO_IPV6, IPV6_V6ONLY, dword_t>;
 
+/**
+ * @brief Enable IPv6 traffic-class metadata on received datagrams.
+ * 
+ */
+using Ipv6RecvTrafficClass = OptionT<IPPROTO_IPV6, IPV6_RECVTCLASS, dword_t>;
+
+#if defined(IPV6_RECVECN) // Windows
+/**
+ * @brief Enable IPV6_ECN metadata on received datagrams.
+ * 
+ */
+using Ipv6RecvEcn = OptionT<IPPROTO_IPV6, IPV6_RECVECN, dword_t>;
+#endif // defined(IPV6_RECVECN)
+
+/**
+ * @brief Enable IPV6_PKTINFO metadata on received datagrams.
+ *
+ * 
+ */
+#if defined(_WIN32) && defined(IPV6_PKTINFO)
+using Ipv6RecvPktInfo = OptionT<IPPROTO_IPV6, IPV6_PKTINFO, dword_t>;
+#elif defined(IPV6_RECVPKTINFO)
+using Ipv6RecvPktInfo = OptionT<IPPROTO_IPV6, IPV6_RECVPKTINFO, int>;
+#endif // defined(_WIN32) && defined(IPV6_PKTINFO)
+
+/**
+ * @brief Set the option of the IPv6 mtu discovery
+ * 
+ */
+using Ipv6MtuDiscover = OptionT<IPPROTO_IPV6, IPV6_MTU_DISCOVER, dword_t>;
+
+/**
+ * @brief Get the IPv6 mtu of the socket
+ *
+ */
+using Ipv6Mtu = OptionT<IPPROTO_IPV6, IPV6_MTU, dword_t, OptionAccess::Read>;
 
 // MARK: Platform specific
 #if defined(_WIN32)
@@ -299,13 +401,19 @@ using UdpNetReset = WSAOptionT<SIO_UDP_NETRESET, ::DWORD, OptionAccess::Write>;
  * @brief Get the base handle of the socket
  * 
  */
-using BaseHandle = WSAOptionT<SIO_BASE_HANDLE, ::DWORD, OptionAccess::Read>;
+using BaseHandle = WSAOptionT<SIO_BASE_HANDLE, ::SOCKET, OptionAccess::Read>;
 
 /**
  * @brief Get the protocol information of the socket
  * 
  */
 using ProtocolInfo = OptionT<SOL_SOCKET, SO_PROTOCOL_INFOW, ::WSAPROTOCOL_INFOW, OptionAccess::Read>;
+
+/**
+ * @brief Set the exclusive address use (true or false)
+ * 
+ */
+using ExclusiveAddrUse = OptionT<SOL_SOCKET, SO_EXCLUSIVEADDRUSE, ::DWORD, OptionAccess::Write>;
 #endif // defined(WIN32)
 
 

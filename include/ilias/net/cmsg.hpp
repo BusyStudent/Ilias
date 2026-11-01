@@ -22,6 +22,10 @@
 #include <array>
 #include <new>
 
+#if defined(__linux__)
+    #include <netinet/udp.h>
+#endif // __linux__
+
 ILIAS_NS_BEGIN
 
 // Import system types
@@ -110,13 +114,94 @@ private:
 };
 
 // MARK: IPPROTO_IP
+/**
+ * @brief The IPv4 TTL control message
+ * 
+ */
 using Ipv4Ttl = CmsgT<IPPROTO_IP, IP_TTL, int>;
+
+/**
+ * @brief The IPv4 Type of Service control message (sendmsg)
+ * 
+ */
 using Ipv4TosSend = CmsgT<IPPROTO_IP, IP_TOS, int>;
+
+/**
+ * @brief The IPv4 Type of Service control message (recvmsg)
+ * 
+ */
 using Ipv4TosRecv = CmsgT<IPPROTO_IP, IP_TOS, uint8_t>;
 
+/**
+ * @brief The IPv4 Packet Info control message
+ * 
+ */
+using Ipv4PktInfo = CmsgT<IPPROTO_IP, IP_PKTINFO, ::in_pktinfo>;
+
+#if defined(IP_ECN)
+/**
+ * @brief The IPv4 ECN codepoint for sending or receiving a datagram.
+ * 
+ */
+using Ipv4Ecn = CmsgT<IPPROTO_IP, IP_ECN, int>;
+#endif // IP_ECN
+
 // MARK: IPPROTO_IPV6
+/**
+ * @brief The IPv6 Hop Limit control message
+ * 
+ */
 using Ipv6HopLimit = CmsgT<IPPROTO_IPV6, IPV6_HOPLIMIT, int>;
+
+/**
+ * @brief The IPv6 Traffic Class control message
+ * 
+ */
 using Ipv6TrafficClass = CmsgT<IPPROTO_IPV6, IPV6_TCLASS, int>;
+
+/**
+ * @brief The IPv6 Packet Info control message
+ * 
+ */
+using Ipv6PktInfo = CmsgT<IPPROTO_IPV6, IPV6_PKTINFO, ::in6_pktinfo>;
+
+#if defined(IPV6_ECN)
+/**
+ * @brief The IPv6 ECN codepoint for sending or receiving a datagram.
+ * 
+ */
+using Ipv6Ecn = CmsgT<IPPROTO_IPV6, IPV6_ECN, int>;
+#endif // IPV6_ECN
+
+// MARK: IPPROTO_UDP
+#if defined(UDP_SEND_MSG_SIZE) && defined(UDP_COALESCED_INFO)
+/**
+ * @brief The Per-message UDP segment payload size in bytes (sendmsg)
+ * 
+ */
+using UdpSendMsgSize = CmsgT<IPPROTO_UDP, UDP_SEND_MSG_SIZE, ::DWORD>;
+
+/**
+ * @brief The Original segment payload size in a coalesced receive (recvmsg)
+ * 
+ */
+using UdpCoalescedInfo = CmsgT<IPPROTO_UDP, UDP_COALESCED_INFO, ::DWORD>;
+#endif // UDP_SEND_MSG_SIZE && UDP_COALESCED_INFO
+
+#if defined(UDP_SEGMENT) && defined(UDP_GRO)
+/**
+ * @brief The Per-message UDP segment payload size in bytes (sendmsg)
+ * 
+ */
+using UdpSegment = CmsgT<IPPROTO_UDP, UDP_SEGMENT, uint16_t>;
+
+/**
+ * @brief brief Original segment payload size in a GRO receive (recvmsg)
+ * 
+ */
+using UdpGro = CmsgT<IPPROTO_UDP, UDP_GRO, int>;
+#endif // UDP_SEGMENT && UDP_GRO
+
 
 } // namespace cmsg
 

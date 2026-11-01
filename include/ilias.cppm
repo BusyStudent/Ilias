@@ -49,7 +49,6 @@ module;
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include <version>
 
 // Container
 #include <array>

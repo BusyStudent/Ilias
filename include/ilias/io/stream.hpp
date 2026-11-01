@@ -14,10 +14,10 @@
 #include <ilias/io/ext.hpp>
 #include <ilias/buffer.hpp> // Buffer MutableBuffer
 #include <utility> // std::min
+#include <limits> // std::numeric_limits
 #include <string> // std::string
 #include <vector> // std::vector
 #include <array> // std::array
-#include <limits>
 
 // For min max macro in windows.h :(
 #undef min
@@ -184,7 +184,7 @@ public:
      * 
      */
     auto shrinkToFit() -> void {
-        if (size() > 0) {
+        if (!empty()) {
             ::memmove(mBuffer.data(), mBuffer.data() + mPos, mTail - mPos);
             mTail -= mPos;
             mPos = 0;
