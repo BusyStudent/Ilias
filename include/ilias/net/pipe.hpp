@@ -16,6 +16,7 @@
 #include <ilias/io/ext.hpp>
 #include <ilias/io/fd.hpp>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

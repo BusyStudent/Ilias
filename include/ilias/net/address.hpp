@@ -20,6 +20,7 @@
 #include <array>
 #include <span>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

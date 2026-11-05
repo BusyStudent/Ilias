@@ -9,11 +9,17 @@
 ILIAS_NS_BEGIN
 
 // Forward declarations
+ILIAS_EXPORT
 class ReadableView;
+ILIAS_EXPORT
 class WritableView;
+ILIAS_EXPORT
 class StreamView;
+ILIAS_EXPORT
 class DynReadable;
+ILIAS_EXPORT
 class DynWritable;
+ILIAS_EXPORT
 class DynStream;
 
 // The implementation of the trait
@@ -101,6 +107,8 @@ concept Dyn = isDynType<std::remove_cvref_t<T> >;
 using DeleteHandler = void (*)(void *object) noexcept;
 
 } // namespace dyn_traits
+
+ILIAS_EXPORT_BEGIN
 
 
 // MARK: Stream
@@ -652,5 +660,7 @@ private:
 // For compatible with old code
 using IStreamClient [[deprecated("Use DynStream instead")]] = DynStream;
 using DynStreamClient [[deprecated("Use DynStream instead")]] = DynStream;
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

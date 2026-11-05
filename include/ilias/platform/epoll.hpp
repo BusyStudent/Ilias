@@ -25,6 +25,7 @@
 
 #include <sys/epoll.h> // epoll_event
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 namespace os_linux {

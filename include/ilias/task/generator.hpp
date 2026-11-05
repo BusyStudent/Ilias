@@ -167,7 +167,9 @@ public:
     }
 };
 
-} // namespace detail
+} // namespace task
+
+ILIAS_EXPORT_BEGIN
 
 /**
  * @brief The Generator class, used to produce value by yield
@@ -249,5 +251,7 @@ private:
     handle_type mHandle;
 friend class task::GeneratorPromise<T>;
 };
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

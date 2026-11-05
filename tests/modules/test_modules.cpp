@@ -7,6 +7,8 @@ import std;
 using namespace ilias;
 using namespace std::chrono_literals;
 
+namespace {
+
 auto tryMacros() -> IoTask<int> {
     IoResult<int> res = 42;
     ILIAS_CO_TRY(auto val, res);
@@ -28,7 +30,9 @@ auto mainTask() -> Task<int> {
         std::println("Bad !!!");
     }
     co_await sleep(1000ms);
-    std::println("Hello, world! from main Tasks!!! {}", IPAddress4::any());
+
+    std::println("Hello, world! from main Tasks!!! {}", ILIAS_VERSION_STRING);
+    std::println("This is a sockopt : {}", sockopt::ReuseAddress{true});
 
     // When all
     std::vector<Task<void>> tasks;
@@ -39,6 +43,8 @@ auto mainTask() -> Task<int> {
     co_await TcpListener::bind("127.0.0.1:0");
     co_return 0;
 }
+
+} // namespace
 
 int main() {
     ilias::PlatformContext ctxt;

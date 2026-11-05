@@ -13,9 +13,13 @@
 ILIAS_NS_BEGIN
 
 // Forward declarations
+ILIAS_EXPORT
 enum class TlsRole;
+ILIAS_EXPORT
 enum class TlsBackend;
+ILIAS_EXPORT
 enum class TlsVersion;
+ILIAS_EXPORT
 enum class TlsVerify;
 
 #if defined(_WIN32)
@@ -82,6 +86,8 @@ using TlsHandle = std::unique_ptr<TlsState, TlsState::Deleter>;
 using TlsContextHandle = std::unique_ptr<void, context::Deleter>;
 
 } // namespace tls
+
+ILIAS_EXPORT_BEGIN
 
 /**
  * @brief The role of the TlsStream, used for handshake
@@ -339,5 +345,7 @@ inline auto toString(TlsVersion version) -> std::string_view {
 // Mark it
 ILIAS_FORMATTABLE(TlsBackend);
 ILIAS_FORMATTABLE(TlsVersion);
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

@@ -3,6 +3,7 @@
 #include <ilias/task/task.hpp>
 #include <ilias/io/error.hpp>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 namespace signal {

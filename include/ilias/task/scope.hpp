@@ -71,6 +71,8 @@ public:
 
 } // namespace task
 
+ILIAS_EXPORT_BEGIN
+
 /**
  * @brief Scope guard for managing task lifetimes
  *
@@ -193,5 +195,7 @@ private:
 
     task::TaskScopeBase mScope;
 };
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

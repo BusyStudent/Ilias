@@ -30,6 +30,7 @@
     #include <netinet/udp.h>
 #endif // defined(_WIN32)
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

@@ -162,6 +162,8 @@ public:
 
 } // namespace task
 
+ILIAS_EXPORT_BEGIN
+
 /**
  * @brief The TaskGroup of tasks, spawn tasks in here and wait for them to finish.
  * @note If the group is destroyed, all tasks will receive the stop request. The TaskGroup will not wait for the tasks to finish.
@@ -301,5 +303,7 @@ private:
 // Types
 template <Awaitable T>
 TaskGroup(T awaitable, runtime::CaptureSource source = {}) -> TaskGroup<AwaitableResult<T> >;
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

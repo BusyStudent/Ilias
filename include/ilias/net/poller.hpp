@@ -3,6 +3,7 @@
 #include <ilias/net/sockfd.hpp>
 #include <ilias/io/context.hpp>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

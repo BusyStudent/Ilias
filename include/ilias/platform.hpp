@@ -25,6 +25,7 @@
 #endif
 
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

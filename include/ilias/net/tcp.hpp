@@ -16,6 +16,7 @@
 #include <ilias/io/context.hpp>
 #include <ilias/io/ext.hpp>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // Forward declarations

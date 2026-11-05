@@ -60,10 +60,16 @@ public:
 };
 
 // Forward declarations
+ILIAS_EXPORT
 class CoroContext;
 
+ILIAS_EXPORT
+class CoroHandle;
+
 // Handler for stopped and completion
+ILIAS_EXPORT
 using StoppedHandler = void (*)(CoroContext &) noexcept;
+ILIAS_EXPORT
 using CompletionHandler = void (*)(CoroContext &) noexcept;
 
 // MARK: CoroContext
@@ -82,6 +88,7 @@ using CompletionHandler = void (*)(CoroContext &) noexcept;
 //   used for cooperative cancellation.
 // - Contexts built with std::nostopstate are intentionally not cancellable.
 // - Contexts should be Pinned to memory before any coroutine runs
+ILIAS_EXPORT
 class CoroContext {
 public:
     CoroContext() = default;
@@ -275,6 +282,7 @@ friend class CoroHandle;
 
 // MARK: CoroHandle
 // The common part handle of all stackless coroutines
+ILIAS_EXPORT
 class CoroHandle {
 public:
     // From type erased handle and promise reference
@@ -420,6 +428,8 @@ struct AwaiterBase {
 
     CoroContext *mCtxt = nullptr;
 };
+
+ILIAS_EXPORT_BEGIN
 
 // Get the stop token from the current coroutine ctxt
 [[nodiscard]] 
@@ -568,6 +578,8 @@ inline auto suspendForever() noexcept {
 inline auto stopped() noexcept {
     return stopPoint();
 }
+
+ILIAS_EXPORT_END
 
 } // namespace this_coro
 

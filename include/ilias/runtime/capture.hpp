@@ -15,6 +15,7 @@ namespace runtime {
  * @brief The virtual stack frame for coroutines
  * 
  */
+ILIAS_EXPORT
 class StackFrame {
 public:
     StackFrame() = default;
@@ -108,6 +109,7 @@ private:
  * @brief The full stack trace for coroutines
  * 
  */
+ILIAS_EXPORT
 class Stacktrace {
 public:
     enum ColorMode {
@@ -189,8 +191,10 @@ private:
 };
 
 // Mark all formattable
+ILIAS_EXPORT_BEGIN
 ILIAS_FORMATTABLE(StackFrame);
 ILIAS_FORMATTABLE(Stacktrace);
+ILIAS_EXPORT_END
 
 #if ILIAS_CORO_TRACE
 
@@ -198,6 +202,7 @@ ILIAS_FORMATTABLE(Stacktrace);
  * @brief Capture a source location, use `CaptureSouce loc = {}` to capture the current location
  * 
  */
+ILIAS_EXPORT
 class CaptureSource {
 public:
     constexpr CaptureSource(std::source_location loc = std::source_location::current()) noexcept : mLoc(loc) {}
@@ -215,6 +220,7 @@ private:
  * @brief Capture a source location, currently disabled
  * 
  */
+ILIAS_EXPORT
 using CaptureSource = std::monostate;
 
 #endif // ILIAS_CORO_TRACE
@@ -222,7 +228,9 @@ using CaptureSource = std::monostate;
 } // namespace runtime
 
 // Export to user
+ILIAS_EXPORT
 using runtime::StackFrame;
+ILIAS_EXPORT
 using runtime::Stacktrace;
 
 ILIAS_NS_END

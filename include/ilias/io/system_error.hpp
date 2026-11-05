@@ -25,6 +25,7 @@
     #define ILIAS_MAP(x) x
 #endif
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

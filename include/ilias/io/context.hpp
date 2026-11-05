@@ -19,6 +19,7 @@
 #include <cstddef> // size_t
 #include <memory> // std::unique_ptr
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // Forward declarations

@@ -177,6 +177,7 @@ private:
 
 } // namespace task
 
+ILIAS_EXPORT_BEGIN
 
 /**
  * @brief The tags used to create a thread (specific executor)
@@ -317,5 +318,7 @@ template <typename E>
 auto useExecutor() -> UseExecutor<E> {
     return {};
 }
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

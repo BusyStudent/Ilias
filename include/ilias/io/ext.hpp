@@ -62,6 +62,7 @@
     ILIAS_DEFINE_IO_INT_FUNC(Int##bits##LE, int##bits##_t,  little)
 
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // Utility functions for io traits

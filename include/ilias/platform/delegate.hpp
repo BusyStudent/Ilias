@@ -57,6 +57,7 @@ inline auto makeThreadedContextImpl() -> std::shared_ptr<T> {
  * @brief Helper class to proxy all io operations to another context
  * 
  */
+ILIAS_EXPORT
 class ProxyContext : public IoContext {
 public:
     explicit ProxyContext(std::shared_ptr<IoContext> context);
@@ -175,6 +176,7 @@ inline auto ProxyContext::poll(IoDescriptor *fd, uint32_t events) -> IoTask<uint
  * 
  * @tparam T 
  */
+ILIAS_EXPORT
 template <typename T> requires(std::is_base_of_v<IoContext, T>)
 inline auto makeThreadedContext() -> std::shared_ptr<T> {
     return detail::makeThreadedContextImpl<T>();

@@ -28,9 +28,11 @@ ILIAS_NS_BEGIN
 namespace mpmc {
 
 // Re-import types
+ILIAS_EXPORT
 using sync::Sendable;
 
 // Forward declaration
+ILIAS_EXPORT
 template <Sendable T>
 class Permit;
 
@@ -225,6 +227,8 @@ template <Sendable T>
 using ChanPermit     = std::unique_ptr<Channel<T>, ChanPermitDeleter>;
 
 } // namespace detail
+
+ILIAS_EXPORT_BEGIN
 
 template <Sendable T>
 class Sender;
@@ -657,6 +661,8 @@ inline auto channel(size_t capacity = std::numeric_limits<size_t>::max()) -> Pai
         }
     };
 }
+
+ILIAS_EXPORT_END
 
 } // namespace mpmc
 

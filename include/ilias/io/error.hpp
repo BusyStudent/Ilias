@@ -4,6 +4,7 @@
 #include <system_error>
 #include <string>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // Result for doing io operations

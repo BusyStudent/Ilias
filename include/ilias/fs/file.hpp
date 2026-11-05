@@ -23,6 +23,7 @@
     #include <ilias/detail/win32defs.hpp>
 #endif // _WIN32
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 class File;

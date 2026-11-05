@@ -171,9 +171,11 @@ ILIAS_API extern auto await(runtime::CoroHandle handle, runtime::CaptureSource s
 namespace this_fiber {
 
 // Get the current fiber's stop token
+ILIAS_EXPORT
 ILIAS_API extern auto stopToken() -> runtime::StopToken;
 
 // Yield the current fiber, resume the fiber when the next time it is scheduled
+ILIAS_EXPORT
 ILIAS_API extern auto yield() -> void;
 
 // Functor for impl await
@@ -206,9 +208,12 @@ public:
  * @param awaitable
  * @return AwaitableResult<T>
  */
+ILIAS_EXPORT
 constexpr inline Await await {};
 
 } // namespace this_fiber
+
+ILIAS_EXPORT_BEGIN
 
 /**
  * @brief The Fiber class, stackful coroutine, hold the context of the coroutine
@@ -308,5 +313,7 @@ Fiber(Fn, Args ...) -> Fiber<std::invoke_result_t<Fn, Args...> >;
  * 
  */
 class FiberCancellation final {};
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

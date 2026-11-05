@@ -139,6 +139,8 @@ private:
 
 } // namespace detail
 
+ILIAS_EXPORT_BEGIN
+
 // Re-import helpers type
 using sync::Sendable;
 
@@ -374,6 +376,8 @@ inline auto channel() -> Pair<T> {
         .receiver = Receiver<T> {ptr}
     };
 }
+
+ILIAS_EXPORT_END
 
 } // namespace oneshot
 

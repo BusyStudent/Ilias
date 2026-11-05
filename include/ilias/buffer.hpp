@@ -18,6 +18,7 @@
 #include <span> // std::span
 #include <bit> // std::bit_cast
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

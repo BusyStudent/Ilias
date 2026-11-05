@@ -365,6 +365,8 @@ public:
 
 } // namespace task
 
+ILIAS_EXPORT_BEGIN
+
 /**
  * @brief The lazy task class, respresent a task that is not started yet, it take the ownership of the coroutine
  * 
@@ -494,6 +496,8 @@ constexpr inline task::ToTask toTask{};
 
 // Blocking wait an awaitable complete
 constexpr inline task::BlockingWait blockingWait{};
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END
 

@@ -55,6 +55,7 @@ concept RawAwaitable = Awaiter<T> || HasCoAwait<T> || HasMemberCoAwait<T>;
  * 
  * @tparam T 
  */
+ILIAS_EXPORT
 template <typename T>
 struct IntoRawAwaitableTrait;
 
@@ -182,11 +183,13 @@ inline auto just() -> Just<void> {
 
 } // namespace runtime
 
+ILIAS_EXPORT_BEGIN
 using runtime::AwaitableSequenceValue;
 using runtime::AwaitableSequence;
 using runtime::AwaitableResult;
 using runtime::Awaitable;
 using runtime::Just;
 using runtime::just;
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

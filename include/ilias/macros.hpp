@@ -1,4 +1,10 @@
 /**
+  ___ _ _             ____              _   _                
+ |_ _| (_) __ _ ___  |  _ \ _   _ _ __ | |_(_)_ __ ___   ___ 
+  | || | |/ _` / __| | |_) | | | | '_ \| __| | '_ ` _ \ / _ \
+  | || | | (_| \__ \ |  _ <| |_| | | | | |_| | | | | | |  __/
+ |___|_|_|\__,_|___/ |_| \_\\__,_|_| |_|\__|_|_| |_| |_|\___|
+
  * @file macros.hpp
  * @author BusyStudent (fyw90mc@gmail.com)
  * @brief Header of user api macros (it can be include when use module)
@@ -38,7 +44,7 @@
     #define ILIAS_BASIC_TRY_IMPL(var, tmp, ret, ...)           \
         auto &&tmp = (__VA_ARGS__);                            \
         if (!tmp) {                                            \
-            ret ::ilias::makeErr(std::move(tmp));              \
+            ret ::ilias::detail::makeErr(std::move(tmp));      \
         }                                                      \
         static_cast<void>(tmp);                                \
         var = std::move(*tmp)
@@ -48,7 +54,7 @@
 #define ILIAS_BASIC_TRYV_IMPL(ret, ...)                        \
     do {                                                       \
         if (auto &&_res = (__VA_ARGS__); !_res) {              \
-            ret ::ilias::makeErr(std::move(_res));             \
+            ret ::ilias::detail::makeErr(std::move(_res));     \
         }                                                      \
     } while (false)
 
@@ -57,7 +63,7 @@
     ({                                                     \
         auto &&tmp = (__VA_ARGS__);                        \
         if (!tmp) {                                        \
-            ret ::ilias::makeErr(std::move(tmp));          \
+            ret ::ilias::detail::makeErr(std::move(tmp));  \
         }                                                  \
         std::move(*tmp);                                   \
     })

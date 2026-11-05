@@ -166,22 +166,20 @@ public:
 
     auto await_suspend(CoroHandle caller) -> void {
         mHandle = caller;
-        mCtxt->setCompletionHandler<&TaskSpawnAwaiterBase::onCompletion>(this);
-        mReg.register_<&TaskSpawnAwaiterBase::onStopRequested>(caller.stopToken(), this); // Forward the stop request
+
+        // Workaround the issue that of msvc module
+        mCtxt->setCompletionHandler([this](TaskSpawnContextBase &) noexcept {
+            if (mCtxt->isStopped() && mHandle.isStopRequested()) { // The target is stopped and the caller was requested to stop
+                mHandle.setStopped();
+                return; // Forward the stop
+            }
+            mHandle.schedule(); // We should resume the caller by ourself
+        });
+        mReg.register_(caller.stopToken(), [this]() noexcept {
+            mCtxt->stop();
+        }); // Forward the stop request
     }
 protected:
-    auto onStopRequested() -> void {
-        mCtxt->stop();
-    }
-
-    auto onCompletion(TaskSpawnContextBase &) -> void {
-        if (mCtxt->isStopped() && mHandle.isStopRequested()) { // The target is stopped and the caller was requested to stop
-            mHandle.setStopped();
-            return; // Forward the stop
-        }
-        mHandle.schedule(); // We should resume the caller by ourself
-    }
-
     Rc<TaskSpawnContextBase> mCtxt;
     StopRegistration mReg;
     CoroHandle mHandle;
@@ -199,6 +197,8 @@ public:
 };
 
 } // namespace task
+
+ILIAS_EXPORT_BEGIN
 
 /**
  * @brief The handle of an spawned task
@@ -374,5 +374,7 @@ public:
 
     FireAndForget(Task<void> task) { spawn(std::move(task)); }
 };
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

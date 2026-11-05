@@ -6,6 +6,7 @@
 #include <optional> // std::optional
 #include <atomic> // std::atomic
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 class Semaphore;

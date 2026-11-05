@@ -20,6 +20,7 @@
 #include <cstdio> // SEEK_CUR
 #include <span>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

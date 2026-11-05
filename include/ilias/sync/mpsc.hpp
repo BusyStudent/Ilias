@@ -26,9 +26,11 @@ ILIAS_NS_BEGIN
 namespace mpsc {
 
 // Re-import types
+ILIAS_EXPORT
 using sync::Sendable;
 
 // Forward declaration
+ILIAS_EXPORT
 template <Sendable T>
 class Permit;
 
@@ -219,6 +221,8 @@ template <Sendable T>
 using ChanReceiver   = std::unique_ptr<Channel<T>, sync::ChanReceiverDeleter>;
 
 } // namespace detail
+
+ILIAS_EXPORT_BEGIN
 
 template <Sendable T>
 class Sender;
@@ -601,6 +605,8 @@ inline auto channel(size_t capacity = std::numeric_limits<size_t>::max()) -> Pai
         .receiver = Receiver<T> {ptr}
     };
 }
+
+ILIAS_EXPORT_END
 
 } // namespace mpsc
 

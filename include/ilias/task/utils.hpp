@@ -434,6 +434,8 @@ struct runtime::IntoRawAwaitableTrait<T> {
     static auto into(T &&token) -> task::StopTokenAwaiter { return {std::forward<T>(token)}; }
 };
 
+ILIAS_EXPORT_BEGIN
+
 // Public interface
 // Set an timeout for a task, return nullopt on timeout
 constexpr inline task::Timeout timeout{};
@@ -449,5 +451,7 @@ constexpr inline task::Finally finally{};
 
 // Map an awaitable result to another type
 constexpr inline task::Map fmap{};
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

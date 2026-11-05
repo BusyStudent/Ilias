@@ -20,6 +20,7 @@
 #include <deque> // std::deque
 #include <array> // std::array
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 namespace win32 {
@@ -30,6 +31,7 @@ struct NtDll;
  * @brief The iocp implementation of the io context
  * 
  */
+
 class ILIAS_API IocpContext final : public IoContext {
 public:
     IocpContext();

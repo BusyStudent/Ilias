@@ -11,6 +11,8 @@ ILIAS_NS_BEGIN
 
 namespace runtime {
 
+ILIAS_EXPORT_BEGIN
+
 /// The StopToken, used to get notify of the stop
 using StopToken = std::stop_token;
 
@@ -91,6 +93,8 @@ public:
 private:
     StopCallbackEx<Fn> mCallback;
 };
+
+ILIAS_EXPORT_END
 
 } // namespace runtime
 

@@ -15,6 +15,7 @@
 #include <ilias/net/msghdr.hpp> // MsgHdr
 #include <ilias/io/context.hpp>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // Forward declaration

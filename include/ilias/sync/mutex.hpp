@@ -8,7 +8,9 @@
 
 ILIAS_NS_BEGIN
 
+ILIAS_EXPORT
 class Mutex;
+ILIAS_EXPORT
 class MutexGuard;
 
 namespace sync {
@@ -31,6 +33,7 @@ friend class Mutex;
  * @brief The mutex lock guard, unlock when the object is destroyed
  * 
  */
+ILIAS_EXPORT
 class [[nodiscard]] MutexGuard {
 public:
     explicit MutexGuard(Mutex &m);
@@ -50,6 +53,7 @@ private:
  * 
  * @tparam T 
  */
+ILIAS_EXPORT
 template <typename T>
 class [[nodiscard]] LockedGuard {
 public:
@@ -74,6 +78,7 @@ private:
  * @brief The coroutine mutex, it is thread-safe
  * 
  */
+ILIAS_EXPORT
 class Mutex {
 public:
     Mutex(const Mutex &) = delete;
@@ -169,6 +174,7 @@ friend class sync::MutexAwaiter;
  * 
  * @tparam T 
  */
+ILIAS_EXPORT
 template <typename T>
 class Locked {
 public:

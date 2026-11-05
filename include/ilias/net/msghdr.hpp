@@ -44,6 +44,7 @@
     #define msg_flags dwFlags
 #endif // _WIN32
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // Import the system types

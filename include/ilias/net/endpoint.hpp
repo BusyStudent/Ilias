@@ -19,6 +19,7 @@
 #include <cstring>
 #include <compare>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

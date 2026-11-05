@@ -26,6 +26,7 @@
     #define ILIAS_STDERR_FILENO STDERR_FILENO
 #endif
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // Internal...

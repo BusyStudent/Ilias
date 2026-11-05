@@ -35,6 +35,7 @@ using ProcessHandle = IoHandle<FileDescriptor>; // pidfd
  * @brief The process class
  * 
  */
+ILIAS_EXPORT
 class ILIAS_API Process {
 public:
     class Builder;

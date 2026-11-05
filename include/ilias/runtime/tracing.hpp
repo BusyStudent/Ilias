@@ -22,6 +22,7 @@ namespace runtime {
  * @brief The id of tracing unit
  * 
  */
+ILIAS_EXPORT
 enum class SpanId : intptr_t {
     Invalid = 0,
 };
@@ -30,6 +31,7 @@ enum class SpanId : intptr_t {
  * @brief The state of the span
  * 
  */
+ILIAS_EXPORT
 enum class TraceState : uint8_t {
     Created = 0,
     Running,
@@ -42,6 +44,7 @@ enum class TraceState : uint8_t {
  * @note This struct should be keep in standard layout
  * 
  */
+ILIAS_EXPORT
 class TraceSpan {
 public:
     // ABI
@@ -76,6 +79,7 @@ public:
  * @brief The event used for tracing the coroutine execution
  * 
  */
+ILIAS_EXPORT
 class TraceEvent {
 public:
     enum Type {
@@ -210,6 +214,7 @@ private:
  * @note This interface is unstable and may change in the future
  * 
  */
+ILIAS_EXPORT
 class ILIAS_TRACING_API TracingSubscriber {
 public:
     virtual ~TracingSubscriber();
@@ -328,6 +333,7 @@ inline auto TraceRegistery::currentThread() -> const TraceRegistery * { return n
 #endif // !defined(ILIAS_CORO_TRACE)
 
 // Formatting
+ILIAS_EXPORT_BEGIN
 inline auto toString(SpanId id) -> std::string {
     if (id == SpanId::Invalid) return "Invalid";
     return std::to_string(static_cast<intptr_t>(id));
@@ -358,6 +364,7 @@ inline auto toString(TraceState state) -> std::string_view {
 ILIAS_FORMATTABLE(SpanId);
 ILIAS_FORMATTABLE(TraceState);
 ILIAS_FORMATTABLE(TraceEvent::Type);
+ILIAS_EXPORT_END
 
 } // namespace runtime
 

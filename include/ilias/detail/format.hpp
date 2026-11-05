@@ -33,7 +33,8 @@
     struct ilias::fmtlib::formatter<type> :                \
         ::ilias::detail::DefaultFormatter
 
-// Mark a type is formattable, generate the fmtlib bridge and ostream operator<<
+// Mark a type is formattable, generate the fmtlib bridge and ostream operator<<.
+// Invoke in an exported public region; the macro must not nest export declarations.
 #define ILIAS_FORMATTABLE(type)                              \
     inline auto _ilias_implToString(const type &t) {         \
         return ::ilias::detail::toStringImpl(t);             \

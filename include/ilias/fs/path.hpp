@@ -13,6 +13,7 @@
 #include <ilias/defines.hpp>
 #include <filesystem>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 namespace fs {

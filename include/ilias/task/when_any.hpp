@@ -144,17 +144,21 @@ public:
     }
 };
 
+ILIAS_EXPORT
 template <typename ...Ts>
 inline auto operator co_await(WhenAnyTuple<Ts...> &&tuple) noexcept {
     return WhenAnyAwaiter<Ts...> {tuple.mTasks, *tuple.mContext, tuple.mSource};
 }
 
+ILIAS_EXPORT
 template <typename T>
 inline auto operator co_await(WhenAnySequence<T> &&seq) noexcept {
     return WhenAnySequenceAwaiter<T> {seq.mTasks, *seq.mContext, seq.mSource};
 }
 
 } // namespace task
+
+ILIAS_EXPORT_BEGIN
 
 /**
  * @brief When Any on multiple awaitable
@@ -209,5 +213,7 @@ inline auto operator ||(
 {
     return whenAny(std::forward<T1>(a), std::forward<T2>(b));
 }
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

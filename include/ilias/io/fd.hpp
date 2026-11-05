@@ -23,6 +23,7 @@ ILIAS_NS_BEGIN
  * @brief RAII Wrapper for file descriptors. (fd on linux, HANDLE on windows). it take the ownership of the file descriptor.
  * 
  */
+ILIAS_EXPORT
 class FileDescriptor {
 public:
     explicit FileDescriptor(fd_t fd) : mFd(fd) {}
@@ -93,6 +94,7 @@ private:
  * @brief RAII wrapper for windows HANDLE. it take the ownership of the handle.
  * 
  */
+ILIAS_EXPORT
 class Win32Handle {
 public:
     explicit Win32Handle(HANDLE handle) : mHandle(normalized(handle)) {}

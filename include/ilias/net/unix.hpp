@@ -93,8 +93,11 @@ private:
 } // namespace detail
 
 // Forward declaration
+ILIAS_EXPORT
 class UnixStream;
+ILIAS_EXPORT
 class UnixDatagram; // TODO:
+ILIAS_EXPORT
 class UnixListener;
 
 /**
@@ -107,6 +110,7 @@ class UnixListener;
  * @endcode
  * 
  */
+ILIAS_EXPORT
 class UnixBuilder {
 public:
     explicit UnixBuilder(int type) : mFd(detail::UnixSocket::make(type)) {}
@@ -158,6 +162,7 @@ private:
  * @brief The unix socket stream class. a connected unix stream.
  * 
  */
+ILIAS_EXPORT
 class UnixStream final : public StreamExt<UnixStream> {
 public:
     UnixStream() = default;
@@ -317,6 +322,7 @@ private:
  * @brief The unix listener class.
  * 
  */
+ILIAS_EXPORT
 class UnixListener {
 public:
     UnixListener() = default;

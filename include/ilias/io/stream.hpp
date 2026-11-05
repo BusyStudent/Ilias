@@ -23,6 +23,7 @@
 #undef min
 #undef max
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // MARK: StreamBuffer

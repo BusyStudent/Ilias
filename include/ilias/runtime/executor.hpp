@@ -28,6 +28,7 @@ namespace runtime {
  * @brief Executor, it can post a callable and execute it in the run() method, it is one loop per thread
  * 
  */
+ILIAS_EXPORT
 class ILIAS_API Executor {
 public:
     virtual ~Executor();
@@ -123,6 +124,7 @@ private:
  * @brief The Mini Executor
  * 
  */
+ILIAS_EXPORT
 class ILIAS_API EventLoop : public Executor {
 public:
     EventLoop();
@@ -180,6 +182,7 @@ namespace runtime::threadpool {
 } // namespace runtime::threadpool
 
 // Re-export the EventLoop
+ILIAS_EXPORT
 using runtime::EventLoop;
 
 ILIAS_NS_END

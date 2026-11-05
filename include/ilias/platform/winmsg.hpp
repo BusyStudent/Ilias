@@ -10,6 +10,7 @@
     #pragma comment(lib, "user32.lib")
 #endif // _MSC_VER
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 namespace win32 {

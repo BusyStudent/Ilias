@@ -24,6 +24,7 @@
 #endif // defined(_WIN32)
 
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // Wrapping file descriptor api to cross-platform code.

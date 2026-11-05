@@ -46,6 +46,8 @@ struct WinIoVec {
 
 } // namespace detail
 
+ILIAS_EXPORT_BEGIN
+
 /**
  * @brief The byte constant buffer view, (with ABI compatible with iovec or WSABUF)
  * 
@@ -201,5 +203,7 @@ inline auto makeMutableIoSequence(const T &seq) {
         return vec;
     }
 }
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

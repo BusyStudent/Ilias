@@ -14,6 +14,20 @@
 #include <ilias/detail/config.hpp>
 #define _ILIAS_DEFINES_H_
 
+// GCC PR C++/124584:
+// Destructors of tuple-protocol structured bindings may be skipped
+// when they cross a coroutine suspension point.
+// See more info: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=124584
+#if defined(__GNUC__) && !defined(__clang__)
+    #if (__GNUC__ == 15 && __GNUC_MINOR__ <= 3) || (__GNUC__ == 16 && __GNUC_MINOR__ < 2)
+        #warning "ilias: Your GCC version is affected by GCC PR C++/124584.           \
+            Coroutine structured bindings may have incorrect object lifetime cleanup, \
+            potentially causing deadlocks and undefined behavior.                     \
+            Please upgrade to GCC 16.2+ or use GCC 14.x."
+        #define ILIAS_GCC_PR124584_AFFECTED 
+    #endif // __GNUC__ == 15 && __GNUC_MINOR__ <= 3) || (__GNUC__ == 16 && __GNUC_MINOR__ < 2)
+#endif // __GNUC__
+
 // Platform detection
 #if   defined(_WIN32)
     #define ILIAS_DLL_EXPORT ILIAS_ATTRIBUTE(dllexport)
@@ -66,12 +80,14 @@
         #define ILIAS_API ILIAS_DLL_EXPORT
     #else
         #define ILIAS_API ILIAS_DLL_IMPORT
-    #endif
+    #endif // _ILIAS_SOURCE
 #else
     #error "Library mode not specified"
 #endif // ILIAS_STATIC
 
-// Module
+// Module: export public declarations explicitly. A wholly public header can
+// place ILIAS_EXPORT before ILIAS_NS_BEGIN; mixed headers export only their API
+// declarations or public regions. Keep module export separate from ILIAS_API.
 #if   defined(ILIAS_MODULE)
     #define ILIAS_EXPORT_BEGIN export {
     #define ILIAS_EXPORT_END }
@@ -94,8 +110,8 @@
 #endif // __cpp_exceptions || ILIAS_NO_EXCEPTIONS
 
 // Utils macro
-#define ILIAS_NS_BEGIN ILIAS_EXPORT_BEGIN namespace ilias {
-#define ILIAS_NS_END } ILIAS_EXPORT_END
+#define ILIAS_NS_BEGIN namespace ilias {
+#define ILIAS_NS_END }
 
 // Assume macro
 #define ILIAS_ASSUME(cond, ...) do {        \
@@ -114,6 +130,7 @@
 #include <cstdint>
 #endif // ILIAS_MODULE
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // Basic platform types

@@ -15,6 +15,7 @@
 #include <liburing.h>
 #include <deque>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 namespace os_linux {

@@ -25,6 +25,7 @@
     #include <csignal>
 #endif // _WIN32
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

@@ -5,6 +5,7 @@
 #include <ilias/io/ext.hpp>
 #include <memory>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

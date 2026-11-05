@@ -10,6 +10,7 @@ ILIAS_NS_BEGIN
  * @brief The webui for the console, used for debugging, profiling and tracing, no-op on ILIAS_CORO_TRACE is not defined
  * 
  */
+ILIAS_EXPORT
 class ILIAS_TRACING_API TracingWebUi {
 public:
     /**
@@ -45,7 +46,7 @@ private:
 #if ILIAS_CORO_TRACE == 0
 struct TracingWebUi::Impl {};
 inline TracingWebUi::TracingWebUi(std::string_view) {}
-inline TracingWebUi::~TracingWebUi() {}
+inline TracingWebUi::~TracingWebUi() = default;
 inline auto TracingWebUi::install() -> bool { return false; }
 inline auto TracingWebUi::endpoint() const -> std::string_view { return {}; }
 #endif

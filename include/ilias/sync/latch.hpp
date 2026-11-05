@@ -5,6 +5,7 @@
 #include <ilias/log.hpp>
 #include <atomic>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

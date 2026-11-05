@@ -6,6 +6,7 @@
 #include <functional> // std::reference_wrapper
 #include <cstring> // memcpy
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 /**

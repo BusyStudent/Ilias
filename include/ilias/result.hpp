@@ -23,6 +23,8 @@ ILIAS_NS_BEGIN
 
 namespace exp = ILIAS_EXPECTED_NAMESPACE;
 
+ILIAS_EXPORT_BEGIN
+
 template <typename T, typename E>
 using Result = exp::expected<T, E>;
 
@@ -40,6 +42,8 @@ template <typename E>
 using BadExpectedAccess [[deprecated("Use BadResultAccess instead")]] = exp::bad_expected_access<E>;
 
 // Utils function to make error, used in TRY macro
+namespace detail {
+
 template <typename T, typename E>
 constexpr auto makeErr(Result<T, E> result) -> Err<E> {
     if (!std::is_constant_evaluated()) {
@@ -59,5 +63,9 @@ constexpr auto makeErr(std::optional<T> option) -> std::nullopt_t {
 // Did you forget to use co_await ?
 template <typename T>
 constexpr auto makeErr(Task<T> task) -> T = delete;
+
+} // namespace detail
+
+ILIAS_EXPORT_END
 
 ILIAS_NS_END

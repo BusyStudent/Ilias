@@ -17,6 +17,7 @@
 
 ILIAS_NS_BEGIN
 
+ILIAS_EXPORT
 class Event;
 
 namespace sync {
@@ -39,6 +40,7 @@ friend class ilias::Event;
  * 
  * @note The ```AutoClear``` mode make the  event clear automatically when waiter wakeup, it is recommended to use for single customer
  */
+ILIAS_EXPORT
 class Event final {
 public:
     enum Flag : uint32_t {

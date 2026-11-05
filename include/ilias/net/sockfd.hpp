@@ -19,6 +19,7 @@
 #include <ilias/buffer.hpp> // Buffer
 #include <ilias/log.hpp>
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // NOTE: in windows recv and send 's buffer argument is char type and linux is void type

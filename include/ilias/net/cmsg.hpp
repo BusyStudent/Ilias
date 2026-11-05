@@ -26,6 +26,7 @@
     #include <netinet/udp.h>
 #endif // __linux__
 
+ILIAS_EXPORT
 ILIAS_NS_BEGIN
 
 // Import system types
