@@ -46,7 +46,7 @@ private:
  */
 class ILIAS_API IoError {
 public:
-    enum Code : int {
+    enum Code : int { // NOLINT(readability-enum-initial-value)
         Ok = 0,
         
         // System
@@ -97,7 +97,7 @@ public:
         WriteZero,                   //< The operation can't be completed because the lower level write io call returned zero
 
         Other,                       //< Other error
-        Unknown = Other,             //< For compatibility with old code
+        Unknown [[deprecated]] = Other, //< For compatibility with old code
     };
 
     constexpr explicit IoError(int err) : mErr(static_cast<Code>(err)) { }
@@ -147,11 +147,11 @@ inline auto toKind(IoError::Code err) noexcept -> std::error_condition {
 }
 
 // ADL for error code
-inline auto make_error_code(IoError err) noexcept -> std::error_code { // NOLINT
+inline auto make_error_code(IoError err) noexcept -> std::error_code {
     return {static_cast<int>(err), IoCategory::instance()};
 }
 
-inline auto make_error_code(IoError::Code err) noexcept -> std::error_code { // NOLINT
+inline auto make_error_code(IoError::Code err) noexcept -> std::error_code {
     return {static_cast<int>(err), IoCategory::instance()};
 }
 

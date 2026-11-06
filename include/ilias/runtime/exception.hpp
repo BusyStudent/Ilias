@@ -38,7 +38,7 @@ public:
 
     // Check is valid
     explicit operator bool() const noexcept {
-        return bool(mPtr);
+        return static_cast<bool>(mPtr);
     }
 
     // Get the current exception, only can be called from within a catch block

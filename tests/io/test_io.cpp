@@ -383,6 +383,10 @@ ILIAS_TEST(Io, MemStream) {
     }
 }
 
+static_assert(BufferSequence<IoVecSequence>);
+static_assert(BufferSequence<MutableIoVecSequence>); // Mutable -> Const, OK!
+static_assert(MutableBufferSequence<MutableIoVecSequence>);
+
 TEST(Experimental, IoVec) {
     static_assert(std::is_trivially_destructible_v<IoVec>);
     static_assert(std::is_trivially_destructible_v<MutableIoVec>);

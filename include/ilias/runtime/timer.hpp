@@ -36,7 +36,7 @@ public:
     using TimerId = std::multimap<TimePoint, TimerAwaiter *>::iterator;
     using Callback = SmallFunction<void (std::optional<TimePoint> nextTimepoint)>;
 
-    TimerService() { }
+    TimerService() = default;
     TimerService(const TimerService &) = delete;
     ~TimerService() {
         if (!mTimers.empty()) {

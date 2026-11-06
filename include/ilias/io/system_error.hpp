@@ -134,7 +134,7 @@ public:
      * 
      * @return Error 
      */
-    explicit operator int() const { return mErr; }
+    explicit operator int() const { return static_cast<int>(mErr); }
 
     /**
      * @brief Get the system error from the errno
@@ -164,11 +164,11 @@ inline auto SystemError::isOk() const noexcept -> bool {
 }
 
 // ADL for error code
-inline auto make_error_code(SystemError::Code err) -> std::error_code { // NOLINT
+inline auto make_error_code(SystemError::Code err) -> std::error_code {
     return {static_cast<int>(err), SystemCategory::instance()};
 }
 
-inline auto make_error_code(SystemError err) -> std::error_code { // NOLINT
+inline auto make_error_code(SystemError err) -> std::error_code {
     return {static_cast<int>(err), SystemCategory::instance()};
 }
 

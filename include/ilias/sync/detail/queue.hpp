@@ -139,14 +139,14 @@ auto WaitQueue::blockingWait(Fn pred) -> void {
                 return;
             }
             {
-                std::lock_guard locker {mQueue};
+                std::lock_guard locker{mQueue};
                 if (mFn()) { // Atomic check and suspend
                     return;
                 }
                 mQueue.mWaiters.push_back(*this);
             }
 
-            std::atomic_ref {mBlocking}.wait(true); // Wait it to be set to false
+            std::atomic_ref{mBlocking}.wait(true); // Wait it to be set to false
         }
 
         static auto proxy(WaiterBase &self) -> bool {
@@ -168,7 +168,7 @@ auto WaitQueue::blockingWait(Fn pred) -> void {
 #endif // NDEBUG
 // LCOV_EXCL_STOP
 
-    auto waiter = Waiter {*this, std::move(pred)};
+    Waiter waiter{*this, std::move(pred)};
     waiter.suspend();
 }
 

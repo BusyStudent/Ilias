@@ -416,7 +416,7 @@ public:
      * 
      * @return handle_type 
      */
-    auto _leak() noexcept -> handle_type {
+    auto _leak() noexcept -> handle_type { // NOLINT(readability-identifier-naming)
         return std::exchange(mHandle, nullptr);
     }
 
@@ -426,7 +426,7 @@ public:
      * 
      * @return handle_type 
      */
-    auto _handle() const noexcept -> handle_type {
+    auto _handle() const noexcept -> handle_type { // NOLINT(readability-identifier-naming)
         return mHandle;
     }
 
@@ -492,10 +492,10 @@ inline auto sleepUntil(std::chrono::time_point<Clock, Duration> timepoint) -> Ta
 }
 
 // Convert any awaitable types to Task<T>
-constexpr inline task::ToTask toTask{};
+constexpr inline task::ToTask toTask{}; // NOLINT(readability-identifier-naming)
 
 // Blocking wait an awaitable complete
-constexpr inline task::BlockingWait blockingWait{};
+constexpr inline task::BlockingWait blockingWait{}; // NOLINT(readability-identifier-naming)
 
 ILIAS_EXPORT_END
 

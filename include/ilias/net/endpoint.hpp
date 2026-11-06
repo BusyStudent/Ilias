@@ -633,7 +633,7 @@ public:
      * @brief Construct a new empty Mutable Endpoint View object
      * 
      */
-    MutableEndpointView(std::nullptr_t) : mAddr(nullptr), mBufSize(0) { }
+    MutableEndpointView(std::nullptr_t) {}
 
     /**
      * @brief Construct a new Mutable Endpoint View object

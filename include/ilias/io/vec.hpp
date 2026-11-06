@@ -140,12 +140,6 @@ public:
 using IoVecSequence        = std::span<const IoVec>;
 using MutableIoVecSequence = std::span<const MutableIoVec>;
 
-#if !defined(NDEBUG)
-static_assert(BufferSequence<IoVecSequence>);
-static_assert(BufferSequence<MutableIoVecSequence>); // Mutable -> Const, OK!
-static_assert(MutableBufferSequence<MutableIoVecSequence>);
-#endif // NDEBUG
-
 /**
  * @brief Convert IoVec to system raw IoVec pointer
  * 

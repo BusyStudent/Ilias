@@ -189,9 +189,9 @@ public:
     Generator() = default;
     Generator(std::nullptr_t) noexcept {}
     Generator(Generator &&other) noexcept : mHandle(std::exchange(other.mHandle, nullptr)) {}
-    ~Generator() { clear(); }
+    ~Generator() noexcept { clear(); }
 
-    auto clear() -> void {
+    auto clear() noexcept -> void {
         if (mHandle) {
             mHandle.destroy();
             mHandle = nullptr;
@@ -229,7 +229,7 @@ public:
         return std::swap(mHandle, other.mHandle);
     }
 
-    auto operator =(Generator &&other) -> Generator & {
+    auto operator =(Generator &&other) noexcept -> Generator & {
         if (&other == this) {
             return *this;
         }
@@ -237,7 +237,7 @@ public:
         return *this;
     }
 
-    auto operator =(std::nullptr_t) -> Generator & {
+    auto operator =(std::nullptr_t) noexcept -> Generator & {
         clear();
         return *this;
     }

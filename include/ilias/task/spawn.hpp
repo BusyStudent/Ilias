@@ -280,7 +280,7 @@ public:
     }
 
     // Get the internal context ptr
-    auto _leak() -> task::Rc<task::TaskSpawnContextBase> {
+    auto _leak() -> task::Rc<task::TaskSpawnContextBase> { // NOLINT(readability-identifier-naming)
         return std::exchange(mPtr, nullptr);
     }
 
@@ -314,7 +314,7 @@ private:
 
     task::Rc<task::TaskSpawnContextBase> mPtr;
 template <Awaitable U>
-friend auto spawn(U awaitale, runtime::CaptureSource source) -> WaitHandle<AwaitableResult<U> >;
+friend auto spawn(U awaitable, runtime::CaptureSource source) -> WaitHandle<AwaitableResult<U> >;
 };
 
 /**

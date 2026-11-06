@@ -431,13 +431,14 @@ public:
         return mFd != invalid();
     }
 
+    // Impl BorrowFileDescriptor
     /**
      * @brief Get the underlying socket descriptor
      * 
      * @return fd_t 
      */
     explicit operator fd_t() const noexcept {
-        return fd_t(mFd);
+        return fd_t(mFd); // NOLINT
     }
 
     /**

@@ -47,7 +47,8 @@ struct PipePair {
 inline auto pipe() -> IoResult<PipePair> {
 
 #if defined(_WIN32)
-    HANDLE reader, writer;
+    ::HANDLE reader{};
+    ::HANDLE writer{};
     if (!win32::pipe(&reader, &writer)) {
         return Err(SystemError::fromErrno());
     }
@@ -178,7 +179,7 @@ inline auto truncate(fd_t fd, uint64_t size) -> IoResult<void> {
 
 #if defined(_WIN32)
     ::LARGE_INTEGER currentPos { };
-    ::LARGE_INTEGER newSize { .QuadPart = LONGLONG(size) };
+    ::LARGE_INTEGER newSize { .QuadPart = static_cast<::LONGLONG>(size) };
     auto ok = ::SetFilePointerEx(fd, newSize, &currentPos, FILE_BEGIN) && ::SetEndOfFile(fd);
     ::SetFilePointerEx(fd, currentPos, nullptr, FILE_BEGIN);
     if (ok) {

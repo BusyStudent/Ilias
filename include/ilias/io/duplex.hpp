@@ -71,7 +71,7 @@ public:
     static auto make(size_t size) -> std::pair<DuplexStream, DuplexStream>;
 
     // Check the stream is valid
-    explicit operator bool() const noexcept { return bool(d); }
+    explicit operator bool() const noexcept { return static_cast<bool>(d); }
 private:
     // Implementation
     struct Impl;

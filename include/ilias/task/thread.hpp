@@ -64,14 +64,12 @@ public:
 
     // Try suspend the caller, return false if the thread is already completed.
     auto tryAwait(CoroHandle handle) noexcept -> bool {
-        std::lock_guard locker {mMutex};
+        std::scoped_lock locker{mMutex};
         if (mCompleted) { // The mValue is ready
             return false;
         }
-        else {
-            mHandle = handle;
-            return true;
-        }
+        mHandle = handle;
+        return true;
     }
 
     // Set the executor used in the thread

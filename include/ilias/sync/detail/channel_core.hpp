@@ -34,10 +34,7 @@ public:
 #endif
 
     auto onDeref() -> bool {
-        if (mRefCount.fetch_sub(1) == 1) {
-            return true;
-        }
-        return false;
+        return mRefCount.fetch_sub(1) == 1;
     }
 private:
     std::atomic<uint8_t> mRefCount {2}; // 2 for sender and receiver

@@ -437,6 +437,8 @@ struct runtime::IntoRawAwaitableTrait<T> {
 ILIAS_EXPORT_BEGIN
 
 // Public interface
+// NOLINTBEGIN(readability-identifier-naming)
+
 // Set an timeout for a task, return nullopt on timeout
 constexpr inline task::Timeout timeout{};
 
@@ -451,6 +453,8 @@ constexpr inline task::Finally finally{};
 
 // Map an awaitable result to another type
 constexpr inline task::Map fmap{};
+
+// NOLINTEND(readability-identifier-naming)
 
 ILIAS_EXPORT_END
 

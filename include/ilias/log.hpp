@@ -1,7 +1,7 @@
 /**
  * @file log.hpp
  * @author BusyStudent (fyw90mc@gmail.com)
- * @brief The minimal logging system
+ * @brief The minimal logging system, internal used by ilias
  * @version 0.1
  * @date 2024-08-11
  * 
@@ -15,7 +15,7 @@
 // Check headers
 #if defined(ILIAS_NO_FORMAT)
     #undef ILIAS_USE_LOG
-#endif
+#endif // ILIAS_NO_FORMAT
 
 // Begin declaration
 #if defined(ILIAS_USE_LOG)
@@ -69,7 +69,7 @@ ILIAS_NS_END
     #define ILIAS_LOG_ADD_WHITELIST(mod) do { } while(0)
     #define ILIAS_LOG_ADD_BLACKLIST(mod) do { } while(0)
     #define ILIAS_LOG(level, mod, ...) do { } while(0)
-#endif
+#endif// ILIAS_USE_LOG
 
 
 // Define macros for common part

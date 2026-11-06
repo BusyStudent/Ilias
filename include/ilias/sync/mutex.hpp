@@ -23,7 +23,7 @@ public:
     auto onWakeup() -> bool; // Do try lock here
 private:
     Mutex &mMutex;
-friend class Mutex;
+friend class ilias::Mutex;
 };
 
 } // namespace sync
@@ -38,7 +38,7 @@ class [[nodiscard]] MutexGuard {
 public:
     explicit MutexGuard(Mutex &m);
     MutexGuard(const MutexGuard &) = delete;
-    MutexGuard(MutexGuard &&);
+    MutexGuard(MutexGuard &&) noexcept;
     ~MutexGuard();
 
     auto unlock() -> void;
@@ -239,7 +239,7 @@ inline MutexGuard::MutexGuard(Mutex &m) : mMutex(&m) {
     ILIAS_ASSERT(mMutex->isLocked());
 }
 
-inline MutexGuard::MutexGuard(MutexGuard &&o) : mMutex(o.mMutex) {
+inline MutexGuard::MutexGuard(MutexGuard &&o) noexcept : mMutex(o.mMutex) {
     o.mMutex = nullptr;
 }
 

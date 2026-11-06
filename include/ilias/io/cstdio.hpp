@@ -111,7 +111,7 @@ private:
                 case StdioKind::Out: fd = ILIAS_STDOUT_FILENO; break;
                 case StdioKind::Err: fd = ILIAS_STDERR_FILENO; break;
             }
-            if (fd == fd_t(-1)) { // Invalid file descriptor
+            if (fd == FileDescriptor::invalid()) { // Invalid file descriptor
                 mHandle = Err(IoError::BadFileDescriptor);   
             }
             else {

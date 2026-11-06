@@ -59,7 +59,8 @@ public:
 
 #if defined(_WIN32)
     static auto make(socket_t sockfd) -> IoTask<Poller> {
-        return make(fd_t(sockfd), IoDescriptor::Socket);
+        // NOLINTNEXTLINE(performance-no-int-to-ptr)
+        return make(reinterpret_cast<fd_t>(sockfd), IoDescriptor::Socket);
     }
 #endif
 
@@ -70,7 +71,7 @@ public:
      * @return false 
      */
     explicit operator bool() const noexcept {
-        return bool(mHandle);
+        return static_cast<bool>(mHandle);
     }
 private:
     IoHandle<fd_t> mHandle;

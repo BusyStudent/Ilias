@@ -57,13 +57,13 @@ public:
     }
 
     auto onSenderClose() -> void {
-        std::lock_guard locker {*this};
+        std::lock_guard locker{*this};
         senderClose = true;
         notify(); // Notify the receiver we are closed
     }
 
     auto onReceiverClose() -> void {
-        std::lock_guard locker {*this};
+        std::lock_guard locker{*this};
         receiverClose = true;
     }
 
@@ -189,7 +189,7 @@ public:
         if (!mChan) {
             return true;
         }
-        std::lock_guard locker {*mChan};
+        std::lock_guard locker{*mChan};
         return mChan->senderClose;
     }
 
@@ -198,7 +198,7 @@ public:
         if (!mChan) {
             return true;
         }
-        std::lock_guard locker {*mChan};
+        std::lock_guard locker{*mChan};
         return !mChan->value.has_value();
     }
 
@@ -219,7 +219,7 @@ public:
      */
     [[nodiscard]]
     auto tryRecv() -> Result<T, TryRecvError> {
-        std::unique_lock locker {*mChan};
+        std::unique_lock locker{*mChan};
 
         // Check value
         if (!mChan->value && mChan->senderClose) {
@@ -249,7 +249,7 @@ public:
     auto blockingRecv() -> std::optional<T> {
         mChan->finally.wait(false); // Wait the result
         auto chan = std::exchange(mChan, nullptr); // Consume the receiver
-        auto locker = std::lock_guard {*chan};
+        auto locker = std::lock_guard{*chan};
 
         if (chan->value) {
             chan->valueGot = true;
@@ -268,7 +268,7 @@ public:
      * @return std::optional<T>, nullopt on closed 
      */
     auto operator co_await() && -> detail::RecvAwaiter<T> {
-        return detail::RecvAwaiter<T> {std::move(mChan)};
+        return {std::move(mChan)};
     }
 
     /**
@@ -312,7 +312,7 @@ public:
         if (!mChan) {
             return true;
         }
-        auto locker = std::lock_guard {*mChan};
+        std::lock_guard locker{*mChan};
         return mChan->senderClose;
     }
 
@@ -328,7 +328,7 @@ public:
             return Err(std::move(value));
         }
 
-        auto locker = std::lock_guard {*mChan};
+        std::lock_guard locker{*mChan};
         if (mChan->value) { // already send
             return Err(std::move(value));
         }
@@ -370,10 +370,10 @@ friend auto channel() -> Pair<U>;
  */
 template <Sendable T>
 inline auto channel() -> Pair<T> {
-    auto ptr = new detail::Channel<T> {};
+    auto ptr = new detail::Channel<T>{};
     return {
-        .sender = Sender<T> {ptr},
-        .receiver = Receiver<T> {ptr}
+        .sender = Sender<T>{ptr},
+        .receiver = Receiver<T>{ptr}
     };
 }
 

@@ -117,7 +117,7 @@ public:
     auto operator *() const noexcept -> HANDLE { return get(); }
 
     // Check if the handle is valid
-    explicit operator bool() const noexcept { return bool(mHandle); };
+    explicit operator bool() const noexcept { return static_cast<bool>(mHandle); };
 private:
     // Normalized the handle to nullptr if it's invalid
     static auto normalized(HANDLE handle) -> HANDLE { return handle == INVALID_HANDLE_VALUE ? nullptr : handle; }

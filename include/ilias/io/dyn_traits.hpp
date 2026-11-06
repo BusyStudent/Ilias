@@ -60,6 +60,7 @@ inline auto deleteProxy(void *object) noexcept -> void {
     delete static_cast<T *>(object);
 }
 
+// NOLINTBEGIN(readability-identifier-naming)
 // Vtbls, C++20 compatible
 template <Stream T>
 inline constexpr StreamVtbl streamVtbl {
@@ -99,6 +100,8 @@ inline constexpr bool isDynType<ReadableView> = true;
 
 template <>
 inline constexpr bool isDynType<WritableView> = true;
+
+// NOLINTEND(readability-identifier-naming)
 
 template <typename T>
 concept Dyn = isDynType<std::remove_cvref_t<T> >;
