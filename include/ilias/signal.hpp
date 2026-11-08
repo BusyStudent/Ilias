@@ -18,6 +18,7 @@
 
 #include <ilias/task/task.hpp>
 #include <ilias/io/error.hpp>
+#include <csignal> // SIG*
 
 ILIAS_EXPORT
 ILIAS_NS_BEGIN
@@ -39,7 +40,17 @@ ILIAS_API extern auto ctrlC() -> IoTask<void>;
  * @return IoTask<void> 
  */
 ILIAS_API extern auto waitFor(int sig) -> IoTask<void>;
-#endif
+#endif // __linux__
+
+#if defined(_WIN32)
+/**
+ * @brief Waiting for the specified ctrl event
+ * 
+ * @param ctrlEvent The ctrl event number like CTRL_C_EVENT, CTRL_BREAK_EVENT, etc.
+ * @return IoTask<void> 
+ */
+ILIAS_API extern auto waitCtrl(int ctrlEvent) -> IoTask<void>;
+#endif // _WIN32
 
 } // namespace signal
 

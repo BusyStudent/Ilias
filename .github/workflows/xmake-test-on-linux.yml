@@ -39,6 +39,9 @@ jobs:
         PACKAGES=()
         if [ "${{ matrix.mode }}" == "coverage" ]; then
           PACKAGES+=(lcov)
+          if [ "${{ matrix.toolchain }}" == "clang" ]; then
+            PACKAGES+=(llvm-21)
+          fi
         fi
         if [ "${{ matrix.backend }}" == "io_uring" ]; then
           PACKAGES+=(liburing-dev)
@@ -73,6 +76,17 @@ jobs:
         sudo update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-21   21
         clang++ --version
         clang   --version
+
+    - name: Set up Clang coverage
+      if: matrix.toolchain == 'clang' && matrix.mode == 'coverage'
+      run: |
+        # Invoking llvm-cov as gcov selects its gcov-compatible mode.
+        # Match Codecov's unversioned gcov command to Clang 21 coverage data.
+        GCOV_BIN="$RUNNER_TEMP/clang-21-coverage"
+        mkdir -p "$GCOV_BIN"
+        ln -s "$(command -v llvm-cov-21)" "$GCOV_BIN/gcov"
+        "$GCOV_BIN/gcov" --version
+        echo "$GCOV_BIN" >> "$GITHUB_PATH"
 
     - name: Configure
       run: |
