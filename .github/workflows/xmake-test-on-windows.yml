@@ -150,3 +150,68 @@ jobs:
         with:
           verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  coverage-windows-mingw-clang:
+    name: coverage / windows / mingw-clang
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2 for MinGW Clang coverage
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          path-type: minimal
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-llvm
+            mingw-w64-clang-x86_64-libc++
+            mingw-w64-clang-x86_64-make
+            mingw-w64-clang-x86_64-cmake
+            mingw-w64-clang-x86_64-ninja
+            mingw-w64-clang-x86_64-xmake
+            mingw-w64-clang-x86_64-gcovr
+            git
+
+      - name: Configure Clang coverage
+        shell: msys2 {0}
+        run: |
+          which xmake
+          clang --version
+          clang++ -dumpmachine
+          llvm-cov --version
+          gcovr --version
+
+          xmake f -c \
+            -p mingw -a x64 \
+            --toolchain=clang \
+            -m coverage \
+            -k static \
+            --dev=y -y
+
+      - name: Build
+        shell: msys2 {0}
+        run: xmake -vD -y
+
+      - name: Test
+        shell: msys2 {0}
+        run: xmake test -vD
+
+      - name: Generate Clang coverage report
+        shell: msys2 {0}
+        run: |
+          gcovr --root . build \
+            --gcov-executable "llvm-cov gcov" \
+            --xml-pretty --output coverage.xml \
+            --print-summary
+
+      - name: Upload Clang coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          disable_search: true
+          plugins: noop
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}

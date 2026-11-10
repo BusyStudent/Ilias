@@ -8,10 +8,12 @@
 
 ILIAS_NS_BEGIN
 
+namespace {
+
 // Do io call in thread pool
 // MARK: SynchronousIo
 template <typename Fn>
-inline auto ioCall(const runtime::StopToken &token, Fn fn) -> std::invoke_result_t<Fn> {
+auto ioCall(const runtime::StopToken &token, Fn fn) -> std::invoke_result_t<Fn> {
     // Get the thread handle, used for CancelSynchronousIo
     HANDLE threadHandle = nullptr;
     auto ok = ::DuplicateHandle(
@@ -27,18 +29,18 @@ inline auto ioCall(const runtime::StopToken &token, Fn fn) -> std::invoke_result
         return Err(SystemError::fromErrno());
     }
 
-    Win32Handle raii {threadHandle};
+    Win32Handle raii{threadHandle};
 
     // Check the stop request
     std::invoke_result_t<Fn> result = Err(SystemError::Canceled); // store the return value
-    std::atomic<HANDLE> handle {threadHandle}; // nullptr on (canceled or completed)
-    std::latch latch {1};
-    runtime::StopCallback callback(token, [&]() {
+    std::atomic<HANDLE> handle{threadHandle}; // nullptr on (canceled or completed)
+    std::latch latch{1};
+    runtime::StopCallback callback{token, [&]() {
         if (auto h = handle.exchange(nullptr); h != nullptr) {
             ::CancelSynchronousIo(h);
             latch.count_down();
         }
-    });
+    }};
     if (!token.stop_requested()) {
         result = fn();
     }
@@ -48,6 +50,8 @@ inline auto ioCall(const runtime::StopToken &token, Fn fn) -> std::invoke_result
     }
     return result;
 }
+
+} // namespace
 
 auto runtime::threadpool::read(fd_t fd, MutableBuffer buffer, std::optional<size_t> offset) -> IoTask<size_t> {
     auto token = co_await this_coro::stopToken();

@@ -15,7 +15,8 @@ hero:
       link: zh/guides/quick-start
     - theme: alt
       text: API 参考
-      link: zh/dev/api
+      link: /api/index.html
+      target: _self
 
 features:
   - title: 轻量级

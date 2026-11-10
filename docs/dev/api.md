@@ -4,6 +4,8 @@ outline: deep
 
 # API Overview
 
+For types, functions, parameters, and return values, see the <a href="/api/index.html" target="_self">generated API reference</a>.
+
 Ilias can be understood in six layers: runtime, tasks, I/O, networking, synchronization, and optional extensions. In day-to-day development, you usually only need a small subset of headers.
 
 ## Recommended entry headers

@@ -15,7 +15,8 @@ hero:
       link: /guides/quick-start
     - theme: alt
       text: API Reference
-      link: /dev/api
+      link: /api/index.html
+      target: _self
 
 features:
   - title: Lightweight

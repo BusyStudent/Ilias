@@ -17,3 +17,5 @@ a.out
 docs/node_modules
 docs/.vitepress/dist
 docs/.vitepress/cache
+docs/.vitepress/.temp
+docs/public/api

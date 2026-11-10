@@ -6,10 +6,21 @@ on:
       - main
     paths:
       - 'docs/**'
+      - 'include/**'
+      - '.github/workflows/depoly_docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'include/**'
+      - '.github/workflows/depoly_docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,14 +33,18 @@ jobs:
           cache-dependency-path: docs/package-lock.json 
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
         working-directory: docs 
 
-      - name: Build VitePress
+      - name: Install Doxygen
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y doxygen
+
+      - name: Build VitePress and API reference
         run: npm run docs:build
         working-directory: docs 
 
       - name: Deploy to External Repo
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v3
         with:
           personal_token: ${{ secrets.DEPLOY_TOKEN }}

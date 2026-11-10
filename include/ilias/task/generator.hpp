@@ -13,7 +13,7 @@
 #include <ilias/runtime/executor.hpp>
 #include <ilias/runtime/token.hpp>
 #include <ilias/runtime/coro.hpp>
-#include <ilias/macros.hpp>
+#include <ilias/macros.hpp> // ILIAS_FOR_AWAIT
 #include <ilias/log.hpp>
 #include <coroutine>
 #include <optional> // std::optional
@@ -174,7 +174,7 @@ ILIAS_EXPORT_BEGIN
 /**
  * @brief The Generator class, used to produce value by yield
  * 
- * @tparam T The type of the value to be yielded (can't be void)
+ * @tparam T The type of the value to be yielded (can't be void and reference)
  */
 template <typename T>
 class Generator {
@@ -185,6 +185,7 @@ public:
     using value_type = T;
 
     static_assert(!std::is_void_v<T>, "Generator can't be used with void type");
+    static_assert(!std::is_reference_v<T>, "Generator can't be used with reference type"); // TODO: Support reference?
 
     Generator() = default;
     Generator(std::nullptr_t) noexcept {}

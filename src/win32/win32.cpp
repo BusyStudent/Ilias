@@ -37,8 +37,8 @@ auto win32::pipe(HANDLE *read, HANDLE *write, SECURITY_ATTRIBUTES *attr) -> bool
         sizeof(name), 
         L"\\\\.\\Pipe\\IliasPipe_%" PRIuPTR "_%d_%d",
         counter.fetch_add(1, std::memory_order_relaxed),
-        int(::time(nullptr)),
-        int(::GetCurrentThreadId())
+        static_cast<int>(::time(nullptr)),
+        static_cast<int>(::GetCurrentThreadId())
     );
 
     HANDLE readPipe = ::CreateNamedPipeW(

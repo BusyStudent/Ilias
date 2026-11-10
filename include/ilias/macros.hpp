@@ -193,10 +193,14 @@
  */
 #define ILIAS_TRYV(...) ILIAS_BASIC_TRYV_IMPL(return, __VA_ARGS__)
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
+
 // task/generator.hpp
 // MARK: For Await API
-// Because for(xxx; xxx; co_await(++it)) compile failed in gcc, so we have to use it instead
-#define ILIAS_FOR_AWAIT_FALLBACK(var, generator)                                       \
+
+// Because for(xxx; xxx; co_await(++it)) compile failed in some gcc versions.
+// Workaround with this macro
+#define ILIAS_FOR_AWAIT_GCC(var, generator)                                            \
     if (auto &&_gen_ = (generator); false) {}                                          \
     else if (bool _first_ = true; false) {}                                            \
     else                                                                               \
@@ -213,15 +217,23 @@
     if (auto &&_gen_ = (generator); false) {}                                             \
     else                                                                                  \
         for (auto _it_ = co_await _gen_.begin(); _it_ != _gen_.end(); co_await (++_it_))  \
-            if (var = *_it_; false) {}
+            if (var = *_it_; false) {}                                                    \
+            else
+
+// Select implementation by compiler
+#if defined(__GNUC__) && !defined(__clang__)
+    #define ILIAS_FOR_AWAIT_IMPL(var, generator) ILIAS_FOR_AWAIT_GCC(var, generator)
+#else
+    #define ILIAS_FOR_AWAIT_IMPL(var, generator) ILIAS_FOR_AWAIT_GENERIC(var, generator)
+#endif // __GNUC__
 
 /**
  * @brief The range for for the Generator<T>
  * 
- * @code {.cpp}
- * ilias_for_await(const auto &val, generator()) {
- *  useVal(val);
- * }
+ * @code
+ *   ILIAS_FOR_AWAIT(const auto &val, generator()) {
+ *       useVal(val);
+ *   }
  * @endcode
  * 
  * 
@@ -231,10 +243,12 @@
  * @param var The variable to hold each value from the generator.
  * @param generator The generator object to iterate over.
  */
-#define ILIAS_FOR_AWAIT(var, generator) ILIAS_FOR_AWAIT_FALLBACK(var, generator)
+#define ILIAS_FOR_AWAIT(var, generator) ILIAS_FOR_AWAIT_IMPL(var, generator) // NOLINT
 
 /// @copydoc ILIAS_FOR_AWAIT
-#define ilias_for_await(var, generator) ILIAS_FOR_AWAIT(var, generator)
+#define ilias_for_await(var, generator) ILIAS_FOR_AWAIT(var, generator) // NOLINT
+
+// NOLINTEND(bugprone-macro-parentheses)
 
 // testing.hpp
 // MARK: Testing API
@@ -336,6 +350,7 @@
  *    co_return;
  *  }
  *  ILIAS_TEST_MAIN_F(ilias::EventLoop) {}
+ * @endcode
  */
 #define ILIAS_TEST_MAIN_F(ctxt)                 \
     static auto _ilias_before_test() -> void;   \

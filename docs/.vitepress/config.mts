@@ -3,6 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'ilias',
   description: 'Modern Lightweight C++ Async Runtime',
+  srcExclude: ['README.md', 'doxygen/**'],
   locales: {
     root: {
       label: 'English',
@@ -13,7 +14,7 @@ export default defineConfig({
             collapsed: false,
             text: 'Docs',
             items: [
-              { text: 'API Reference', link: '/dev/api' },
+              { text: 'API Overview', link: '/dev/api' },
             ],
           },
           {
@@ -55,7 +56,11 @@ export default defineConfig({
     },
   },
   themeConfig: {
-    nav: [{ text: 'Home', link: '/' }],
+    nav: [
+      { text: 'Home', link: '/' },
+      // Static Doxygen pages require a full navigation instead of client routing.
+      { text: 'API', link: '/api/index.html', target: '_self' },
+    ],
     socialLinks: [{ icon: 'github', link: 'https://github.com/BusyStudent/Ilias' }],
   },
 })

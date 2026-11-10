@@ -4,6 +4,8 @@ outline: deep
 
 # API 总览
 
+类型、函数、参数和返回值的详细说明，请查看<a href="/api/index.html" target="_self">从代码生成的 API 参考</a>。
+
 ilias 被划分成了以下模块
 
 - platform 平台相关上下文
