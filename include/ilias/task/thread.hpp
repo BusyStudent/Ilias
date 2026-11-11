@@ -75,8 +75,8 @@ public:
     // Set the executor used in the thread
     template <typename T>
     auto setExecutor() noexcept -> void {
-        mInit = []() -> Executor * {
-            return new T;
+        mCreateExecutor = []() -> std::unique_ptr<Executor> {
+            return std::make_unique<T>();
         };
     }
 
@@ -90,16 +90,16 @@ protected:
     ThreadBase() = default;
     ~ThreadBase() = default;
 
-    Executor *          (*mInit)() = nullptr; // Create the executor (nullptr on builtin, the PlatformContext)
-    Task<void>          (*mInvoke)(ThreadBase &self) = nullptr; // Call the task
-    void                (*mDestroy)(ThreadBase *self) = nullptr; // Destroy the thread state
-    ExceptionPtr          mException; // The exception that the invoke throwed
+    std::unique_ptr<Executor> (*mCreateExecutor)() = nullptr; // Create the executor (nullptr on builtin, the PlatformContext)
+    Task<void> (*mInvoke)(ThreadBase &self) = nullptr; // Call the task
+    void       (*mDestroy)(ThreadBase *self) = nullptr; // Destroy the thread state
+    ExceptionPtr mException; // The exception that the invoke throwed
 private:
-    StopSource            mSource;
-    CoroHandle            mHandle; // For the coroutine who await this thread
-    std::thread           mThread; // the thread that runs the task
-    std::mutex            mMutex; // Used to locked the mHandle & mCompleted
-    bool                  mCompleted = false;
+    StopSource   mSource;
+    CoroHandle   mHandle; // For the coroutine who await this thread
+    std::thread  mThread; // the thread that runs the task
+    std::mutex   mMutex; // Used to locked the mHandle & mCompleted
+    bool         mCompleted = false;
 };
 
 // The state object used for Thread<T>. hold the return value of the task.

@@ -449,7 +449,7 @@ public:
     }
 
     // Expose Seekable if the stream is seekable
-    auto seek(int64_t offset, SeekOrigin origin) -> IoTask<uint64_t> requires Seekable<T> {
+    auto seek(int64_t offset, SeekOrigin origin) requires Seekable<T> {
         mBuffer.clear(); // Discard all buffered data
         return mStream.seek(offset, origin);
     }
@@ -643,7 +643,7 @@ public:
     }
 
     // Seekable
-    auto seek(int64_t offset, SeekOrigin origin) -> IoTask<uint64_t> requires Seekable<T> {
+    auto seek(int64_t offset, SeekOrigin origin) requires Seekable<T> {
         return mStream.seek(offset, origin);
     }
 

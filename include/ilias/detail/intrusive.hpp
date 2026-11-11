@@ -119,7 +119,7 @@ public:
         }
     }
 
-    // Get the size of the list， O(n), only for debug
+    // Get the size of the list, O(n), only for debug
     [[nodiscard]]
     auto size() const -> size_t {
         size_t n = 0;
